@@ -50,8 +50,19 @@ DOMAIN=api.example.com docker compose -f docker-compose.prod.yml up -d
 
 - [x] Repository scaffold
 - [x] docker-compose (postgres + minio + mailpit + api)
-- [ ] Auth module (Phase 2)
-- [ ] REST auto-generator (Phase 2)
+- [x] Auth module — argon2id + JWT + rotating refresh tokens (Phase 2)
+- [x] REST auto-generator — PostgREST-style, RLS via `pluto.user_id` GUC (Phase 2)
+- [x] `@pluto/client` SDK — fetch-based, browser/node/edge (Phase 2)
 - [ ] Storage module (Phase 3)
 - [ ] Admin API + logs (Phase 3)
 - [ ] Realtime, Edge Functions, OAuth (Phase 5+)
+
+## Using `@pluto/client`
+
+```ts
+import { createPlutoClient } from "@pluto/client";
+const pluto = createPlutoClient({ url: "http://localhost:8000", anonKey: "pk_anon_dev" });
+
+await pluto.auth.signUp({ email: "me@example.com", password: "correct horse" });
+const { data, error } = await pluto.from("notes").select("*").order("created_at", { ascending: false });
+```
