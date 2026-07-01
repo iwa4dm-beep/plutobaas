@@ -40,6 +40,22 @@ export type Database = {
     message: string;
     user_id: string | null;
   };
+  oauth_accounts: {
+    id: string;
+    user_id: string;
+    provider: "google" | "github";
+    provider_user_id: string;
+    created_at: Date;
+  };
+  edge_functions: {
+    slug: string;
+    code: string;
+    runtime: "js";
+    timeout_ms: number;
+    public: boolean;
+    created_by: string | null;
+    updated_at: Date;
+  };
 };
 
 export const db = new Kysely<Database>({
