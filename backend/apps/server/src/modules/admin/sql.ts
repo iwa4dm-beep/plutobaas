@@ -69,7 +69,7 @@ async function recordHistory(
   }
 }
 
-async function runQuery(sql: string, readOnly: boolean): Promise<RunResult[]> {
+async function runQuery(sql: string, params: unknown[], readOnly: boolean): Promise<RunResult[]> {
   const client = await pool.connect();
   try {
     await client.query(`set local statement_timeout = ${STATEMENT_TIMEOUT_MS}`);
@@ -79,7 +79,14 @@ async function runQuery(sql: string, readOnly: boolean): Promise<RunResult[]> {
       await client.query("begin");
     }
     try {
-      const raw = await client.query(sql);
+      // pg parameterization only works with a single statement — the wire
+      // protocol's extended query mode does not accept multi-statement
+      // strings when bind params are supplied. When params are present
+      // we enforce single-statement execution; otherwise fall back to
+      // simple-query mode (which supports multiple statements).
+      const raw = params.length > 0
+        ? await client.query(sql, params)
+        : await client.query(sql);
       const arr = Array.isArray(raw) ? raw : [raw];
       const out: RunResult[] = arr.map((r) => {
         const rows = (r.rows ?? []) as unknown[];
