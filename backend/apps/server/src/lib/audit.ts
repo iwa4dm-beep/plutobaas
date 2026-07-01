@@ -56,3 +56,6 @@ export async function audit(req: FastifyRequest | null, input: AuditInput) {
 export async function emit(channel: string, event: string, payload: unknown) {
   await broadcast(channel, event, payload);
 }
+
+// Compat alias — earlier phases imported this name.
+export const logAudit = audit;
