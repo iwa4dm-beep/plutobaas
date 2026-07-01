@@ -1,8 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
-import { AlertTriangle, CheckCircle2, Clock, Play, RotateCcw, XCircle } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Clock, Eye, Play, RotateCcw, XCircle } from "lucide-react";
 import { PageHeader } from "@/components/pluto/PageHeader";
-import { isLive, live, type MigrationEntry } from "@/lib/pluto/live";
+import { isLive, live, subscribe, type DryRunEntry, type MigrationEntry, type RealtimeEvent } from "@/lib/pluto/live";
 
 export const Route = createFileRoute("/dashboard/migrations")({
   component: MigrationsPage,
@@ -17,11 +17,16 @@ const STATUS_COLOR: Record<MigrationEntry["status"], string> = {
   missing: "text-muted-foreground bg-muted/40 border-border",
 };
 
+type ProgressEntry = { ts: string; event: string; text: string };
+
 function MigrationsPage() {
   const [entries, setEntries] = useState<MigrationEntry[] | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
+  const [plan, setPlan] = useState<DryRunEntry[] | null>(null);
+  const [progress, setProgress] = useState<ProgressEntry[]>([]);
+  const [liveConn, setLiveConn] = useState(false);
 
   const load = useCallback(async () => {
     setErr(null);
@@ -40,10 +45,41 @@ function MigrationsPage() {
 
   useEffect(() => { void load(); }, [load]);
 
+  // Live progress: subscribe to the migrations broadcast channel.
+  useEffect(() => {
+    if (!isLive()) return;
+    setLiveConn(true);
+    const push = (e: RealtimeEvent) => {
+      const p = (e.payload ?? {}) as Record<string, unknown>;
+      const bits: string[] = [];
+      if (p.version) bits.push(String(p.version));
+      if (p.phase) bits.push(String(p.phase));
+      if (p.duration_ms) bits.push(`${p.duration_ms}ms`);
+      if (p.error) bits.push(`error: ${p.error}`);
+      if (p.total != null) bits.push(`${p.total} version(s)`);
+      if (p.applied) bits.push(`applied ${(p.applied as string[]).length}`);
+      setProgress((prev) => [{ ts: e.ts ?? new Date().toISOString(), event: e.event, text: bits.join(" · ") }, ...prev].slice(0, 40));
+      // Any run.done / rollback.done event should refresh the list.
+      if (e.event === "run.done" || e.event.endsWith(".done") || e.event === "step") void load();
+    };
+    const off = subscribe("system:migrations", push);
+    return () => { off(); setLiveConn(false); };
+  }, [load]);
+
   async function guard<T>(key: string, fn: () => Promise<T>) {
     setBusy(key); setErr(null); setNote(null);
     try { const r = await fn(); await load(); return r; }
     catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
+    finally { setBusy(null); }
+  }
+
+  async function preview() {
+    setBusy("plan"); setErr(null); setNote(null);
+    try {
+      if (!isLive()) throw new Error("Pluto backend not configured.");
+      const res = await live.migrations.dryRun();
+      setPlan(res.plan);
+    } catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
     finally { setBusy(null); }
   }
 
@@ -53,10 +89,18 @@ function MigrationsPage() {
     <div>
       <PageHeader
         title="Database migrations"
-        description="Version history, pending runs, and rollback for the Pluto schema."
+        description="Version history, pending runs, rollback, and live progress for the Pluto schema."
       />
 
       <div className="flex flex-wrap items-center gap-3 mb-4">
+        <button
+          disabled={!isLive() || busy !== null || pendingCount === 0}
+          onClick={preview}
+          className="inline-flex items-center gap-2 rounded-md border border-input px-3 py-1.5 text-sm hover:bg-accent disabled:opacity-50"
+        >
+          <Eye className="h-4 w-4" />
+          Preview (dry-run)
+        </button>
         <button
           disabled={!isLive() || busy !== null || pendingCount === 0}
           onClick={() => guard("run", () => live.migrations.runPending())}
@@ -72,12 +116,53 @@ function MigrationsPage() {
         >
           Refresh
         </button>
-        {!isLive() && (
-          <span className="text-xs text-muted-foreground inline-flex items-center gap-1">
-            <AlertTriangle className="h-3.5 w-3.5" /> Read-only preview
+        {isLive() && (
+          <span className={`text-xs inline-flex items-center gap-1.5 ${liveConn ? "text-emerald-500" : "text-muted-foreground"}`}>
+            <span className={`inline-block h-1.5 w-1.5 rounded-full ${liveConn ? "bg-emerald-500 animate-pulse" : "bg-muted-foreground"}`} />
+            {liveConn ? "live" : "connecting…"}
           </span>
         )}
       </div>
+
+      {plan && (
+        <div className="mb-4 rounded-lg border border-sky-500/30 bg-sky-500/5 p-4">
+          <div className="flex items-center justify-between mb-2">
+            <div className="text-sm font-medium">Dry-run plan · {plan.length} migration{plan.length === 1 ? "" : "s"} would run</div>
+            <button onClick={() => setPlan(null)} className="text-xs text-muted-foreground hover:text-foreground">Dismiss</button>
+          </div>
+          {plan.length === 0 ? (
+            <div className="text-xs text-muted-foreground">Nothing pending — schema is up to date.</div>
+          ) : (
+            <ul className="space-y-2">
+              {plan.map((p) => (
+                <li key={p.version} className="rounded-md border border-border bg-card p-3">
+                  <div className="flex items-center gap-2 text-xs">
+                    <span className="font-mono">{p.version}</span>
+                    <span className="text-muted-foreground">· {p.reason} · {p.statement_count} stmt · {p.bytes}B</span>
+                    {p.has_down && <span className="text-emerald-500">· rollback available</span>}
+                  </div>
+                  <pre className="mt-2 text-[11px] bg-muted/40 rounded p-2 overflow-x-auto whitespace-pre-wrap">{p.preview}{p.bytes > 400 ? "…" : ""}</pre>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
+      {progress.length > 0 && (
+        <div className="mb-4 rounded-lg border border-border bg-card p-3">
+          <div className="text-xs font-medium mb-2">Live progress</div>
+          <ul className="text-xs font-mono space-y-0.5 max-h-40 overflow-y-auto">
+            {progress.map((p, i) => (
+              <li key={i} className="text-muted-foreground">
+                <span className="text-foreground/80">{new Date(p.ts).toLocaleTimeString()}</span>
+                {" "}<span className="text-primary">{p.event}</span>
+                {" "}{p.text}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {note && <div className="mb-3 rounded-md border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">{note}</div>}
       {err && <div className="mb-3 rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-500">{err}</div>}
