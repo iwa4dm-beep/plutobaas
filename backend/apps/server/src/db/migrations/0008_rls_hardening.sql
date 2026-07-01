@@ -46,18 +46,11 @@ create policy edge_functions_workspace_scope on public.edge_functions
 
 -- +migrate down
 drop policy if exists edge_functions_workspace_scope on public.edge_functions;
-do $$
-declare
-  t text;
-begin
-  for t in
-    select unnest(array[
-      'users','refresh_tokens','api_logs','oauth_accounts','schema_migrations'
-    ])
-  loop
-    execute format('drop policy if exists %I_service_only on public.%I', t, t);
-  end loop;
-end $$;
+drop policy if exists schema_migrations_service_only on public.schema_migrations;
+drop policy if exists oauth_accounts_service_only    on public.oauth_accounts;
+drop policy if exists api_logs_service_only          on public.api_logs;
+drop policy if exists refresh_tokens_service_only    on public.refresh_tokens;
+drop policy if exists users_service_only             on public.users;
 alter table public.schema_migrations disable row level security;
 alter table public.edge_functions    disable row level security;
 alter table public.oauth_accounts    disable row level security;
