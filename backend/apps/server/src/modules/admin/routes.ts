@@ -89,4 +89,23 @@ export async function adminRoutes(app: FastifyInstance) {
       storage_bytes: Number(obj[0].bytes),
     };
   });
+
+  // Audit trail — read-only. Filterable by action prefix (e.g. "migration.")
+  // or exact match, and by actor. Newest first.
+  app.get("/audit", async (req) => {
+    const q = (req.query ?? {}) as { action?: string; actor?: string; limit?: string; since?: string };
+    const limit = Math.min(500, Number(q.limit ?? 100));
+    const parts: string[] = [];
+    const args: unknown[] = [];
+    if (q.action) { parts.push(`action like $${args.length + 1}`); args.push(q.action.endsWith("*") ? q.action.replace(/\*$/, "%") : q.action); }
+    if (q.actor)  { parts.push(`actor_email = $${args.length + 1}`); args.push(q.actor); }
+    if (q.since)  { parts.push(`ts >= $${args.length + 1}`); args.push(q.since); }
+    const where = parts.length ? `where ${parts.join(" and ")}` : "";
+    const { rows } = await adminPool.query(
+      `select id, ts, actor_id, actor_email, actor_role, action, target, status, metadata, ip
+         from public.audit_events ${where} order by ts desc limit ${limit}`,
+      args
+    );
+    return rows;
+  });
 }
