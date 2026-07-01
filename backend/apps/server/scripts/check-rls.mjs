@@ -75,8 +75,11 @@ for (const t of tables) {
     continue;
   }
   if (t.columns.includes("workspace_id")) {
+    // `using (false)` or `with check (false)` = the table is completely
+    // locked down for that grantee — no leak possible via that policy.
+    const allLockedDown = pols.every((p) => /\busing\s*\(\s*false\s*\)/i.test(p.body));
     const hasWorkspaceFilter = pols.some((p) => /workspace_id/i.test(p.body) || /is_workspace_member/i.test(p.body) || /current_workspace_id/i.test(p.body));
-    if (!hasWorkspaceFilter) {
+    if (!allLockedDown && !hasWorkspaceFilter) {
       violations.push(`${t.file}:${t.name}: has workspace_id but no policy references workspace_id / is_workspace_member() — cross-tenant leak risk`);
     }
   }
