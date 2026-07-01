@@ -90,22 +90,57 @@ export async function adminRoutes(app: FastifyInstance) {
     };
   });
 
-  // Audit trail — read-only. Filterable by action prefix (e.g. "migration.")
-  // or exact match, and by actor. Newest first.
-  app.get("/audit", async (req) => {
-    const q = (req.query ?? {}) as { action?: string; actor?: string; limit?: string; since?: string };
-    const limit = Math.min(500, Number(q.limit ?? 100));
+  // Audit trail — read-only. Server-side filter by action (prefix with
+  // '*' → LIKE), actor (email substring, ILIKE), status, free-text (q,
+  // matches action / target / actor_email). Newest first. Response
+  // includes `total` so the client can paginate.
+  app.get("/audit", async (req, reply) => {
+    const q = z.object({
+      action:  z.string().max(120).optional(),
+      actor:   z.string().max(200).optional(),
+      status:  z.enum(["ok", "error", "dry_run"]).optional(),
+      q:       z.string().max(200).optional(),
+      since:   z.string().datetime().optional(),
+      until:   z.string().datetime().optional(),
+      limit:   z.coerce.number().int().min(1).max(200).default(50),
+      offset:  z.coerce.number().int().min(0).default(0),
+    }).safeParse(req.query ?? {});
+    if (!q.success) return reply.code(400).send({ error: "invalid_query", issues: q.error.issues });
+    const { action, actor, status, q: text, since, until, limit, offset } = q.data;
+
     const parts: string[] = [];
     const args: unknown[] = [];
-    if (q.action) { parts.push(`action like $${args.length + 1}`); args.push(q.action.endsWith("*") ? q.action.replace(/\*$/, "%") : q.action); }
-    if (q.actor)  { parts.push(`actor_email = $${args.length + 1}`); args.push(q.actor); }
-    if (q.since)  { parts.push(`ts >= $${args.length + 1}`); args.push(q.since); }
+    const add = (sql: string, val: unknown) => { args.push(val); parts.push(sql.replace("$?", `$${args.length}`)); };
+    if (action) add(action.endsWith("*") ? "action like $?" : "action = $?", action.endsWith("*") ? action.replace(/\*$/, "%") : action);
+    if (actor)  add("actor_email ilike $?", `%${actor}%`);
+    if (status) add("status = $?", status);
+    if (since)  add("ts >= $?", since);
+    if (until)  add("ts <= $?", until);
+    if (text) {
+      args.push(`%${text}%`);
+      const i = args.length;
+      parts.push(`(action ilike $${i} or coalesce(target,'') ilike $${i} or coalesce(actor_email,'') ilike $${i})`);
+    }
     const where = parts.length ? `where ${parts.join(" and ")}` : "";
-    const { rows } = await adminPool.query(
-      `select id, ts, actor_id, actor_email, actor_role, action, target, status, metadata, ip
-         from public.audit_events ${where} order by ts desc limit ${limit}`,
-      args
-    );
-    return rows;
+
+    const [rows, count] = await Promise.all([
+      adminPool.query(
+        `select id, ts, actor_id, actor_email, actor_role, action, target, status, metadata, ip
+           from public.audit_events ${where}
+          order by ts desc
+          limit ${limit} offset ${offset}`,
+        args
+      ),
+      adminPool.query<{ n: string }>(
+        `select count(*)::text as n from public.audit_events ${where}`,
+        args
+      ),
+    ]);
+    return {
+      items: rows.rows,
+      total: Number(count.rows[0]?.n ?? 0),
+      limit, offset,
+      next_offset: rows.rows.length === limit ? offset + limit : null,
+    };
   });
 }
