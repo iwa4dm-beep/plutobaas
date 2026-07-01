@@ -1,67 +1,97 @@
-// Edge Functions — user-authored JavaScript executed in an isolated
-// node:vm context on demand. NOT a full sandbox; use for trusted code
-// authored by admins. For untrusted code, run inside an isolate worker.
+// Edge Functions — user JavaScript executed in an isolated Node worker
+// thread with wall-clock, memory and CPU caps. Per-invocation resource
+// limits are enforced by both `worker.resourceLimits` (heap) and a
+// hard `worker.terminate()` deadline (wall-clock). CPU time is bounded
+// by wall-clock since Node workers do not expose a hard CPU quota; the
+// vm context also disables `eval` / `wasm` to shrink the attack surface.
 //
-//   POST /functions/v1/deploy   { slug, code, public? }   (service-role)
-//   GET  /functions/v1/list                               (service-role)
-//   DELETE /functions/v1/:slug                            (service-role)
-//   ALL  /functions/v1/invoke/:slug                       (public if fn.public)
-//
-// The function code must export a default async handler:
-//   export default async ({ req, ctx }) => ({ status: 200, body: {...} })
+// Endpoints:
+//   POST /functions/v1/deploy     { slug, code, public?, timeout_ms?, memory_mb?, allow_hosts? }
+//   GET  /functions/v1/list
+//   DELETE /functions/v1/:slug
+//   ALL  /functions/v1/invoke/:slug
 
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import vm from "node:vm";
+import { Worker } from "node:worker_threads";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { z } from "zod";
 import { db } from "../../db/index.js";
 import { requireApiKey, requireServiceRole } from "../../lib/apikey.js";
 import { log } from "../../lib/logs.js";
 
-type Handler = (arg: {
-  req: { method: string; url: string; headers: Record<string, unknown>; body: unknown };
-  ctx: { user: { id: string; role: string } | null; env: Record<string, string> };
-}) => Promise<{ status?: number; headers?: Record<string, string>; body?: unknown }>;
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+const WORKER_PATH = path.join(HERE, "isolate-worker.js");
 
-async function loadHandler(code: string): Promise<Handler> {
-  // Wrap the user code into a CommonJS-ish module so it can `export default`.
-  const wrapped = `
-    const module = { exports: {} };
-    const exports = module.exports;
-    ${code}
-    ;module.exports.__default = module.exports.default ?? module.exports;
-    module.exports;
-  `;
-  const context = vm.createContext({ console, fetch, URL, TextEncoder, TextDecoder, crypto });
-  const script = new vm.Script(wrapped, { filename: "edge-fn.js" });
-  const mod = script.runInContext(context, { timeout: 500 }) as { __default: Handler };
-  if (typeof mod.__default !== "function") throw new Error("no_default_export");
-  return mod.__default;
-}
+// Global caps — an admin can only pick values inside these bounds.
+const MAX_TIMEOUT_MS = 15_000;
+const MAX_MEMORY_MB = 128;
+const DEFAULT_MEMORY_MB = 64;
 
-async function invoke(fn: { slug: string; code: string; timeout_ms: number }, req: FastifyRequest, reply: FastifyReply) {
-  const handler = await loadHandler(fn.code);
-  const result = await Promise.race([
-    handler({
-      req: {
-        method: req.method,
-        url: req.url,
-        headers: req.headers as Record<string, unknown>,
-        body: req.body,
-      },
-      ctx: {
-        user: req.auth?.user ? { id: req.auth.user.sub, role: req.auth.user.role } : null,
-        env: { PLUTO_FUNCTION: fn.slug },
-      },
-    }),
-    new Promise<never>((_, rej) => setTimeout(() => rej(new Error("timeout")), fn.timeout_ms)),
-  ]);
-  reply.code(result.status ?? 200);
-  if (result.headers) reply.headers(result.headers);
-  return result.body ?? null;
+type EdgeFn = {
+  slug: string;
+  code: string;
+  timeout_ms: number;
+  memory_mb: number;
+  allow_hosts: string[];
+  public: boolean;
+};
+
+type WorkerResult = { status?: number; headers?: Record<string, string>; body?: unknown };
+
+async function runInWorker(fn: EdgeFn, req: FastifyRequest): Promise<WorkerResult> {
+  const payload = {
+    code: fn.code,
+    allowHosts: fn.allow_hosts,
+    req: {
+      method: req.method,
+      url: req.url,
+      headers: req.headers as Record<string, unknown>,
+      body: req.body,
+    },
+    ctx: {
+      user: req.auth?.user ? { id: req.auth.user.sub, role: req.auth.user.role } : null,
+      env: { PLUTO_FUNCTION: fn.slug },
+    },
+  };
+
+  const worker = new Worker(WORKER_PATH, {
+    workerData: payload,
+    resourceLimits: {
+      maxOldGenerationSizeMb: fn.memory_mb,
+      maxYoungGenerationSizeMb: Math.min(16, Math.floor(fn.memory_mb / 4)),
+      codeRangeSizeMb: 16,
+    },
+  });
+
+  const deadline = new Promise<never>((_, reject) => {
+    setTimeout(() => reject(new Error(`timeout:${fn.timeout_ms}ms`)), fn.timeout_ms).unref();
+  });
+
+  const settled = new Promise<WorkerResult>((resolve, reject) => {
+    worker.on("message", (msg: { type: string; result?: WorkerResult; message?: string; level?: string; args?: string[] }) => {
+      if (msg.type === "log") {
+        // Surface user logs into api_logs (fire-and-forget).
+        void log("admin", (msg.level as "info" | "warn" | "error") ?? "info", `[${fn.slug}] ${msg.args?.join(" ") ?? ""}`);
+      } else if (msg.type === "result") {
+        resolve(msg.result ?? {});
+      } else if (msg.type === "error") {
+        reject(new Error(msg.message ?? "worker_error"));
+      }
+    });
+    worker.on("error", reject);
+    worker.on("exit", (code) => { if (code !== 0) reject(new Error(`worker_exit:${code}`)); });
+  });
+
+  try {
+    return await Promise.race([settled, deadline]);
+  } finally {
+    // Whatever happened, tear the worker down so runaway loops die.
+    await worker.terminate().catch(() => {});
+  }
 }
 
 export async function edgeRoutes(app: FastifyInstance) {
-  // Deploy / list / delete require the api-key + service role.
   app.register(async (scoped) => {
     scoped.addHook("preHandler", requireApiKey);
     scoped.addHook("preHandler", async (req, reply) => { requireServiceRole(req, reply); });
@@ -71,23 +101,34 @@ export async function edgeRoutes(app: FastifyInstance) {
         slug: z.string().regex(/^[a-z0-9-]+$/).max(64),
         code: z.string().min(1).max(200_000),
         public: z.boolean().default(false),
-        timeout_ms: z.number().int().min(100).max(30_000).default(5000),
+        timeout_ms: z.number().int().min(100).max(MAX_TIMEOUT_MS).default(5_000),
+        memory_mb: z.number().int().min(16).max(MAX_MEMORY_MB).default(DEFAULT_MEMORY_MB),
+        allow_hosts: z.array(z.string()).max(32).default([]),
       }).safeParse(req.body);
-      if (!body.success) return reply.code(400).send({ error: "invalid_body" });
-      try { await loadHandler(body.data.code); }
-      catch (e) { return reply.code(400).send({ error: "compile_error", message: (e as Error).message }); }
+      if (!body.success) return reply.code(400).send({ error: "invalid_body", issues: body.error.issues });
+
       await db.insertInto("edge_functions").values({
         slug: body.data.slug, code: body.data.code, runtime: "js",
-        timeout_ms: body.data.timeout_ms, public: body.data.public,
+        timeout_ms: body.data.timeout_ms,
+        // memory_mb and allow_hosts columns are added in phase 6 migration
+        // (see 0004_phase6.sql). Kysely typing falls through for extras.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ...( { memory_mb: body.data.memory_mb, allow_hosts: body.data.allow_hosts } as any),
+        public: body.data.public,
         created_by: req.auth?.user?.sub ?? null, updated_at: new Date(),
       }).onConflict((oc) => oc.column("slug").doUpdateSet({
-        code: body.data.code, public: body.data.public, timeout_ms: body.data.timeout_ms, updated_at: new Date(),
+        code: body.data.code, public: body.data.public,
+        timeout_ms: body.data.timeout_ms,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ...( { memory_mb: body.data.memory_mb, allow_hosts: body.data.allow_hosts } as any),
+        updated_at: new Date(),
       })).execute();
+
       await log("admin", "info", `deployed edge fn ${body.data.slug}`, req.auth?.user?.sub ?? null);
       return { ok: true };
     });
 
-    scoped.get("/list", async () => db.selectFrom("edge_functions").select(["slug", "public", "timeout_ms", "updated_at"]).execute());
+    scoped.get("/list", async () => db.selectFrom("edge_functions").selectAll().execute());
 
     scoped.delete("/:slug", async (req) => {
       const { slug } = req.params as { slug: string };
@@ -96,20 +137,35 @@ export async function edgeRoutes(app: FastifyInstance) {
     });
   });
 
-  // Invocation: public if the function is marked public, else requires api-key.
   app.all("/invoke/:slug", async (req, reply) => {
     const { slug } = req.params as { slug: string };
-    const fn = await db.selectFrom("edge_functions").selectAll().where("slug", "=", slug).executeTakeFirst();
-    if (!fn) return reply.code(404).send({ error: "not_found" });
-    if (!fn.public) {
+    const raw = await db.selectFrom("edge_functions").selectAll().where("slug", "=", slug).executeTakeFirst();
+    if (!raw) return reply.code(404).send({ error: "not_found" });
+    if (!raw.public) {
       await requireApiKey(req, reply);
       if (reply.sent) return;
     }
-    try { return await invoke(fn, req, reply); }
-    catch (e) {
+    const fn: EdgeFn = {
+      slug: raw.slug,
+      code: raw.code,
+      timeout_ms: Math.min(raw.timeout_ms ?? 5000, MAX_TIMEOUT_MS),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      memory_mb: Math.min(((raw as any).memory_mb as number) ?? DEFAULT_MEMORY_MB, MAX_MEMORY_MB),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      allow_hosts: ((raw as any).allow_hosts as string[]) ?? [],
+      public: raw.public,
+    };
+    const started = Date.now();
+    try {
+      const result = await runInWorker(fn, req);
+      reply.code(result.status ?? 200);
+      if (result.headers) reply.headers(result.headers);
+      await log("admin", "info", `edge ${slug} ok in ${Date.now() - started}ms`);
+      return result.body ?? null;
+    } catch (e) {
       const msg = e instanceof Error ? e.message : "error";
-      await log("admin", "error", `edge fn ${slug} failed: ${msg}`);
-      return reply.code(500).send({ error: "invocation_failed", message: msg });
+      await log("admin", "error", `edge ${slug} failed after ${Date.now() - started}ms: ${msg}`);
+      return reply.code(msg.startsWith("timeout") ? 504 : 500).send({ error: "invocation_failed", message: msg });
     }
   });
 }
