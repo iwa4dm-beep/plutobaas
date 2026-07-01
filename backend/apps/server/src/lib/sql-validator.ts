@@ -141,13 +141,12 @@ export function splitStatements(sql: string): Classified[] {
 
   const out: Classified[] = [];
   for (const p of rawParts) {
-    // Use CLEANED slice for verb detection (comments stripped, literals
-    // blanked) but keep the original text for display purposes.
-    const cleanedRaw = cleaned.slice(p.start, p.end).trim();
-    const originalRaw = sql.slice(p.start, p.end).trim();
+    // Use CLEANED slice for classification (comments stripped, literals
+    // blanked out). The original text is kept for user-facing display.
+    const cleanedRaw = cleaned.slice(p.start, p.end).trim().replace(/\s+/g, " ");
     if (!cleanedRaw) continue;
     const m = /^([A-Za-z]+)/.exec(cleanedRaw);
-    out.push({ index: out.length, verb: (m?.[1] ?? "").toUpperCase(), text: originalRaw || cleanedRaw });
+    out.push({ index: out.length, verb: (m?.[1] ?? "").toUpperCase(), text: cleanedRaw });
   }
   return out;
 }
