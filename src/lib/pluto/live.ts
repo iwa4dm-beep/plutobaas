@@ -97,11 +97,39 @@ export type JobToken = {
   use_count: number;
 };
 
+export type DryRunEntry = {
+  version: string;
+  name: string;
+  reason: "pending" | "rolled_back" | "failed";
+  statement_count: number;
+  bytes: number;
+  has_down: boolean;
+  preview: string;
+};
+
+export type AuditEvent = {
+  id: string;
+  ts: string;
+  actor_id: string | null;
+  actor_email: string | null;
+  actor_role: string | null;
+  action: string;
+  target: string | null;
+  status: "ok" | "error" | "dry_run";
+  metadata: Record<string, unknown>;
+  ip: string | null;
+};
+
 export const live = {
   migrations: {
     list: () => api<{ migrations: MigrationEntry[] }>("/admin/v1/migrations/", { service: true }),
+    dryRun: () => api<{ dry_run: true; plan: DryRunEntry[] }>(
+      "/admin/v1/migrations/run",
+      { method: "POST", service: true, body: JSON.stringify({ dry_run: true }) }
+    ),
     runPending: () => api<{ applied: string[]; failed: { version: string; error: string }[] }>(
-      "/admin/v1/migrations/run", { method: "POST", service: true }
+      "/admin/v1/migrations/run",
+      { method: "POST", service: true, body: JSON.stringify({ dry_run: false }) }
     ),
     rerun: (version: string) => api(`/admin/v1/migrations/${version}/rerun`, { method: "POST", service: true }),
     rollback: (version: string) => api(`/admin/v1/migrations/${version}/rollback`, { method: "POST", service: true }),
@@ -114,4 +142,56 @@ export const live = {
     ),
     revoke: (id: string) => api(`/jobs/v1/tokens/${id}`, { method: "DELETE", service: true }),
   },
+  audit: {
+    list: (params: { action?: string; actor?: string; limit?: number } = {}) => {
+      const qs = new URLSearchParams();
+      if (params.action) qs.set("action", params.action);
+      if (params.actor)  qs.set("actor", params.actor);
+      qs.set("limit", String(params.limit ?? 100));
+      return api<AuditEvent[]>(`/admin/v1/audit?${qs.toString()}`, { service: true });
+    },
+  },
 };
+
+// -------- Realtime helper (WebSocket wrapper) --------
+//
+// Subscribes to one broadcast channel and calls `onEvent` for each
+// message. Returns an unsubscribe function. Silently no-ops if the
+// backend is not configured.
+
+export type RealtimeEvent = { channel: string; event: string; payload: unknown; ts?: string };
+
+export function subscribe(channel: string, onEvent: (e: RealtimeEvent) => void): () => void {
+  const cfg = liveConfig();
+  if (!cfg) return () => {};
+  const wsUrl = cfg.url.replace(/^http/, "ws").replace(/\/$/, "") +
+    `/realtime/v1/?apikey=${encodeURIComponent(cfg.serviceKey ?? cfg.anonKey)}`;
+  let ws: WebSocket | null = null;
+  let closed = false;
+  let retry = 0;
+
+  const connect = () => {
+    if (closed) return;
+    ws = new WebSocket(wsUrl);
+    ws.addEventListener("open", () => {
+      retry = 0;
+      ws?.send(JSON.stringify({ type: "subscribe", channel }));
+    });
+    ws.addEventListener("message", (ev) => {
+      try {
+        const msg = JSON.parse(ev.data) as { type?: string; channel?: string; event?: string; payload?: unknown; ts?: string };
+        if (msg.type === "broadcast" && msg.channel === channel && msg.event) {
+          onEvent({ channel, event: msg.event, payload: msg.payload, ts: msg.ts });
+        }
+      } catch { /* ignore malformed frames */ }
+    });
+    ws.addEventListener("close", () => {
+      if (closed) return;
+      retry = Math.min(retry + 1, 6);
+      setTimeout(connect, 500 * 2 ** retry);
+    });
+    ws.addEventListener("error", () => ws?.close());
+  };
+  connect();
+  return () => { closed = true; ws?.close(); };
+}
