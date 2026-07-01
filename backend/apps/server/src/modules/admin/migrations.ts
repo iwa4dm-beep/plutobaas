@@ -11,7 +11,7 @@ import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { requireApiKey, requireAdmin } from "../../lib/apikey.js";
 import {
-  listMigrations, planPending, runPending, rerunOne, rollback,
+  listMigrations, planPending, planPendingDetailed, runPending, rerunOne, rollback,
 } from "../../lib/migrator.js";
 import { audit, emit } from "../../lib/audit.js";
 
@@ -28,16 +28,32 @@ export async function migrationRoutes(app: FastifyInstance) {
   app.get("/", async () => ({ migrations: await listMigrations() }));
 
   app.post("/run", async (req) => {
-    const body = z.object({ dry_run: z.boolean().default(false) }).safeParse(req.body ?? {});
+    const body = z.object({
+      dry_run: z.boolean().default(false),
+      detailed: z.boolean().default(true),
+    }).safeParse(req.body ?? {});
     const dryRun = body.success ? body.data.dry_run : false;
+    const detailed = body.success ? body.data.detailed : true;
     const actor = req.auth?.user?.sub ?? "service_role";
 
     if (dryRun) {
-      const plan = await planPending();
+      // Detailed plan runs each migration in a transaction that ALWAYS
+      // rolls back. Zero DB writes, but we still record the dry-run in
+      // the audit trail so admins have a receipt.
+      const plan = detailed ? await planPendingDetailed() : await planPending();
       await audit(req, {
         action: "migration.run",
         status: "dry_run",
-        metadata: { versions: plan.map((p) => p.version), count: plan.length },
+        metadata: {
+          versions: plan.map((p) => p.version),
+          count: plan.length,
+          detailed,
+          totals: {
+            added:   plan.reduce((n, p) => n + p.diff.added.length, 0),
+            removed: plan.reduce((n, p) => n + p.diff.removed.length, 0),
+            changed: plan.reduce((n, p) => n + p.diff.changed.length, 0),
+          },
+        },
       });
       return { dry_run: true, plan };
     }
@@ -50,6 +66,7 @@ export async function migrationRoutes(app: FastifyInstance) {
     });
     return result;
   });
+
 
   app.post("/:version/rerun", async (req, reply) => {
     const p = z.object({ version: z.string().regex(/^[\w.-]+$/) }).safeParse(req.params);
