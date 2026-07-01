@@ -97,6 +97,19 @@ export type JobToken = {
   use_count: number;
 };
 
+export type StatementInfo = {
+  index: number;
+  kind: string;
+  target: string | null;
+  sql: string;
+};
+
+export type SchemaDiff = {
+  added: string[];
+  removed: string[];
+  changed: string[];
+};
+
 export type DryRunEntry = {
   version: string;
   name: string;
@@ -105,6 +118,11 @@ export type DryRunEntry = {
   bytes: number;
   has_down: boolean;
   preview: string;
+  statements: StatementInfo[];
+  diff: SchemaDiff;
+  before_snapshot_size: number;
+  after_snapshot_size: number;
+  simulation_error: string | null;
 };
 
 export type AuditEvent = {
@@ -120,12 +138,31 @@ export type AuditEvent = {
   ip: string | null;
 };
 
+export type AuditPage = {
+  items: AuditEvent[];
+  total: number;
+  limit: number;
+  offset: number;
+  next_offset: number | null;
+};
+
+export type AuditQuery = {
+  action?: string;
+  actor?: string;
+  status?: "ok" | "error" | "dry_run";
+  q?: string;
+  since?: string;
+  until?: string;
+  limit?: number;
+  offset?: number;
+};
+
 export const live = {
   migrations: {
     list: () => api<{ migrations: MigrationEntry[] }>("/admin/v1/migrations/", { service: true }),
-    dryRun: () => api<{ dry_run: true; plan: DryRunEntry[] }>(
+    dryRun: (detailed = true) => api<{ dry_run: true; plan: DryRunEntry[] }>(
       "/admin/v1/migrations/run",
-      { method: "POST", service: true, body: JSON.stringify({ dry_run: true }) }
+      { method: "POST", service: true, body: JSON.stringify({ dry_run: true, detailed }) }
     ),
     runPending: () => api<{ applied: string[]; failed: { version: string; error: string }[] }>(
       "/admin/v1/migrations/run",
@@ -143,12 +180,17 @@ export const live = {
     revoke: (id: string) => api(`/jobs/v1/tokens/${id}`, { method: "DELETE", service: true }),
   },
   audit: {
-    list: (params: { action?: string; actor?: string; limit?: number } = {}) => {
+    list: (params: AuditQuery = {}) => {
       const qs = new URLSearchParams();
       if (params.action) qs.set("action", params.action);
-      if (params.actor)  qs.set("actor", params.actor);
-      qs.set("limit", String(params.limit ?? 100));
-      return api<AuditEvent[]>(`/admin/v1/audit?${qs.toString()}`, { service: true });
+      if (params.actor)  qs.set("actor",  params.actor);
+      if (params.status) qs.set("status", params.status);
+      if (params.q)      qs.set("q",      params.q);
+      if (params.since)  qs.set("since",  params.since);
+      if (params.until)  qs.set("until",  params.until);
+      qs.set("limit",  String(params.limit  ?? 50));
+      qs.set("offset", String(params.offset ?? 0));
+      return api<AuditPage>(`/admin/v1/audit?${qs.toString()}`, { service: true });
     },
   },
 };
