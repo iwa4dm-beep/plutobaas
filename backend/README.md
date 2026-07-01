@@ -40,11 +40,16 @@ Run the admin dashboard separately (the Lovable project in this workspace) and p
 
 ## Production
 
-`docker-compose.prod.yml` adds Caddy with automatic HTTPS:
+Full guide: [DEPLOY.md](./DEPLOY.md).
 
 ```bash
-DOMAIN=api.example.com docker compose -f docker-compose.prod.yml up -d
+sh scripts/gen-secrets.sh > .env
+# edit DOMAIN + ACME_EMAIL
+docker compose -f docker-compose.yml -f docker-compose.prod.yml --env-file .env up -d
 ```
+
+Caddy handles TLS via Let's Encrypt. Only `:80/:443` are exposed on the
+host — postgres, minio, and the api sit on the internal docker network.
 
 ## Status
 
