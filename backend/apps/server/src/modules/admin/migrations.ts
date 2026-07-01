@@ -1,46 +1,83 @@
-// /admin/v1/migrations — inspect ledger, run pending, re-run one,
-// rollback one. Requires service-role API key (admin scope only).
+// /admin/v1/migrations — inspect ledger, dry-run, run pending,
+// re-run one, rollback one. Requires an active admin session AND the
+// service-role api key (see requireAdmin).
+//
+// All mutating actions:
+//   * are recorded in `public.audit_events`
+//   * emit realtime progress on the `system:migrations` broadcast
+//     channel so the dashboard can stream live status
 
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
-import { requireApiKey, requireServiceRole } from "../../lib/apikey.js";
-import { listMigrations, runPending, rerunOne, rollback } from "../../lib/migrator.js";
-import { log } from "../../lib/logs.js";
+import { requireApiKey, requireAdmin } from "../../lib/apikey.js";
+import {
+  listMigrations, planPending, runPending, rerunOne, rollback,
+} from "../../lib/migrator.js";
+import { audit, emit } from "../../lib/audit.js";
+
+const CHANNEL = "system:migrations";
+const emitter = (req: FastifyRequest) =>
+  async (event: string, payload: unknown) => {
+    await emit(CHANNEL, event, { ...(payload as object), actor: req.auth?.user?.email ?? null });
+  };
 
 export async function migrationRoutes(app: FastifyInstance) {
   app.addHook("preHandler", requireApiKey);
-  app.addHook("preHandler", async (req, reply) => { requireServiceRole(req, reply); });
+  app.addHook("preHandler", async (req, reply) => { requireAdmin(req, reply); });
 
   app.get("/", async () => ({ migrations: await listMigrations() }));
 
   app.post("/run", async (req) => {
+    const body = z.object({ dry_run: z.boolean().default(false) }).safeParse(req.body ?? {});
+    const dryRun = body.success ? body.data.dry_run : false;
     const actor = req.auth?.user?.sub ?? "service_role";
-    const result = await runPending(actor);
-    await log("admin", "info", `migrations run: +${result.applied.length}, ${result.failed.length} failed`, req.auth?.user?.sub ?? null);
+
+    if (dryRun) {
+      const plan = await planPending();
+      await audit(req, {
+        action: "migration.run",
+        status: "dry_run",
+        metadata: { versions: plan.map((p) => p.version), count: plan.length },
+      });
+      return { dry_run: true, plan };
+    }
+
+    const result = await runPending(actor, emitter(req));
+    await audit(req, {
+      action: "migration.run",
+      status: result.failed.length ? "error" : "ok",
+      metadata: result,
+    });
     return result;
   });
 
   app.post("/:version/rerun", async (req, reply) => {
     const p = z.object({ version: z.string().regex(/^[\w.-]+$/) }).safeParse(req.params);
     if (!p.success) return reply.code(400).send({ error: "invalid_version" });
+    const actor = req.auth?.user?.sub ?? "service_role";
     try {
-      const row = await rerunOne(p.data.version, req.auth?.user?.sub ?? "service_role");
-      await log("admin", "warn", `migration rerun ${p.data.version}`, req.auth?.user?.sub ?? null);
+      const row = await rerunOne(p.data.version, actor, emitter(req));
+      await audit(req, { action: "migration.rerun", target: p.data.version });
       return { ok: true, row };
     } catch (e) {
-      return reply.code(400).send({ error: "rerun_failed", message: e instanceof Error ? e.message : String(e) });
+      const message = e instanceof Error ? e.message : String(e);
+      await audit(req, { action: "migration.rerun", target: p.data.version, status: "error", metadata: { message } });
+      return reply.code(400).send({ error: "rerun_failed", message });
     }
   });
 
   app.post("/:version/rollback", async (req, reply) => {
     const p = z.object({ version: z.string().regex(/^[\w.-]+$/) }).safeParse(req.params);
     if (!p.success) return reply.code(400).send({ error: "invalid_version" });
+    const actor = req.auth?.user?.sub ?? "service_role";
     try {
-      const result = await rollback(p.data.version, req.auth?.user?.sub ?? "service_role");
-      await log("admin", "warn", `migration rollback ${p.data.version}`, req.auth?.user?.sub ?? null);
+      const result = await rollback(p.data.version, actor, emitter(req));
+      await audit(req, { action: "migration.rollback", target: p.data.version });
       return result;
     } catch (e) {
-      return reply.code(400).send({ error: "rollback_failed", message: e instanceof Error ? e.message : String(e) });
+      const message = e instanceof Error ? e.message : String(e);
+      await audit(req, { action: "migration.rollback", target: p.data.version, status: "error", metadata: { message } });
+      return reply.code(400).send({ error: "rollback_failed", message });
     }
   });
 }
