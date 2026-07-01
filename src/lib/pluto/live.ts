@@ -211,10 +211,15 @@ export const live = {
     members: (id: string) => api<{ members: WorkspaceMember[] }>(`/admin/v1/workspaces/${id}/members`, { service: true }),
   },
   sql: {
-    run: (sql: string, opts: { read_only?: boolean; workspace_id?: string } = {}) =>
+    run: (sql: string, opts: { read_only?: boolean; workspace_id?: string; params?: unknown[] } = {}) =>
       api<SqlRunResponse>("/admin/v1/sql/run", {
         method: "POST", service: true,
-        body: JSON.stringify({ sql, read_only: opts.read_only ?? false, workspace_id: opts.workspace_id }),
+        body: JSON.stringify({
+          sql,
+          read_only: opts.read_only ?? false,
+          workspace_id: opts.workspace_id,
+          params: opts.params ?? [],
+        }),
       }),
     explain: (sql: string) => api<{ plan: unknown }>("/admin/v1/sql/explain", {
       method: "POST", service: true, body: JSON.stringify({ sql }),
@@ -230,6 +235,11 @@ export const live = {
       return api<SqlHistoryPage>(`/admin/v1/sql/history?${qs.toString()}`, { service: true });
     },
     historyEntry: (id: string) => api<SqlHistoryEntry & { sql: string }>(`/admin/v1/sql/history/${id}`, { service: true }),
+  },
+  schema: {
+    introspect: () => api<{ tables: SchemaTable[] }>("/admin/v1/schema/", { service: true }),
+    summary:    () => api<SchemaSummary>("/admin/v1/schema/summary"),
+    openapi:    () => api<Record<string, unknown>>("/admin/v1/schema/openapi.json"),
   },
 };
 
