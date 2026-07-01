@@ -21,6 +21,7 @@ import { Route as DashboardMigrationsRouteImport } from './routes/dashboard.migr
 import { Route as DashboardLogsRouteImport } from './routes/dashboard.logs'
 import { Route as DashboardJobsRouteImport } from './routes/dashboard.jobs'
 import { Route as DashboardDatabaseRouteImport } from './routes/dashboard.database'
+import { Route as DashboardAuditRouteImport } from './routes/dashboard.audit'
 
 const DashboardRoute = DashboardRouteImport.update({
   id: '/dashboard',
@@ -82,11 +83,17 @@ const DashboardDatabaseRoute = DashboardDatabaseRouteImport.update({
   path: '/database',
   getParentRoute: () => DashboardRoute,
 } as any)
+const DashboardAuditRoute = DashboardAuditRouteImport.update({
+  id: '/audit',
+  path: '/audit',
+  getParentRoute: () => DashboardRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
   '/dashboard': typeof DashboardRouteWithChildren
+  '/dashboard/audit': typeof DashboardAuditRoute
   '/dashboard/database': typeof DashboardDatabaseRoute
   '/dashboard/jobs': typeof DashboardJobsRoute
   '/dashboard/logs': typeof DashboardLogsRoute
@@ -100,6 +107,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
+  '/dashboard/audit': typeof DashboardAuditRoute
   '/dashboard/database': typeof DashboardDatabaseRoute
   '/dashboard/jobs': typeof DashboardJobsRoute
   '/dashboard/logs': typeof DashboardLogsRoute
@@ -115,6 +123,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
   '/dashboard': typeof DashboardRouteWithChildren
+  '/dashboard/audit': typeof DashboardAuditRoute
   '/dashboard/database': typeof DashboardDatabaseRoute
   '/dashboard/jobs': typeof DashboardJobsRoute
   '/dashboard/logs': typeof DashboardLogsRoute
@@ -131,6 +140,7 @@ export interface FileRouteTypes {
     | '/'
     | '/auth'
     | '/dashboard'
+    | '/dashboard/audit'
     | '/dashboard/database'
     | '/dashboard/jobs'
     | '/dashboard/logs'
@@ -144,6 +154,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/auth'
+    | '/dashboard/audit'
     | '/dashboard/database'
     | '/dashboard/jobs'
     | '/dashboard/logs'
@@ -158,6 +169,7 @@ export interface FileRouteTypes {
     | '/'
     | '/auth'
     | '/dashboard'
+    | '/dashboard/audit'
     | '/dashboard/database'
     | '/dashboard/jobs'
     | '/dashboard/logs'
@@ -261,10 +273,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardDatabaseRouteImport
       parentRoute: typeof DashboardRoute
     }
+    '/dashboard/audit': {
+      id: '/dashboard/audit'
+      path: '/audit'
+      fullPath: '/dashboard/audit'
+      preLoaderRoute: typeof DashboardAuditRouteImport
+      parentRoute: typeof DashboardRoute
+    }
   }
 }
 
 interface DashboardRouteChildren {
+  DashboardAuditRoute: typeof DashboardAuditRoute
   DashboardDatabaseRoute: typeof DashboardDatabaseRoute
   DashboardJobsRoute: typeof DashboardJobsRoute
   DashboardLogsRoute: typeof DashboardLogsRoute
@@ -277,6 +297,7 @@ interface DashboardRouteChildren {
 }
 
 const DashboardRouteChildren: DashboardRouteChildren = {
+  DashboardAuditRoute: DashboardAuditRoute,
   DashboardDatabaseRoute: DashboardDatabaseRoute,
   DashboardJobsRoute: DashboardJobsRoute,
   DashboardLogsRoute: DashboardLogsRoute,
