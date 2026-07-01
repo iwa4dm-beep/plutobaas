@@ -81,10 +81,14 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { title: "Pluto BaaS — Self-hosted backend for your apps" },
       { name: "description", content: "Open-source Backend-as-a-Service: Auth, auto REST API, and Storage. Run locally with Docker or on any VPS." },
       { name: "author", content: "Pluto" },
-      { property: "og:title", content: "Pluto BaaS" },
-      { property: "og:description", content: "Self-hosted Auth + Postgres REST + Storage for your frontends." },
+      { property: "og:title", content: "Pluto BaaS — Self-hosted backend for your apps" },
+      { property: "og:description", content: "Open-source Backend-as-a-Service: Auth, auto REST API, and Storage. Run locally with Docker or on any VPS." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
+      { name: "twitter:title", content: "Pluto BaaS — Self-hosted backend for your apps" },
+      { name: "twitter:description", content: "Open-source Backend-as-a-Service: Auth, auto REST API, and Storage. Run locally with Docker or on any VPS." },
+      { property: "og:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/037ea448-93a5-4518-a2d1-32b284e6623b/id-preview-19214521--a121327a-6c20-4978-80f0-5e01b27a5e18.lovable.app-1782931055919.png" },
+      { name: "twitter:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/037ea448-93a5-4518-a2d1-32b284e6623b/id-preview-19214521--a121327a-6c20-4978-80f0-5e01b27a5e18.lovable.app-1782931055919.png" },
     ],
     links: [
       {
