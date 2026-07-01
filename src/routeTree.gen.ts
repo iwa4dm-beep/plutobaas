@@ -17,7 +17,9 @@ import { Route as DashboardUsersRouteImport } from './routes/dashboard.users'
 import { Route as DashboardStorageRouteImport } from './routes/dashboard.storage'
 import { Route as DashboardSettingsRouteImport } from './routes/dashboard.settings'
 import { Route as DashboardProjectsRouteImport } from './routes/dashboard.projects'
+import { Route as DashboardMigrationsRouteImport } from './routes/dashboard.migrations'
 import { Route as DashboardLogsRouteImport } from './routes/dashboard.logs'
+import { Route as DashboardJobsRouteImport } from './routes/dashboard.jobs'
 import { Route as DashboardDatabaseRouteImport } from './routes/dashboard.database'
 
 const DashboardRoute = DashboardRouteImport.update({
@@ -60,9 +62,19 @@ const DashboardProjectsRoute = DashboardProjectsRouteImport.update({
   path: '/projects',
   getParentRoute: () => DashboardRoute,
 } as any)
+const DashboardMigrationsRoute = DashboardMigrationsRouteImport.update({
+  id: '/migrations',
+  path: '/migrations',
+  getParentRoute: () => DashboardRoute,
+} as any)
 const DashboardLogsRoute = DashboardLogsRouteImport.update({
   id: '/logs',
   path: '/logs',
+  getParentRoute: () => DashboardRoute,
+} as any)
+const DashboardJobsRoute = DashboardJobsRouteImport.update({
+  id: '/jobs',
+  path: '/jobs',
   getParentRoute: () => DashboardRoute,
 } as any)
 const DashboardDatabaseRoute = DashboardDatabaseRouteImport.update({
@@ -76,7 +88,9 @@ export interface FileRoutesByFullPath {
   '/auth': typeof AuthRoute
   '/dashboard': typeof DashboardRouteWithChildren
   '/dashboard/database': typeof DashboardDatabaseRoute
+  '/dashboard/jobs': typeof DashboardJobsRoute
   '/dashboard/logs': typeof DashboardLogsRoute
+  '/dashboard/migrations': typeof DashboardMigrationsRoute
   '/dashboard/projects': typeof DashboardProjectsRoute
   '/dashboard/settings': typeof DashboardSettingsRoute
   '/dashboard/storage': typeof DashboardStorageRoute
@@ -87,7 +101,9 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
   '/dashboard/database': typeof DashboardDatabaseRoute
+  '/dashboard/jobs': typeof DashboardJobsRoute
   '/dashboard/logs': typeof DashboardLogsRoute
+  '/dashboard/migrations': typeof DashboardMigrationsRoute
   '/dashboard/projects': typeof DashboardProjectsRoute
   '/dashboard/settings': typeof DashboardSettingsRoute
   '/dashboard/storage': typeof DashboardStorageRoute
@@ -100,7 +116,9 @@ export interface FileRoutesById {
   '/auth': typeof AuthRoute
   '/dashboard': typeof DashboardRouteWithChildren
   '/dashboard/database': typeof DashboardDatabaseRoute
+  '/dashboard/jobs': typeof DashboardJobsRoute
   '/dashboard/logs': typeof DashboardLogsRoute
+  '/dashboard/migrations': typeof DashboardMigrationsRoute
   '/dashboard/projects': typeof DashboardProjectsRoute
   '/dashboard/settings': typeof DashboardSettingsRoute
   '/dashboard/storage': typeof DashboardStorageRoute
@@ -114,7 +132,9 @@ export interface FileRouteTypes {
     | '/auth'
     | '/dashboard'
     | '/dashboard/database'
+    | '/dashboard/jobs'
     | '/dashboard/logs'
+    | '/dashboard/migrations'
     | '/dashboard/projects'
     | '/dashboard/settings'
     | '/dashboard/storage'
@@ -125,7 +145,9 @@ export interface FileRouteTypes {
     | '/'
     | '/auth'
     | '/dashboard/database'
+    | '/dashboard/jobs'
     | '/dashboard/logs'
+    | '/dashboard/migrations'
     | '/dashboard/projects'
     | '/dashboard/settings'
     | '/dashboard/storage'
@@ -137,7 +159,9 @@ export interface FileRouteTypes {
     | '/auth'
     | '/dashboard'
     | '/dashboard/database'
+    | '/dashboard/jobs'
     | '/dashboard/logs'
+    | '/dashboard/migrations'
     | '/dashboard/projects'
     | '/dashboard/settings'
     | '/dashboard/storage'
@@ -209,11 +233,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardProjectsRouteImport
       parentRoute: typeof DashboardRoute
     }
+    '/dashboard/migrations': {
+      id: '/dashboard/migrations'
+      path: '/migrations'
+      fullPath: '/dashboard/migrations'
+      preLoaderRoute: typeof DashboardMigrationsRouteImport
+      parentRoute: typeof DashboardRoute
+    }
     '/dashboard/logs': {
       id: '/dashboard/logs'
       path: '/logs'
       fullPath: '/dashboard/logs'
       preLoaderRoute: typeof DashboardLogsRouteImport
+      parentRoute: typeof DashboardRoute
+    }
+    '/dashboard/jobs': {
+      id: '/dashboard/jobs'
+      path: '/jobs'
+      fullPath: '/dashboard/jobs'
+      preLoaderRoute: typeof DashboardJobsRouteImport
       parentRoute: typeof DashboardRoute
     }
     '/dashboard/database': {
@@ -228,7 +266,9 @@ declare module '@tanstack/react-router' {
 
 interface DashboardRouteChildren {
   DashboardDatabaseRoute: typeof DashboardDatabaseRoute
+  DashboardJobsRoute: typeof DashboardJobsRoute
   DashboardLogsRoute: typeof DashboardLogsRoute
+  DashboardMigrationsRoute: typeof DashboardMigrationsRoute
   DashboardProjectsRoute: typeof DashboardProjectsRoute
   DashboardSettingsRoute: typeof DashboardSettingsRoute
   DashboardStorageRoute: typeof DashboardStorageRoute
@@ -238,7 +278,9 @@ interface DashboardRouteChildren {
 
 const DashboardRouteChildren: DashboardRouteChildren = {
   DashboardDatabaseRoute: DashboardDatabaseRoute,
+  DashboardJobsRoute: DashboardJobsRoute,
   DashboardLogsRoute: DashboardLogsRoute,
+  DashboardMigrationsRoute: DashboardMigrationsRoute,
   DashboardProjectsRoute: DashboardProjectsRoute,
   DashboardSettingsRoute: DashboardSettingsRoute,
   DashboardStorageRoute: DashboardStorageRoute,
