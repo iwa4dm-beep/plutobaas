@@ -2,6 +2,7 @@ import { createFileRoute, Outlet, useNavigate } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { Sidebar } from "@/components/pluto/Sidebar";
 import { useAuth } from "@/lib/pluto/auth-context";
+import { WorkspaceProvider } from "@/lib/pluto/workspace-context";
 
 export const Route = createFileRoute("/dashboard")({
   ssr: false,
@@ -25,13 +26,15 @@ function DashboardLayout() {
   }
 
   return (
-    <div className="min-h-screen flex bg-background text-foreground">
-      <Sidebar />
-      <main className="flex-1 overflow-auto">
-        <div className="max-w-6xl mx-auto px-6 py-8">
-          <Outlet />
-        </div>
-      </main>
-    </div>
+    <WorkspaceProvider>
+      <div className="min-h-screen flex bg-background text-foreground">
+        <Sidebar />
+        <main className="flex-1 overflow-auto">
+          <div className="max-w-6xl mx-auto px-6 py-8">
+            <Outlet />
+          </div>
+        </main>
+      </div>
+    </WorkspaceProvider>
   );
 }
