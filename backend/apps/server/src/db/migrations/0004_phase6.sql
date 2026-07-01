@@ -64,3 +64,17 @@ alter table public.job_tokens enable row level security;
 drop policy if exists job_tokens_service_only on public.job_tokens;
 create policy job_tokens_service_only on public.job_tokens
   for all to authenticated using (false) with check (false);
+
+-- Edge-function isolation columns (memory cap + fetch allow-list).
+alter table public.edge_functions
+  add column if not exists memory_mb   int not null default 64,
+  add column if not exists allow_hosts text[] not null default '{}';
+
+-- +migrate down
+drop table if exists public.job_tokens;
+alter table if exists public.edge_functions
+  drop column if exists memory_mb,
+  drop column if exists allow_hosts;
+drop table if exists public.schema_migrations;
+-- Note: we intentionally do NOT drop the pluto_jobs role here since
+-- other databases in the cluster may reuse it.
