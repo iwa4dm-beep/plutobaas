@@ -127,27 +127,75 @@ function MigrationsPage() {
       {plan && (
         <div className="mb-4 rounded-lg border border-sky-500/30 bg-sky-500/5 p-4">
           <div className="flex items-center justify-between mb-2">
-            <div className="text-sm font-medium">Dry-run plan · {plan.length} migration{plan.length === 1 ? "" : "s"} would run</div>
+            <div className="text-sm font-medium">
+              Dry-run plan · {plan.length} migration{plan.length === 1 ? "" : "s"} would run
+              <span className="ml-2 text-xs text-muted-foreground">
+                (simulated in a transaction; nothing was written)
+              </span>
+            </div>
             <button onClick={() => setPlan(null)} className="text-xs text-muted-foreground hover:text-foreground">Dismiss</button>
           </div>
           {plan.length === 0 ? (
             <div className="text-xs text-muted-foreground">Nothing pending — schema is up to date.</div>
           ) : (
-            <ul className="space-y-2">
+            <ul className="space-y-3">
               {plan.map((p) => (
                 <li key={p.version} className="rounded-md border border-border bg-card p-3">
-                  <div className="flex items-center gap-2 text-xs">
+                  <div className="flex flex-wrap items-center gap-2 text-xs">
                     <span className="font-mono">{p.version}</span>
-                    <span className="text-muted-foreground">· {p.reason} · {p.statement_count} stmt · {p.bytes}B</span>
+                    <span className="text-muted-foreground">
+                      · {p.reason} · {p.statement_count} stmt · {p.bytes}B
+                    </span>
                     {p.has_down && <span className="text-emerald-500">· rollback available</span>}
+                    {p.simulation_error && <span className="text-red-500">· simulation error</span>}
+                    {!p.simulation_error && (
+                      <span className="text-muted-foreground">
+                        · schema {p.before_snapshot_size} → {p.after_snapshot_size}
+                      </span>
+                    )}
                   </div>
-                  <pre className="mt-2 text-[11px] bg-muted/40 rounded p-2 overflow-x-auto whitespace-pre-wrap">{p.preview}{p.bytes > 400 ? "…" : ""}</pre>
+
+                  {p.simulation_error && (
+                    <div className="mt-2 text-xs text-red-500 bg-red-500/10 border border-red-500/20 rounded p-2">
+                      {p.simulation_error}
+                    </div>
+                  )}
+
+                  {/* Per-statement classification */}
+                  {p.statements.length > 0 && (
+                    <div className="mt-2">
+                      <div className="text-[11px] text-muted-foreground mb-1">Statements</div>
+                      <ul className="text-[11px] font-mono space-y-0.5">
+                        {p.statements.map((s) => (
+                          <li key={s.index} className="flex items-start gap-2">
+                            <span className="inline-block min-w-[8ch] text-primary">{s.kind}</span>
+                            <span className="text-muted-foreground">{s.target ?? ""}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {/* Schema diff — before / after symmetric difference */}
+                  {(p.diff.added.length + p.diff.removed.length + p.diff.changed.length) > 0 && (
+                    <div className="mt-2 grid gap-2 md:grid-cols-3">
+                      <DiffColumn title="Added"   items={p.diff.added}   className="text-emerald-500 bg-emerald-500/5 border-emerald-500/30" prefix="+ " />
+                      <DiffColumn title="Removed" items={p.diff.removed} className="text-red-500 bg-red-500/5 border-red-500/30"             prefix="- " />
+                      <DiffColumn title="Changed" items={p.diff.changed} className="text-amber-500 bg-amber-500/5 border-amber-500/30"       prefix="~ " />
+                    </div>
+                  )}
+
+                  <details className="mt-2">
+                    <summary className="text-[11px] text-muted-foreground cursor-pointer hover:text-foreground">Show SQL preview</summary>
+                    <pre className="mt-2 text-[11px] bg-muted/40 rounded p-2 overflow-x-auto whitespace-pre-wrap">{p.preview}{p.bytes > 400 ? "…" : ""}</pre>
+                  </details>
                 </li>
               ))}
             </ul>
           )}
         </div>
       )}
+
 
       {progress.length > 0 && (
         <div className="mb-4 rounded-lg border border-border bg-card p-3">
