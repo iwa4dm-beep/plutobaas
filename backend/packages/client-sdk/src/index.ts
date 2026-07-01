@@ -149,18 +149,80 @@ class QueryBuilder<T> {
   }
 }
 
+class StorageBucket {
+  constructor(private base: string, private bucket: string, private headers: () => Record<string, string>) {}
+  async upload(path: string, file: Blob | File | ArrayBuffer | Uint8Array, opts?: { contentType?: string }) {
+    const fd = new FormData();
+    const blob = file instanceof Blob ? file : new Blob([file as BlobPart], { type: opts?.contentType ?? "application/octet-stream" });
+    fd.append("file", blob, path.split("/").pop() ?? "file");
+    const res = await fetch(`${this.base}/storage/v1/object/${this.bucket}/${encodeURI(path)}`, {
+      method: "POST", headers: this.headers(), body: fd,
+    });
+    if (!res.ok) throw new Error((await res.json().catch(() => ({ error: res.statusText }))).error);
+    return res.json() as Promise<{ bucket: string; key: string; size: number }>;
+  }
+  async download(path: string): Promise<Blob> {
+    const res = await fetch(`${this.base}/storage/v1/object/${this.bucket}/${encodeURI(path)}`, { headers: this.headers() });
+    if (!res.ok) throw new Error("not_found");
+    return res.blob();
+  }
+  async remove(paths: string[]) {
+    await Promise.all(paths.map((p) => fetch(`${this.base}/storage/v1/object/${this.bucket}/${encodeURI(p)}`, {
+      method: "DELETE", headers: this.headers(),
+    })));
+  }
+  async createSignedUrl(path: string, expiresIn: number, mode: "read" | "write" = "read") {
+    const res = await fetch(`${this.base}/storage/v1/object/sign/${this.bucket}/${encodeURI(path)}`, {
+      method: "POST", headers: { ...this.headers(), "content-type": "application/json" },
+      body: JSON.stringify({ expires_in: expiresIn, mode }),
+    });
+    if (!res.ok) throw new Error("sign_failed");
+    return res.json() as Promise<{ url: string; expires_in: number }>;
+  }
+  getPublicUrl(path: string) {
+    return { publicUrl: `${this.base}/storage/v1/object/public/${this.bucket}/${encodeURI(path)}` };
+  }
+  async list(prefix?: string) {
+    const q = prefix ? `?prefix=${encodeURIComponent(prefix)}` : "";
+    const res = await fetch(`${this.base}/storage/v1/list/${this.bucket}${q}`, { headers: this.headers() });
+    if (!res.ok) throw new Error("list_failed");
+    return res.json();
+  }
+}
+
+class Storage {
+  constructor(private base: string, private headers: () => Record<string, string>) {}
+  from(bucket: string) { return new StorageBucket(this.base, bucket, this.headers); }
+  async listBuckets() {
+    const res = await fetch(`${this.base}/storage/v1/buckets`, { headers: this.headers() });
+    return res.json();
+  }
+  async createBucket(name: string, opts?: { public?: boolean }) {
+    const res = await fetch(`${this.base}/storage/v1/buckets`, {
+      method: "POST", headers: { ...this.headers(), "content-type": "application/json" },
+      body: JSON.stringify({ name, public: opts?.public ?? false }),
+    });
+    if (!res.ok) throw new Error((await res.json().catch(() => ({ error: res.statusText }))).error);
+    return res.json();
+  }
+}
+
 export class PlutoClient {
   auth: Auth;
+  storage: Storage;
+  private base: string;
   constructor(private opts: PlutoClientOptions) {
+    this.base = opts.url.replace(/\/+$/, "");
     this.auth = new Auth({
-      url: opts.url.replace(/\/+$/, ""),
+      url: this.base,
       anonKey: opts.anonKey,
       storageKey: opts.storageKey ?? "pluto.session",
       persist: opts.persistSession ?? isBrowser,
     });
+    this.storage = new Storage(this.base, () => ({ apikey: opts.anonKey, ...this.auth.authHeader() }));
   }
   from<T = Record<string, unknown>>(table: string) {
-    return new QueryBuilder<T>(this.opts.url.replace(/\/+$/, ""), table, () => ({
+    return new QueryBuilder<T>(this.base, table, () => ({
       apikey: this.opts.anonKey,
       ...this.auth.authHeader(),
     }));
@@ -170,3 +232,4 @@ export class PlutoClient {
 export function createPlutoClient(opts: PlutoClientOptions) {
   return new PlutoClient(opts);
 }
+

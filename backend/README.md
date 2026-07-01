@@ -53,8 +53,8 @@ DOMAIN=api.example.com docker compose -f docker-compose.prod.yml up -d
 - [x] Auth module — argon2id + JWT + rotating refresh tokens (Phase 2)
 - [x] REST auto-generator — PostgREST-style, RLS via `pluto.user_id` GUC (Phase 2)
 - [x] `@pluto/client` SDK — fetch-based, browser/node/edge (Phase 2)
-- [ ] Storage module (Phase 3)
-- [ ] Admin API + logs (Phase 3)
+- [x] Storage module — local + S3 drivers, buckets, signed URLs, public objects (Phase 3)
+- [x] Admin API — users, tables, SQL runner, logs, stats (Phase 3)
 - [ ] Realtime, Edge Functions, OAuth (Phase 5+)
 
 ## Using `@pluto/client`
