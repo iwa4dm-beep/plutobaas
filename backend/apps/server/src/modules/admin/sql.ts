@@ -25,12 +25,14 @@ import pg from "pg";
 import { z } from "zod";
 import { env } from "../../config.js";
 import { requireApiKey, requireAdmin } from "../../lib/apikey.js";
-import { logAudit } from "../../lib/audit.js";
+import { audit as logAudit } from "../../lib/audit.js";
+import { validateSql } from "../../lib/sql-validator.js";
 
 const pool = new pg.Pool({ connectionString: env.DATABASE_URL, max: 5 });
 const STATEMENT_TIMEOUT_MS = 30_000;
 const MAX_ROWS_RETURNED = 5_000;
 const MAX_SQL_BYTES = 100_000;
+const MAX_BIND_PARAMS = 64;
 
 type RunResult = {
   command: string | null;
@@ -67,7 +69,7 @@ async function recordHistory(
   }
 }
 
-async function runQuery(sql: string, readOnly: boolean): Promise<RunResult[]> {
+async function runQuery(sql: string, params: unknown[], readOnly: boolean): Promise<RunResult[]> {
   const client = await pool.connect();
   try {
     await client.query(`set local statement_timeout = ${STATEMENT_TIMEOUT_MS}`);
@@ -77,7 +79,14 @@ async function runQuery(sql: string, readOnly: boolean): Promise<RunResult[]> {
       await client.query("begin");
     }
     try {
-      const raw = await client.query(sql);
+      // pg parameterization only works with a single statement — the wire
+      // protocol's extended query mode does not accept multi-statement
+      // strings when bind params are supplied. When params are present
+      // we enforce single-statement execution; otherwise fall back to
+      // simple-query mode (which supports multiple statements).
+      const raw = params.length > 0
+        ? await client.query(sql, params)
+        : await client.query(sql);
       const arr = Array.isArray(raw) ? raw : [raw];
       const out: RunResult[] = arr.map((r) => {
         const rows = (r.rows ?? []) as unknown[];
@@ -118,14 +127,38 @@ export async function sqlRunnerRoutes(app: FastifyInstance) {
 
     const body = z.object({
       sql: z.string().min(1).max(MAX_SQL_BYTES),
+      params: z.array(z.unknown()).max(MAX_BIND_PARAMS).default([]),
       read_only: z.boolean().default(false),
       workspace_id: z.string().uuid().optional(),
     }).safeParse(req.body);
     if (!body.success) return reply.code(400).send({ error: "invalid_body", issues: body.error.issues });
 
+    // Static validation BEFORE we open a connection. Rejects disallowed
+    // statements (SET ROLE, GRANT, COPY, LISTEN, ALTER SYSTEM, …) and
+    // any non-SELECT verb when read_only is on.
+    const check = validateSql(body.data.sql, { readOnly: body.data.read_only });
+    if (!check.ok) {
+      await logAudit(req, {
+        action: body.data.read_only ? "sql.run_read_only" : "sql.run",
+        target: "validator", status: "error",
+        metadata: { rejected: check.error, verb: check.offending?.verb ?? null },
+      });
+      return reply.code(400).send({
+        error: "sql_rejected", reason: check.error,
+        offending: check.offending?.text ?? null,
+        statements: check.statements.map((s) => ({ index: s.index, verb: s.verb })),
+      });
+    }
+    if (body.data.params.length > 0 && check.statements.length > 1) {
+      return reply.code(400).send({
+        error: "params_require_single_statement",
+        message: "Bind parameters require a single SQL statement.",
+      });
+    }
+
     const t0 = Date.now();
     try {
-      const results = await runQuery(body.data.sql, body.data.read_only);
+      const results = await runQuery(body.data.sql, body.data.params, body.data.read_only);
       const total = results.reduce((n, r) => n + (r.row_count ?? 0), 0);
       const historyId = await recordHistory(req, {
         sql: body.data.sql, readOnly: body.data.read_only,
@@ -135,13 +168,18 @@ export async function sqlRunnerRoutes(app: FastifyInstance) {
         action: body.data.read_only ? "sql.run_read_only" : "sql.run",
         target: historyId ?? "sql",
         status: "ok",
-        metadata: { duration_ms: Date.now() - t0, statements: results.length, rows: total },
+        metadata: {
+          duration_ms: Date.now() - t0, statements: results.length, rows: total,
+          param_count: body.data.params.length,
+          verbs: check.statements.map((s) => s.verb),
+        },
       });
       return {
         history_id: historyId,
         duration_ms: Date.now() - t0,
         read_only: body.data.read_only,
         results,
+        statements: check.statements.map((s) => ({ index: s.index, verb: s.verb })),
       };
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
@@ -166,7 +204,7 @@ export async function sqlRunnerRoutes(app: FastifyInstance) {
     const body = z.object({ sql: z.string().min(1).max(MAX_SQL_BYTES) }).safeParse(req.body);
     if (!body.success) return reply.code(400).send({ error: "invalid_body" });
     try {
-      const [res] = await runQuery(`explain (format json) ${body.data.sql}`, true);
+      const [res] = await runQuery(`explain (format json) ${body.data.sql}`, [], true);
       return { plan: res.rows[0] };
     } catch (e) {
       return reply.code(400).send({ error: "sql_error", message: e instanceof Error ? e.message : String(e) });

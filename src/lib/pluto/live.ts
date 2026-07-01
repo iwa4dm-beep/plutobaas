@@ -211,10 +211,15 @@ export const live = {
     members: (id: string) => api<{ members: WorkspaceMember[] }>(`/admin/v1/workspaces/${id}/members`, { service: true }),
   },
   sql: {
-    run: (sql: string, opts: { read_only?: boolean; workspace_id?: string } = {}) =>
+    run: (sql: string, opts: { read_only?: boolean; workspace_id?: string; params?: unknown[] } = {}) =>
       api<SqlRunResponse>("/admin/v1/sql/run", {
         method: "POST", service: true,
-        body: JSON.stringify({ sql, read_only: opts.read_only ?? false, workspace_id: opts.workspace_id }),
+        body: JSON.stringify({
+          sql,
+          read_only: opts.read_only ?? false,
+          workspace_id: opts.workspace_id,
+          params: opts.params ?? [],
+        }),
       }),
     explain: (sql: string) => api<{ plan: unknown }>("/admin/v1/sql/explain", {
       method: "POST", service: true, body: JSON.stringify({ sql }),
@@ -230,6 +235,11 @@ export const live = {
       return api<SqlHistoryPage>(`/admin/v1/sql/history?${qs.toString()}`, { service: true });
     },
     historyEntry: (id: string) => api<SqlHistoryEntry & { sql: string }>(`/admin/v1/sql/history/${id}`, { service: true }),
+  },
+  schema: {
+    introspect: () => api<{ tables: SchemaTable[] }>("/admin/v1/schema", { service: true }),
+    summary:    () => api<SchemaSummary>("/admin/v1/schema/summary"),
+    openapi:    () => api<Record<string, unknown>>("/admin/v1/schema/openapi.json"),
   },
 };
 
@@ -265,6 +275,30 @@ export type SqlHistoryPage = { items: SqlHistoryEntry[]; total: number; limit: n
 export type SqlHistoryQuery = {
   workspace_id?: string; status?: "ok" | "error";
   read_only?: boolean; q?: string; limit?: number; offset?: number;
+};
+
+// ---- Schema (auto REST) ----
+export type SchemaColumn = {
+  name: string; data_type: string; udt_name: string;
+  is_nullable: boolean; has_default: boolean;
+  is_primary_key: boolean; is_unique: boolean;
+  references: { table: string; column: string } | null;
+};
+export type SchemaTable = {
+  schema: string; name: string; comment: string | null;
+  columns: SchemaColumn[]; primary_key: string[];
+  rls_enabled: boolean; policies: string[];
+  workspace_scoped: boolean;
+  privileges: { anon: string[]; authenticated: string[]; service_role: string[] };
+};
+export type SchemaEndpoint = {
+  table: string; workspace_scoped: boolean; rls_enabled: boolean;
+  primary_key: string[]; columns: string[]; methods: string[]; base: string;
+};
+export type SchemaSummary = {
+  workspace_id: string | null;
+  role: "service_role" | "authenticated";
+  endpoints: SchemaEndpoint[];
 };
 
 

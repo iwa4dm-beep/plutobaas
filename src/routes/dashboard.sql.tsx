@@ -2,16 +2,20 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, Clock, History, Lock, Play, RotateCcw, Unlock } from "lucide-react";
 import { PageHeader } from "@/components/pluto/PageHeader";
+import { RequireWorkspace } from "@/components/pluto/RequireWorkspace";
+import { useWorkspace } from "@/lib/pluto/workspace-context";
 import { isLive, live, type SqlHistoryEntry, type SqlResult, type SqlRunResponse } from "@/lib/pluto/live";
 
 export const Route = createFileRoute("/dashboard/sql")({
-  component: SqlRunnerPage,
+  component: () => <RequireWorkspace><SqlRunnerPage /></RequireWorkspace>,
 });
 
-const SAMPLE = "-- Ctrl/⌘+Enter to run\nselect table_schema, table_name\n  from information_schema.tables\n where table_schema = 'public'\n order by table_name;";
+const SAMPLE = "-- Ctrl/⌘+Enter to run. Use $1, $2 … with the Params box for bind variables.\nselect table_schema, table_name\n  from information_schema.tables\n where table_schema = 'public'\n order by table_name;";
 
 function SqlRunnerPage() {
+  const { active } = useWorkspace();
   const [sql, setSql] = useState(SAMPLE);
+  const [paramsText, setParamsText] = useState<string>("");
   const [readOnly, setReadOnly] = useState(true);
   const [confirmWrite, setConfirmWrite] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -21,30 +25,46 @@ function SqlRunnerPage() {
   const [historyLoading, setHistoryLoading] = useState(false);
 
   const backendOk = isLive();
-  const canWrite = !readOnly && confirmWrite;
 
   const loadHistory = useCallback(async () => {
     if (!backendOk) return;
     setHistoryLoading(true);
     try {
-      const page = await live.sql.history({ limit: 30 });
+      const page = await live.sql.history({ limit: 30, workspace_id: active.id });
       setHistory(page.items);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setHistoryLoading(false);
     }
-  }, [backendOk]);
+  }, [backendOk, active.id]);
 
   useEffect(() => { void loadHistory(); }, [loadHistory]);
+
+  const parsedParams = useMemo(() => {
+    const t = paramsText.trim();
+    if (!t) return { ok: true as const, value: [] as unknown[] };
+    try {
+      const v = JSON.parse(t);
+      if (!Array.isArray(v)) return { ok: false as const, error: "Params must be a JSON array (e.g. [42, \"foo\"])." };
+      return { ok: true as const, value: v as unknown[] };
+    } catch (e) {
+      return { ok: false as const, error: e instanceof Error ? e.message : "Invalid JSON" };
+    }
+  }, [paramsText]);
 
   const run = useCallback(async () => {
     if (!backendOk) { setError("Configure VITE_PLUTO_URL & VITE_PLUTO_SERVICE_KEY to run SQL."); return; }
     if (!readOnly && !confirmWrite) { setError("Write mode requires the confirmation checkbox."); return; }
+    if (!parsedParams.ok) { setError(`Bad params: ${parsedParams.error}`); return; }
     setError(null);
     setBusy(true);
     try {
-      const res = await live.sql.run(sql, { read_only: readOnly });
+      const res = await live.sql.run(sql, {
+        read_only: readOnly,
+        workspace_id: active.id,
+        params: parsedParams.value,
+      });
       setResult(res);
       await loadHistory();
     } catch (e) {
@@ -54,7 +74,7 @@ function SqlRunnerPage() {
     } finally {
       setBusy(false);
     }
-  }, [backendOk, sql, readOnly, confirmWrite, loadHistory]);
+  }, [backendOk, sql, readOnly, confirmWrite, loadHistory, active.id, parsedParams]);
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); void run(); }
@@ -132,6 +152,30 @@ function SqlRunnerPage() {
             spellCheck={false}
             className="w-full min-h-[240px] px-3 py-2 bg-background text-foreground font-mono text-[13px] leading-5 outline-none resize-vertical"
           />
+
+          <div className="border-t border-border px-3 py-2 bg-muted/20">
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-xs font-medium text-muted-foreground">
+                Bind params (JSON array — $1, $2, …)
+              </label>
+              <span className="text-[11px] text-muted-foreground">
+                Workspace: <span className="font-mono">{active.slug}</span>
+              </span>
+            </div>
+            <textarea
+              value={paramsText}
+              onChange={(e) => setParamsText(e.target.value)}
+              placeholder='e.g. [42, "hello", null]'
+              spellCheck={false}
+              className={
+                "w-full min-h-[52px] px-2 py-1.5 bg-background rounded border font-mono text-[12px] leading-4 outline-none resize-vertical " +
+                (parsedParams.ok ? "border-border" : "border-red-500/50")
+              }
+            />
+            {!parsedParams.ok && (
+              <div className="mt-1 text-[11px] text-red-400">{parsedParams.error}</div>
+            )}
+          </div>
 
           {error && (
             <div className="border-t border-border bg-red-500/5 px-3 py-2 text-sm text-red-300 flex items-start gap-2">

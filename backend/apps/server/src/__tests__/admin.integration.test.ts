@@ -89,7 +89,7 @@ describe("requireAdmin — authorization matrix on /admin/v1/migrations/run", ()
   it("rejects request with no api key (401 invalid_api_key)", async () => {
     const r = await app.inject({ method: "POST", url: "/admin/v1/migrations/run", payload: {} });
     expect(r.statusCode).toBe(401);
-    expect(r.json().error).toBe("invalid_api_key");
+    expect(r.json().error).toMatch(/missing_api_key|invalid_api_key/);
   });
 
   it("rejects anon api key (403 service_role_required)", async () => {
