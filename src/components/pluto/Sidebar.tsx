@@ -35,6 +35,8 @@ export function Sidebar() {
         </div>
       </div>
 
+      <WorkspaceSwitcher />
+
       <nav className="flex-1 px-2 py-3 space-y-0.5 overflow-y-auto">
         {items.map(({ to, label, icon: Icon }) => {
           const active = pathname === to || (to !== "/dashboard" && pathname.startsWith(to));
