@@ -1,11 +1,13 @@
 import { Link, useRouterState } from "@tanstack/react-router";
-import { Building2, Database, Files, Gauge, GitBranch, KeyRound, LogOut, ScrollText, Settings, ShieldAlert, ShieldCheck, Terminal, Users, Zap } from "lucide-react";
+import { Building2, Database, Files, Gauge, GitBranch, KeyRound, LogOut, Radio, ScrollText, Settings, ShieldAlert, ShieldCheck, Terminal, Users, Zap } from "lucide-react";
 import { useAuth } from "@/lib/pluto/auth-context";
+import { WorkspaceSwitcher } from "@/components/pluto/WorkspaceSwitcher";
 
 const items = [
   { to: "/dashboard", label: "Overview", icon: Gauge },
   { to: "/dashboard/projects", label: "Projects & Keys", icon: KeyRound },
   { to: "/dashboard/workspaces", label: "Workspaces", icon: Building2 },
+  { to: "/dashboard/api", label: "REST endpoints", icon: Radio },
   { to: "/dashboard/database", label: "Database", icon: Database },
   { to: "/dashboard/sql", label: "SQL runner", icon: Terminal },
   { to: "/dashboard/migrations", label: "Migrations", icon: GitBranch },
