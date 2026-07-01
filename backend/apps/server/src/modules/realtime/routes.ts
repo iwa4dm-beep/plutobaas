@@ -80,25 +80,40 @@ export async function realtimeRoutes(app: FastifyInstance) {
     if (apikey !== env.ANON_KEY && apikey !== env.SERVICE_ROLE_KEY) {
       socket.close(1008, "invalid_api_key"); return;
     }
+    const isServiceRole = apikey === env.SERVICE_ROLE_KEY;
 
     let userId: string | null = null;
+    let role: string | null = null;
     const token = url.searchParams.get("access_token");
     if (token) {
-      try { userId = (await verifyAccessToken(token)).sub; } catch { /* anonymous */ }
+      try {
+        const claims = await verifyAccessToken(token);
+        userId = claims.sub; role = claims.role;
+      } catch { /* anonymous */ }
     }
+
+    // A "system:*" broadcast is admin-only. It carries privileged
+    // audit and migration progress payloads that anon/regular users
+    // must never see. Enforce at BOTH connect time (fast reject) and
+    // per-subscribe time (defence in depth).
+    const isAdmin = isServiceRole && role === "admin";
 
     const client: Client = {
       send: (d) => { try { socket.send(d); } catch { /* closed */ } },
       subs: [],
       userId,
+      isAdmin,
     };
     clients.add(client);
-    client.send(JSON.stringify({ type: "ready" }));
+    client.send(JSON.stringify({ type: "ready", admin: isAdmin }));
 
     socket.on("message", async (raw: Buffer) => {
       let msg: { type?: string; channel?: string; event?: string; payload?: unknown };
       try { msg = JSON.parse(raw.toString()); } catch { return; }
       if (msg.type === "subscribe" && msg.channel) {
+        if (msg.channel.startsWith("system:") && !client.isAdmin) {
+          return client.send(JSON.stringify({ type: "error", channel: msg.channel, error: "admin_required" }));
+        }
         const s = parseChannel(msg.channel);
         if (!s) return client.send(JSON.stringify({ type: "error", error: "bad_channel" }));
         client.subs.push(s);
@@ -106,6 +121,11 @@ export async function realtimeRoutes(app: FastifyInstance) {
       } else if (msg.type === "unsubscribe" && msg.channel) {
         client.subs = client.subs.filter((s) => s.channel !== parseChannel(msg.channel!)?.channel);
       } else if (msg.type === "broadcast" && msg.channel && msg.event) {
+        // Never let clients spoof system:* traffic; only server-side
+        // `emit()` helpers may write to those channels.
+        if (msg.channel.startsWith("system:")) {
+          return client.send(JSON.stringify({ type: "error", error: "system_channel_readonly" }));
+        }
         const pgClient = new pg.Client({ connectionString: env.DATABASE_URL });
         await pgClient.connect();
         await pgClient.query("select pg_notify('pluto_broadcast', $1)", [
