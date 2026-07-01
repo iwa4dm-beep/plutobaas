@@ -193,7 +193,80 @@ export const live = {
       return api<AuditPage>(`/admin/v1/audit?${qs.toString()}`, { service: true });
     },
   },
+  workspaces: {
+    list: () => api<{ workspaces: Workspace[] }>("/admin/v1/workspaces/", { service: true }),
+    create: (slug: string, name: string) =>
+      api<{ id: string; slug: string; name: string; keys: { anon: string; service_role: string } }>(
+        "/admin/v1/workspaces/",
+        { method: "POST", service: true, body: JSON.stringify({ slug, name }) }
+      ),
+    keys: (id: string) => api<{ keys: WorkspaceKey[] }>(`/admin/v1/workspaces/${id}/keys`, { service: true }),
+    mintKey: (id: string, kind: "anon" | "service_role", name: string) =>
+      api<{ id: string; kind: string; plaintext: string }>(
+        `/admin/v1/workspaces/${id}/keys`,
+        { method: "POST", service: true, body: JSON.stringify({ kind, name }) }
+      ),
+    revokeKey: (id: string, keyId: string) =>
+      api(`/admin/v1/workspaces/${id}/keys/${keyId}/revoke`, { method: "POST", service: true }),
+    members: (id: string) => api<{ members: WorkspaceMember[] }>(`/admin/v1/workspaces/${id}/members`, { service: true }),
+  },
+  sql: {
+    run: (sql: string, opts: { read_only?: boolean; workspace_id?: string } = {}) =>
+      api<SqlRunResponse>("/admin/v1/sql/run", {
+        method: "POST", service: true,
+        body: JSON.stringify({ sql, read_only: opts.read_only ?? false, workspace_id: opts.workspace_id }),
+      }),
+    explain: (sql: string) => api<{ plan: unknown }>("/admin/v1/sql/explain", {
+      method: "POST", service: true, body: JSON.stringify({ sql }),
+    }),
+    history: (params: SqlHistoryQuery = {}) => {
+      const qs = new URLSearchParams();
+      if (params.workspace_id) qs.set("workspace_id", params.workspace_id);
+      if (params.status)       qs.set("status", params.status);
+      if (params.read_only != null) qs.set("read_only", String(params.read_only));
+      if (params.q)            qs.set("q", params.q);
+      qs.set("limit",  String(params.limit  ?? 50));
+      qs.set("offset", String(params.offset ?? 0));
+      return api<SqlHistoryPage>(`/admin/v1/sql/history?${qs.toString()}`, { service: true });
+    },
+    historyEntry: (id: string) => api<SqlHistoryEntry & { sql: string }>(`/admin/v1/sql/history/${id}`, { service: true }),
+  },
 };
+
+export type Workspace = {
+  id: string; slug: string; name: string;
+  created_at: string; archived_at: string | null;
+  member_count: number; active_keys: number;
+};
+export type WorkspaceKey = {
+  id: string; kind: "anon" | "service_role"; name: string;
+  key_prefix: string; created_at: string;
+  revoked_at: string | null; last_used_at: string | null; use_count: number;
+};
+export type WorkspaceMember = { user_id: string; role: string; created_at: string; email: string };
+
+export type SqlColumn = { name: string; type_oid: number };
+export type SqlResult = {
+  command: string | null; row_count: number | null;
+  rows: unknown[]; columns: SqlColumn[]; truncated: boolean;
+};
+export type SqlRunResponse = {
+  history_id: string | null; duration_ms: number;
+  read_only: boolean; results: SqlResult[];
+};
+export type SqlHistoryEntry = {
+  id: string; workspace_id: string | null; user_id: string | null;
+  user_email: string | null; sql_preview: string; sql_bytes: number;
+  read_only: boolean; status: "ok" | "error";
+  row_count: number | null; duration_ms: number;
+  error: string | null; ran_at: string;
+};
+export type SqlHistoryPage = { items: SqlHistoryEntry[]; total: number; limit: number; offset: number };
+export type SqlHistoryQuery = {
+  workspace_id?: string; status?: "ok" | "error";
+  read_only?: boolean; q?: string; limit?: number; offset?: number;
+};
+
 
 // -------- Realtime helper (WebSocket wrapper) --------
 //

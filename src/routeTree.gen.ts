@@ -13,8 +13,10 @@ import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as DashboardIndexRouteImport } from './routes/dashboard.index'
+import { Route as DashboardWorkspacesRouteImport } from './routes/dashboard.workspaces'
 import { Route as DashboardUsersRouteImport } from './routes/dashboard.users'
 import { Route as DashboardStorageRouteImport } from './routes/dashboard.storage'
+import { Route as DashboardSqlRouteImport } from './routes/dashboard.sql'
 import { Route as DashboardSettingsRouteImport } from './routes/dashboard.settings'
 import { Route as DashboardProjectsRouteImport } from './routes/dashboard.projects'
 import { Route as DashboardMigrationsRouteImport } from './routes/dashboard.migrations'
@@ -43,6 +45,11 @@ const DashboardIndexRoute = DashboardIndexRouteImport.update({
   path: '/',
   getParentRoute: () => DashboardRoute,
 } as any)
+const DashboardWorkspacesRoute = DashboardWorkspacesRouteImport.update({
+  id: '/workspaces',
+  path: '/workspaces',
+  getParentRoute: () => DashboardRoute,
+} as any)
 const DashboardUsersRoute = DashboardUsersRouteImport.update({
   id: '/users',
   path: '/users',
@@ -51,6 +58,11 @@ const DashboardUsersRoute = DashboardUsersRouteImport.update({
 const DashboardStorageRoute = DashboardStorageRouteImport.update({
   id: '/storage',
   path: '/storage',
+  getParentRoute: () => DashboardRoute,
+} as any)
+const DashboardSqlRoute = DashboardSqlRouteImport.update({
+  id: '/sql',
+  path: '/sql',
   getParentRoute: () => DashboardRoute,
 } as any)
 const DashboardSettingsRoute = DashboardSettingsRouteImport.update({
@@ -100,8 +112,10 @@ export interface FileRoutesByFullPath {
   '/dashboard/migrations': typeof DashboardMigrationsRoute
   '/dashboard/projects': typeof DashboardProjectsRoute
   '/dashboard/settings': typeof DashboardSettingsRoute
+  '/dashboard/sql': typeof DashboardSqlRoute
   '/dashboard/storage': typeof DashboardStorageRoute
   '/dashboard/users': typeof DashboardUsersRoute
+  '/dashboard/workspaces': typeof DashboardWorkspacesRoute
   '/dashboard/': typeof DashboardIndexRoute
 }
 export interface FileRoutesByTo {
@@ -114,8 +128,10 @@ export interface FileRoutesByTo {
   '/dashboard/migrations': typeof DashboardMigrationsRoute
   '/dashboard/projects': typeof DashboardProjectsRoute
   '/dashboard/settings': typeof DashboardSettingsRoute
+  '/dashboard/sql': typeof DashboardSqlRoute
   '/dashboard/storage': typeof DashboardStorageRoute
   '/dashboard/users': typeof DashboardUsersRoute
+  '/dashboard/workspaces': typeof DashboardWorkspacesRoute
   '/dashboard': typeof DashboardIndexRoute
 }
 export interface FileRoutesById {
@@ -130,8 +146,10 @@ export interface FileRoutesById {
   '/dashboard/migrations': typeof DashboardMigrationsRoute
   '/dashboard/projects': typeof DashboardProjectsRoute
   '/dashboard/settings': typeof DashboardSettingsRoute
+  '/dashboard/sql': typeof DashboardSqlRoute
   '/dashboard/storage': typeof DashboardStorageRoute
   '/dashboard/users': typeof DashboardUsersRoute
+  '/dashboard/workspaces': typeof DashboardWorkspacesRoute
   '/dashboard/': typeof DashboardIndexRoute
 }
 export interface FileRouteTypes {
@@ -147,8 +165,10 @@ export interface FileRouteTypes {
     | '/dashboard/migrations'
     | '/dashboard/projects'
     | '/dashboard/settings'
+    | '/dashboard/sql'
     | '/dashboard/storage'
     | '/dashboard/users'
+    | '/dashboard/workspaces'
     | '/dashboard/'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -161,8 +181,10 @@ export interface FileRouteTypes {
     | '/dashboard/migrations'
     | '/dashboard/projects'
     | '/dashboard/settings'
+    | '/dashboard/sql'
     | '/dashboard/storage'
     | '/dashboard/users'
+    | '/dashboard/workspaces'
     | '/dashboard'
   id:
     | '__root__'
@@ -176,8 +198,10 @@ export interface FileRouteTypes {
     | '/dashboard/migrations'
     | '/dashboard/projects'
     | '/dashboard/settings'
+    | '/dashboard/sql'
     | '/dashboard/storage'
     | '/dashboard/users'
+    | '/dashboard/workspaces'
     | '/dashboard/'
   fileRoutesById: FileRoutesById
 }
@@ -217,6 +241,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardIndexRouteImport
       parentRoute: typeof DashboardRoute
     }
+    '/dashboard/workspaces': {
+      id: '/dashboard/workspaces'
+      path: '/workspaces'
+      fullPath: '/dashboard/workspaces'
+      preLoaderRoute: typeof DashboardWorkspacesRouteImport
+      parentRoute: typeof DashboardRoute
+    }
     '/dashboard/users': {
       id: '/dashboard/users'
       path: '/users'
@@ -229,6 +260,13 @@ declare module '@tanstack/react-router' {
       path: '/storage'
       fullPath: '/dashboard/storage'
       preLoaderRoute: typeof DashboardStorageRouteImport
+      parentRoute: typeof DashboardRoute
+    }
+    '/dashboard/sql': {
+      id: '/dashboard/sql'
+      path: '/sql'
+      fullPath: '/dashboard/sql'
+      preLoaderRoute: typeof DashboardSqlRouteImport
       parentRoute: typeof DashboardRoute
     }
     '/dashboard/settings': {
@@ -291,8 +329,10 @@ interface DashboardRouteChildren {
   DashboardMigrationsRoute: typeof DashboardMigrationsRoute
   DashboardProjectsRoute: typeof DashboardProjectsRoute
   DashboardSettingsRoute: typeof DashboardSettingsRoute
+  DashboardSqlRoute: typeof DashboardSqlRoute
   DashboardStorageRoute: typeof DashboardStorageRoute
   DashboardUsersRoute: typeof DashboardUsersRoute
+  DashboardWorkspacesRoute: typeof DashboardWorkspacesRoute
   DashboardIndexRoute: typeof DashboardIndexRoute
 }
 
@@ -304,8 +344,10 @@ const DashboardRouteChildren: DashboardRouteChildren = {
   DashboardMigrationsRoute: DashboardMigrationsRoute,
   DashboardProjectsRoute: DashboardProjectsRoute,
   DashboardSettingsRoute: DashboardSettingsRoute,
+  DashboardSqlRoute: DashboardSqlRoute,
   DashboardStorageRoute: DashboardStorageRoute,
   DashboardUsersRoute: DashboardUsersRoute,
+  DashboardWorkspacesRoute: DashboardWorkspacesRoute,
   DashboardIndexRoute: DashboardIndexRoute,
 }
 
