@@ -45,3 +45,21 @@ export function requireServiceRole(req: FastifyRequest, reply: FastifyReply): vo
     reply.code(403).send({ error: "service_role_required" });
   }
 }
+
+// Strict guard for dashboard mutations: caller MUST present the
+// service-role api key AND a valid JWT bearer whose `role` claim is
+// "admin". This means a leaked service-role key alone is not enough —
+// an active admin session is also required.
+export function requireAdmin(req: FastifyRequest, reply: FastifyReply): void {
+  if (req.auth?.apiKey !== "service_role") {
+    reply.code(403).send({ error: "service_role_required" });
+    return;
+  }
+  if (!req.auth.user) {
+    reply.code(401).send({ error: "admin_session_required" });
+    return;
+  }
+  if (req.auth.user.role !== "admin") {
+    reply.code(403).send({ error: "admin_role_required" });
+  }
+}

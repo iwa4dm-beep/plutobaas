@@ -162,9 +162,10 @@ export async function listMigrations(): Promise<MigrationEntry[]> {
   return entries.sort((a, b) => a.version.localeCompare(b.version));
 }
 
-async function runOne(file: MigrationFile, actor: string): Promise<MigrationRow> {
+async function runOne(file: MigrationFile, actor: string, emit?: EmitFn): Promise<MigrationRow> {
   const client = await pool.connect();
   const started = Date.now();
+  await emit?.("step", { version: file.version, phase: "start" });
   try {
     await client.query("begin");
     await client.query(file.upSql);
@@ -185,6 +186,7 @@ async function runOne(file: MigrationFile, actor: string): Promise<MigrationRow>
       [file.version, file.name, file.checksum, actor, duration, file.downSql]
     );
     await client.query("commit");
+    await emit?.("step", { version: file.version, phase: "done", duration_ms: duration });
     return rows[0];
   } catch (e) {
     await client.query("rollback").catch(() => {});
@@ -197,13 +199,49 @@ async function runOne(file: MigrationFile, actor: string): Promise<MigrationRow>
          status = 'failed', error = excluded.error, applied_at = now()`,
       [file.version, file.name, file.checksum, actor, Date.now() - started, message]
     );
+    await emit?.("step", { version: file.version, phase: "failed", error: message });
     throw e;
   } finally {
     client.release();
   }
 }
 
-export async function runPending(actor = "dashboard") {
+export type EmitFn = (event: string, payload: unknown) => void | Promise<void>;
+
+export type DryRunEntry = {
+  version: string;
+  name: string;
+  reason: "pending" | "rolled_back" | "failed";
+  statement_count: number;
+  bytes: number;
+  has_down: boolean;
+  preview: string;              // first ~400 chars of SQL
+};
+
+export async function planPending(): Promise<DryRunEntry[]> {
+  const entries = await listMigrations();
+  const files = await readMigrationFiles();
+  const byVersion = new Map(files.map((f) => [f.version, f]));
+  const plan: DryRunEntry[] = [];
+  for (const e of entries) {
+    if (!(e.status === "pending" || e.status === "rolled_back" || e.status === "failed")) continue;
+    const file = byVersion.get(e.version);
+    if (!file) continue;
+    const stmts = file.upSql.split(/;\s*(?:\n|$)/).map((s) => s.trim()).filter(Boolean);
+    plan.push({
+      version: file.version,
+      name: file.name,
+      reason: e.status as "pending" | "rolled_back" | "failed",
+      statement_count: stmts.length,
+      bytes: file.upSql.length,
+      has_down: !!file.downSql,
+      preview: file.upSql.slice(0, 400),
+    });
+  }
+  return plan;
+}
+
+export async function runPending(actor = "dashboard", emit?: EmitFn) {
   await ensureLedger();
   const entries = await listMigrations();
   const files = await readMigrationFiles();
@@ -211,29 +249,32 @@ export async function runPending(actor = "dashboard") {
   const applied: string[] = [];
   const failed: { version: string; error: string }[] = [];
 
-  for (const e of entries) {
-    if (!(e.status === "pending" || e.status === "rolled_back" || e.status === "failed")) continue;
+  const targets = entries.filter((e) => e.status === "pending" || e.status === "rolled_back" || e.status === "failed");
+  await emit?.("run.start", { total: targets.length, versions: targets.map((t) => t.version) });
+
+  for (const e of targets) {
     const file = filesByVersion.get(e.version);
     if (!file) continue;
     try {
-      await runOne(file, actor);
+      await runOne(file, actor, emit);
       applied.push(e.version);
     } catch (err) {
       failed.push({ version: e.version, error: err instanceof Error ? err.message : String(err) });
-      break; // stop the chain on first failure
+      break;
     }
   }
+  await emit?.("run.done", { applied, failed });
   return { applied, failed };
 }
 
-export async function rerunOne(version: string, actor = "dashboard") {
+export async function rerunOne(version: string, actor = "dashboard", emit?: EmitFn) {
   const files = await readMigrationFiles();
   const file = files.find((f) => f.version === version);
   if (!file) throw new Error(`no_file:${version}`);
-  return runOne(file, actor);
+  return runOne(file, actor, emit);
 }
 
-export async function rollback(version: string, actor = "dashboard") {
+export async function rollback(version: string, actor = "dashboard", emit?: EmitFn) {
   await ensureLedger();
   const { rows } = await pool.query<MigrationRow & { down_sql: string | null }>(
     "select * from public.schema_migrations where version=$1",
@@ -246,6 +287,7 @@ export async function rollback(version: string, actor = "dashboard") {
   const down = row.down_sql ?? file?.downSql ?? null;
   if (!down || !down.trim()) throw new Error("no_down_sql");
 
+  await emit?.("rollback.start", { version });
   const client = await pool.connect();
   try {
     await client.query("begin");
@@ -257,9 +299,11 @@ export async function rollback(version: string, actor = "dashboard") {
       [version, actor]
     );
     await client.query("commit");
+    await emit?.("rollback.done", { version });
     return { ok: true };
   } catch (e) {
     await client.query("rollback").catch(() => {});
+    await emit?.("rollback.failed", { version, error: e instanceof Error ? e.message : String(e) });
     throw e;
   } finally {
     client.release();
