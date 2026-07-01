@@ -13,6 +13,8 @@ import { realtimeRoutes } from "./modules/realtime/routes.js";
 import { edgeRoutes } from "./modules/edge/routes.js";
 import { migrationRoutes } from "./modules/admin/migrations.js";
 import { jobsRoutes } from "./modules/jobs/routes.js";
+import { workspacesRoutes } from "./modules/admin/workspaces.js";
+import { sqlRunnerRoutes } from "./modules/admin/sql.js";
 import { env } from "./config.js";
 
 async function main() {
@@ -53,6 +55,8 @@ async function main() {
   await app.register(storageRoutes, { prefix: "/storage/v1" });
   await app.register(adminRoutes, { prefix: "/admin/v1" });
   await app.register(migrationRoutes, { prefix: "/admin/v1/migrations" });
+  await app.register(workspacesRoutes, { prefix: "/admin/v1/workspaces" });
+  await app.register(sqlRunnerRoutes,  { prefix: "/admin/v1/sql" });
   await app.register(jobsRoutes, { prefix: "/jobs/v1" });
   await app.register(realtimeRoutes, { prefix: "/realtime/v1" });
   await app.register(edgeRoutes, { prefix: "/functions/v1" });
