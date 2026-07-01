@@ -45,25 +45,24 @@ for (const p of perFile) {
 }
 
 // --- Collect alter-table RLS enables and create-policy statements ----
-const rlsEnabled = new Set<string>();
+const rlsEnabled = new Set();
 for (const m of combined.matchAll(/alter\s+table\s+(?:if\s+exists\s+)?public\.([a-z_][a-z0-9_]*)\s+enable\s+row\s+level\s+security/gi)) {
   rlsEnabled.add(m[1]);
 }
 
-type Policy = { table: string; name: string; body: string };
-const policies: Policy[] = [];
+const policies = [];
 const POLICY_RE = /create\s+policy\s+([a-z_][a-z0-9_]*)\s+on\s+public\.([a-z_][a-z0-9_]*)([\s\S]*?);/gi;
 for (const m of combined.matchAll(POLICY_RE)) {
   policies.push({ name: m[1], table: m[2], body: m[3] });
 }
-const policiesByTable = new Map<string, Policy[]>();
+const policiesByTable = new Map();
 for (const p of policies) {
   if (!policiesByTable.has(p.table)) policiesByTable.set(p.table, []);
-  policiesByTable.get(p.table)!.push(p);
+  policiesByTable.get(p.table).push(p);
 }
 
 // --- Enforce rules ---------------------------------------------------
-const violations: string[] = [];
+const violations = [];
 for (const t of tables) {
   if (t.exempt) continue;
   if (!rlsEnabled.has(t.name)) {
