@@ -141,10 +141,13 @@ export function splitStatements(sql: string): Classified[] {
 
   const out: Classified[] = [];
   for (const p of rawParts) {
-    const raw = sql.slice(p.start, p.end).trim();
-    if (!raw) continue;
-    const m = /^\s*([A-Za-z]+)/.exec(raw);
-    out.push({ index: out.length, verb: (m?.[1] ?? "").toUpperCase(), text: raw });
+    // Use CLEANED slice for verb detection (comments stripped, literals
+    // blanked) but keep the original text for display purposes.
+    const cleanedRaw = cleaned.slice(p.start, p.end).trim();
+    const originalRaw = sql.slice(p.start, p.end).trim();
+    if (!cleanedRaw) continue;
+    const m = /^([A-Za-z]+)/.exec(cleanedRaw);
+    out.push({ index: out.length, verb: (m?.[1] ?? "").toUpperCase(), text: originalRaw || cleanedRaw });
   }
   return out;
 }
