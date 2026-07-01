@@ -1,4 +1,29 @@
+{
+    email {$ACME_EMAIL:admin@example.com}
+    servers {
+        trusted_proxies static private_ranges
+    }
+}
+
 {$DOMAIN} {
     encode zstd gzip
-    reverse_proxy api:8000
+
+    @cors_preflight method OPTIONS
+    header {
+        Access-Control-Allow-Origin  "{header.Origin}"
+        Access-Control-Allow-Methods "GET, POST, PATCH, DELETE, OPTIONS"
+        Access-Control-Allow-Headers "authorization, apikey, x-api-key, content-type"
+        Access-Control-Max-Age       "86400"
+        Vary                         "Origin"
+    }
+    respond @cors_preflight 204
+
+    handle_path /healthz {
+        reverse_proxy api:8000
+    }
+
+    reverse_proxy api:8000 {
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+    }
 }
