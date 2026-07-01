@@ -237,7 +237,7 @@ export const live = {
     historyEntry: (id: string) => api<SqlHistoryEntry & { sql: string }>(`/admin/v1/sql/history/${id}`, { service: true }),
   },
   schema: {
-    introspect: () => api<{ tables: SchemaTable[] }>("/admin/v1/schema/", { service: true }),
+    introspect: () => api<{ tables: SchemaTable[] }>("/admin/v1/schema", { service: true }),
     summary:    () => api<SchemaSummary>("/admin/v1/schema/summary"),
     openapi:    () => api<Record<string, unknown>>("/admin/v1/schema/openapi.json"),
   },
