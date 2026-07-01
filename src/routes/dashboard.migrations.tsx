@@ -295,6 +295,21 @@ function StatusIcon({ status }: { status: MigrationEntry["status"] }) {
   return <AlertTriangle className="h-3 w-3" />;
 }
 
+function DiffColumn({ title, items, className, prefix }: { title: string; items: string[]; className: string; prefix: string }) {
+  return (
+    <div className={`rounded border p-2 ${className}`}>
+      <div className="text-[11px] font-medium mb-1">{title} ({items.length})</div>
+      {items.length === 0 ? (
+        <div className="text-[11px] opacity-60">—</div>
+      ) : (
+        <ul className="text-[11px] font-mono space-y-0.5 max-h-40 overflow-y-auto">
+          {items.map((v, i) => <li key={i} className="truncate" title={v}>{prefix}{v}</li>)}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 const mockEntries: MigrationEntry[] = [
   { version: "0001_init", name: "init", status: "applied", file_checksum: "abc", db_checksum: "abc", applied_at: new Date(Date.now() - 86400000 * 30).toISOString(), duration_ms: 240, has_down: false, error: null },
   { version: "0002_rls_helpers", name: "rls_helpers", status: "applied", file_checksum: "def", db_checksum: "def", applied_at: new Date(Date.now() - 86400000 * 20).toISOString(), duration_ms: 88, has_down: false, error: null },
