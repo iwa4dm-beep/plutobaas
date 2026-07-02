@@ -975,7 +975,8 @@ export const enterprise = {
     api<IpRule>("/enterprise/v1/ip-rules", { method: "POST", body: JSON.stringify(body) }),
   removeIpRule: (id: string) => api<{ ok: boolean }>(`/enterprise/v1/ip-rules/${id}`, { method: "DELETE" }),
   checkIp: (workspace_id: string, ip: string) =>
-    api<{ decision: "allow" | "deny"; matched: number; has_allow_list: boolean }>("/enterprise/v1/ip-rules/check",
+    api<{ decision: "allow" | "deny"; matched: number; has_allow_list: boolean; matched_rules?: IpRule[]; reason?: string }>(
+      "/enterprise/v1/ip-rules/check",
       { method: "POST", body: JSON.stringify({ workspace_id, ip }) }),
   domains: () => api<{ domains: CustomDomain[] }>("/enterprise/v1/domains"),
   addDomain: (hostname: string) =>
