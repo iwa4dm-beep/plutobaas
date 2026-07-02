@@ -174,17 +174,49 @@ function MigrationsPage() {
         )}
       </div>
 
+      {/* Realtime authorization failure — surfaced by openSocket. Retries
+          are suspended until the operator updates credentials. */}
+      {authErr && (
+        <div className="mb-4 rounded-md border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-200 flex items-start gap-2">
+          <ShieldAlert className="h-4 w-4 mt-0.5" />
+          <div className="flex-1">
+            <div className="font-medium">Realtime disabled — {authErr.code}</div>
+            <div className="text-xs mt-0.5">{authErr.message} Live progress will resume after you refresh with updated credentials.</div>
+          </div>
+        </div>
+      )}
+
+      {/* Last container-boot migration run — see src/db/migrate.ts */}
+      {bootRun && <BootRunCard run={bootRun} />}
+
       {plan && (
         <div className="mb-4 rounded-lg border border-sky-500/30 bg-sky-500/5 p-4">
-          <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center justify-between mb-2 gap-2 flex-wrap">
             <div className="text-sm font-medium">
               Dry-run plan · {plan.length} migration{plan.length === 1 ? "" : "s"} would run
               <span className="ml-2 text-xs text-muted-foreground">
                 (simulated in a transaction; nothing was written)
               </span>
             </div>
-            <button onClick={() => setPlan(null)} className="text-xs text-muted-foreground hover:text-foreground">Dismiss</button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => exportPlan("json")}
+                disabled={plan.length === 0}
+                className="inline-flex items-center gap-1 text-xs rounded-md border border-input px-2 py-1 hover:bg-accent disabled:opacity-40"
+              >
+                <Download className="h-3 w-3" /> JSON
+              </button>
+              <button
+                onClick={() => exportPlan("text")}
+                disabled={plan.length === 0}
+                className="inline-flex items-center gap-1 text-xs rounded-md border border-input px-2 py-1 hover:bg-accent disabled:opacity-40"
+              >
+                <Download className="h-3 w-3" /> Text
+              </button>
+              <button onClick={() => setPlan(null)} className="text-xs text-muted-foreground hover:text-foreground">Dismiss</button>
+            </div>
           </div>
+
           {plan.length === 0 ? (
             <div className="text-xs text-muted-foreground">Nothing pending — schema is up to date.</div>
           ) : (
