@@ -151,6 +151,7 @@ export type AuditQuery = {
   actor?: string;
   status?: "ok" | "error" | "dry_run";
   q?: string;
+  workspace_id?: string;
   since?: string;
   until?: string;
   limit?: number;
@@ -182,12 +183,13 @@ export const live = {
   audit: {
     list: (params: AuditQuery = {}) => {
       const qs = new URLSearchParams();
-      if (params.action) qs.set("action", params.action);
-      if (params.actor)  qs.set("actor",  params.actor);
-      if (params.status) qs.set("status", params.status);
-      if (params.q)      qs.set("q",      params.q);
-      if (params.since)  qs.set("since",  params.since);
-      if (params.until)  qs.set("until",  params.until);
+      if (params.action)       qs.set("action",       params.action);
+      if (params.actor)        qs.set("actor",        params.actor);
+      if (params.status)       qs.set("status",       params.status);
+      if (params.q)            qs.set("q",            params.q);
+      if (params.workspace_id) qs.set("workspace_id", params.workspace_id);
+      if (params.since)        qs.set("since",        params.since);
+      if (params.until)        qs.set("until",        params.until);
       qs.set("limit",  String(params.limit  ?? 50));
       qs.set("offset", String(params.offset ?? 0));
       return api<AuditPage>(`/admin/v1/audit?${qs.toString()}`, { service: true });

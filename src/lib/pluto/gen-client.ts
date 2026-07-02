@@ -163,6 +163,87 @@ export function createPlutoClient(opts: PlutoClientOptions) {
   return {
     from: {${tableHelpers}
     },
+
+    // ── Storage helpers (bucket-agnostic, RLS enforced server-side) ──
+    // Signed URLs default to short (60s) reads. Set { one_time: true }
+    // when handing a URL to an untrusted context so replays are refused.
+    storage: {
+      /** Single-shot upload (multipart/form-data). ≤ bucket.max_size. */
+      upload: async (bucket: string, key: string, file: Blob | File, contentType?: string) => {
+        const fd = new FormData();
+        fd.append("file", file, (file as File).name ?? "blob");
+        const token = opts.getToken ? await opts.getToken() : null;
+        const headers: Record<string, string> = { apikey: opts.apiKey };
+        if (token) headers["authorization"] = \`Bearer \${token}\`;
+        if (contentType) headers["x-content-type"] = contentType;
+        const res = await doFetch(\`\${base}/storage/v1/object/\${bucket}/\${encodeURI(key)}\`, {
+          method: "POST", headers, body: fd,
+        });
+        if (!res.ok) throw new Error(\`\${res.status} \${res.statusText}: \${await res.text()}\`);
+        return res.json() as Promise<{ bucket: string; key: string; size: number; content_type: string }>;
+      },
+      /** Streamed download → Blob. */
+      download: async (bucket: string, key: string): Promise<Blob> => {
+        const token = opts.getToken ? await opts.getToken() : null;
+        const headers: Record<string, string> = { apikey: opts.apiKey };
+        if (token) headers["authorization"] = \`Bearer \${token}\`;
+        const res = await doFetch(\`\${base}/storage/v1/object/\${bucket}/\${encodeURI(key)}\`, { headers });
+        if (!res.ok) throw new Error(\`\${res.status} \${res.statusText}\`);
+        return res.blob();
+      },
+      remove: (bucket: string, key: string) =>
+        http<{ ok: true }>(\`/storage/v1/object/\${bucket}/\${encodeURI(key)}\`, { method: "DELETE" }),
+      signedUrl: (bucket: string, key: string, opts2: { expires_in?: number; mode?: "read" | "write"; one_time?: boolean } = {}) =>
+        http<{ url: string; id: string; expires_at: string; one_time: boolean }>(
+          \`/storage/v1/object/sign/\${bucket}/\${encodeURI(key)}\`,
+          { method: "POST", body: JSON.stringify(opts2) },
+        ),
+      revokeSignedUrl: (id: string) =>
+        http<{ ok: true }>(\`/storage/v1/object/sign/grants/\${encodeURIComponent(id)}\`, { method: "DELETE" }),
+      /**
+       * Resumable / multipart upload for large files. Splits the file
+       * into 5 MiB chunks (configurable) and PUTs them individually,
+       * then finalizes with `/upload/:id/complete`. Server re-checks
+       * RLS on every part so a revoked grant kills the session.
+       */
+      uploadLarge: async (
+        bucket: string,
+        key: string,
+        file: Blob,
+        opts2: { part_size?: number; content_type?: string; onProgress?: (done: number, total: number) => void } = {},
+      ) => {
+        const part_size = opts2.part_size ?? 5 * 1024 * 1024;
+        const content_type = opts2.content_type ?? (file as File).type ?? "application/octet-stream";
+        const init = await http<{ upload_id: string; part_size: number; part_count: number }>(
+          \`/storage/v1/upload/init\`,
+          { method: "POST", body: JSON.stringify({ bucket, key, size: file.size, content_type, part_size }) },
+        );
+        const token = opts.getToken ? await opts.getToken() : null;
+        const headers: Record<string, string> = {
+          apikey: opts.apiKey, "content-type": "application/octet-stream",
+        };
+        if (token) headers["authorization"] = \`Bearer \${token}\`;
+        const parts: { part_number: number; etag: string }[] = [];
+        for (let i = 0; i < init.part_count; i++) {
+          const slice = file.slice(i * init.part_size, (i + 1) * init.part_size);
+          const res = await doFetch(\`\${base}/storage/v1/upload/\${init.upload_id}/part/\${i + 1}\`, {
+            method: "PUT", headers, body: slice,
+          });
+          if (!res.ok) {
+            await doFetch(\`\${base}/storage/v1/upload/\${init.upload_id}/abort\`, { method: "DELETE", headers });
+            throw new Error(\`part \${i + 1}: \${res.status} \${await res.text()}\`);
+          }
+          const j = await res.json() as { part_number: number; etag: string };
+          parts.push({ part_number: j.part_number, etag: j.etag });
+          opts2.onProgress?.((i + 1) * init.part_size, file.size);
+        }
+        return http<{ bucket: string; key: string; size: number; content_type: string }>(
+          \`/storage/v1/upload/\${init.upload_id}/complete\`,
+          { method: "POST", body: JSON.stringify({ parts }) },
+        );
+      },
+    },
+
     /** Raw request escape hatch. */
     request: http,
   };
