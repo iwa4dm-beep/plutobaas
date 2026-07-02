@@ -46,6 +46,39 @@ export const observabilityPlugin: FastifyPluginAsync = async (app: FastifyInstan
   }
   app.log.info({ module: "observability", phase: "18" }, "observability registered");
 
+  // ---- Auto tracing --------------------------------------------------
+  // Attach a trace id to every request, mirror it into `x-trace-id`,
+  // and persist a root span on completion so /obs/v1/traces surfaces
+  // recent requests linked back to dashboard debugging tools.
+  app.decorateRequest("plutoTrace", null as null | { traceId: string; startedAt: number });
+  app.addHook("onRequest", async (req, reply) => {
+    const traceId = (req.headers["x-trace-id"] as string) || crypto.randomUUID();
+    (req as unknown as { plutoTrace: { traceId: string; startedAt: number } }).plutoTrace =
+      { traceId, startedAt: Date.now() };
+    reply.header("x-trace-id", traceId);
+  });
+  app.addHook("onResponse", async (req, reply) => {
+    const t = (req as unknown as { plutoTrace: { traceId: string; startedAt: number } | null }).plutoTrace;
+    if (!t) return;
+    const dur = Date.now() - t.startedAt;
+    const wsId = (req.headers["x-workspace-id"] as string) || null;
+    try {
+      await q(
+        `insert into public.trace_spans
+           (trace_id, workspace_id, name, kind, attributes, started_at, ended_at, duration_ms)
+         values ($1,$2,$3,'server',$4::jsonb, to_timestamp($5/1000.0), now(), $6)`,
+        [t.traceId, wsId, `${req.method} ${req.url.split("?")[0]}`,
+         JSON.stringify({ method: req.method, url: req.url, status: reply.statusCode, request_id: req.id }),
+         t.startedAt, dur]);
+      // Also emit an http.request duration metric so /metrics + charts work.
+      await q(
+        `insert into public.metrics_samples (workspace_id, metric, value, labels)
+         values ($1,'http.request',$2,$3::jsonb)`,
+        [wsId, dur, JSON.stringify({ method: req.method, status: String(reply.statusCode) })]);
+    } catch { /* observability must never break the request path */ }
+  });
+
+
   // ---- Metrics ingest / query / prometheus ----
   app.post("/obs/v1/metrics", { preHandler: requireApiKey }, async (req) => {
     const body = metricBody.parse(req.body);
