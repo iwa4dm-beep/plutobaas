@@ -1,10 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Clock, History, Lock, Play, RotateCcw, Unlock } from "lucide-react";
+import { AlertTriangle, Clock, History, Lock, Play, RotateCcw, ShieldAlert, Unlock } from "lucide-react";
 import { PageHeader } from "@/components/pluto/PageHeader";
 import { RequireWorkspace } from "@/components/pluto/RequireWorkspace";
 import { useWorkspace } from "@/lib/pluto/workspace-context";
 import { isLive, live, type SqlHistoryEntry, type SqlResult, type SqlRunResponse } from "@/lib/pluto/live";
+import { validateClientSql } from "@/lib/pluto/sql-client-validator";
 
 export const Route = createFileRoute("/dashboard/sql")({
   component: () => <RequireWorkspace><SqlRunnerPage /></RequireWorkspace>,
@@ -53,10 +54,19 @@ function SqlRunnerPage() {
     }
   }, [paramsText]);
 
+  const clientCheck = useMemo(
+    () => validateClientSql(sql, parsedParams.ok ? parsedParams.value : [], { readOnly }),
+    [sql, parsedParams, readOnly],
+  );
+  const hardBlocked = clientCheck.blocked.length > 0
+    || clientCheck.issues.some((i) => i.kind === "missing_placeholder" || i.kind === "gap")
+    || (readOnly && clientCheck.writeInReadOnly);
+
   const run = useCallback(async () => {
     if (!backendOk) { setError("Configure VITE_PLUTO_URL & VITE_PLUTO_SERVICE_KEY to run SQL."); return; }
     if (!readOnly && !confirmWrite) { setError("Write mode requires the confirmation checkbox."); return; }
     if (!parsedParams.ok) { setError(`Bad params: ${parsedParams.error}`); return; }
+    if (hardBlocked) { setError("Fix the highlighted validation issues before running."); return; }
     setError(null);
     setBusy(true);
     try {
@@ -74,7 +84,7 @@ function SqlRunnerPage() {
     } finally {
       setBusy(false);
     }
-  }, [backendOk, sql, readOnly, confirmWrite, loadHistory, active.id, parsedParams]);
+  }, [backendOk, sql, readOnly, confirmWrite, loadHistory, active.id, parsedParams, hardBlocked]);
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); void run(); }
@@ -136,7 +146,7 @@ function SqlRunnerPage() {
             <div className="ml-auto flex items-center gap-2">
               <button
                 onClick={() => void run()}
-                disabled={busy || (!readOnly && !confirmWrite) || !backendOk}
+                disabled={busy || (!readOnly && !confirmWrite) || !backendOk || hardBlocked}
                 className="inline-flex items-center gap-1.5 rounded-md bg-primary text-primary-foreground px-3 py-1.5 text-sm font-medium disabled:opacity-50"
               >
                 <Play className="h-3.5 w-3.5" />
@@ -174,6 +184,41 @@ function SqlRunnerPage() {
             />
             {!parsedParams.ok && (
               <div className="mt-1 text-[11px] text-red-400">{parsedParams.error}</div>
+            )}
+
+            {parsedParams.ok && (clientCheck.maxIndex > 0 || clientCheck.issues.length > 0 || clientCheck.blocked.length > 0 || clientCheck.writeInReadOnly) && (
+              <div className="mt-2 space-y-1 text-[11px]">
+                {clientCheck.maxIndex > 0 && (
+                  <div className="text-muted-foreground">
+                    <span className="font-medium text-foreground">Bind slots:</span>{" "}
+                    {clientCheck.paramTypes.map((p) => (
+                      <code key={p.index} className="mr-1.5">${p.index}=<span className="text-primary">{p.type}</span></code>
+                    ))}
+                  </div>
+                )}
+                {clientCheck.issues.map((i, idx) => (
+                  <div key={idx} className={
+                    i.kind === "extra_param"
+                      ? "text-amber-300 inline-flex items-start gap-1"
+                      : "text-red-400 inline-flex items-start gap-1"
+                  }>
+                    <ShieldAlert className="h-3 w-3 mt-0.5 shrink-0" />
+                    <span>{i.message}</span>
+                  </div>
+                ))}
+                {clientCheck.writeInReadOnly && (
+                  <div className="text-red-400 inline-flex items-start gap-1">
+                    <ShieldAlert className="h-3 w-3 mt-0.5 shrink-0" />
+                    <span>Read-only is on but the SQL contains a write verb (INSERT/UPDATE/DELETE/DDL).</span>
+                  </div>
+                )}
+                {clientCheck.blocked.length > 0 && (
+                  <div className="text-red-400 inline-flex items-start gap-1">
+                    <ShieldAlert className="h-3 w-3 mt-0.5 shrink-0" />
+                    <span>Disallowed statement{clientCheck.blocked.length > 1 ? "s" : ""}: {clientCheck.blocked.join(", ")}. Server will reject.</span>
+                  </div>
+                )}
+              </div>
             )}
           </div>
 

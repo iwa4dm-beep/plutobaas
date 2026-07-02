@@ -57,8 +57,29 @@ jobs:
         run: npx tsx src/db/migrate.ts --dry-run
       - name: migrate (apply)
         run: npx tsx src/db/migrate.ts
-      - name: unit + integration tests
+      - name: rls policy regression (fails on missing workspace policy)
+        run: node scripts/check-rls.mjs
+      - name: sql validator tests
+        run: npx vitest run src/__tests__/sql-validator.test.ts --reporter=default
+      - name: workspace isolation e2e
+        run: npx vitest run src/__tests__/workspace-isolation.test.ts --reporter=default
+      - name: admin auth integration
+        run: npx vitest run src/__tests__/admin.integration.test.ts --reporter=default
+      - name: full unit + integration suite
         run: npm test -- --reporter=default
+
+  frontend:
+    name: frontend build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: install
+        run: npm install --no-audit --no-fund --legacy-peer-deps
+      - name: typecheck + build
+        run: npm run build
 
   docker:
     name: docker image
