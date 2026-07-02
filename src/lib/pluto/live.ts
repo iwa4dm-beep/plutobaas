@@ -992,3 +992,44 @@ export const enterprise = {
 };
 
 
+
+// ---------------- Phase 21 — Branching, Studio, Metered Usage ----------------
+export type DbBranch = { id: string; name: string; schema_name: string; parent_id: string | null; status: string; created_at: string };
+export type BranchChange = { id: number; statement: string; ok: boolean; error: string | null; applied_at: string };
+export type SchemaOp =
+  | { op: "create_table"; schema?: string; table: string; columns: Array<{ name: string; type: string; nullable?: boolean; default?: string; primary?: boolean }> }
+  | { op: "add_column"; schema?: string; table: string; column: string; type: string; nullable?: boolean; default?: string }
+  | { op: "drop_column"; schema?: string; table: string; column: string }
+  | { op: "add_index"; schema?: string; table: string; name: string; columns: string[]; unique?: boolean }
+  | { op: "add_fk"; schema?: string; table: string; name: string; column: string; ref_table: string; ref_column: string };
+export type UsageMetric = "storage_gb" | "egress_gb" | "function_invocations" | "ai_tokens" | "db_rows" | "realtime_msgs";
+export type UsageSummary = { period: string; metrics: Record<UsageMetric, { used: number; hard_limit: number | null; soft_limit: number | null; pct: number | null }> };
+export type Quota = { metric: UsageMetric; period: "day" | "month"; hard_limit: number; soft_limit: number | null; updated_at: string };
+
+export const branching = {
+  list: () => api<{ branches: DbBranch[] }>("/branches/v1"),
+  create: (body: { name: string; parent_id?: string; copy_from?: string }) =>
+    api<DbBranch>("/branches/v1", { method: "POST", body: JSON.stringify(body) }),
+  remove: (id: string) => api<{ ok: boolean }>(`/branches/v1/${id}`, { method: "DELETE" }),
+  apply: (id: string, sql: string) =>
+    api<{ ok: boolean; error?: string }>(`/branches/v1/${id}/apply`, { method: "POST", body: JSON.stringify({ sql }) }),
+  changes: (id: string) => api<{ changes: BranchChange[] }>(`/branches/v1/${id}/changes`),
+};
+
+export const studio = {
+  apply: (operations: SchemaOp[], opts?: { branch_id?: string; dry_run?: boolean }) =>
+    api<{ ok?: boolean; dry_run?: boolean; statements?: Array<{ sql: string }>; results?: Array<{ sql: string; ok: boolean; error?: string }> }>(
+      "/schema/v1/apply",
+      { method: "POST", body: JSON.stringify({ operations, ...(opts ?? {}) }) }),
+  history: () => api<{ edits: Array<{ id: number; operation: SchemaOp; sql: string; ok: boolean; error: string | null; applied_at: string; branch_id: string | null }> }>("/schema/v1/history"),
+};
+
+export const usage = {
+  record: (body: { metric: UsageMetric; quantity: number; meta?: Record<string, unknown> }) =>
+    api<{ ok: boolean }>("/usage/v1/events", { method: "POST", body: JSON.stringify(body) }),
+  summary: (period: "day" | "month" = "month") =>
+    api<UsageSummary>(`/usage/v1/summary?period=${period}`),
+  quotas: () => api<{ quotas: Quota[] }>("/usage/v1/quotas"),
+  setQuota: (body: { metric: UsageMetric; period?: "day" | "month"; hard_limit: number; soft_limit?: number }) =>
+    api<{ ok: boolean }>("/usage/v1/quotas", { method: "PUT", body: JSON.stringify(body) }),
+};
