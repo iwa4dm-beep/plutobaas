@@ -76,12 +76,35 @@ async function main() {
 
   console.log(`[smoke] wrote ${file} (${src.length} bytes, ${tables.length} tables)`);
 
+  // Storage module drift-check — the generator must always emit the
+  // full Storage helper surface. If any of these names disappear the
+  // frontend / SDK will silently lose functionality, so fail CI loudly.
+  const STORAGE_METHODS = [
+    "storage:",           // storage: { ... } block
+    "upload:",            // single-shot upload
+    "download:",          // streamed download
+    "remove:",            // delete object
+    "signedUrl:",         // mint short-lived signed URL
+    "revokeSignedUrl:",   // revoke an issued grant
+    "uploadLarge:",       // resumable / multipart upload
+    "/storage/v1/object/",
+    "/storage/v1/upload/init",
+    "/storage/v1/upload/", // part PUT + complete + abort
+    "/storage/v1/object/sign/",
+  ];
+  const missing = STORAGE_METHODS.filter((m) => !src.includes(m));
+  if (missing.length) {
+    console.error(`[smoke] FAIL — generated client is missing storage surface: ${missing.join(", ")}`);
+    process.exit(2);
+  }
+  console.log(`[smoke] storage surface present (${STORAGE_METHODS.length} markers matched)`);
+
   const tsc = spawnSync("npx", ["--no-install", "tsc", "-p", dir], { stdio: "inherit", encoding: "utf8" });
   if (tsc.status !== 0) {
     console.error(`[smoke] tsc failed with exit ${tsc.status}`);
     process.exit(tsc.status ?? 1);
   }
-  console.log("[smoke] OK — generated client typechecks cleanly");
+  console.log("[smoke] OK — generated client typechecks cleanly (incl. storage helpers)");
 }
 
 main().catch((err) => { console.error(err); process.exit(1); });
