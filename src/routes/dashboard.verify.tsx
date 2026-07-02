@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { CheckCircle2, Circle, Loader2, PlayCircle, RefreshCw, XCircle } from "lucide-react";
 import { PageHeader } from "@/components/pluto/PageHeader";
-import { getConfig, isLive, live, subscribe, type RealtimeStatus } from "@/lib/pluto/live";
+import { isLive, live, liveConfig, subscribe, type RealtimeStatus } from "@/lib/pluto/live";
 
 export const Route = createFileRoute("/dashboard/verify")({
   component: VerifyPage,
@@ -68,7 +68,7 @@ function VerifyPage() {
   const runAll = useCallback(async () => {
     setRunning(true); setSummary(null);
     setChecks(INITIAL.map((c) => ({ ...c, status: "idle", detail: undefined })));
-    const cfg = getConfig();
+    const cfg = liveConfig();
 
     // — Config —
     await runOne("cfg.url",     async () => cfg?.url    || Promise.reject(new Error("missing")), (v) => v as string);
@@ -106,7 +106,7 @@ function VerifyPage() {
           onStatus: (s: RealtimeStatus) => {
             if (s.kind === "open")       { clearTimeout(timer); off(); resolve("connected + subscribed"); }
             else if (s.kind === "auth_error") { clearTimeout(timer); off(); reject(new Error(`${s.error}: ${s.message}`)); }
-            else if (s.kind === "closed" && s.code === 1008) { clearTimeout(timer); reject(new Error("policy violation (1008)")); }
+            else if (s.kind === "closed") { clearTimeout(timer); reject(new Error(`closed${s.reason ? `: ${s.reason}` : ""}`)); }
           },
         });
       }));
