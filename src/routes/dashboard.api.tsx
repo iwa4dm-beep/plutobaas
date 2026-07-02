@@ -8,11 +8,12 @@
 
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Copy, Download, Lock, Radio, RefreshCw, ShieldCheck } from "lucide-react";
+import { AlertTriangle, Code2, Copy, Download, Lock, Radio, RefreshCw, ShieldCheck } from "lucide-react";
 import { PageHeader } from "@/components/pluto/PageHeader";
 import { RequireWorkspace } from "@/components/pluto/RequireWorkspace";
 import { useWorkspace } from "@/lib/pluto/workspace-context";
 import { isLive, live, type SchemaEndpoint, type SchemaTable } from "@/lib/pluto/live";
+import { generateTypedClient } from "@/lib/pluto/gen-client";
 
 export const Route = createFileRoute("/dashboard/api")({
   component: () => <RequireWorkspace><ApiEndpointsPage /></RequireWorkspace>,
