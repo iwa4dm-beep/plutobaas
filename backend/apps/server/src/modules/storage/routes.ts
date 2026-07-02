@@ -98,8 +98,9 @@ export async function storageRoutes(app: FastifyInstance) {
       if (!body.success) return reply.code(400).send({ error: "invalid_body" });
       await db.insertInto("bucket_policies" as never)
         .values({ bucket: name, ...body.data } as never)
-        .onConflict((oc: never) => (oc as { columns: (c: string[]) => { doUpdateSet: (v: unknown) => unknown } })
-          .columns(["bucket", "role", "action"]).doUpdateSet({ allow: body.data.allow }))
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        .onConflict((oc: any) =>
+          oc.columns(["bucket", "role", "action"]).doUpdateSet({ allow: body.data.allow }))
         .execute();
       await audit(req, { action: "storage.policy.upsert", target: `${name}:${body.data.role}:${body.data.action}`, status: "ok", metadata: { allow: body.data.allow } });
       return { ok: true };
