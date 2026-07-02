@@ -19,7 +19,9 @@ import { Route as DashboardUsersRouteImport } from './routes/dashboard.users'
 import { Route as DashboardStorageRouteImport } from './routes/dashboard.storage'
 import { Route as DashboardSqlRouteImport } from './routes/dashboard.sql'
 import { Route as DashboardSettingsRouteImport } from './routes/dashboard.settings'
+import { Route as DashboardScalingRouteImport } from './routes/dashboard.scaling'
 import { Route as DashboardProjectsRouteImport } from './routes/dashboard.projects'
+import { Route as DashboardObservabilityRouteImport } from './routes/dashboard.observability'
 import { Route as DashboardMigrationsRouteImport } from './routes/dashboard.migrations'
 import { Route as DashboardMfaRouteImport } from './routes/dashboard.mfa'
 import { Route as DashboardLogsRouteImport } from './routes/dashboard.logs'
@@ -80,9 +82,19 @@ const DashboardSettingsRoute = DashboardSettingsRouteImport.update({
   path: '/settings',
   getParentRoute: () => DashboardRoute,
 } as any)
+const DashboardScalingRoute = DashboardScalingRouteImport.update({
+  id: '/scaling',
+  path: '/scaling',
+  getParentRoute: () => DashboardRoute,
+} as any)
 const DashboardProjectsRoute = DashboardProjectsRouteImport.update({
   id: '/projects',
   path: '/projects',
+  getParentRoute: () => DashboardRoute,
+} as any)
+const DashboardObservabilityRoute = DashboardObservabilityRouteImport.update({
+  id: '/observability',
+  path: '/observability',
   getParentRoute: () => DashboardRoute,
 } as any)
 const DashboardMigrationsRoute = DashboardMigrationsRouteImport.update({
@@ -144,7 +156,9 @@ export interface FileRoutesByFullPath {
   '/dashboard/logs': typeof DashboardLogsRoute
   '/dashboard/mfa': typeof DashboardMfaRoute
   '/dashboard/migrations': typeof DashboardMigrationsRoute
+  '/dashboard/observability': typeof DashboardObservabilityRoute
   '/dashboard/projects': typeof DashboardProjectsRoute
+  '/dashboard/scaling': typeof DashboardScalingRoute
   '/dashboard/settings': typeof DashboardSettingsRoute
   '/dashboard/sql': typeof DashboardSqlRoute
   '/dashboard/storage': typeof DashboardStorageRoute
@@ -165,7 +179,9 @@ export interface FileRoutesByTo {
   '/dashboard/logs': typeof DashboardLogsRoute
   '/dashboard/mfa': typeof DashboardMfaRoute
   '/dashboard/migrations': typeof DashboardMigrationsRoute
+  '/dashboard/observability': typeof DashboardObservabilityRoute
   '/dashboard/projects': typeof DashboardProjectsRoute
+  '/dashboard/scaling': typeof DashboardScalingRoute
   '/dashboard/settings': typeof DashboardSettingsRoute
   '/dashboard/sql': typeof DashboardSqlRoute
   '/dashboard/storage': typeof DashboardStorageRoute
@@ -188,7 +204,9 @@ export interface FileRoutesById {
   '/dashboard/logs': typeof DashboardLogsRoute
   '/dashboard/mfa': typeof DashboardMfaRoute
   '/dashboard/migrations': typeof DashboardMigrationsRoute
+  '/dashboard/observability': typeof DashboardObservabilityRoute
   '/dashboard/projects': typeof DashboardProjectsRoute
+  '/dashboard/scaling': typeof DashboardScalingRoute
   '/dashboard/settings': typeof DashboardSettingsRoute
   '/dashboard/sql': typeof DashboardSqlRoute
   '/dashboard/storage': typeof DashboardStorageRoute
@@ -212,7 +230,9 @@ export interface FileRouteTypes {
     | '/dashboard/logs'
     | '/dashboard/mfa'
     | '/dashboard/migrations'
+    | '/dashboard/observability'
     | '/dashboard/projects'
+    | '/dashboard/scaling'
     | '/dashboard/settings'
     | '/dashboard/sql'
     | '/dashboard/storage'
@@ -233,7 +253,9 @@ export interface FileRouteTypes {
     | '/dashboard/logs'
     | '/dashboard/mfa'
     | '/dashboard/migrations'
+    | '/dashboard/observability'
     | '/dashboard/projects'
+    | '/dashboard/scaling'
     | '/dashboard/settings'
     | '/dashboard/sql'
     | '/dashboard/storage'
@@ -255,7 +277,9 @@ export interface FileRouteTypes {
     | '/dashboard/logs'
     | '/dashboard/mfa'
     | '/dashboard/migrations'
+    | '/dashboard/observability'
     | '/dashboard/projects'
+    | '/dashboard/scaling'
     | '/dashboard/settings'
     | '/dashboard/sql'
     | '/dashboard/storage'
@@ -343,11 +367,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardSettingsRouteImport
       parentRoute: typeof DashboardRoute
     }
+    '/dashboard/scaling': {
+      id: '/dashboard/scaling'
+      path: '/scaling'
+      fullPath: '/dashboard/scaling'
+      preLoaderRoute: typeof DashboardScalingRouteImport
+      parentRoute: typeof DashboardRoute
+    }
     '/dashboard/projects': {
       id: '/dashboard/projects'
       path: '/projects'
       fullPath: '/dashboard/projects'
       preLoaderRoute: typeof DashboardProjectsRouteImport
+      parentRoute: typeof DashboardRoute
+    }
+    '/dashboard/observability': {
+      id: '/dashboard/observability'
+      path: '/observability'
+      fullPath: '/dashboard/observability'
+      preLoaderRoute: typeof DashboardObservabilityRouteImport
       parentRoute: typeof DashboardRoute
     }
     '/dashboard/migrations': {
@@ -426,7 +464,9 @@ interface DashboardRouteChildren {
   DashboardLogsRoute: typeof DashboardLogsRoute
   DashboardMfaRoute: typeof DashboardMfaRoute
   DashboardMigrationsRoute: typeof DashboardMigrationsRoute
+  DashboardObservabilityRoute: typeof DashboardObservabilityRoute
   DashboardProjectsRoute: typeof DashboardProjectsRoute
+  DashboardScalingRoute: typeof DashboardScalingRoute
   DashboardSettingsRoute: typeof DashboardSettingsRoute
   DashboardSqlRoute: typeof DashboardSqlRoute
   DashboardStorageRoute: typeof DashboardStorageRoute
@@ -446,7 +486,9 @@ const DashboardRouteChildren: DashboardRouteChildren = {
   DashboardLogsRoute: DashboardLogsRoute,
   DashboardMfaRoute: DashboardMfaRoute,
   DashboardMigrationsRoute: DashboardMigrationsRoute,
+  DashboardObservabilityRoute: DashboardObservabilityRoute,
   DashboardProjectsRoute: DashboardProjectsRoute,
+  DashboardScalingRoute: DashboardScalingRoute,
   DashboardSettingsRoute: DashboardSettingsRoute,
   DashboardSqlRoute: DashboardSqlRoute,
   DashboardStorageRoute: DashboardStorageRoute,

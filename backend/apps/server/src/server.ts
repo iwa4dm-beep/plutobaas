@@ -112,6 +112,10 @@ async function main() {
   await app.register(advancedAuthPlugin);  // Phase 15 — /auth/v1/mfa|sso, /push/v1/*, PLUTO_ENABLE_ADVANCED_AUTH=1
   await app.register(templatesPlugin);     // Phase 15 — /templates/v1/*, PLUTO_ENABLE_TEMPLATES=1
   await app.register(aiPlugin);            // Phase 16 — /ai/v1/*, PLUTO_ENABLE_AI=1
+  const { scalingPlugin } = await import("./modules/scaling/plugin.js");
+  const { observabilityPlugin } = await import("./modules/observability/plugin.js");
+  await app.register(scalingPlugin);        // Phase 17 — /queue/v1/*, /cache/v1/*, /admin/v1/rate-limits — PLUTO_ENABLE_SCALING=1
+  await app.register(observabilityPlugin);  // Phase 18 — /obs/v1/*, /compliance/v1/* — PLUTO_ENABLE_OBSERVABILITY=1
 
   await app.listen({ host: "0.0.0.0", port: env.PORT });
   app.log.info(`Pluto API listening on :${env.PORT}`);

@@ -1,0 +1,120 @@
+import { createFileRoute } from "@tanstack/react-router";
+import { useCallback, useEffect, useState } from "react";
+import { Loader2, RefreshCw, Trash2 } from "lucide-react";
+import { PageHeader } from "@/components/pluto/PageHeader";
+import { isLive, scaling, type QueueJob, type QueueStat, type RateLimitPolicy } from "@/lib/pluto/live";
+
+export const Route = createFileRoute("/dashboard/scaling")({
+  component: ScalingPage,
+});
+
+// Scaling & Performance dashboard (Phase 17). Shows queue stats,
+// recent jobs, and workspace rate-limit policies with quick edit.
+
+function ScalingPage() {
+  const [stats, setStats] = useState<QueueStat[]>([]);
+  const [jobs, setJobs] = useState<QueueJob[]>([]);
+  const [policies, setPolicies] = useState<RateLimitPolicy[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const [form, setForm] = useState({ route: "", scope: "ip" as const, max_hits: 100, window_sec: 60 });
+
+  const load = useCallback(async () => {
+    if (!isLive()) { setErr("Live backend not configured."); return; }
+    setLoading(true); setErr(null);
+    try {
+      const [s, j, p] = await Promise.all([scaling.stats(), scaling.jobs({ limit: 50 }), scaling.listRateLimits()]);
+      setStats(s.rows); setJobs(j.jobs); setPolicies(p.policies);
+    } catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
+    finally { setLoading(false); }
+  }, []);
+  useEffect(() => { void load(); }, [load]);
+
+  const addPolicy = async () => {
+    if (!form.route) return;
+    try { await scaling.upsertRateLimit({ ...form, action: "block" }); await load(); }
+    catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
+  };
+  const delPolicy = async (id: string) => { await scaling.deleteRateLimit(id); await load(); };
+
+  return (
+    <div className="space-y-6">
+      <PageHeader title="Scaling & Performance" description="Job queues, cache, and rate-limit policies"
+        actions={<button onClick={() => void load()} disabled={loading}
+          className="inline-flex items-center gap-2 rounded-md border border-border bg-card px-3 py-1.5 text-sm hover:bg-accent">
+          {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />} Refresh
+        </button>} />
+
+      {err && <div className="rounded-md border border-rose-500/40 bg-rose-500/5 px-4 py-3 text-sm text-rose-500">{err}</div>}
+
+      <section className="rounded-lg border border-border bg-card p-4">
+        <div className="font-semibold mb-3">Queue stats</div>
+        <div className="grid gap-2 md:grid-cols-4">
+          {stats.length === 0 && <div className="text-sm text-muted-foreground">No jobs yet.</div>}
+          {stats.map((s) => (
+            <div key={`${s.queue}:${s.status}`} className="rounded-md border border-border p-3">
+              <div className="text-xs text-muted-foreground">{s.queue}</div>
+              <div className="text-sm">{s.status}</div>
+              <div className="text-2xl font-semibold">{s.n}</div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="rounded-lg border border-border bg-card p-4">
+        <div className="font-semibold mb-3">Recent jobs</div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="text-left text-xs text-muted-foreground">
+              <tr><th className="py-1">Queue</th><th>Status</th><th>Attempts</th><th>Run at</th><th>Error</th></tr>
+            </thead>
+            <tbody>
+              {jobs.map((j) => (
+                <tr key={j.id} className="border-t border-border">
+                  <td className="py-1.5">{j.queue}</td>
+                  <td>{j.status}</td>
+                  <td>{j.attempts}/{j.max_attempts}</td>
+                  <td className="text-xs text-muted-foreground">{new Date(j.run_at).toLocaleString()}</td>
+                  <td className="text-xs text-rose-500 truncate max-w-xs">{j.last_error ?? ""}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section className="rounded-lg border border-border bg-card p-4 space-y-3">
+        <div className="font-semibold">Rate-limit policies</div>
+        <div className="flex flex-wrap gap-2 items-end">
+          <label className="text-xs"><div className="text-muted-foreground">Route</div>
+            <input value={form.route} onChange={(e) => setForm({ ...form, route: e.target.value })}
+              placeholder="/auth/v1/token" className="mt-0.5 rounded-md border border-border bg-background px-2 py-1 text-sm" />
+          </label>
+          <label className="text-xs"><div className="text-muted-foreground">Max hits</div>
+            <input type="number" value={form.max_hits}
+              onChange={(e) => setForm({ ...form, max_hits: Number(e.target.value) })}
+              className="mt-0.5 w-24 rounded-md border border-border bg-background px-2 py-1 text-sm" />
+          </label>
+          <label className="text-xs"><div className="text-muted-foreground">Window (sec)</div>
+            <input type="number" value={form.window_sec}
+              onChange={(e) => setForm({ ...form, window_sec: Number(e.target.value) })}
+              className="mt-0.5 w-24 rounded-md border border-border bg-background px-2 py-1 text-sm" />
+          </label>
+          <button onClick={() => void addPolicy()}
+            className="rounded-md bg-primary text-primary-foreground px-3 py-1.5 text-sm">Save</button>
+        </div>
+        <ul className="text-sm divide-y divide-border">
+          {policies.map((p) => (
+            <li key={p.id} className="py-2 flex items-center justify-between">
+              <span className="font-mono text-xs">{p.route}</span>
+              <span className="text-xs text-muted-foreground">{p.scope} · {p.max_hits}/{p.window_sec}s · {p.action}</span>
+              <button onClick={() => void delPolicy(p.id)} className="text-rose-500"><Trash2 className="h-4 w-4" /></button>
+            </li>
+          ))}
+          {policies.length === 0 && <li className="py-2 text-muted-foreground">No policies configured.</li>}
+        </ul>
+      </section>
+    </div>
+  );
+}

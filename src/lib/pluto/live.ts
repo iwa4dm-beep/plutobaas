@@ -842,3 +842,63 @@ export const integrations = {
 
 // The chat return shape from the backend is { content, model, usage }.
 export type ChatCompletion = { content: string; model: string; usage: { prompt_tokens: number; completion_tokens: number } };
+
+// ---- Phase 17 — Scaling & Performance ----
+export type QueueJob = {
+  id: string; queue: string; status: "pending" | "running" | "done" | "failed" | "dead";
+  attempts: number; max_attempts: number; run_at: string; last_error: string | null; created_at: string;
+};
+export type QueueStat = { queue: string; status: string; n: number };
+export type RateLimitPolicy = {
+  id: string; workspace_id: string | null; route: string;
+  scope: "ip" | "user" | "workspace" | "key"; max_hits: number; window_sec: number; action: "block" | "shadow";
+};
+export const scaling = {
+  enqueue: (queue: string, payload: Record<string, unknown>, opts: { run_at?: string; max_attempts?: number } = {}) =>
+    api<{ id: string; queue: string; status: string }>(`/queue/v1/${queue}/enqueue`,
+      { method: "POST", body: JSON.stringify({ payload, ...opts }) }),
+  jobs:  (params: { queue?: string; status?: string; limit?: number } = {}) => {
+    const qs = new URLSearchParams();
+    for (const [k, v] of Object.entries(params)) if (v != null) qs.set(k, String(v));
+    return api<{ jobs: QueueJob[]; total: number }>(`/queue/v1/jobs${qs.toString() ? "?" + qs.toString() : ""}`);
+  },
+  stats: () => api<{ rows: QueueStat[] }>("/queue/v1/stats"),
+  cacheGet: (key: string) => api<{ value: unknown; expires_at: string | null }>(`/cache/v1/${encodeURIComponent(key)}`),
+  cachePut: (key: string, value: unknown, ttl_sec?: number) =>
+    api(`/cache/v1/${encodeURIComponent(key)}`, { method: "PUT", body: JSON.stringify({ value, ttl_sec }) }),
+  cacheDel: (key: string) => api(`/cache/v1/${encodeURIComponent(key)}`, { method: "DELETE" }),
+  listRateLimits: () => api<{ policies: RateLimitPolicy[] }>("/admin/v1/rate-limits", { service: true }),
+  upsertRateLimit: (body: Omit<RateLimitPolicy, "id" | "workspace_id">) =>
+    api<RateLimitPolicy>("/admin/v1/rate-limits", { method: "POST", service: true, body: JSON.stringify(body) }),
+  deleteRateLimit: (id: string) =>
+    api(`/admin/v1/rate-limits/${id}`, { method: "DELETE", service: true }),
+};
+
+// ---- Phase 18 — Observability & Compliance ----
+export type MetricPoint = { bucket: string; v: number };
+export type TraceSpan = {
+  span_id: string; trace_id: string; parent_id: string | null;
+  name: string; kind: string; started_at: string; ended_at: string | null; duration_ms: number | null;
+};
+export type GdprRequest = {
+  id: string; subject_id: string; kind: "export" | "erasure";
+  status: "pending" | "running" | "completed" | "failed" | "cancelled";
+  requested_at: string; completed_at: string | null; artifact_key: string | null; notes: string | null;
+};
+export const observability = {
+  ingestMetrics: (samples: Array<{ metric: string; value: number; labels?: Record<string, string>; observed_at?: string }>) =>
+    api<{ inserted: number }>("/obs/v1/metrics", { method: "POST", body: JSON.stringify({ samples }) }),
+  queryMetric: (metric: string, agg: "avg" | "sum" | "count" | "min" | "max" | "p95" = "avg", window_min = 60) => {
+    const qs = new URLSearchParams({ metric, agg, window_min: String(window_min) });
+    return api<{ metric: string; agg: string; points: MetricPoint[] }>(`/obs/v1/metrics/query?${qs}`);
+  },
+  ingestSpans: (spans: Array<Partial<TraceSpan> & { trace_id: string; name: string; started_at: string }>) =>
+    api<{ inserted: number }>("/obs/v1/spans", { method: "POST", body: JSON.stringify({ spans }) }),
+  trace: (traceId: string) => api<{ trace_id: string; spans: TraceSpan[] }>(`/obs/v1/traces/${traceId}`),
+  prometheus: () => api<{ body: string }>("/obs/v1/prometheus"),
+  gdprList: () => api<{ requests: GdprRequest[] }>("/compliance/v1/gdpr"),
+  gdprCreate: (subject_id: string, kind: "export" | "erasure", notes?: string) =>
+    api<{ id: string; status: string }>("/compliance/v1/gdpr",
+      { method: "POST", body: JSON.stringify({ subject_id, kind, notes }) }),
+  gdprRun: (id: string) => api<{ ok: boolean }>(`/compliance/v1/gdpr/${id}/run`, { method: "POST", service: true }),
+};
