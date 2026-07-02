@@ -12,7 +12,7 @@ export interface StorageDriver {
   put(bucket: string, key: string, body: Readable | Buffer, contentType: string): Promise<void>;
   get(bucket: string, key: string): Promise<Readable>;
   remove(bucket: string, key: string): Promise<void>;
-  signedUrl(bucket: string, key: string, expiresIn: number, mode: "read" | "write"): Promise<string>;
+  signedUrl(bucket: string, key: string, expiresIn: number, mode: "read" | "write", tokenId?: string): Promise<string>;
 }
 
 class LocalDriver implements StorageDriver {
@@ -85,7 +85,9 @@ class S3Driver implements StorageDriver {
   async remove(bucket: string, key: string) {
     await this.client.send(new DeleteObjectCommand({ Bucket: env.S3_BUCKET!, Key: this.k(bucket, key) }));
   }
-  async signedUrl(bucket: string, key: string, expiresIn: number, mode: "read" | "write") {
+  async signedUrl(bucket: string, key: string, expiresIn: number, mode: "read" | "write", _tokenId?: string) {
+    // S3 signed URLs are stateless by design — one-time / revocation is
+    // enforced by the app layer refusing to hand out the URL a second time.
     const cmd = mode === "read"
       ? new GetObjectCommand({ Bucket: env.S3_BUCKET!, Key: this.k(bucket, key) })
       : new PutObjectCommand({ Bucket: env.S3_BUCKET!, Key: this.k(bucket, key) });
