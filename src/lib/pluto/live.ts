@@ -451,13 +451,30 @@ export type SchemaSummary = {
 
 // -------- Realtime helper (WebSocket wrapper) --------
 //
-// Subscribes to one broadcast channel and calls `onEvent` for each
-// message. Returns an unsubscribe function. Silently no-ops if the
-// backend is not configured.
+// Two subscription modes over a single reconnecting socket:
+//   • `subscribe(channel, cb)`         — pub/sub broadcast channels
+//   • `subscribeTable(spec, cb)`       — Postgres row change events
+//                                        (INSERT/UPDATE/DELETE) from
+//                                        `pluto_enable_realtime(table)`.
+//
+// `spec` is `"schema:table"` or `"schema:table:col=eq.value"`.
 
 export type RealtimeEvent = { channel: string; event: string; payload: unknown; ts?: string };
+export type RealtimeChange = {
+  channel: string;
+  event: "INSERT" | "UPDATE" | "DELETE";
+  record: Record<string, unknown>;
+};
 
-export function subscribe(channel: string, onEvent: (e: RealtimeEvent) => void): () => void {
+type WsMsg = {
+  type?: string; channel?: string; event?: string;
+  payload?: unknown; record?: Record<string, unknown>; ts?: string;
+};
+
+function openSocket(
+  handler: (m: WsMsg) => void,
+  onOpen: (send: (m: unknown) => void) => void,
+): () => void {
   const cfg = liveConfig();
   if (!cfg) return () => {};
   const wsUrl = cfg.url.replace(/^http/, "ws").replace(/\/$/, "") +
@@ -469,17 +486,10 @@ export function subscribe(channel: string, onEvent: (e: RealtimeEvent) => void):
   const connect = () => {
     if (closed) return;
     ws = new WebSocket(wsUrl);
-    ws.addEventListener("open", () => {
-      retry = 0;
-      ws?.send(JSON.stringify({ type: "subscribe", channel }));
-    });
+    const send = (m: unknown) => ws?.readyState === WebSocket.OPEN && ws.send(JSON.stringify(m));
+    ws.addEventListener("open", () => { retry = 0; onOpen(send); });
     ws.addEventListener("message", (ev) => {
-      try {
-        const msg = JSON.parse(ev.data) as { type?: string; channel?: string; event?: string; payload?: unknown; ts?: string };
-        if (msg.type === "broadcast" && msg.channel === channel && msg.event) {
-          onEvent({ channel, event: msg.event, payload: msg.payload, ts: msg.ts });
-        }
-      } catch { /* ignore malformed frames */ }
+      try { handler(JSON.parse(ev.data) as WsMsg); } catch { /* ignore */ }
     });
     ws.addEventListener("close", () => {
       if (closed) return;
@@ -490,6 +500,87 @@ export function subscribe(channel: string, onEvent: (e: RealtimeEvent) => void):
   };
   connect();
   return () => { closed = true; ws?.close(); };
+}
+
+export function subscribe(channel: string, onEvent: (e: RealtimeEvent) => void): () => void {
+  return openSocket(
+    (msg) => {
+      if (msg.type === "broadcast" && msg.channel === channel && msg.event) {
+        onEvent({ channel, event: msg.event, payload: msg.payload, ts: msg.ts });
+      }
+    },
+    (send) => send({ type: "subscribe", channel }),
+  );
+}
+
+/**
+ * Subscribe to Postgres row-change events for a table. Requires the DBA
+ * to have run `select pluto_enable_realtime('schema.table')`.
+ *   subscribeTable("public:notes", cb)
+ *   subscribeTable("public:notes:user_id=eq.<uuid>", cb)
+ */
+export function subscribeTable(spec: string, onChange: (c: RealtimeChange) => void): () => void {
+  const baseChannel = spec.split(":").slice(0, 2).join(":");
+  return openSocket(
+    (msg) => {
+      if (msg.type === "change" && msg.channel === baseChannel && msg.event && msg.record) {
+        onChange({
+          channel: baseChannel,
+          event: msg.event as RealtimeChange["event"],
+          record: msg.record,
+        });
+      }
+    },
+    (send) => send({ type: "subscribe", channel: spec }),
+  );
+}
+
+// -------- OAuth helpers (browser redirect flow) --------
+//
+// `signInWithOAuth("google")` sends the tab to the provider. After
+// consent the server redirects back to `redirectTo` with tokens in the
+// URL fragment. Call `completeOAuthRedirect()` on app boot to consume
+// the fragment and persist the session.
+
+export type OAuthProvider = "google" | "github";
+
+export function signInWithOAuth(
+  provider: OAuthProvider,
+  opts: { redirectTo?: string } = {},
+): void {
+  const cfg = liveConfig();
+  if (!cfg) throw new Error("Pluto backend not configured");
+  const redirect_to = opts.redirectTo ?? window.location.origin + window.location.pathname;
+  const url = new URL(cfg.url.replace(/\/$/, "") + `/auth/v1/oauth/${provider}`);
+  url.searchParams.set("redirect_to", redirect_to);
+  url.searchParams.set("apikey", cfg.anonKey);
+  window.location.href = url.toString();
+}
+
+export function completeOAuthRedirect(): (AuthSession & { user: AuthUser }) | null {
+  if (typeof window === "undefined" || !window.location.hash) return null;
+  const frag = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+  const access_token  = frag.get("access_token");
+  const refresh_token = frag.get("refresh_token");
+  const expires_in    = frag.get("expires_in");
+  if (!access_token || !refresh_token) return null;
+
+  // Decode the JWT payload to pull user identity — no verification needed
+  // client-side; the server re-checks the signature on every call.
+  let user: AuthUser = { id: "", email: "", role: "user" };
+  try {
+    const [, payload] = access_token.split(".");
+    const claims = JSON.parse(atob(payload.replace(/-/g, "+").replace(/_/g, "/"))) as {
+      sub: string; email: string; role: "admin" | "user";
+    };
+    user = { id: claims.sub, email: claims.email, role: claims.role };
+  } catch { /* fall through with empty user */ }
+
+  const expires_at = Math.floor(Date.now() / 1000) + Number(expires_in ?? 3600);
+  const session: AuthSession = { access_token, refresh_token, expires_at };
+  persistSession(session, user);
+  history.replaceState(null, "", window.location.pathname + window.location.search);
+  return { ...session, user };
 }
 
 // ---- Edge Function types ----
