@@ -224,7 +224,7 @@ function AuditPage() {
                 </td>
               </tr>
             ))}
-            {page && items.length === 0 && (
+            {pageData && items.length === 0 && (
               <tr><td className="px-3 py-6 text-center text-xs text-muted-foreground" colSpan={5}>No events match these filters.</td></tr>
             )}
           </tbody>
