@@ -491,3 +491,22 @@ export function subscribe(channel: string, onEvent: (e: RealtimeEvent) => void):
   connect();
   return () => { closed = true; ws?.close(); };
 }
+
+// ---- Edge Function types ----
+export type EdgeFunctionMeta = {
+  slug: string;
+  public: boolean;
+  timeout_ms: number;
+  memory_mb: number;
+  allow_hosts: string[];
+  updated_at: string;
+  version?: number;
+};
+export type EdgeFunctionDeploy = {
+  slug: string;
+  code: string;
+  public?: boolean;
+  timeout_ms?: number;
+  memory_mb?: number;
+  allow_hosts?: string[];
+};
