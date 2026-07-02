@@ -1,5 +1,5 @@
 import { Link, useRouterState } from "@tanstack/react-router";
-import { Activity, Building2, Database, Files, Gauge, GitBranch, KeyRound, LogOut, Radio, ScrollText, Settings, ShieldAlert, ShieldCheck, Terminal, Users, Zap } from "lucide-react";
+import { Activity, Building2, Database, Files, Gauge, GitBranch, KeyRound, LogOut, Radio, ScrollText, Settings, Shield, ShieldAlert, ShieldCheck, Sparkles, Terminal, Users, Zap } from "lucide-react";
 import { useAuth } from "@/lib/pluto/auth-context";
 import { WorkspaceSwitcher } from "@/components/pluto/WorkspaceSwitcher";
 
@@ -12,6 +12,8 @@ const items = [
   { to: "/dashboard/sql", label: "SQL runner", icon: Terminal },
   { to: "/dashboard/migrations", label: "Migrations", icon: GitBranch },
   { to: "/dashboard/users", label: "Auth & Users", icon: Users },
+  { to: "/dashboard/mfa", label: "MFA & SSO", icon: Shield },
+  { to: "/dashboard/ai", label: "AI & Vector", icon: Sparkles },
   { to: "/dashboard/storage", label: "Storage", icon: Files },
   { to: "/dashboard/jobs", label: "Jobs & pool user", icon: ShieldCheck },
   { to: "/dashboard/audit", label: "Audit trail", icon: ShieldAlert },
