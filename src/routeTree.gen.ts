@@ -27,6 +27,8 @@ import { Route as DashboardMfaRouteImport } from './routes/dashboard.mfa'
 import { Route as DashboardLogsRouteImport } from './routes/dashboard.logs'
 import { Route as DashboardJobsRouteImport } from './routes/dashboard.jobs'
 import { Route as DashboardIntegrationsRouteImport } from './routes/dashboard.integrations'
+import { Route as DashboardEnterpriseRouteImport } from './routes/dashboard.enterprise'
+import { Route as DashboardDevexRouteImport } from './routes/dashboard.devex'
 import { Route as DashboardDatabaseRouteImport } from './routes/dashboard.database'
 import { Route as DashboardAuditRouteImport } from './routes/dashboard.audit'
 import { Route as DashboardApiRouteImport } from './routes/dashboard.api'
@@ -122,6 +124,16 @@ const DashboardIntegrationsRoute = DashboardIntegrationsRouteImport.update({
   path: '/integrations',
   getParentRoute: () => DashboardRoute,
 } as any)
+const DashboardEnterpriseRoute = DashboardEnterpriseRouteImport.update({
+  id: '/enterprise',
+  path: '/enterprise',
+  getParentRoute: () => DashboardRoute,
+} as any)
+const DashboardDevexRoute = DashboardDevexRouteImport.update({
+  id: '/devex',
+  path: '/devex',
+  getParentRoute: () => DashboardRoute,
+} as any)
 const DashboardDatabaseRoute = DashboardDatabaseRouteImport.update({
   id: '/database',
   path: '/database',
@@ -151,6 +163,8 @@ export interface FileRoutesByFullPath {
   '/dashboard/api': typeof DashboardApiRoute
   '/dashboard/audit': typeof DashboardAuditRoute
   '/dashboard/database': typeof DashboardDatabaseRoute
+  '/dashboard/devex': typeof DashboardDevexRoute
+  '/dashboard/enterprise': typeof DashboardEnterpriseRoute
   '/dashboard/integrations': typeof DashboardIntegrationsRoute
   '/dashboard/jobs': typeof DashboardJobsRoute
   '/dashboard/logs': typeof DashboardLogsRoute
@@ -174,6 +188,8 @@ export interface FileRoutesByTo {
   '/dashboard/api': typeof DashboardApiRoute
   '/dashboard/audit': typeof DashboardAuditRoute
   '/dashboard/database': typeof DashboardDatabaseRoute
+  '/dashboard/devex': typeof DashboardDevexRoute
+  '/dashboard/enterprise': typeof DashboardEnterpriseRoute
   '/dashboard/integrations': typeof DashboardIntegrationsRoute
   '/dashboard/jobs': typeof DashboardJobsRoute
   '/dashboard/logs': typeof DashboardLogsRoute
@@ -199,6 +215,8 @@ export interface FileRoutesById {
   '/dashboard/api': typeof DashboardApiRoute
   '/dashboard/audit': typeof DashboardAuditRoute
   '/dashboard/database': typeof DashboardDatabaseRoute
+  '/dashboard/devex': typeof DashboardDevexRoute
+  '/dashboard/enterprise': typeof DashboardEnterpriseRoute
   '/dashboard/integrations': typeof DashboardIntegrationsRoute
   '/dashboard/jobs': typeof DashboardJobsRoute
   '/dashboard/logs': typeof DashboardLogsRoute
@@ -225,6 +243,8 @@ export interface FileRouteTypes {
     | '/dashboard/api'
     | '/dashboard/audit'
     | '/dashboard/database'
+    | '/dashboard/devex'
+    | '/dashboard/enterprise'
     | '/dashboard/integrations'
     | '/dashboard/jobs'
     | '/dashboard/logs'
@@ -248,6 +268,8 @@ export interface FileRouteTypes {
     | '/dashboard/api'
     | '/dashboard/audit'
     | '/dashboard/database'
+    | '/dashboard/devex'
+    | '/dashboard/enterprise'
     | '/dashboard/integrations'
     | '/dashboard/jobs'
     | '/dashboard/logs'
@@ -272,6 +294,8 @@ export interface FileRouteTypes {
     | '/dashboard/api'
     | '/dashboard/audit'
     | '/dashboard/database'
+    | '/dashboard/devex'
+    | '/dashboard/enterprise'
     | '/dashboard/integrations'
     | '/dashboard/jobs'
     | '/dashboard/logs'
@@ -423,6 +447,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardIntegrationsRouteImport
       parentRoute: typeof DashboardRoute
     }
+    '/dashboard/enterprise': {
+      id: '/dashboard/enterprise'
+      path: '/enterprise'
+      fullPath: '/dashboard/enterprise'
+      preLoaderRoute: typeof DashboardEnterpriseRouteImport
+      parentRoute: typeof DashboardRoute
+    }
+    '/dashboard/devex': {
+      id: '/dashboard/devex'
+      path: '/devex'
+      fullPath: '/dashboard/devex'
+      preLoaderRoute: typeof DashboardDevexRouteImport
+      parentRoute: typeof DashboardRoute
+    }
     '/dashboard/database': {
       id: '/dashboard/database'
       path: '/database'
@@ -459,6 +497,8 @@ interface DashboardRouteChildren {
   DashboardApiRoute: typeof DashboardApiRoute
   DashboardAuditRoute: typeof DashboardAuditRoute
   DashboardDatabaseRoute: typeof DashboardDatabaseRoute
+  DashboardDevexRoute: typeof DashboardDevexRoute
+  DashboardEnterpriseRoute: typeof DashboardEnterpriseRoute
   DashboardIntegrationsRoute: typeof DashboardIntegrationsRoute
   DashboardJobsRoute: typeof DashboardJobsRoute
   DashboardLogsRoute: typeof DashboardLogsRoute
@@ -481,6 +521,8 @@ const DashboardRouteChildren: DashboardRouteChildren = {
   DashboardApiRoute: DashboardApiRoute,
   DashboardAuditRoute: DashboardAuditRoute,
   DashboardDatabaseRoute: DashboardDatabaseRoute,
+  DashboardDevexRoute: DashboardDevexRoute,
+  DashboardEnterpriseRoute: DashboardEnterpriseRoute,
   DashboardIntegrationsRoute: DashboardIntegrationsRoute,
   DashboardJobsRoute: DashboardJobsRoute,
   DashboardLogsRoute: DashboardLogsRoute,

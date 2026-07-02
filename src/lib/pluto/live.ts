@@ -929,3 +929,58 @@ export const observability = {
   gdprRun: (id: string) => api<{ ok: boolean }>(`/compliance/v1/gdpr/${id}/run`, { method: "POST", service: true }),
 };
 
+// ---------------- Phase 19 — Developer Experience -----------------------
+export type ProjectTemplate = { id: string; slug: string; name: string; description: string; category: string; published: boolean; created_at: string };
+export type PersonalToken = { id: string; name: string; scopes: string[]; last_used_at: string | null; expires_at: string | null; revoked_at: string | null; created_at: string };
+export type WebhookSub = { id: string; target_url: string; event_types: string[]; active: boolean; failure_count: number; created_at: string };
+export type WebhookDelivery = { id: number; event_type: string; status_code: number | null; response_ms: number | null; error: string | null; attempted_at: string };
+export type InstalledPlugin = { id: string; plugin_slug: string; version: string; config: Record<string, unknown>; enabled: boolean; installed_at: string };
+
+export const devex = {
+  templates: () => api<{ templates: ProjectTemplate[] }>("/devex/v1/templates"),
+  publishTemplate: (t: Partial<ProjectTemplate> & { slug: string; name: string }) =>
+    api<ProjectTemplate>("/devex/v1/templates", { method: "POST", service: true, body: JSON.stringify(t) }),
+  tokens: () => api<{ tokens: PersonalToken[] }>("/devex/v1/tokens"),
+  mintToken: (body: { name: string; scopes?: string[]; expires_in_days?: number; workspace_id?: string }) =>
+    api<{ token: string; meta: PersonalToken; warning: string }>("/devex/v1/tokens", { method: "POST", body: JSON.stringify(body) }),
+  revokeToken: (id: string) => api<{ ok: boolean }>(`/devex/v1/tokens/${id}/revoke`, { method: "POST" }),
+  webhooks: () => api<{ subscriptions: WebhookSub[] }>("/devex/v1/webhooks"),
+  createWebhook: (body: { target_url: string; event_types?: string[] }) =>
+    api<WebhookSub & { secret: string; note: string }>("/devex/v1/webhooks", { method: "POST", body: JSON.stringify(body) }),
+  deleteWebhook: (id: string) => api<{ ok: boolean }>(`/devex/v1/webhooks/${id}`, { method: "DELETE" }),
+  testWebhook: (id: string) => api<{ status_code: number | null; response_ms: number; error: string | null }>(`/devex/v1/webhooks/${id}/test`, { method: "POST" }),
+  deliveries: (id: string) => api<{ deliveries: WebhookDelivery[] }>(`/devex/v1/webhooks/${id}/deliveries`),
+  plugins: () => api<{ installed: InstalledPlugin[] }>("/devex/v1/plugins"),
+  installPlugin: (body: { plugin_slug: string; version: string; config?: Record<string, unknown>; enabled?: boolean }) =>
+    api<InstalledPlugin>("/devex/v1/plugins", { method: "POST", body: JSON.stringify(body) }),
+};
+
+// ---------------- Phase 20 — Enterprise & Multi-region ------------------
+export type IpRule = { id: string; cidr: string; action: "allow" | "deny"; note: string | null; created_at: string };
+export type CustomDomain = { id: string; hostname: string; verified: boolean; verify_token: string; cert_status: string; created_at: string; verified_at: string | null };
+export type RegionConfig = { primary_region: string; read_regions: string[]; pin_writes: boolean; updated_at?: string };
+export type StatusComponent = { id: string; name: string; status: string; updated_at: string };
+export type StatusIncident = { id: string; title: string; body: string; severity: string; component_id: string | null; started_at: string; resolved_at: string | null };
+
+export const enterprise = {
+  ipRules: () => api<{ rules: IpRule[] }>("/enterprise/v1/ip-rules"),
+  addIpRule: (body: { cidr: string; action: "allow" | "deny"; note?: string }) =>
+    api<IpRule>("/enterprise/v1/ip-rules", { method: "POST", body: JSON.stringify(body) }),
+  removeIpRule: (id: string) => api<{ ok: boolean }>(`/enterprise/v1/ip-rules/${id}`, { method: "DELETE" }),
+  checkIp: (workspace_id: string, ip: string) =>
+    api<{ decision: "allow" | "deny"; matched: number; has_allow_list: boolean }>("/enterprise/v1/ip-rules/check",
+      { method: "POST", body: JSON.stringify({ workspace_id, ip }) }),
+  domains: () => api<{ domains: CustomDomain[] }>("/enterprise/v1/domains"),
+  addDomain: (hostname: string) =>
+    api<CustomDomain & { dns_txt_record: string; dns_txt_value: string }>("/enterprise/v1/domains",
+      { method: "POST", body: JSON.stringify({ hostname }) }),
+  verifyDomain: (id: string) => api<{ ok: boolean; verified: boolean }>(`/enterprise/v1/domains/${id}/verify`, { method: "POST" }),
+  removeDomain: (id: string) => api<{ ok: boolean }>(`/enterprise/v1/domains/${id}`, { method: "DELETE" }),
+  regions: () => api<RegionConfig>("/enterprise/v1/regions"),
+  updateRegions: (body: RegionConfig) => api<RegionConfig>("/enterprise/v1/regions", { method: "PUT", body: JSON.stringify(body) }),
+  status: () => api<{ overall: string; components: StatusComponent[]; incidents: StatusIncident[] }>("/enterprise/v1/status"),
+  postIncident: (body: { title: string; body?: string; severity?: string; component_id?: string; resolved?: boolean }) =>
+    api<StatusIncident>("/enterprise/v1/status/incidents", { method: "POST", service: true, body: JSON.stringify(body) }),
+};
+
+
