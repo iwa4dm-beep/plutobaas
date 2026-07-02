@@ -19,6 +19,7 @@ const items = [
   { to: "/dashboard/audit", label: "Audit trail", icon: ShieldAlert },
   { to: "/dashboard/logs", label: "Logs", icon: ScrollText },
   { to: "/dashboard/verify", label: "Live checklist", icon: Activity },
+  { to: "/dashboard/integrations", label: "Integration health", icon: HeartPulse },
   { to: "/dashboard/settings", label: "Settings", icon: Settings },
 ] as const;
 
