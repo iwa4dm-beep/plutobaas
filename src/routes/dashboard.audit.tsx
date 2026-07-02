@@ -92,7 +92,7 @@ function AuditPage() {
       } : prev);
     });
     return () => { off(); setLiveConn(false); };
-  }, [action, actor, status, text, offset]);
+  }, [action, actor, status, text, workspaceId, offset]);
 
   const items = page?.items ?? [];
   const total = page?.total ?? 0;
@@ -103,7 +103,7 @@ function AuditPage() {
     <div>
       <PageHeader
         title="Audit trail"
-        description="Every privileged dashboard action: migration runs, rollbacks, and job-token mint / revoke, streamed live."
+        description="Every privileged dashboard action — migration runs, rollbacks, storage grants, and SQL runner executions — filterable by workspace, actor, or event class and streamed live."
       />
 
       <div className="flex flex-wrap items-center gap-2 mb-4">
@@ -118,8 +118,11 @@ function AuditPage() {
           <option value="error">error</option>
           <option value="dry_run">dry_run</option>
         </select>
-        <input value={actor} onChange={(e) => setActor(e.target.value)} placeholder="Actor email…"
-          className="rounded-md border border-input bg-background px-3 py-1.5 text-sm w-48" />
+        <input value={actor} onChange={(e) => setActor(e.target.value)} placeholder="User email…"
+          className="rounded-md border border-input bg-background px-3 py-1.5 text-sm w-44" />
+        <input value={workspaceId} onChange={(e) => setWorkspaceId(e.target.value.trim())}
+          placeholder="Workspace UUID…"
+          className="rounded-md border border-input bg-background px-3 py-1.5 text-sm w-64 font-mono" />
         <div className="relative">
           <Search className="h-3.5 w-3.5 absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground" />
           <input value={text} onChange={(e) => setText(e.target.value)} placeholder="Search action / target…"
