@@ -292,5 +292,102 @@ export async function adminRoutes(app: FastifyInstance) {
     await logAudit(req, { action: "settings.delete", target: key, status: "ok", metadata: { workspace_id: wsId } });
     return { ok: true };
   });
+
+  // ============================================================
+  // API key ROTATION w/ grace period
+  //
+  // POST /workspaces/:id/keys/:keyId/rotate { grace_seconds?: number }
+  //   → mints a NEW key of the same kind, links it via rotated_from_id,
+  //     marks the OLD key as `status = 'rotating'` with a
+  //     `grace_expires_at` in the future. During the grace window,
+  //     apikey.ts accepts BOTH keys so clients can swap credentials
+  //     without downtime. When the window elapses the old key stops
+  //     resolving on the next request (cache bust below is immediate;
+  //     natural expiry is enforced by resolveKey()).
+  //
+  // POST /workspaces/:id/keys/:keyId/finalize
+  //   → immediately revokes the predecessor of a rotation, ending
+  //     the grace window early.
+  // ============================================================
+  app.post("/workspaces/:id/keys/:keyId/rotate", async (req, reply) => {
+    const { id, keyId } = req.params as { id: string; keyId: string };
+    const body = z.object({
+      grace_seconds: z.number().int().min(0).max(7 * 86400).optional().default(86400),
+      name:          z.string().min(1).max(80).optional(),
+    }).safeParse(req.body ?? {});
+    if (!body.success) return reply.code(400).send({ error: "invalid_body", issues: body.error.issues });
+
+    const client = await adminPool.connect();
+    try {
+      await client.query("begin");
+      const src = await client.query<{ id: string; kind: "anon" | "service_role"; name: string; status: string }>(
+        `select id, kind, name, status from public.workspace_api_keys
+          where id = $1 and workspace_id = $2 for update`,
+        [keyId, id],
+      );
+      if (src.rowCount === 0) { await client.query("rollback"); return reply.code(404).send({ error: "not_found" }); }
+      if (src.rows[0].status !== "active") {
+        await client.query("rollback");
+        return reply.code(409).send({ error: "not_rotatable", status: src.rows[0].status });
+      }
+      const kind = src.rows[0].kind;
+      const secret = randomBytes(32).toString("base64url");
+      const plaintext = `pk_${kind === "service_role" ? "svc" : "anon"}_${secret}`;
+      const prefix    = plaintext.slice(0, 12);
+      const newId     = crypto.randomUUID();
+      const grace     = new Date(Date.now() + body.data.grace_seconds * 1000);
+
+      await client.query(
+        `insert into public.workspace_api_keys
+           (id, workspace_id, kind, name, key_prefix, key_hash, created_by, status, rotated_from_id)
+         values ($1,$2,$3,$4,$5,$6,$7,'active',$8)`,
+        [newId, id, kind, body.data.name ?? `${src.rows[0].name} (rotated)`, prefix,
+         sha256(plaintext), req.auth?.user?.sub ?? null, keyId],
+      );
+      await client.query(
+        `update public.workspace_api_keys
+            set status = 'rotating', grace_expires_at = $1, rotated_to_id = $2
+          where id = $3`,
+        [grace, newId, keyId],
+      );
+      await client.query("commit");
+      bustKeyCache();
+      await logAudit(req, {
+        action: "api_key.rotate", target: keyId, status: "ok",
+        metadata: {
+          workspace_id: id, kind, new_key_id: newId,
+          grace_expires_at: grace.toISOString(),
+          grace_seconds: body.data.grace_seconds,
+        },
+      });
+      return reply.code(201).send({
+        rotated_from: keyId,
+        new_key: { id: newId, kind, name: body.data.name ?? `${src.rows[0].name} (rotated)`, key_prefix: prefix, plaintext },
+        grace_expires_at: grace.toISOString(),
+      });
+    } catch (e) {
+      await client.query("rollback").catch(() => undefined);
+      throw e;
+    } finally {
+      client.release();
+    }
+  });
+
+  app.post("/workspaces/:id/keys/:keyId/finalize", async (req, reply) => {
+    const { id, keyId } = req.params as { id: string; keyId: string };
+    const r = await adminPool.query(
+      `update public.workspace_api_keys
+          set status = 'revoked', revoked_at = coalesce(revoked_at, now()),
+              grace_expires_at = now()
+        where id = $1 and workspace_id = $2 and status = 'rotating'
+       returning id`,
+      [keyId, id],
+    );
+    if (r.rowCount === 0) return reply.code(404).send({ error: "not_rotating_or_not_found" });
+    bustKeyCache();
+    await logAudit(req, { action: "api_key.finalize_rotation", target: keyId, status: "ok", metadata: { workspace_id: id } });
+    return { ok: true };
+  });
 }
+
 
