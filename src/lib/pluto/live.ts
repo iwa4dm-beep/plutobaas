@@ -692,3 +692,137 @@ export type EdgeFunctionDeploy = {
   memory_mb?: number;
   allow_hosts?: string[];
 };
+
+// ============================================================
+// Phase 15 & 16 SDK surface — MFA · SSO · Templates · Push · AI
+// ============================================================
+// These are thin wrappers over `api(...)`. Handlers return 501 until the
+// corresponding phase milestone (15.1+, 16.1+); the surface is stable so
+// frontends can be built now and lit up as milestones land.
+
+// ---- Phase 15: MFA ----
+export type MfaFactor = {
+  id: string; factor_type: "totp" | "webauthn";
+  friendly_name: string | null;
+  status: "unverified" | "verified" | "revoked";
+  created_at: string; last_used_at: string | null;
+};
+export type MfaEnrollResponse = {
+  factor_id: string; factor_type: "totp" | "webauthn";
+  otpauth_url: string; secret: string;
+};
+
+export const mfa = {
+  list:            () => api<{ factors: MfaFactor[] }>("/auth/v1/mfa/factors"),
+  enroll:          (friendly_name?: string) =>
+    api<MfaEnrollResponse>("/auth/v1/mfa/enroll", { method: "POST", body: JSON.stringify({ friendly_name }) }),
+  verify:          (factor_id: string, code: string) =>
+    api<{ ok: true }>("/auth/v1/mfa/verify", { method: "POST", body: JSON.stringify({ factor_id, code }) }),
+  challenge:       (factor_id: string) =>
+    api<{ challenge_id: string; expires_at: string }>("/auth/v1/mfa/challenge", { method: "POST", body: JSON.stringify({ factor_id }) }),
+  verifyChallenge: (challenge_id: string, code: string) =>
+    api<{ access_token: string; refresh_token: string }>("/auth/v1/mfa/challenge/verify", { method: "POST", body: JSON.stringify({ challenge_id, code }) }),
+  revoke:          (factor_id: string) =>
+    api<{ ok: true }>(`/auth/v1/mfa/factors/${factor_id}`, { method: "DELETE" }),
+  recoveryCodes:   () =>
+    api<{ codes: string[] }>("/auth/v1/mfa/recovery-codes", { method: "POST" }),
+};
+
+// ---- Phase 15: SSO ----
+export type SsoProvider = {
+  id: string; slug: string; display_name: string;
+  protocol: "oidc" | "saml"; enabled: boolean;
+  config: Record<string, unknown>; created_at: string;
+};
+
+export const sso = {
+  list:   () => api<{ providers: SsoProvider[] }>("/auth/v1/sso/providers"),
+  create: (p: Partial<SsoProvider>) =>
+    api<SsoProvider>("/auth/v1/sso/providers", { method: "POST", body: JSON.stringify(p), service: true }),
+  update: (id: string, p: Partial<SsoProvider>) =>
+    api<SsoProvider>(`/auth/v1/sso/providers/${id}`, { method: "PATCH", body: JSON.stringify(p), service: true }),
+  remove: (id: string) =>
+    api<{ ok: true }>(`/auth/v1/sso/providers/${id}`, { method: "DELETE", service: true }),
+  startUrl: (slug: string, redirect_to?: string) => {
+    const cfg = liveConfig(); if (!cfg) throw new Error("Pluto backend not configured");
+    const u = new URL(cfg.url.replace(/\/$/, "") + `/auth/v1/sso/${slug}/start`);
+    if (redirect_to) u.searchParams.set("redirect_to", redirect_to);
+    u.searchParams.set("apikey", cfg.anonKey);
+    return u.toString();
+  },
+};
+
+// ---- Phase 15: Templates ----
+export type CommsTemplate = {
+  id: string; slug: string; channel: "email" | "sms" | "push";
+  version: number; is_active: boolean;
+  subject: string | null; body_text: string | null; body_html: string | null;
+  variables: string[]; created_at: string;
+};
+
+export const templates = {
+  list:      () => api<{ templates: CommsTemplate[] }>("/templates/v1"),
+  create:    (t: Partial<CommsTemplate>) =>
+    api<CommsTemplate>("/templates/v1", { method: "POST", body: JSON.stringify(t) }),
+  get:       (slug: string) => api<CommsTemplate>(`/templates/v1/${slug}`),
+  versions:  (slug: string) => api<{ versions: CommsTemplate[] }>(`/templates/v1/${slug}/versions`),
+  newVersion:(slug: string, t: Partial<CommsTemplate>) =>
+    api<CommsTemplate>(`/templates/v1/${slug}/versions`, { method: "POST", body: JSON.stringify(t) }),
+  activate:  (slug: string, version: number) =>
+    api<{ ok: true }>(`/templates/v1/${slug}/activate/${version}`, { method: "POST" }),
+  preview:   (slug: string, vars: Record<string, unknown>) =>
+    api<{ subject: string | null; body_text: string; body_html: string | null }>(
+      `/templates/v1/${slug}/preview`, { method: "POST", body: JSON.stringify({ vars }) }),
+  remove:    (slug: string) => api<{ ok: true }>(`/templates/v1/${slug}`, { method: "DELETE" }),
+};
+
+// ---- Phase 15: Push ----
+export type PushDevice = {
+  id: string; platform: "ios" | "android" | "web"; token: string;
+  bundle_id: string | null; app_version: string | null;
+  disabled_at: string | null; last_seen_at: string; created_at: string;
+};
+
+export const push = {
+  listDevices: () => api<{ devices: PushDevice[] }>("/push/v1/devices"),
+  register:    (d: Omit<PushDevice, "id" | "disabled_at" | "last_seen_at" | "created_at">) =>
+    api<PushDevice>("/push/v1/devices", { method: "POST", body: JSON.stringify(d) }),
+  remove:      (id: string) => api<{ ok: true }>(`/push/v1/devices/${id}`, { method: "DELETE" }),
+  send:        (msg: { device_id?: string; user_id?: string; title?: string; body?: string; data?: Record<string, unknown> }) =>
+    api<{ id: string; status: string }>("/push/v1/send", { method: "POST", body: JSON.stringify(msg) }),
+  messages:    (limit = 50) => api<{ messages: unknown[] }>(`/push/v1/messages?limit=${limit}`),
+};
+
+// ---- Phase 16: AI & Vector ----
+export type AiStatus = {
+  module: "ai"; phase: string; gateway_ready: boolean;
+  vector_allow: string[]; drivers: string[];
+};
+export type EmbeddingsResponse = {
+  embeddings: number[][]; model: string;
+  usage: { tokens_in: number; tokens_out: 0 };
+};
+export type ChatMessage = { role: "system" | "user" | "assistant"; content: string };
+export type VectorHit = {
+  id: string; content: string;
+  metadata: Record<string, unknown>; distance: number;
+};
+
+export const ai = {
+  status:  () => api<AiStatus>("/ai/v1/status"),
+  embed:   (input: string | string[], opts: { model?: string; provider?: string } = {}) =>
+    api<EmbeddingsResponse>("/ai/v1/embeddings", { method: "POST", body: JSON.stringify({ input, ...opts }) }),
+  chat:    (messages: ChatMessage[], opts: { model?: string; provider?: string; temperature?: number; max_tokens?: number } = {}) =>
+    api<{ id: string; message: ChatMessage; usage: { tokens_in: number; tokens_out: number } }>(
+      "/ai/v1/chat/completions", { method: "POST", body: JSON.stringify({ messages, ...opts }) }),
+  vectorSearch: (collection: string, req: {
+      vector?: number[]; query?: string; k?: number;
+      filter?: Record<string, unknown>; distance?: "cosine" | "l2" | "ip";
+    }) =>
+    api<{ hits: VectorHit[] }>(`/ai/v1/vector/${collection}/search`, { method: "POST", body: JSON.stringify(req) }),
+  usage:   (params: { limit?: number; workspace_id?: string; actor_id?: string } = {}) => {
+    const qs = new URLSearchParams();
+    for (const [k, v] of Object.entries(params)) if (v != null) qs.set(k, String(v));
+    return api<{ rows: unknown[]; total: number }>(`/ai/v1/usage${qs.toString() ? "?" + qs.toString() : ""}`);
+  },
+};

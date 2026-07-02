@@ -11,6 +11,9 @@ import { storageRoutes } from "./modules/storage/routes.js";
 import { adminRoutes } from "./modules/admin/routes.js";
 import { realtimeRoutes } from "./modules/realtime/routes.js";
 import { commsPlugin } from "./modules/comms/plugin.js";
+import { advancedAuthPlugin } from "./modules/advanced_auth/plugin.js";
+import { templatesPlugin } from "./modules/templates/plugin.js";
+import { aiPlugin } from "./modules/ai/plugin.js";
 import { edgeRoutes } from "./modules/edge/routes.js";
 import { migrationRoutes } from "./modules/admin/migrations.js";
 import { jobsRoutes } from "./modules/jobs/routes.js";
@@ -103,7 +106,10 @@ async function main() {
   await app.register(jobsRoutes, { prefix: "/jobs/v1" });
   await app.register(realtimeRoutes, { prefix: "/realtime/v1" });
   await app.register(edgeRoutes, { prefix: "/functions/v1" });
-  await app.register(commsPlugin);   // Phase 14 — mounted at /comms/v1/*, gated by PLUTO_ENABLE_COMMS=1
+  await app.register(commsPlugin);         // Phase 14 — /comms/v1/*, PLUTO_ENABLE_COMMS=1
+  await app.register(advancedAuthPlugin);  // Phase 15 — /auth/v1/mfa|sso, /push/v1/*, PLUTO_ENABLE_ADVANCED_AUTH=1
+  await app.register(templatesPlugin);     // Phase 15 — /templates/v1/*, PLUTO_ENABLE_TEMPLATES=1
+  await app.register(aiPlugin);            // Phase 16 — /ai/v1/*, PLUTO_ENABLE_AI=1
 
   await app.listen({ host: "0.0.0.0", port: env.PORT });
   app.log.info(`Pluto API listening on :${env.PORT}`);
