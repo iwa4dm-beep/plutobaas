@@ -65,8 +65,25 @@ jobs:
         run: npx vitest run src/__tests__/workspace-isolation.test.ts --reporter=default
       - name: admin auth integration
         run: npx vitest run src/__tests__/admin.integration.test.ts --reporter=default
+      - name: auth flow e2e (refresh rotation, expiry, sign-out, lockout)
+        env:
+          PLUTO_E2E_DATABASE_URL: postgres://pluto:pluto@localhost:5432/pluto_test
+        run: npx vitest run src/__tests__/auth-flow.e2e.test.ts src/__tests__/ratelimit.test.ts --reporter=default
       - name: full unit + integration suite
         run: npm test -- --reporter=default
+
+  client-gen-smoke:
+    name: typed-client codegen smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: install root deps
+        run: npm install --no-audit --no-fund --legacy-peer-deps
+      - name: generate + typecheck emitted client
+        run: npx tsx scripts/smoke-gen-client.mts
 
   frontend:
     name: frontend build
