@@ -45,43 +45,50 @@ const STATUS_ICON = {
 const PAGE_SIZE = 50;
 
 function AuditPage() {
-  const [page, setPage] = useState<AuditPage | null>(null);
+  const [pageData, setPageData] = useState<AuditPage | null>(null);
+  // Raw inputs (change on every keystroke) …
   const [action, setAction] = useState("");
   const [actor, setActor] = useState("");
   const [actorId, setActorId] = useState("");
   const [status, setStatus] = useState<"" | "ok" | "error" | "dry_run">("");
   const [text, setText] = useState("");
   const [workspaceId, setWorkspaceId] = useState("");
+  // … debounced values feed the actual fetch. Fast typing does NOT
+  // trigger a burst of /admin/v1/audit calls.
+  const dActor       = useDebounced(actor);
+  const dActorId     = useDebounced(actorId);
+  const dText        = useDebounced(text);
+  const dWorkspaceId = useDebounced(workspaceId);
   const [offset, setOffset] = useState(0);
   const [err, setErr] = useState<string | null>(null);
   const [liveConn, setLiveConn] = useState(false);
+  const [authErr, setAuthErr] = useState<{ code: RealtimeAuthError; message: string } | null>(null);
 
   const load = useCallback(async () => {
     setErr(null);
     try {
       if (!isLive()) {
-        setPage({ items: mockEvents, total: mockEvents.length, limit: PAGE_SIZE, offset: 0, next_offset: null });
+        setPageData({ items: mockEvents, total: mockEvents.length, limit: PAGE_SIZE, offset: 0, next_offset: null });
         return;
       }
       const q: AuditQuery = { limit: PAGE_SIZE, offset };
       if (action) q.action = action;
-      if (actor) q.actor = actor;
-      if (actorId) q.actor_id = actorId;
+      if (dActor) q.actor = dActor;
+      if (dActorId) q.actor_id = dActorId;
       if (status) q.status = status;
-      if (text) q.q = text;
-      if (workspaceId) q.workspace_id = workspaceId;
-      setPage(await live.audit.list(q));
+      if (dText) q.q = dText;
+      if (dWorkspaceId) q.workspace_id = dWorkspaceId;
+      setPageData(await live.audit.list(q));
     } catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
-  }, [action, actor, actorId, status, text, workspaceId, offset]);
+  }, [action, dActor, dActorId, status, dText, dWorkspaceId, offset]);
 
   useEffect(() => { void load(); }, [load]);
 
   // Reset to first page when any filter changes.
-  useEffect(() => { setOffset(0); }, [action, actor, actorId, status, text, workspaceId]);
+  useEffect(() => { setOffset(0); }, [action, dActor, dActorId, status, dText, dWorkspaceId]);
 
   useEffect(() => {
     if (!isLive()) return;
-    setLiveConn(true);
     const off = subscribe("system:audit", (e: RealtimeEvent) => {
       const p = e.payload as unknown as AuditEvent & { ts: string };
       if (!p) return;
@@ -92,9 +99,10 @@ function AuditPage() {
         if (!p.action.startsWith(prefix)) return;
       }
       if (status && p.status !== status) return;
-      if (actor && !(p.actor_email ?? "").toLowerCase().includes(actor.toLowerCase())) return;
-      if (actorId && p.actor_id !== actorId) return;
-      if (workspaceId) {
+      if (dActor && !(p.actor_email ?? "").toLowerCase().includes(dActor.toLowerCase())) return;
+      if (dActorId && p.actor_id !== dActorId) return;
+      if (dWorkspaceId) {
+
         const md = (p.metadata ?? {}) as { workspace_id?: string };
         if (md.workspace_id !== workspaceId) return;
       }
