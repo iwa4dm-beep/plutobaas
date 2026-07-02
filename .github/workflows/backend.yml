@@ -109,7 +109,7 @@ jobs:
         run: bash backend/scripts/e2e-storage-ci.sh
 
   client-gen-smoke:
-    name: typed-client codegen smoke
+    name: typed-client codegen smoke (incl. storage surface)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -118,8 +118,38 @@ jobs:
           node-version: "20"
       - name: install root deps
         run: npm install --no-audit --no-fund --legacy-peer-deps
-      - name: generate + typecheck emitted client
+      - name: generate + typecheck emitted client (fixture schema)
         run: npx tsx scripts/smoke-gen-client.mts
+      - name: generate + typecheck emitted client (live schema from server)
+        # Boot the server just long enough to serve /admin/v1/schema, then
+        # run the same generator against it. Catches drift between the
+        # real REST/storage schema and the typed client on every PR.
+        env:
+          DATABASE_URL: postgres://pluto:pluto@localhost:5432/pluto_livegen
+          JWT_SECRET: ci-jwt-secret-min-32-chars-xxxxxxxxxxxxxxxxxxx
+          ANON_KEY: pk_anon_ci
+          SERVICE_ROLE_KEY: sk_service_ci
+          STORAGE_DRIVER: local
+          STORAGE_LOCAL_DIR: /tmp/pluto-livegen
+          PORT: "8799"
+        run: |
+          docker run -d --name pg-livegen -e POSTGRES_USER=pluto -e POSTGRES_PASSWORD=pluto \
+            -e POSTGRES_DB=pluto_livegen -p 5432:5432 postgres:16-alpine
+          for i in $(seq 1 30); do
+            docker exec pg-livegen pg_isready -U pluto -d pluto_livegen && break; sleep 1
+          done
+          cd backend/apps/server && npm install --no-audit --no-fund
+          npx tsx src/db/migrate.ts
+          npx tsx src/index.ts > /tmp/pluto-livegen.log 2>&1 &
+          echo $! > /tmp/pluto-livegen.pid
+          for i in $(seq 1 40); do
+            curl -fsS "http://localhost:$PORT/readyz" >/dev/null 2>&1 && break; sleep 0.5
+          done
+          cd - >/dev/null
+          PLUTO_SMOKE_URL="http://localhost:$PORT" PLUTO_SMOKE_ANON_KEY="$ANON_KEY" \
+            npx tsx scripts/smoke-gen-client.mts
+          kill "$(cat /tmp/pluto-livegen.pid)" || true
+          docker rm -f pg-livegen || true
 
   frontend:
     name: frontend build
