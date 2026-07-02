@@ -943,7 +943,7 @@ export const devex = {
   publishTemplate: (t: Partial<ProjectTemplate> & { slug: string; name: string }) =>
     api<ProjectTemplate>("/devex/v1/templates", { method: "POST", service: true, body: JSON.stringify(t) }),
   tokens: () => api<{ tokens: PersonalToken[] }>("/devex/v1/tokens"),
-  mintToken: (body: { name: string; scopes?: string[]; expires_in_days?: number; workspace_id?: string }) =>
+  mintToken: (body: { name: string; scopes?: DevexTokenScope[] | string[]; expires_in_days?: number | null; workspace_id?: string }) =>
     api<{ token: string; meta: PersonalToken; warning: string }>("/devex/v1/tokens", { method: "POST", body: JSON.stringify(body) }),
   revokeToken: (id: string) => api<{ ok: boolean }>(`/devex/v1/tokens/${id}/revoke`, { method: "POST" }),
   webhooks: () => api<{ subscriptions: WebhookSub[] }>("/devex/v1/webhooks"),
