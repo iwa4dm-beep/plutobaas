@@ -241,7 +241,7 @@ function AuditPage() {
           ><ChevronLeft className="h-3 w-3" /> Prev</button>
           <button
             onClick={() => setOffset(offset + PAGE_SIZE)}
-            disabled={!page?.next_offset}
+            disabled={!pageData?.next_offset}
             className="inline-flex items-center gap-1 rounded-md border border-input px-2 py-1 hover:bg-accent disabled:opacity-40"
           >Next <ChevronRight className="h-3 w-3" /></button>
         </div>
