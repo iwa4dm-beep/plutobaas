@@ -117,7 +117,123 @@ UID2=$(echo "$INIT2" | node -e 'process.stdin.on("data",d=>console.log(JSON.pars
 curl -sS -o /dev/null -w '%{http_code}\n' -X DELETE "$BASE/storage/v1/upload/$UID2/abort" \
   -H "apikey: $ANON_KEY" -H "authorization: Bearer $T2" | grep -q '^403$' && pass "intruder cannot abort" || fail "abort auth"
 
+# ══════════════════════════════════════════════════════════════════════
+# Negative multipart tests — every one of these MUST be rejected. If any
+# path returns 2xx the server has silently regressed on RLS/state safety
+# and CI must fail. Each block is written so that a bad response prints
+# both the code and the JSON body for debugging.
+# ══════════════════════════════════════════════════════════════════════
+
+# helper: expect a given HTTP status; on mismatch fail loud.
+expect_code() {   # $1 expected, $2 actual, $3 label, $4 body
+  if [[ "$2" != "$1" ]]; then
+    echo "  ✗ $3 — expected HTTP $1, got $2"
+    echo "    body: $4"
+    exit 1
+  fi
+  pass "$3 (HTTP $2)"
+}
+
+# ── (a) Intruder cannot upload a part into someone else's session ──
+INIT_NEG=$(curl -sS -X POST "$BASE/storage/v1/upload/init" \
+  -H "apikey: $ANON_KEY" -H "authorization: Bearer $T1" -H 'content-type: application/json' \
+  -d "{\"bucket\":\"$BUCKET\",\"key\":\"neg.bin\",\"size\":204800,\"part_size\":102400}")
+UID_NEG=$(echo "$INIT_NEG" | node -e 'process.stdin.on("data",d=>console.log(JSON.parse(d).upload_id))')
+[[ -n "$UID_NEG" ]] || fail "init (neg suite)"
+
+dd if=/dev/urandom of=/tmp/negpart bs=1024 count=100 status=none
+RES=$(curl -sS -o /tmp/body -w '%{http_code}' -X PUT "$BASE/storage/v1/upload/$UID_NEG/part/1" \
+  -H "apikey: $ANON_KEY" -H "authorization: Bearer $T2" \
+  -H 'content-type: application/octet-stream' --data-binary @/tmp/negpart)
+expect_code 403 "$RES" "intruder cannot PUT part into owner's session" "$(cat /tmp/body)"
+
+# ── (b) Anonymous (no bearer) cannot PUT a part either ──
+RES=$(curl -sS -o /tmp/body -w '%{http_code}' -X PUT "$BASE/storage/v1/upload/$UID_NEG/part/1" \
+  -H "apikey: $ANON_KEY" -H 'content-type: application/octet-stream' --data-binary @/tmp/negpart)
+[[ "$RES" == "401" || "$RES" == "403" ]] && pass "anonymous PUT part refused (HTTP $RES)" \
+  || { echo "  ✗ anonymous PUT should be 401/403, got $RES ($(cat /tmp/body))"; exit 1; }
+
+# ── (c) Resume: owner re-uploads part 1 with new content — server
+#         must accept (upsert) and hand back the NEW etag. Then upload
+#         part 2 with the RIGHT content but complete with a tampered
+#         etag → 400 etag_mismatch. ──
+dd if=/dev/urandom of=/tmp/p1a bs=1024 count=100 status=none
+E1A=$(curl -sS -X PUT "$BASE/storage/v1/upload/$UID_NEG/part/1" \
+  -H "apikey: $ANON_KEY" -H "authorization: Bearer $T1" \
+  -H 'content-type: application/octet-stream' --data-binary @/tmp/p1a \
+  | node -e 'process.stdin.on("data",d=>console.log(JSON.parse(d).etag))')
+dd if=/dev/urandom of=/tmp/p1b bs=1024 count=100 status=none
+E1B=$(curl -sS -X PUT "$BASE/storage/v1/upload/$UID_NEG/part/1" \
+  -H "apikey: $ANON_KEY" -H "authorization: Bearer $T1" \
+  -H 'content-type: application/octet-stream' --data-binary @/tmp/p1b \
+  | node -e 'process.stdin.on("data",d=>console.log(JSON.parse(d).etag))')
+[[ -n "$E1A" && -n "$E1B" && "$E1A" != "$E1B" ]] \
+  && pass "resume: part 1 re-upload replaced etag ($E1A → $E1B)" \
+  || fail "resume upsert (E1A=$E1A E1B=$E1B)"
+
+dd if=/dev/urandom of=/tmp/p2 bs=1024 count=100 status=none
+E2R=$(curl -sS -X PUT "$BASE/storage/v1/upload/$UID_NEG/part/2" \
+  -H "apikey: $ANON_KEY" -H "authorization: Bearer $T1" \
+  -H 'content-type: application/octet-stream' --data-binary @/tmp/p2 \
+  | node -e 'process.stdin.on("data",d=>console.log(JSON.parse(d).etag))')
+[[ -n "$E2R" ]] || fail "part 2 upload"
+
+# Tampered etag on complete — flip a byte.
+TAMPERED="${E1B:0:-1}$([[ ${E1B: -1} == '0' ]] && echo 1 || echo 0)"
+RES=$(curl -sS -o /tmp/body -w '%{http_code}' -X POST "$BASE/storage/v1/upload/$UID_NEG/complete" \
+  -H "apikey: $ANON_KEY" -H "authorization: Bearer $T1" -H 'content-type: application/json' \
+  -d "{\"parts\":[{\"part_number\":1,\"etag\":\"$TAMPERED\"},{\"part_number\":2,\"etag\":\"$E2R\"}]}")
+expect_code 400 "$RES" "complete with tampered etag refused" "$(cat /tmp/body)"
+grep -q 'etag_mismatch' /tmp/body && pass "  → error=etag_mismatch surfaced" \
+  || { echo "  ✗ expected etag_mismatch in body: $(cat /tmp/body)"; exit 1; }
+
+# ── (d) Complete with a missing part → 400 ──
+RES=$(curl -sS -o /tmp/body -w '%{http_code}' -X POST "$BASE/storage/v1/upload/$UID_NEG/complete" \
+  -H "apikey: $ANON_KEY" -H "authorization: Bearer $T1" -H 'content-type: application/json' \
+  -d "{\"parts\":[{\"part_number\":1,\"etag\":\"$E1B\"}]}")
+expect_code 400 "$RES" "complete with missing part refused" "$(cat /tmp/body)"
+
+# ── (e) Intruder cannot complete owner's session ──
+RES=$(curl -sS -o /tmp/body -w '%{http_code}' -X POST "$BASE/storage/v1/upload/$UID_NEG/complete" \
+  -H "apikey: $ANON_KEY" -H "authorization: Bearer $T2" -H 'content-type: application/json' \
+  -d "{\"parts\":[{\"part_number\":1,\"etag\":\"$E1B\"},{\"part_number\":2,\"etag\":\"$E2R\"}]}")
+expect_code 403 "$RES" "intruder cannot complete owner's session" "$(cat /tmp/body)"
+
+# ── (f) Owner aborts → subsequent part PUT and complete both refused ──
+RES=$(curl -sS -o /tmp/body -w '%{http_code}' -X DELETE "$BASE/storage/v1/upload/$UID_NEG/abort" \
+  -H "apikey: $ANON_KEY" -H "authorization: Bearer $T1")
+expect_code 200 "$RES" "owner aborts session" "$(cat /tmp/body)"
+
+RES=$(curl -sS -o /tmp/body -w '%{http_code}' -X PUT "$BASE/storage/v1/upload/$UID_NEG/part/3" \
+  -H "apikey: $ANON_KEY" -H "authorization: Bearer $T1" \
+  -H 'content-type: application/octet-stream' --data-binary @/tmp/negpart)
+expect_code 409 "$RES" "PUT part after abort refused" "$(cat /tmp/body)"
+
+RES=$(curl -sS -o /tmp/body -w '%{http_code}' -X POST "$BASE/storage/v1/upload/$UID_NEG/complete" \
+  -H "apikey: $ANON_KEY" -H "authorization: Bearer $T1" -H 'content-type: application/json' \
+  -d "{\"parts\":[{\"part_number\":1,\"etag\":\"$E1B\"},{\"part_number\":2,\"etag\":\"$E2R\"}]}")
+expect_code 409 "$RES" "complete after abort refused" "$(cat /tmp/body)"
+
+# ── (g) Unknown upload id → 404, and empty part body → 400 ──
+BOGUS="00000000-0000-0000-0000-000000000000"
+RES=$(curl -sS -o /tmp/body -w '%{http_code}' -X PUT "$BASE/storage/v1/upload/$BOGUS/part/1" \
+  -H "apikey: $ANON_KEY" -H "authorization: Bearer $T1" \
+  -H 'content-type: application/octet-stream' --data-binary @/tmp/negpart)
+expect_code 404 "$RES" "PUT part on unknown upload id refused" "$(cat /tmp/body)"
+
+INIT_EMP=$(curl -sS -X POST "$BASE/storage/v1/upload/init" \
+  -H "apikey: $ANON_KEY" -H "authorization: Bearer $T1" -H 'content-type: application/json' \
+  -d "{\"bucket\":\"$BUCKET\",\"key\":\"emp.bin\",\"size\":1024,\"part_size\":65536}")
+UID_EMP=$(echo "$INIT_EMP" | node -e 'process.stdin.on("data",d=>console.log(JSON.parse(d).upload_id))')
+: > /tmp/empty
+RES=$(curl -sS -o /tmp/body -w '%{http_code}' -X PUT "$BASE/storage/v1/upload/$UID_EMP/part/1" \
+  -H "apikey: $ANON_KEY" -H "authorization: Bearer $T1" \
+  -H 'content-type: application/octet-stream' --data-binary @/tmp/empty)
+expect_code 400 "$RES" "empty part body refused" "$(cat /tmp/body)"
+curl -sS -o /dev/null -X DELETE "$BASE/storage/v1/upload/$UID_EMP/abort" \
+  -H "apikey: $ANON_KEY" -H "authorization: Bearer $T1" || true
+
 echo
 echo "════════════════════════════════════════"
-echo "  ✅ Storage CI E2E: signed URLs + multipart + RLS all green"
+echo "  ✅ Storage CI E2E: signed URLs + multipart + negative RLS all green"
 echo "════════════════════════════════════════"
