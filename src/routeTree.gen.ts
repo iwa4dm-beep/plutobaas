@@ -30,6 +30,7 @@ import { Route as DashboardIntegrationsRouteImport } from './routes/dashboard.in
 import { Route as DashboardEnterpriseRouteImport } from './routes/dashboard.enterprise'
 import { Route as DashboardDevexRouteImport } from './routes/dashboard.devex'
 import { Route as DashboardDatabaseRouteImport } from './routes/dashboard.database'
+import { Route as DashboardBranchingRouteImport } from './routes/dashboard.branching'
 import { Route as DashboardAuditRouteImport } from './routes/dashboard.audit'
 import { Route as DashboardApiRouteImport } from './routes/dashboard.api'
 import { Route as DashboardAiRouteImport } from './routes/dashboard.ai'
@@ -139,6 +140,11 @@ const DashboardDatabaseRoute = DashboardDatabaseRouteImport.update({
   path: '/database',
   getParentRoute: () => DashboardRoute,
 } as any)
+const DashboardBranchingRoute = DashboardBranchingRouteImport.update({
+  id: '/branching',
+  path: '/branching',
+  getParentRoute: () => DashboardRoute,
+} as any)
 const DashboardAuditRoute = DashboardAuditRouteImport.update({
   id: '/audit',
   path: '/audit',
@@ -162,6 +168,7 @@ export interface FileRoutesByFullPath {
   '/dashboard/ai': typeof DashboardAiRoute
   '/dashboard/api': typeof DashboardApiRoute
   '/dashboard/audit': typeof DashboardAuditRoute
+  '/dashboard/branching': typeof DashboardBranchingRoute
   '/dashboard/database': typeof DashboardDatabaseRoute
   '/dashboard/devex': typeof DashboardDevexRoute
   '/dashboard/enterprise': typeof DashboardEnterpriseRoute
@@ -187,6 +194,7 @@ export interface FileRoutesByTo {
   '/dashboard/ai': typeof DashboardAiRoute
   '/dashboard/api': typeof DashboardApiRoute
   '/dashboard/audit': typeof DashboardAuditRoute
+  '/dashboard/branching': typeof DashboardBranchingRoute
   '/dashboard/database': typeof DashboardDatabaseRoute
   '/dashboard/devex': typeof DashboardDevexRoute
   '/dashboard/enterprise': typeof DashboardEnterpriseRoute
@@ -214,6 +222,7 @@ export interface FileRoutesById {
   '/dashboard/ai': typeof DashboardAiRoute
   '/dashboard/api': typeof DashboardApiRoute
   '/dashboard/audit': typeof DashboardAuditRoute
+  '/dashboard/branching': typeof DashboardBranchingRoute
   '/dashboard/database': typeof DashboardDatabaseRoute
   '/dashboard/devex': typeof DashboardDevexRoute
   '/dashboard/enterprise': typeof DashboardEnterpriseRoute
@@ -242,6 +251,7 @@ export interface FileRouteTypes {
     | '/dashboard/ai'
     | '/dashboard/api'
     | '/dashboard/audit'
+    | '/dashboard/branching'
     | '/dashboard/database'
     | '/dashboard/devex'
     | '/dashboard/enterprise'
@@ -267,6 +277,7 @@ export interface FileRouteTypes {
     | '/dashboard/ai'
     | '/dashboard/api'
     | '/dashboard/audit'
+    | '/dashboard/branching'
     | '/dashboard/database'
     | '/dashboard/devex'
     | '/dashboard/enterprise'
@@ -293,6 +304,7 @@ export interface FileRouteTypes {
     | '/dashboard/ai'
     | '/dashboard/api'
     | '/dashboard/audit'
+    | '/dashboard/branching'
     | '/dashboard/database'
     | '/dashboard/devex'
     | '/dashboard/enterprise'
@@ -468,6 +480,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardDatabaseRouteImport
       parentRoute: typeof DashboardRoute
     }
+    '/dashboard/branching': {
+      id: '/dashboard/branching'
+      path: '/branching'
+      fullPath: '/dashboard/branching'
+      preLoaderRoute: typeof DashboardBranchingRouteImport
+      parentRoute: typeof DashboardRoute
+    }
     '/dashboard/audit': {
       id: '/dashboard/audit'
       path: '/audit'
@@ -496,6 +515,7 @@ interface DashboardRouteChildren {
   DashboardAiRoute: typeof DashboardAiRoute
   DashboardApiRoute: typeof DashboardApiRoute
   DashboardAuditRoute: typeof DashboardAuditRoute
+  DashboardBranchingRoute: typeof DashboardBranchingRoute
   DashboardDatabaseRoute: typeof DashboardDatabaseRoute
   DashboardDevexRoute: typeof DashboardDevexRoute
   DashboardEnterpriseRoute: typeof DashboardEnterpriseRoute
@@ -520,6 +540,7 @@ const DashboardRouteChildren: DashboardRouteChildren = {
   DashboardAiRoute: DashboardAiRoute,
   DashboardApiRoute: DashboardApiRoute,
   DashboardAuditRoute: DashboardAuditRoute,
+  DashboardBranchingRoute: DashboardBranchingRoute,
   DashboardDatabaseRoute: DashboardDatabaseRoute,
   DashboardDevexRoute: DashboardDevexRoute,
   DashboardEnterpriseRoute: DashboardEnterpriseRoute,
