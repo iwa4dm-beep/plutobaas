@@ -19,12 +19,52 @@ import { schemaRoutes } from "./modules/admin/schema.js";
 import { env } from "./config.js";
 
 async function main() {
-  const app = Fastify({ logger: { level: "info" } });
+  // Structured JSON logging — one line per request/error, easy to grep &
+  // ship to Loki/CloudWatch. Request-id is auto-attached to every child
+  // log so a single failing call can be traced end-to-end across DB,
+  // storage, and edge-function hops. Secret headers are redacted.
+  const app = Fastify({
+    logger: {
+      level: process.env.LOG_LEVEL ?? "info",
+      // Pretty output in dev, raw JSON in prod/docker for log shippers.
+      transport: process.env.NODE_ENV === "production" ? undefined : {
+        target: "pino-pretty",
+        options: { colorize: true, translateTime: "SYS:HH:MM:ss.l", ignore: "pid,hostname" },
+      },
+      redact: {
+        paths: [
+          "req.headers.authorization",
+          "req.headers.apikey",
+          "req.headers['x-service-role-key']",
+          "req.headers.cookie",
+          "res.headers['set-cookie']",
+        ],
+        censor: "[REDACTED]",
+      },
+      serializers: {
+        req: (req) => ({
+          method: req.method,
+          url: req.url,
+          remoteAddress: req.ip,
+          workspace_id: (req.headers?.["x-workspace-id"] as string) ?? null,
+        }),
+        res: (res) => ({ statusCode: res.statusCode }),
+      },
+    },
+    // Trust upstream proxy (Caddy) so req.ip is the real client, not 127.0.0.1.
+    trustProxy: true,
+    // Use inbound x-request-id when set, else generate — surfaced back to
+    // the client so users can quote it in bug reports.
+    genReqId: (req) => (req.headers["x-request-id"] as string) || `req_${Math.random().toString(36).slice(2, 12)}`,
+    disableRequestLogging: false,
+  });
+  app.addHook("onSend", async (req, reply) => { reply.header("x-request-id", req.id); });
 
   await app.register(cors, { origin: true, credentials: true });
   await app.register(rateLimit, { max: 200, timeWindow: "1 minute" });
   await app.register(multipart, { limits: { fileSize: 50 * 1024 * 1024 } });
   await app.register(websocket);
+
 
   const startedAt = Date.now();
   app.get("/healthz", async () => ({ ok: true, service: "pluto", version: "0.3.0" }));

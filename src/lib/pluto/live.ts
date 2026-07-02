@@ -246,6 +246,53 @@ export const live = {
     openapi:    () => api<Record<string, unknown>>("/admin/v1/schema/openapi.json"),
   },
 
+  // ---- Edge Functions ----
+  // Serverless JS running in isolated Node worker threads on the Pluto
+  // instance. Handlers receive `ctx.user` (from the caller's Bearer JWT)
+  // and can talk to Auth, REST, and Storage via injected fetch helpers.
+  // Deploy/list/delete are admin-only; invoke honors the function's own
+  // `public` flag plus per-function RLS.
+  functions: {
+    list: () => api<{ items: EdgeFunctionMeta[] }>("/functions/v1/list", { service: true }),
+    deploy: (opts: EdgeFunctionDeploy) =>
+      api<{ slug: string; version: number }>("/functions/v1/deploy", {
+        method: "POST", service: true, body: JSON.stringify(opts),
+      }),
+    remove: (slug: string) =>
+      api(`/functions/v1/${encodeURIComponent(slug)}`, { method: "DELETE", service: true }),
+    /**
+     * Invoke an edge function. Uses the caller's user session bearer when
+     * available, else falls back to the anon key — same identity the
+     * function's ctx.user will observe. `body` is JSON-serialized; pass a
+     * `Blob`/`ArrayBuffer` via `rawBody` for binary payloads.
+     */
+    invoke: async <T = unknown>(
+      slug: string,
+      opts: { method?: string; body?: unknown; headers?: Record<string, string>; rawBody?: BodyInit } = {}
+    ): Promise<{ status: number; data: T; headers: Record<string, string> }> => {
+      const cfg = liveConfig();
+      if (!cfg) throw new Error("Pluto backend not configured");
+      const method = opts.method ?? "POST";
+      const hasBody = opts.rawBody !== undefined || opts.body !== undefined;
+      const headers: Record<string, string> = {
+        ...bearer(false),
+        ...(hasBody && opts.rawBody === undefined ? { "content-type": "application/json" } : {}),
+        ...(opts.headers ?? {}),
+      };
+      const res = await fetch(`${cfg.url.replace(/\/$/, "")}/functions/v1/invoke/${encodeURIComponent(slug)}`, {
+        method,
+        headers,
+        body: opts.rawBody ?? (hasBody ? JSON.stringify(opts.body) : undefined),
+      });
+      const ct = res.headers.get("content-type") ?? "";
+      const data = (ct.includes("application/json") ? await res.json() : await res.text()) as T;
+      const h: Record<string, string> = {};
+      res.headers.forEach((v, k) => { h[k] = v; });
+      return { status: res.status, data, headers: h };
+    },
+  },
+
+
   // ---- Real auth (session / JWT / refresh / RBAC) ----
   //
   // These call the /auth/v1/* endpoints exposed by the server. The
@@ -395,6 +442,7 @@ export type SchemaEndpoint = {
   primary_key: string[]; columns: string[]; methods: string[]; base: string;
 };
 export type SchemaSummary = {
+
   workspace_id: string | null;
   role: "service_role" | "authenticated";
   endpoints: SchemaEndpoint[];
@@ -443,3 +491,22 @@ export function subscribe(channel: string, onEvent: (e: RealtimeEvent) => void):
   connect();
   return () => { closed = true; ws?.close(); };
 }
+
+// ---- Edge Function types ----
+export type EdgeFunctionMeta = {
+  slug: string;
+  public: boolean;
+  timeout_ms: number;
+  memory_mb: number;
+  allow_hosts: string[];
+  updated_at: string;
+  version?: number;
+};
+export type EdgeFunctionDeploy = {
+  slug: string;
+  code: string;
+  public?: boolean;
+  timeout_ms?: number;
+  memory_mb?: number;
+  allow_hosts?: string[];
+};
