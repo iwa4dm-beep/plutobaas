@@ -227,7 +227,7 @@ export async function adminRoutes(app: FastifyInstance) {
   app.delete("/workspaces/:id/keys/:keyId", async (req, reply) => {
     const { id, keyId } = req.params as { id: string; keyId: string };
     const r = await adminPool.query(
-      `update public.workspace_api_keys set revoked_at = now()
+      `update public.workspace_api_keys set revoked_at = now(), status = 'revoked'
         where id = $1 and workspace_id = $2 and revoked_at is null
        returning id`,
       [keyId, id],
