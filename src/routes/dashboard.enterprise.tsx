@@ -74,7 +74,7 @@ function EnterprisePage() {
   return (
     <div className="space-y-6">
       <PageHeader title="Enterprise & Multi-region"
-        subtitle="IP access rules, custom domains, region routing, and the public status page (Phase 20)"
+        description="IP access rules, custom domains, region routing, and the public status page (Phase 20)"
         icon={Globe} />
       <div className="flex justify-end">
         <button onClick={() => void load()}

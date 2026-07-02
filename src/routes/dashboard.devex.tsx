@@ -68,7 +68,7 @@ function DevexPage() {
   return (
     <div className="space-y-6">
       <PageHeader title="Developer Experience"
-        subtitle="Project templates, personal access tokens, outbound webhooks and installed plugins (Phase 19)"
+        description="Project templates, personal access tokens, outbound webhooks and installed plugins (Phase 19)"
         icon={KeyRound} />
       <div className="flex justify-end">
         <button onClick={() => void load()}
