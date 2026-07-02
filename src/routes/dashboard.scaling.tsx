@@ -1,31 +1,39 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
-import { Loader2, RefreshCw, Trash2 } from "lucide-react";
+import { Loader2, RefreshCw, Trash2, Send, PlayCircle } from "lucide-react";
 import { PageHeader } from "@/components/pluto/PageHeader";
-import { isLive, scaling, type QueueJob, type QueueStat, type RateLimitPolicy } from "@/lib/pluto/live";
+import { isLive, scaling, type QueueJob, type QueueStat, type RateLimitPolicy, type RateLimitBucket } from "@/lib/pluto/live";
 
 export const Route = createFileRoute("/dashboard/scaling")({
   component: ScalingPage,
 });
 
 // Scaling & Performance dashboard (Phase 17). Shows queue stats,
-// recent jobs, and workspace rate-limit policies with quick edit.
+// recent jobs, workspace rate-limit policies, live throttle buckets,
+// and a one-click test job + rate-limit harness for E2E verification.
 
 function ScalingPage() {
   const [stats, setStats] = useState<QueueStat[]>([]);
   const [jobs, setJobs] = useState<QueueJob[]>([]);
   const [policies, setPolicies] = useState<RateLimitPolicy[]>([]);
+  const [snapshot, setSnapshot] = useState<RateLimitBucket[]>([]);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [msg, setMsg] = useState<string | null>(null);
 
   const [form, setForm] = useState({ route: "", scope: "ip" as const, max_hits: 100, window_sec: 60 });
+  const [testForm, setTestForm] = useState({ route: "", identity: "dashboard-test", hits: 1 });
+  const [echo, setEcho] = useState("");
 
   const load = useCallback(async () => {
     if (!isLive()) { setErr("Live backend not configured."); return; }
     setLoading(true); setErr(null);
     try {
-      const [s, j, p] = await Promise.all([scaling.stats(), scaling.jobs({ limit: 50 }), scaling.listRateLimits()]);
-      setStats(s.rows); setJobs(j.jobs); setPolicies(p.policies);
+      const [s, j, p, snap] = await Promise.all([
+        scaling.stats(), scaling.jobs({ limit: 50 }),
+        scaling.listRateLimits(), scaling.rateLimitStatus(),
+      ]);
+      setStats(s.rows); setJobs(j.jobs); setPolicies(p.policies); setSnapshot(snap.snapshot);
     } catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
     finally { setLoading(false); }
   }, []);
@@ -37,6 +45,24 @@ function ScalingPage() {
     catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
   };
   const delPolicy = async (id: string) => { await scaling.deleteRateLimit(id); await load(); };
+
+  const testPolicy = async () => {
+    if (!testForm.route) return;
+    try {
+      const r = await scaling.testRateLimit({ route: testForm.route, identity: testForm.identity, hits: testForm.hits });
+      setMsg(`${r.result.allowed ? "✓ allowed" : "✗ blocked"} — ${r.result.hits}/${r.result.max}, resets in ${r.result.reset_in_sec}s`);
+      await load();
+    } catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
+  };
+
+  const enqueueTest = async () => {
+    try {
+      const r = await scaling.enqueueTest(echo || undefined);
+      setMsg(`✓ enqueued ${r.id} on ${r.queue}`);
+      setTimeout(() => void load(), 800);
+    } catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
+  };
+
 
   return (
     <div className="space-y-6">
