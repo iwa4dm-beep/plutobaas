@@ -116,6 +116,10 @@ async function main() {
   const { observabilityPlugin } = await import("./modules/observability/plugin.js");
   await app.register(scalingPlugin);        // Phase 17 — /queue/v1/*, /cache/v1/*, /admin/v1/rate-limits — PLUTO_ENABLE_SCALING=1
   await app.register(observabilityPlugin);  // Phase 18 — /obs/v1/*, /compliance/v1/* — PLUTO_ENABLE_OBSERVABILITY=1
+  const { devexPlugin } = await import("./modules/devex/plugin.js");
+  const { enterprisePlugin } = await import("./modules/enterprise/plugin.js");
+  await app.register(devexPlugin);          // Phase 19 — /devex/v1/* — PLUTO_ENABLE_DEVEX=1
+  await app.register(enterprisePlugin);     // Phase 20 — /enterprise/v1/* — PLUTO_ENABLE_ENTERPRISE=1
 
   // Top-level Prometheus scrape target — proxies to the observability
   // module when enabled so scrapers hit a stable /metrics regardless of
