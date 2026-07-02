@@ -16,6 +16,32 @@ export async function adminRoutes(app: FastifyInstance) {
   // an admin JWT. A leaked API key alone cannot mutate anything.
   app.addHook("preHandler", async (req, reply) => { requireAdmin(req, reply); });
 
+  // Blanket audit hook: every admin request (GET included) is recorded
+  // so that read access to sensitive endpoints (users list, audit trail,
+  // key list, settings) is traceable, not just the mutations. Handler-
+  // level `logAudit(...)` calls layer richer metadata on top.
+  app.addHook("onResponse", async (req, reply) => {
+    // Skip when auth failed — requireAdmin already returned 401/403 and
+    // we don't want to spam audit_events with rejected preflights.
+    if (!req.auth || reply.statusCode >= 400 && reply.statusCode < 500 && !req.auth.user) return;
+    const method = req.method.toLowerCase();
+    if (method === "options" || method === "head") return;
+    await logAudit(req, {
+      action: `admin.${method}`,
+      target: req.routeOptions?.url ?? req.url,
+      status: reply.statusCode >= 400 ? "error" : "ok",
+      metadata: {
+        method: req.method,
+        path: req.url,
+        status: reply.statusCode,
+        workspace_id: req.auth.workspaceId,
+        response_ms: reply.elapsedTime ? Math.round(reply.elapsedTime) : undefined,
+      },
+    });
+  });
+
+
+
   app.get("/users", async () => {
     return db.selectFrom("users")
       .select(["id", "email", "role", "email_verified", "created_at"])
