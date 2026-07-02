@@ -102,30 +102,38 @@ function AuditPage() {
       if (dActor && !(p.actor_email ?? "").toLowerCase().includes(dActor.toLowerCase())) return;
       if (dActorId && p.actor_id !== dActorId) return;
       if (dWorkspaceId) {
-
         const md = (p.metadata ?? {}) as { workspace_id?: string };
-        if (md.workspace_id !== workspaceId) return;
+        if (md.workspace_id !== dWorkspaceId) return;
       }
-      if (text) {
-        const t = text.toLowerCase();
+      if (dText) {
+        const t = dText.toLowerCase();
         const hit = p.action.toLowerCase().includes(t)
                  || (p.target ?? "").toLowerCase().includes(t)
                  || (p.actor_email ?? "").toLowerCase().includes(t);
         if (!hit) return;
       }
-      setPage((prev) => prev ? {
+      setPageData((prev) => prev ? {
         ...prev,
         items: [{ ...p, id: p.id ?? Math.random().toString(36).slice(2) }, ...prev.items].slice(0, PAGE_SIZE),
         total: prev.total + 1,
       } : prev);
+    }, {
+      onStatus: (s: RealtimeStatus) => {
+        if (s.kind === "open") { setLiveConn(true); setAuthErr(null); }
+        else if (s.kind === "auth_error") { setLiveConn(false); setAuthErr({ code: s.error, message: s.message }); }
+        else setLiveConn(false);
+      },
     });
     return () => { off(); setLiveConn(false); };
-  }, [action, actor, actorId, status, text, workspaceId, offset]);
+  }, [action, dActor, dActorId, status, dText, dWorkspaceId, offset]);
 
-  const items = page?.items ?? [];
-  const total = page?.total ?? 0;
+  const items = pageData?.items ?? [];
+  const total = pageData?.total ?? 0;
   const pageIdx = Math.floor(offset / PAGE_SIZE) + 1;
   const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  // Silence unused-var warning if downstream doesn't use it.
+  useMemo(() => pageCount, [pageCount]);
+
 
   return (
     <div>
