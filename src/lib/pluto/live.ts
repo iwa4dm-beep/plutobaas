@@ -832,6 +832,7 @@ export type IntegrationCheck = { name: string; ok: boolean; detail?: string };
 export type IntegrationModule = {
   module: string; enabled: boolean; env_flag: string; ready: boolean;
   checks: IntegrationCheck[]; endpoints: string[];
+  throttle?: Array<{ key: string; hits: number; max: number; remaining: number; window_sec: number; reset_in_sec: number; blocked: number }>;
 };
 export type IntegrationHealth = {
   ok: boolean; generated_at: string; modules: IntegrationModule[];
@@ -872,6 +873,20 @@ export const scaling = {
     api<RateLimitPolicy>("/admin/v1/rate-limits", { method: "POST", service: true, body: JSON.stringify(body) }),
   deleteRateLimit: (id: string) =>
     api(`/admin/v1/rate-limits/${id}`, { method: "DELETE", service: true }),
+  testRateLimit: (body: { route: string; scope?: "ip"|"user"|"workspace"|"key"; identity?: string; hits?: number }) =>
+    api<{
+      route: string; scope: string; identity: string; key: string;
+      policy: { max_hits: number; window_sec: number; action: string };
+      result: { allowed: boolean; hits: number; max: number; remaining: number; window_sec: number; reset_in_sec: number; blocked: number };
+    }>("/admin/v1/rate-limits/test", { method: "POST", service: true, body: JSON.stringify(body) }),
+  rateLimitStatus: () => api<{ snapshot: RateLimitBucket[] }>("/admin/v1/rate-limits/status", { service: true }),
+  enqueueTest: (echo?: string, delay_sec = 0) =>
+    api<{ id: string; queue: string; run_at: string; status: string }>(
+      "/queue/v1/test", { method: "POST", body: JSON.stringify({ ...(echo ? { echo } : {}), delay_sec }) }),
+};
+export type RateLimitBucket = {
+  key: string; hits: number; max: number; remaining: number;
+  window_sec: number; reset_in_sec: number; blocked: number;
 };
 
 // ---- Phase 18 — Observability & Compliance ----
@@ -879,6 +894,10 @@ export type MetricPoint = { bucket: string; v: number };
 export type TraceSpan = {
   span_id: string; trace_id: string; parent_id: string | null;
   name: string; kind: string; started_at: string; ended_at: string | null; duration_ms: number | null;
+};
+export type TraceSummary = {
+  trace_id: string; started_at: string; ended_at: string | null;
+  total_ms: number; spans: number; root_name: string; root_status: string | null;
 };
 export type GdprRequest = {
   id: string; subject_id: string; kind: "export" | "erasure";
@@ -895,10 +914,18 @@ export const observability = {
   ingestSpans: (spans: Array<Partial<TraceSpan> & { trace_id: string; name: string; started_at: string }>) =>
     api<{ inserted: number }>("/obs/v1/spans", { method: "POST", body: JSON.stringify({ spans }) }),
   trace: (traceId: string) => api<{ trace_id: string; spans: TraceSpan[] }>(`/obs/v1/traces/${traceId}`),
+  traces: (limit = 25) => api<{ traces: TraceSummary[] }>(`/obs/v1/traces?limit=${limit}`),
   prometheus: () => api<{ body: string }>("/obs/v1/prometheus"),
+  metricsText: async (): Promise<string> => {
+    const cfg = liveConfig(); if (!cfg) throw new Error("Pluto backend not configured");
+    const r = await fetch(cfg.url.replace(/\/$/, "") + "/metrics");
+    if (!r.ok) throw new Error(`metrics ${r.status}`);
+    return r.text();
+  },
   gdprList: () => api<{ requests: GdprRequest[] }>("/compliance/v1/gdpr"),
   gdprCreate: (subject_id: string, kind: "export" | "erasure", notes?: string) =>
     api<{ id: string; status: string }>("/compliance/v1/gdpr",
       { method: "POST", body: JSON.stringify({ subject_id, kind, notes }) }),
   gdprRun: (id: string) => api<{ ok: boolean }>(`/compliance/v1/gdpr/${id}/run`, { method: "POST", service: true }),
 };
+

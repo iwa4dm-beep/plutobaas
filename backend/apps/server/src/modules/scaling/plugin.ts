@@ -12,6 +12,41 @@ import { z } from "zod";
 import { q } from "../../lib/pgraw.js";
 import { requireApiKey, requireAdmin } from "../../lib/apikey.js";
 
+// In-memory throttle tracker keyed by `${scope}:${route}:${identity}`.
+// Exposed via getRateLimitSnapshot() so integration health can surface
+// per-key throttle status without hitting the database.
+type Bucket = { hits: number; resetAt: number; max: number; window_sec: number; blocked: number };
+const throttleBuckets = new Map<string, Bucket>();
+
+export function getRateLimitSnapshot(): Array<{
+  key: string; hits: number; max: number; remaining: number;
+  window_sec: number; reset_in_sec: number; blocked: number;
+}> {
+  const now = Date.now();
+  const out: ReturnType<typeof getRateLimitSnapshot> = [];
+  for (const [key, b] of throttleBuckets.entries()) {
+    if (b.resetAt < now) { throttleBuckets.delete(key); continue; }
+    out.push({
+      key, hits: b.hits, max: b.max, remaining: Math.max(0, b.max - b.hits),
+      window_sec: b.window_sec, reset_in_sec: Math.max(0, Math.round((b.resetAt - now) / 1000)),
+      blocked: b.blocked,
+    });
+  }
+  return out.sort((a, b) => b.hits - a.hits).slice(0, 50);
+}
+
+function bump(key: string, max: number, window_sec: number) {
+  const now = Date.now();
+  let b = throttleBuckets.get(key);
+  if (!b || b.resetAt < now) b = { hits: 0, resetAt: now + window_sec * 1000, max, window_sec, blocked: 0 };
+  b.hits += 1;
+  const allowed = b.hits <= max;
+  if (!allowed) b.blocked += 1;
+  throttleBuckets.set(key, b);
+  return { allowed, ...b, remaining: Math.max(0, max - b.hits), reset_in_sec: Math.max(0, Math.round((b.resetAt - now) / 1000)) };
+}
+
+
 const enqueueBody = z.object({
   payload: z.record(z.unknown()).default({}),
   run_at: z.string().datetime().optional(),
@@ -167,4 +202,115 @@ export const scalingPlugin: FastifyPluginAsync = async (app: FastifyInstance) =>
       await q(`delete from public.rate_limit_policies where id=$1`, [id]);
       return { ok: true };
     });
+
+  // ---- Rate-limit test harness ---------------------------------------
+  // POST /admin/v1/rate-limits/test — increments the in-memory counter
+  // for a (route, scope, identity) tuple against the DB policy so admins
+  // can verify a policy without generating real traffic.
+  app.post("/admin/v1/rate-limits/test",
+    { preHandler: [requireApiKey, async (req, reply) => { requireAdmin(req, reply); }] },
+    async (req, reply) => {
+      const body = z.object({
+        route: z.string().min(1),
+        scope: z.enum(["ip", "user", "workspace", "key"]).default("ip"),
+        identity: z.string().min(1).default("dashboard-test"),
+        hits: z.number().int().min(1).max(1000).default(1),
+      }).parse(req.body);
+      const pol = (await q<{ max_hits: number; window_sec: number; action: string }>(
+        `select max_hits, window_sec, action from public.rate_limit_policies
+         where route=$1 and scope=$2
+           and (workspace_id is null or workspace_id=$3) order by workspace_id nulls last limit 1`,
+        [body.route, body.scope, req.auth!.workspaceId ?? null])).rows[0];
+      if (!pol) return reply.code(404).send({ error: "no_policy_for_route" });
+      const key = `${body.scope}:${body.route}:${body.identity}`;
+      let last: ReturnType<typeof bump> | null = null;
+      for (let i = 0; i < body.hits; i++) last = bump(key, pol.max_hits, pol.window_sec);
+      return {
+        route: body.route, scope: body.scope, identity: body.identity, policy: pol,
+        result: last, key,
+      };
+    });
+
+  app.get("/admin/v1/rate-limits/status",
+    { preHandler: [requireApiKey, async (req, reply) => { requireAdmin(req, reply); }] },
+    async () => ({ snapshot: getRateLimitSnapshot() }));
+
+  // ---- Queue test job + worker --------------------------------------
+  // POST /queue/v1/test — enqueues a demo job onto the `pluto.test`
+  // queue. Payload defaults to a timestamped echo; the in-process
+  // worker (see startQueueWorker) will pick it up and mark it done.
+  app.post("/queue/v1/test", { preHandler: requireApiKey }, async (req) => {
+    const body = z.object({
+      echo: z.string().max(500).default(`ping @ ${new Date().toISOString()}`),
+      delay_sec: z.number().int().min(0).max(60).default(0),
+    }).parse((req.body ?? {}) as Record<string, unknown>);
+    const runAt = new Date(Date.now() + body.delay_sec * 1000).toISOString();
+    const r = await q<{ id: string }>(
+      `insert into public.queue_jobs (workspace_id, queue, payload, run_at, max_attempts)
+       values ($1,'pluto.test',$2::jsonb,$3::timestamptz,3) returning id`,
+      [req.auth!.workspaceId ?? null, JSON.stringify({ echo: body.echo }), runAt]);
+    return { id: r.rows[0]!.id, queue: "pluto.test", run_at: runAt, status: "pending" };
+  });
 };
+
+// ---- Durable queue worker ---------------------------------------------
+// Started from server.ts when PLUTO_QUEUE_WORKER=1. Polls the DB for
+// `pluto.test` and `default` jobs, invokes the registered handler, and
+// completes / retries via update statements (same SKIP LOCKED contract
+// the /queue/v1/:queue/dequeue endpoint uses). Safe to run alongside
+// external workers — advisory locking is done in the SELECT.
+type Handler = (payload: Record<string, unknown>) => Promise<Record<string, unknown> | void>;
+const handlers = new Map<string, Handler>([
+  ["pluto.test", async (payload) => ({ echoed: payload.echo, at: new Date().toISOString() })],
+]);
+export function registerQueueHandler(queue: string, fn: Handler) { handlers.set(queue, fn); }
+
+export function startQueueWorker(log: { info: (o: unknown, m?: string) => void; error: (o: unknown, m?: string) => void }): () => void {
+  const workerId = `w-${process.pid}-${Math.random().toString(36).slice(2, 8)}`;
+  let stopped = false;
+  const tick = async () => {
+    while (!stopped) {
+      let claimed = false;
+      for (const queue of handlers.keys()) {
+        try {
+          const r = await q<{ id: string; payload: Record<string, unknown>; attempts: number; max_attempts: number }>(
+            `with next as (
+               select id from public.queue_jobs
+               where queue=$1 and status='pending' and run_at<=now()
+               order by run_at asc for update skip locked limit 1)
+             update public.queue_jobs j set status='running', attempts=attempts+1,
+               locked_by=$2, locked_at=now(), updated_at=now()
+             from next where j.id=next.id
+             returning j.id, j.payload, j.attempts, j.max_attempts`,
+            [queue, workerId]);
+          const job = r.rows[0];
+          if (!job) continue;
+          claimed = true;
+          try {
+            const result = await handlers.get(queue)!(job.payload);
+            await q(`update public.queue_jobs set status='done', result=$2::jsonb,
+                     locked_by=null, updated_at=now() where id=$1`,
+              [job.id, JSON.stringify(result ?? { ok: true })]);
+          } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e);
+            const done = job.attempts >= job.max_attempts;
+            await q(
+              `update public.queue_jobs set
+                 status = case when $3 then 'dead' else 'pending' end,
+                 last_error=$2,
+                 run_at = now() + make_interval(secs => least(60, attempts*attempts*5)),
+                 locked_by=null, updated_at=now() where id=$1`,
+              [job.id, msg, done]);
+          }
+        } catch (e) {
+          log.error({ err: (e as Error).message, queue }, "worker error");
+        }
+      }
+      await new Promise((r) => setTimeout(r, claimed ? 50 : 1000));
+    }
+  };
+  log.info({ workerId, queues: Array.from(handlers.keys()) }, "queue worker started");
+  void tick();
+  return () => { stopped = true; };
+}
+

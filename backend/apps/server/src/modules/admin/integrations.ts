@@ -134,13 +134,27 @@ export async function integrationsRoutes(app: FastifyInstance) {
       c.push({ name: "table cache_entries", ok: await tableExists("cache_entries") });
       c.push({ name: "table rate_limit_policies", ok: await tableExists("rate_limit_policies") });
       c.push({ name: "grant pluto_jobs → queue_jobs", ok: await hasGrant("queue_jobs","pluto_jobs","UPDATE") });
-      modules.push({
+      c.push({ name: `queue worker = ${process.env.PLUTO_QUEUE_WORKER === "1" ? "in-process" : "external"}`, ok: true });
+      // Live per-key throttle snapshot (top 50 buckets across the process).
+      let throttle: Array<Record<string, unknown>> = [];
+      if (scaleOn) {
+        try {
+          const { getRateLimitSnapshot } = await import("../scaling/plugin.js");
+          throttle = getRateLimitSnapshot();
+          c.push({ name: `active throttle buckets`, ok: true, detail: `${throttle.length} keys tracked` });
+        } catch { /* not loaded */ }
+      }
+      const report: ModuleReport & { throttle?: unknown } = {
         module: "Scaling & Performance", enabled: scaleOn, env_flag: "PLUTO_ENABLE_SCALING=1",
-        ready: scaleOn && c.every((x) => x.ok), checks: c,
-        endpoints: ["/queue/v1/:queue/enqueue","/queue/v1/:queue/dequeue","/queue/v1/jobs",
-                    "/queue/v1/stats","/cache/v1/:key","/admin/v1/rate-limits"],
-      });
+        ready: scaleOn && c.slice(0, 4).every((x) => x.ok), checks: c,
+        endpoints: ["/queue/v1/:queue/enqueue","/queue/v1/:queue/dequeue","/queue/v1/test","/queue/v1/jobs",
+                    "/queue/v1/stats","/cache/v1/:key","/admin/v1/rate-limits",
+                    "/admin/v1/rate-limits/test","/admin/v1/rate-limits/status"],
+      };
+      report.throttle = throttle;
+      modules.push(report);
     }
+
     // --- Observability & Compliance (Phase 18) ---
     {
       const obsOn = process.env.PLUTO_ENABLE_OBSERVABILITY === "1";

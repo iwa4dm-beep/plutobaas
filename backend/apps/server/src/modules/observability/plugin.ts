@@ -46,6 +46,39 @@ export const observabilityPlugin: FastifyPluginAsync = async (app: FastifyInstan
   }
   app.log.info({ module: "observability", phase: "18" }, "observability registered");
 
+  // ---- Auto tracing --------------------------------------------------
+  // Attach a trace id to every request, mirror it into `x-trace-id`,
+  // and persist a root span on completion so /obs/v1/traces surfaces
+  // recent requests linked back to dashboard debugging tools.
+  app.decorateRequest("plutoTrace", null as null | { traceId: string; startedAt: number });
+  app.addHook("onRequest", async (req, reply) => {
+    const traceId = (req.headers["x-trace-id"] as string) || crypto.randomUUID();
+    (req as unknown as { plutoTrace: { traceId: string; startedAt: number } }).plutoTrace =
+      { traceId, startedAt: Date.now() };
+    reply.header("x-trace-id", traceId);
+  });
+  app.addHook("onResponse", async (req, reply) => {
+    const t = (req as unknown as { plutoTrace: { traceId: string; startedAt: number } | null }).plutoTrace;
+    if (!t) return;
+    const dur = Date.now() - t.startedAt;
+    const wsId = (req.headers["x-workspace-id"] as string) || null;
+    try {
+      await q(
+        `insert into public.trace_spans
+           (trace_id, workspace_id, name, kind, attributes, started_at, ended_at, duration_ms)
+         values ($1,$2,$3,'server',$4::jsonb, to_timestamp($5/1000.0), now(), $6)`,
+        [t.traceId, wsId, `${req.method} ${req.url.split("?")[0]}`,
+         JSON.stringify({ method: req.method, url: req.url, status: reply.statusCode, request_id: req.id }),
+         t.startedAt, dur]);
+      // Also emit an http.request duration metric so /metrics + charts work.
+      await q(
+        `insert into public.metrics_samples (workspace_id, metric, value, labels)
+         values ($1,'http.request',$2,$3::jsonb)`,
+        [wsId, dur, JSON.stringify({ method: req.method, status: String(reply.statusCode) })]);
+    } catch { /* observability must never break the request path */ }
+  });
+
+
   // ---- Metrics ingest / query / prometheus ----
   app.post("/obs/v1/metrics", { preHandler: requireApiKey }, async (req) => {
     const body = metricBody.parse(req.body);
@@ -80,19 +113,64 @@ export const observabilityPlugin: FastifyPluginAsync = async (app: FastifyInstan
     return { metric: qs.metric, agg, points: r.rows };
   });
 
-  app.get("/obs/v1/prometheus", async () => {
-    const r = await q<{ metric: string; v: number }>(
-      `select metric, avg(value)::float8 as v from public.metrics_samples
+  // Prometheus text exposition — plain text/plain body so scrapers and
+  // the dashboard's raw preview can consume it identically. Also mounted
+  // at top-level `/metrics` from server.ts.
+  const buildPromText = async () => {
+    const avg = await q<{ metric: string; v: number; n: number }>(
+      `select metric, avg(value)::float8 as v, count(*)::int as n
+       from public.metrics_samples
        where observed_at > now() - interval '5 minutes'
        group by metric order by metric`);
-    const lines = ["# HELP pluto_metric average over last 5 minutes",
-                   "# TYPE pluto_metric gauge"];
-    for (const row of r.rows) {
+    const p95 = await q<{ metric: string; v: number }>(
+      `select metric, percentile_cont(0.95) within group (order by value)::float8 as v
+       from public.metrics_samples
+       where observed_at > now() - interval '5 minutes'
+       group by metric`);
+    const p95map = new Map(p95.rows.map((r) => [r.metric, r.v] as const));
+    const qLen = await q<{ status: string; n: number }>(
+      `select status, count(*)::int as n from public.queue_jobs group by status`).catch(() => ({ rows: [] as { status: string; n: number }[] }));
+    const lines = [
+      "# HELP pluto_metric_avg avg over last 5 minutes",
+      "# TYPE pluto_metric_avg gauge",
+    ];
+    for (const row of avg.rows) {
       const safe = row.metric.replace(/[^a-zA-Z0-9_]/g, "_");
-      lines.push(`pluto_metric{name="${safe}"} ${row.v}`);
+      lines.push(`pluto_metric_avg{name="${safe}"} ${row.v}`);
+      lines.push(`pluto_metric_count{name="${safe}"} ${row.n}`);
+      const p = p95map.get(row.metric);
+      if (p != null) lines.push(`pluto_metric_p95{name="${safe}"} ${p}`);
     }
-    return { body: lines.join("\n") + "\n" };
+    lines.push("# HELP pluto_queue_jobs jobs grouped by status", "# TYPE pluto_queue_jobs gauge");
+    for (const row of qLen.rows) lines.push(`pluto_queue_jobs{status="${row.status}"} ${row.n}`);
+    return lines.join("\n") + "\n";
+  };
+  // Kept for backwards-compatibility with existing SDK callers.
+  app.get("/obs/v1/prometheus", async () => ({ body: await buildPromText() }));
+  // Standard scrape target — text/plain, no auth so scrapers work OOTB.
+  app.get("/obs/v1/metrics", async (_req, reply) => {
+    reply.header("content-type", "text/plain; version=0.0.4; charset=utf-8");
+    return buildPromText();
   });
+
+  // Recent traces — used by the observability dashboard to link a
+  // request into a full trace tree via /obs/v1/traces/:traceId.
+  app.get("/obs/v1/traces", { preHandler: requireApiKey }, async (req) => {
+    const qs = req.query as { limit?: string };
+    const limit = Math.min(Number(qs.limit ?? 25), 100);
+    const r = await q(
+      `select trace_id, min(started_at) as started_at, max(ended_at) as ended_at,
+              sum(duration_ms)::int as total_ms, count(*)::int as spans,
+              (array_agg(name order by started_at asc))[1] as root_name,
+              (array_agg((attributes->>'status') order by started_at asc))[1] as root_status
+       from public.trace_spans
+       where started_at > now() - interval '1 hour'
+         and ($1::uuid is null or workspace_id=$1)
+       group by trace_id order by started_at desc limit $2`,
+      [req.auth!.workspaceId ?? null, limit]);
+    return { traces: r.rows };
+  });
+
 
   // ---- Tracing ----
   app.post("/obs/v1/spans", { preHandler: requireApiKey }, async (req) => {
