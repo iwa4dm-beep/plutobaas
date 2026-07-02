@@ -29,6 +29,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // Consume `#access_token=…` fragment after an OAuth redirect-back so
+    // the session is persisted before we read it.
+    if (isLive()) live.auth.completeOAuthRedirect();
     setSession(isLive() ? liveSessionToPluto() : pluto.auth.getSession());
     setLoading(false);
   }, []);
