@@ -177,6 +177,15 @@ function AuditPage() {
         )}
       </div>
 
+      {authErr && (
+        <div className="mb-3 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-500 flex items-start gap-2">
+          <ShieldAlert className="h-4 w-4 mt-0.5 flex-shrink-0" />
+          <div>
+            <div className="font-semibold">Realtime paused — {authErr.code}</div>
+            <div className="text-amber-500/80 mt-0.5">{authErr.message} Reconnect attempts have stopped until you refresh with valid credentials.</div>
+          </div>
+        </div>
+      )}
       {err && <div className="mb-3 rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-500">{err}</div>}
 
       <div className="rounded-lg border border-border overflow-hidden">
