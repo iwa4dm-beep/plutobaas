@@ -330,6 +330,17 @@ export const live = {
       const s = readSession();
       return s ? { ...s, user: s.user as AuthUser } : null;
     },
+    /** Redirect the browser to the OAuth provider. */
+    signInWithOAuth: (provider: OAuthProvider, opts?: { redirectTo?: string }) =>
+      signInWithOAuth(provider, opts),
+    /** Consume `#access_token=...` fragment on redirect-back. Call on app boot. */
+    completeOAuthRedirect: () => completeOAuthRedirect(),
+  },
+
+  /** Realtime — subscribe to broadcast channels or Postgres row changes. */
+  realtime: {
+    subscribe: (channel: string, cb: (e: RealtimeEvent) => void) => subscribe(channel, cb),
+    subscribeTable: (spec: string, cb: (c: RealtimeChange) => void) => subscribeTable(spec, cb),
   },
 
   // ---- Admin surfaces (used by dashboard pages) ----
