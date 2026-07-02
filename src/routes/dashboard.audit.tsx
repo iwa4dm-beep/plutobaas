@@ -217,6 +217,100 @@ function AuditPage() {
   );
 }
 
+// Storage-aware detail renderer. Extracts common fields
+// (bucket / key / grant / upload / workspace / part / size / mime)
+// from event metadata and renders them as chips instead of a raw JSON
+// blob. Falls back to a compact JSON pre for unknown shapes.
+function AuditDetails({ ev, onFilterWorkspace }: {
+  ev: AuditEvent;
+  onFilterWorkspace: (id: string) => void;
+}) {
+  const md = (ev.metadata ?? {}) as Record<string, unknown>;
+  if (!md || Object.keys(md).length === 0) return <span className="text-muted-foreground">—</span>;
+
+  const isStorage = ev.action.startsWith("storage.");
+  const str = (v: unknown) => typeof v === "string" ? v : undefined;
+  const num = (v: unknown) => typeof v === "number" ? v : undefined;
+
+  // Storage action classifier — verb after "storage."
+  // e.g. "storage.upload.complete" → "upload.complete"
+  const storageKind = isStorage ? ev.action.slice("storage.".length) : null;
+
+  const bucket    = str(md.bucket);
+  const objectKey = str(md.key) ?? str(md.object_key) ?? str(md.path);
+  const grantId   = str(md.grant_id) ?? str(md.signed_grant_id) ?? str(md.token_id);
+  const uploadId  = str(md.upload_id);
+  const partNo    = num(md.part_number) ?? num(md.part);
+  const size      = num(md.size) ?? num(md.content_length);
+  const mime      = str(md.content_type) ?? str(md.mime);
+  const oneTime   = md.one_time === true;
+  const expiresIn = num(md.expires_in);
+  const wsId      = str(md.workspace_id);
+  const err       = str(md.error);
+
+  const chips: { label: string; value: string; mono?: boolean; onClick?: () => void; title?: string }[] = [];
+  if (isStorage && storageKind) chips.push({ label: "op", value: storageKind });
+  if (bucket)    chips.push({ label: "bucket", value: bucket, mono: true });
+  if (objectKey) chips.push({ label: "key",    value: objectKey, mono: true });
+  if (grantId)   chips.push({ label: "grant",  value: grantId, mono: true, title: grantId });
+  if (uploadId)  chips.push({ label: "upload", value: uploadId, mono: true, title: uploadId });
+  if (partNo != null) chips.push({ label: "part", value: `#${partNo}` });
+  if (size != null)   chips.push({ label: "size", value: formatBytes(size) });
+  if (mime)     chips.push({ label: "mime", value: mime });
+  if (oneTime)  chips.push({ label: "one-time", value: "yes" });
+  if (expiresIn != null) chips.push({ label: "ttl", value: `${expiresIn}s` });
+  if (wsId) chips.push({
+    label: "workspace", value: `${wsId.slice(0, 8)}…`, mono: true,
+    title: wsId, onClick: () => onFilterWorkspace(wsId),
+  });
+
+  // Known-key set we already surfaced as chips — remaining go into "extras".
+  const consumed = new Set([
+    "bucket", "key", "object_key", "path", "grant_id", "signed_grant_id",
+    "token_id", "upload_id", "part_number", "part", "size", "content_length",
+    "content_type", "mime", "one_time", "expires_in", "workspace_id", "error",
+  ]);
+  const extras: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(md)) if (!consumed.has(k)) extras[k] = v;
+
+  return (
+    <div className="space-y-1 max-w-md">
+      {chips.length > 0 && (
+        <div className="flex flex-wrap gap-1">
+          {chips.map((c, i) => (
+            <button
+              key={i}
+              type="button"
+              onClick={c.onClick}
+              disabled={!c.onClick}
+              title={c.title ?? (c.onClick ? "Click to filter" : undefined)}
+              className={`inline-flex items-center gap-1 rounded border border-border bg-muted/40 px-1.5 py-0.5 text-[11px] leading-none ${c.onClick ? "hover:bg-accent cursor-pointer" : "cursor-default"}`}
+            >
+              <span className="text-muted-foreground">{c.label}</span>
+              <span className={c.mono ? "font-mono" : ""}>{c.value}</span>
+            </button>
+          ))}
+        </div>
+      )}
+      {err && (
+        <div className="text-[11px] text-red-500 break-words">error: {err}</div>
+      )}
+      {Object.keys(extras).length > 0 && (
+        <pre className="bg-muted/40 rounded p-1.5 text-[11px] whitespace-pre-wrap break-all">
+          {JSON.stringify(extras, null, 0)}
+        </pre>
+      )}
+    </div>
+  );
+}
+
+function formatBytes(n: number) {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  if (n < 1024 * 1024 * 1024) return `${(n / (1024 * 1024)).toFixed(2)} MB`;
+  return `${(n / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+}
+
 const mockEvents: AuditEvent[] = [
   { id: "1", ts: new Date().toISOString(), actor_id: "u_admin", actor_email: "admin@pluto.local", actor_role: "admin", action: "migration.run", target: null, status: "ok", metadata: { applied: ["0004_phase6"], failed: [] }, ip: "127.0.0.1" },
   { id: "2", ts: new Date(Date.now() - 60_000).toISOString(), actor_id: "u_admin", actor_email: "admin@pluto.local", actor_role: "admin", action: "job_token.mint", target: "t_abc", status: "ok", metadata: { name: "nightly-rollup", scope: ["rollup_invoices"] }, ip: "127.0.0.1" },
