@@ -24,7 +24,7 @@ const password = "correct-horse-battery-staple";
 const anon = () => ({ apikey: process.env.ANON_KEY! });
 
 async function inj(method: "POST" | "GET", url: string, headers: Record<string,string>, payload?: unknown) {
-  const r = await app.inject({ method, url, headers, payload });
+  const r = await app.inject({ method, url, headers, payload: payload as never });
   return { code: r.statusCode, body: r.json() as any };
 }
 
