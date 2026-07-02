@@ -185,7 +185,3 @@ function ObservabilityPage() {
     </div>
   );
 }
-
-    </div>
-  );
-}
