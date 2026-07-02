@@ -9,9 +9,14 @@ export const Route = createFileRoute("/dashboard/audit")({
 });
 
 const ACTION_PRESETS = [
-  { label: "All actions", value: "" },
-  { label: "Migrations", value: "migration.*" },
-  { label: "Job tokens", value: "job_token.*" },
+  { label: "All actions",   value: "" },
+  { label: "Migrations",    value: "migration.*" },
+  { label: "Job tokens",    value: "job_token.*" },
+  { label: "SQL runner",    value: "sql.*" },
+  { label: "Storage",       value: "storage.*" },
+  { label: "Signed URLs",   value: "storage.sign*" },
+  { label: "Auth",          value: "auth.*" },
+  { label: "API keys",      value: "api_key.*" },
 ];
 
 const STATUS_ICON = {
@@ -28,6 +33,7 @@ function AuditPage() {
   const [actor, setActor] = useState("");
   const [status, setStatus] = useState<"" | "ok" | "error" | "dry_run">("");
   const [text, setText] = useState("");
+  const [workspaceId, setWorkspaceId] = useState("");
   const [offset, setOffset] = useState(0);
   const [err, setErr] = useState<string | null>(null);
   const [liveConn, setLiveConn] = useState(false);
@@ -44,14 +50,15 @@ function AuditPage() {
       if (actor) q.actor = actor;
       if (status) q.status = status;
       if (text) q.q = text;
+      if (workspaceId) q.workspace_id = workspaceId;
       setPage(await live.audit.list(q));
     } catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
-  }, [action, actor, status, text, offset]);
+  }, [action, actor, status, text, workspaceId, offset]);
 
   useEffect(() => { void load(); }, [load]);
 
   // Reset to first page when any filter changes.
-  useEffect(() => { setOffset(0); }, [action, actor, status, text]);
+  useEffect(() => { setOffset(0); }, [action, actor, status, text, workspaceId]);
 
   useEffect(() => {
     if (!isLive()) return;
@@ -67,6 +74,10 @@ function AuditPage() {
       }
       if (status && p.status !== status) return;
       if (actor && !(p.actor_email ?? "").toLowerCase().includes(actor.toLowerCase())) return;
+      if (workspaceId) {
+        const md = (p.metadata ?? {}) as { workspace_id?: string };
+        if (md.workspace_id !== workspaceId) return;
+      }
       if (text) {
         const t = text.toLowerCase();
         const hit = p.action.toLowerCase().includes(t)
