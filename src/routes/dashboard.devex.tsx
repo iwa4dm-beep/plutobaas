@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
-import { Loader2, RefreshCw, Trash2, Send, KeyRound, Copy } from "lucide-react";
+import { Loader2, RefreshCw, Trash2, Send, Copy } from "lucide-react";
 import { PageHeader } from "@/components/pluto/PageHeader";
 import {
   isLive, devex, type PersonalToken, type ProjectTemplate,
