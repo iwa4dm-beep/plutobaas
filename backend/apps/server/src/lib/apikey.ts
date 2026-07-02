@@ -64,14 +64,21 @@ async function resolveKey(plaintext: string): Promise<CacheEntry | null> {
       "k.kind as kind" as never,
       "k.workspace_id as workspaceId" as never,
       "k.revoked_at as revokedAt" as never,
+      "k.status as status" as never,
+      "k.grace_expires_at as graceExpiresAt" as never,
       "w.slug as workspaceSlug" as never,
     ])
     .where("k.key_hash" as never, "=", hash as never)
     .executeTakeFirst() as
-      | { keyId: string; kind: ApiKeyKind; workspaceId: string; revokedAt: Date | null; workspaceSlug: string }
+      | { keyId: string; kind: ApiKeyKind; workspaceId: string; revokedAt: Date | null;
+          status: "active" | "rotating" | "revoked"; graceExpiresAt: Date | null; workspaceSlug: string }
       | undefined;
 
-  if (!row || row.revokedAt) return null;
+  if (!row || row.revokedAt || row.status === "revoked") return null;
+  // Rotating keys are honoured only until their grace window closes.
+  if (row.status === "rotating") {
+    if (!row.graceExpiresAt || row.graceExpiresAt.getTime() < Date.now()) return null;
+  }
 
   const entry: CacheEntry = {
     kind: row.kind,
