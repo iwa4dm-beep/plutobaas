@@ -89,17 +89,44 @@ export async function adminRoutes(app: FastifyInstance) {
   app.post("/sql", async (req, reply) => {
     const body = z.object({ sql: z.string().min(1).max(50000) }).safeParse(req.body);
     if (!body.success) return reply.code(400).send({ error: "invalid_body" });
+    const started = Date.now();
+    // Extract leading verb for audit metadata without storing the
+    // full statement (which could contain sensitive data).
+    const verb = (body.data.sql.trim().match(/^[A-Za-z]+/)?.[0] ?? "unknown").toLowerCase();
     const client = await adminPool.connect();
     try {
       const res = await client.query(body.data.sql);
       const arr = Array.isArray(res) ? res : [res];
+      const rowCount = arr.reduce((n, r) => n + (r.rowCount ?? 0), 0);
+      await logAudit(req, {
+        action: "sql_runner.execute",
+        status: "ok",
+        metadata: {
+          verb, statements: arr.length, row_count: rowCount,
+          sql_length: body.data.sql.length,
+          duration_ms: Date.now() - started,
+          workspace_id: req.auth?.workspaceId,
+          ip: req.ip, user_agent: req.headers["user-agent"],
+        },
+      });
       return arr.map((r) => ({ rowCount: r.rowCount, rows: r.rows ?? [], command: r.command }));
     } catch (e) {
-      return reply.code(400).send({ error: "sql_error", message: e instanceof Error ? e.message : String(e) });
+      const message = e instanceof Error ? e.message : String(e);
+      await logAudit(req, {
+        action: "sql_runner.execute",
+        status: "error",
+        metadata: {
+          verb, sql_length: body.data.sql.length, duration_ms: Date.now() - started,
+          workspace_id: req.auth?.workspaceId, error: message,
+          ip: req.ip, user_agent: req.headers["user-agent"],
+        },
+      });
+      return reply.code(400).send({ error: "sql_error", message });
     } finally {
       client.release();
     }
   });
+
 
   app.get("/logs", async (req) => {
     const q = (req.query ?? {}) as { source?: string; level?: string; limit?: string };
