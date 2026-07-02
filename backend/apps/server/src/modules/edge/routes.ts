@@ -161,10 +161,16 @@ export async function edgeRoutes(app: FastifyInstance) {
       reply.code(result.status ?? 200);
       if (result.headers) reply.headers(result.headers);
       await log("admin", "info", `edge ${slug} ok in ${Date.now() - started}ms`);
+      const { recordUsage } = await import("../../lib/metering.js");
+      void recordUsage({ workspaceId: req.auth?.workspaceId ?? null, metric: "function_invocations",
+        quantity: 1, billingLabel: `fn:${slug}`, meta: { slug, ms: Date.now() - started } });
       return result.body ?? null;
     } catch (e) {
       const msg = e instanceof Error ? e.message : "error";
       await log("admin", "error", `edge ${slug} failed after ${Date.now() - started}ms: ${msg}`);
+      const { recordUsage } = await import("../../lib/metering.js");
+      void recordUsage({ workspaceId: req.auth?.workspaceId ?? null, metric: "function_invocations",
+        quantity: 1, billingLabel: `fn:${slug}`, meta: { slug, ms: Date.now() - started, error: msg } });
       return reply.code(msg.startsWith("timeout") ? 504 : 500).send({ error: "invocation_failed", message: msg });
     }
   });

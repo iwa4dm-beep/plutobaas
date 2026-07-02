@@ -196,6 +196,10 @@ export async function storageRoutes(app: FastifyInstance) {
         target: `${bucket}/${key}`, status: "ok",
         metadata: { size: buf.length, content_type: ct, mode: "single" },
       });
+      const { recordUsage } = await import("../../lib/metering.js");
+      void recordUsage({ workspaceId: req.auth?.workspaceId ?? null, metric: "storage_gb",
+        quantity: buf.length / 1_073_741_824, billingLabel: `storage:${bucket}`,
+        meta: { bucket, key, bytes: buf.length } });
       return reply.code(201).send({ bucket, key, size: buf.length, content_type: ct });
     });
 
@@ -211,6 +215,10 @@ export async function storageRoutes(app: FastifyInstance) {
       if (!decision.ok) return reply.code(decision.status).send({ error: decision.error });
       reply.header("content-type", obj.content_type);
       reply.header("content-length", String(obj.size));
+      const { recordUsage } = await import("../../lib/metering.js");
+      void recordUsage({ workspaceId: req.auth?.workspaceId ?? null, metric: "egress_gb",
+        quantity: (obj.size ?? 0) / 1_073_741_824, billingLabel: `egress:${bucket}`,
+        meta: { bucket, key, bytes: obj.size } });
       try { return reply.send(await storage.get(bucket, key)); }
       catch { return reply.code(404).send({ error: "not_found" }); }
     });

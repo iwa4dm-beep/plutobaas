@@ -113,6 +113,112 @@ export const branchingPlugin: FastifyPluginAsync = async (app) => {
       return { changes: r.rows };
     });
 
+  // ------------------------ PITR-lite snapshots ------------------------
+  // A snapshot is a copy of the branch schema (`snap_<random>`) taken at a
+  // moment in time. Restore swaps the branch schema with the snapshot so
+  // callers can safely roll back schema changes. This is not real Postgres
+  // PITR (WAL replay) but covers 90% of "undo a bad migration" needs.
+
+  async function branchOwned(id: string, ws: string | null): Promise<string | null> {
+    const r = await q<{ schema_name: string }>(
+      `select schema_name from public.db_branches where id=$1 and workspace_id=$2::uuid`,
+      [id, ws]);
+    return r.rows[0]?.schema_name ?? null;
+  }
+
+  async function cloneSchema(fromSchema: string, toSchema: string): Promise<void> {
+    await q(`create schema ${safeIdent(toSchema, "schema")}`);
+    const tables = await q<{ tablename: string }>(
+      `select tablename from pg_tables where schemaname=$1`, [fromSchema]);
+    for (const t of tables.rows) {
+      const tn = safeIdent(t.tablename, "table");
+      // structure + defaults + constraints + indexes
+      await q(`create table ${toSchema}.${tn} (like ${fromSchema}.${tn} including all)`);
+      // copy rows so the snapshot captures data, not just DDL
+      await q(`insert into ${toSchema}.${tn} select * from ${fromSchema}.${tn}`);
+    }
+  }
+
+  app.post<{ Params: { id: string }; Body: { reason?: string } }>(
+    "/branches/v1/:id/snapshots", { preHandler: requireApiKey },
+    async (req, reply) => {
+      const ws = (req.headers["x-workspace-id"] as string) ?? null;
+      const schema = await branchOwned(req.params.id, ws);
+      if (!schema) { reply.code(404); return { error: "not_found" }; }
+      const snapSchema = `snap_${Math.random().toString(36).slice(2, 10)}`;
+      await cloneSchema(schema, snapSchema);
+      const ins = await q(
+        `insert into public.db_branch_snapshots (branch_id, workspace_id, snapshot_schema, reason)
+         values ($1,$2::uuid,$3,$4)
+         returning id, snapshot_schema, reason, created_at, status`,
+        [req.params.id, ws, snapSchema, req.body?.reason ?? null]);
+      reply.code(201);
+      return ins.rows[0];
+    });
+
+  app.get<{ Params: { id: string } }>("/branches/v1/:id/snapshots",
+    { preHandler: requireApiKey }, async (req) => {
+      const r = await q(
+        `select id, snapshot_schema, reason, created_at, restored_at, status
+         from public.db_branch_snapshots
+         where branch_id=$1 order by created_at desc limit 100`, [req.params.id]);
+      return { snapshots: r.rows };
+    });
+
+  app.post<{ Params: { id: string; snapId: string } }>(
+    "/branches/v1/:id/snapshots/:snapId/restore",
+    { preHandler: requireApiKey }, async (req, reply) => {
+      const ws = (req.headers["x-workspace-id"] as string) ?? null;
+      const branchSchema = await branchOwned(req.params.id, ws);
+      if (!branchSchema) { reply.code(404); return { error: "branch_not_found" }; }
+      const snap = await q<{ snapshot_schema: string }>(
+        `select snapshot_schema from public.db_branch_snapshots
+         where id=$1 and branch_id=$2 and workspace_id=$3::uuid and status='ready'`,
+        [req.params.snapId, req.params.id, ws]);
+      if (!snap.rows[0]) { reply.code(404); return { error: "snapshot_not_found" }; }
+
+      // Take a safety snapshot of the current live schema before we swap.
+      const rescue = `snap_${Math.random().toString(36).slice(2, 10)}`;
+      await cloneSchema(branchSchema, rescue);
+      await q(
+        `insert into public.db_branch_snapshots (branch_id, workspace_id, snapshot_schema, reason)
+         values ($1,$2::uuid,$3,$4)`,
+        [req.params.id, ws, rescue, `pre-restore auto-snapshot of ${branchSchema}`]);
+
+      // Atomic swap: rename live→tmp, snapshot→live, tmp→snapshot-name.
+      const tmp = `tmp_${Math.random().toString(36).slice(2, 10)}`;
+      await q(`begin`);
+      try {
+        await q(`alter schema ${safeIdent(branchSchema, "schema")} rename to ${safeIdent(tmp, "schema")}`);
+        await q(`alter schema ${safeIdent(snap.rows[0].snapshot_schema, "schema")} rename to ${safeIdent(branchSchema, "schema")}`);
+        await q(`alter schema ${safeIdent(tmp, "schema")} rename to ${safeIdent(snap.rows[0].snapshot_schema, "schema")}`);
+        await q(`update public.db_branch_snapshots
+                 set status='restored', restored_at=now()
+                 where id=$1`, [req.params.snapId]);
+        await q(`commit`);
+      } catch (e) {
+        await q(`rollback`);
+        reply.code(500);
+        return { error: (e as Error).message };
+      }
+      return { ok: true, restored_from: req.params.snapId, rescue_schema: rescue };
+    });
+
+  app.delete<{ Params: { id: string; snapId: string } }>(
+    "/branches/v1/:id/snapshots/:snapId",
+    { preHandler: requireApiKey }, async (req, reply) => {
+      const ws = (req.headers["x-workspace-id"] as string) ?? null;
+      const s = await q<{ snapshot_schema: string }>(
+        `select snapshot_schema from public.db_branch_snapshots
+         where id=$1 and branch_id=$2 and workspace_id=$3::uuid`,
+        [req.params.snapId, req.params.id, ws]);
+      if (!s.rows[0]) { reply.code(404); return { error: "not_found" }; }
+      await q(`drop schema if exists ${safeIdent(s.rows[0].snapshot_schema, "schema")} cascade`);
+      await q(`delete from public.db_branch_snapshots where id=$1`, [req.params.snapId]);
+      return { ok: true };
+    });
+
+
   // ------------------------ Studio schema editor -----------------------
   // Structured ops → deterministic SQL. Kept intentionally small for MVP.
   type Op =
@@ -208,6 +314,7 @@ export const usagePlugin: FastifyPluginAsync = async (app) => {
   }
 
   const METRICS = ["storage_gb","egress_gb","function_invocations","ai_tokens","db_rows","realtime_msgs"] as const;
+  const ENVS = ["production","preview","development"] as const;
 
   app.post("/usage/v1/events", { preHandler: requireApiKey }, async (req, reply) => {
     const ws = (req.headers["x-workspace-id"] as string) ?? null;
@@ -215,41 +322,70 @@ export const usagePlugin: FastifyPluginAsync = async (app) => {
     const b = z.object({
       metric: z.enum(METRICS),
       quantity: z.number().nonnegative(),
+      environment: z.enum(ENVS).default("production"),
+      billing_label: z.string().max(80).optional(),
       meta: z.record(z.any()).optional(),
     }).parse(req.body);
-    await q(
-      `insert into public.usage_events (workspace_id, metric, quantity, meta)
-       values ($1,$2,$3,$4::jsonb)`,
-      [ws, b.metric, b.quantity, JSON.stringify(b.meta ?? {})]);
-    return { ok: true };
+    const { recordUsage } = await import("../../lib/metering.js");
+    const r = await recordUsage({
+      workspaceId: ws, metric: b.metric, quantity: b.quantity,
+      environment: b.environment, billingLabel: b.billing_label, meta: b.meta,
+    });
+    if (!r.ok) reply.code(429);
+    return r;
+  });
+
+  app.post("/usage/v1/check", { preHandler: requireApiKey }, async (req, reply) => {
+    const ws = (req.headers["x-workspace-id"] as string) ?? null;
+    if (!ws) { reply.code(400); return { error: "workspace_required" }; }
+    const b = z.object({ metric: z.enum(METRICS), quantity: z.number().nonnegative() }).parse(req.body);
+    const { checkQuota } = await import("../../lib/metering.js");
+    return checkQuota(ws, b.metric, b.quantity);
   });
 
   app.get("/usage/v1/summary", { preHandler: requireApiKey }, async (req) => {
     const ws = (req.headers["x-workspace-id"] as string) ?? null;
-    const period = ((req.query as { period?: string })?.period ?? "month") === "day" ? "1 day" : "30 days";
-    const usage = await q<{ metric: string; total: string }>(
-      `select metric, sum(quantity)::text as total
+    const query = req.query as { period?: string; environment?: string };
+    const period = (query?.period ?? "month") === "day" ? "1 day" : "30 days";
+    const envFilter = query?.environment && ENVS.includes(query.environment as typeof ENVS[number])
+      ? query.environment : null;
+    const params: unknown[] = [ws];
+    let envClause = "";
+    if (envFilter) { params.push(envFilter); envClause = ` and environment=$${params.length}`; }
+    const usage = await q<{ metric: string; total: string; environment: string; billing_label: string | null }>(
+      `select metric, environment, billing_label, sum(quantity)::text as total
        from public.usage_events
-       where workspace_id=$1::uuid and observed_at > now() - interval '${period}'
-       group by metric`, [ws]);
-    const quotas = await q<{ metric: string; hard_limit: number; soft_limit: number | null; period: string }>(
-      `select metric, hard_limit, soft_limit, period
+       where workspace_id=$1::uuid and observed_at > now() - interval '${period}'${envClause}
+       group by metric, environment, billing_label`, params);
+    const quotas = await q<{ metric: string; hard_limit: number; soft_limit: number | null; period: string; overage_behavior: string; billing_label: string | null }>(
+      `select metric, hard_limit, soft_limit, period, overage_behavior, billing_label
        from public.workspace_quotas where workspace_id=$1::uuid`, [ws]);
-    const byMetric: Record<string, { used: number; hard_limit: number | null; soft_limit: number | null; pct: number | null }> = {};
-    for (const m of METRICS) byMetric[m] = { used: 0, hard_limit: null, soft_limit: null, pct: null };
-    for (const r of usage.rows) if (byMetric[r.metric]) byMetric[r.metric].used = Number(r.total);
+    const byMetric: Record<string, {
+      used: number; hard_limit: number | null; soft_limit: number | null; pct: number | null;
+      overage_behavior: string | null; billing_label: string | null;
+      by_env: Record<string, number>; by_label: Record<string, number>;
+    }> = {};
+    for (const m of METRICS) byMetric[m] = { used: 0, hard_limit: null, soft_limit: null, pct: null, overage_behavior: null, billing_label: null, by_env: {}, by_label: {} };
+    for (const r of usage.rows) {
+      const b = byMetric[r.metric]; if (!b) continue;
+      const n = Number(r.total);
+      b.used += n;
+      b.by_env[r.environment] = (b.by_env[r.environment] ?? 0) + n;
+      if (r.billing_label) b.by_label[r.billing_label] = (b.by_label[r.billing_label] ?? 0) + n;
+    }
     for (const qq of quotas.rows) {
       const b = byMetric[qq.metric]; if (!b) continue;
       b.hard_limit = qq.hard_limit; b.soft_limit = qq.soft_limit;
+      b.overage_behavior = qq.overage_behavior; b.billing_label = qq.billing_label;
       b.pct = qq.hard_limit > 0 ? Math.min(100, (b.used / qq.hard_limit) * 100) : null;
     }
-    return { period, metrics: byMetric };
+    return { period, environment: envFilter, metrics: byMetric };
   });
 
   app.get("/usage/v1/quotas", { preHandler: requireApiKey }, async (req) => {
     const ws = (req.headers["x-workspace-id"] as string) ?? null;
     const r = await q(
-      `select metric, period, hard_limit, soft_limit, updated_at
+      `select metric, period, hard_limit, soft_limit, overage_behavior, billing_label, updated_at
        from public.workspace_quotas where workspace_id=$1::uuid order by metric`, [ws]);
     return { quotas: r.rows };
   });
@@ -262,13 +398,18 @@ export const usagePlugin: FastifyPluginAsync = async (app) => {
       period: z.enum(["day","month"]).default("month"),
       hard_limit: z.number().nonnegative(),
       soft_limit: z.number().nonnegative().optional(),
+      overage_behavior: z.enum(["allow","warn","block"]).default("warn"),
+      billing_label: z.string().max(80).optional(),
     }).parse(req.body);
     await q(
-      `insert into public.workspace_quotas (workspace_id, metric, period, hard_limit, soft_limit, updated_at)
-       values ($1,$2,$3,$4,$5,now())
+      `insert into public.workspace_quotas (workspace_id, metric, period, hard_limit, soft_limit, overage_behavior, billing_label, updated_at)
+       values ($1,$2,$3,$4,$5,$6,$7,now())
        on conflict (workspace_id, metric, period)
-       do update set hard_limit=excluded.hard_limit, soft_limit=excluded.soft_limit, updated_at=now()`,
-      [ws, b.metric, b.period, b.hard_limit, b.soft_limit ?? null]);
+       do update set hard_limit=excluded.hard_limit, soft_limit=excluded.soft_limit,
+                     overage_behavior=excluded.overage_behavior, billing_label=excluded.billing_label,
+                     updated_at=now()`,
+      [ws, b.metric, b.period, b.hard_limit, b.soft_limit ?? null, b.overage_behavior, b.billing_label ?? null]);
     return { ok: true };
   });
 };
+

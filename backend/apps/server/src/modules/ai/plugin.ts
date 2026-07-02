@@ -178,6 +178,12 @@ export const aiPlugin: FastifyPluginAsync = async (app: FastifyInstance) => {
     }
     await record(req, { provider_slug: slug, model: body.model, endpoint: "embeddings",
       tokens_in: j.usage?.prompt_tokens ?? 0, latency_ms: latency, status_code: 200 });
+    if ((j.usage?.prompt_tokens ?? 0) > 0) {
+      const { recordUsage } = await import("../../lib/metering.js");
+      void recordUsage({ workspaceId: req.auth!.workspaceId, metric: "ai_tokens",
+        quantity: j.usage!.prompt_tokens!, billingLabel: `ai:${slug}:${body.model}`,
+        meta: { endpoint: "embeddings", model: body.model, provider: slug } });
+    }
     return { embeddings: j.data.map((d) => d.embedding), model: body.model,
              usage: { tokens_in: j.usage?.prompt_tokens ?? 0, tokens_out: 0 } };
   });
@@ -217,6 +223,15 @@ export const aiPlugin: FastifyPluginAsync = async (app: FastifyInstance) => {
       tokens_in: j.usage?.prompt_tokens ?? 0, tokens_out: j.usage?.completion_tokens ?? 0,
       latency_ms: latency, status_code: r.status,
       error: r.ok ? null : (j.error?.message ?? `HTTP ${r.status}`) });
+    if (r.ok) {
+      const totalTokens = (j.usage?.prompt_tokens ?? 0) + (j.usage?.completion_tokens ?? 0);
+      if (totalTokens > 0) {
+        const { recordUsage } = await import("../../lib/metering.js");
+        void recordUsage({ workspaceId: req.auth!.workspaceId, metric: "ai_tokens",
+          quantity: totalTokens, billingLabel: `ai:${slug}:${body.model}`,
+          meta: { endpoint: "chat", model: body.model, provider: slug } });
+      }
+    }
     if (!r.ok) return reply.code(r.status).send({ error: "provider_error", detail: j });
     return {
       content: j.choices?.[0]?.message?.content ?? "",

@@ -1003,8 +1003,19 @@ export type SchemaOp =
   | { op: "add_index"; schema?: string; table: string; name: string; columns: string[]; unique?: boolean }
   | { op: "add_fk"; schema?: string; table: string; name: string; column: string; ref_table: string; ref_column: string };
 export type UsageMetric = "storage_gb" | "egress_gb" | "function_invocations" | "ai_tokens" | "db_rows" | "realtime_msgs";
-export type UsageSummary = { period: string; metrics: Record<UsageMetric, { used: number; hard_limit: number | null; soft_limit: number | null; pct: number | null }> };
-export type Quota = { metric: UsageMetric; period: "day" | "month"; hard_limit: number; soft_limit: number | null; updated_at: string };
+export type OverageBehavior = "allow" | "warn" | "block";
+export type UsageEnvironment = "production" | "staging" | "preview" | "development";
+export type UsageMetricSummary = {
+  used: number; hard_limit: number | null; soft_limit: number | null; pct: number | null;
+  overage_behavior: OverageBehavior | null; billing_label: string | null;
+  by_env: Record<string, number>; by_label: Record<string, number>;
+};
+export type UsageSummary = { period: string; environment: string | null; metrics: Record<UsageMetric, UsageMetricSummary> };
+export type Quota = {
+  metric: UsageMetric; period: "day" | "month"; hard_limit: number; soft_limit: number | null;
+  overage_behavior: OverageBehavior; billing_label: string | null; updated_at: string;
+};
+export type BranchSnapshot = { id: string; snapshot_schema: string; reason: string | null; created_at: string; restored_at: string | null; status: string };
 
 export const branching = {
   list: () => api<{ branches: DbBranch[] }>("/branches/v1"),
@@ -1014,6 +1025,13 @@ export const branching = {
   apply: (id: string, sql: string) =>
     api<{ ok: boolean; error?: string }>(`/branches/v1/${id}/apply`, { method: "POST", body: JSON.stringify({ sql }) }),
   changes: (id: string) => api<{ changes: BranchChange[] }>(`/branches/v1/${id}/changes`),
+  snapshots: (id: string) => api<{ snapshots: BranchSnapshot[] }>(`/branches/v1/${id}/snapshots`),
+  createSnapshot: (id: string, reason?: string) =>
+    api<BranchSnapshot>(`/branches/v1/${id}/snapshots`, { method: "POST", body: JSON.stringify({ reason }) }),
+  restoreSnapshot: (id: string, snapId: string) =>
+    api<{ ok: boolean }>(`/branches/v1/${id}/snapshots/${snapId}/restore`, { method: "POST" }),
+  deleteSnapshot: (id: string, snapId: string) =>
+    api<{ ok: boolean }>(`/branches/v1/${id}/snapshots/${snapId}`, { method: "DELETE" }),
 };
 
 export const studio = {
@@ -1025,11 +1043,11 @@ export const studio = {
 };
 
 export const usage = {
-  record: (body: { metric: UsageMetric; quantity: number; meta?: Record<string, unknown> }) =>
+  record: (body: { metric: UsageMetric; quantity: number; environment?: UsageEnvironment; billing_label?: string; meta?: Record<string, unknown> }) =>
     api<{ ok: boolean }>("/usage/v1/events", { method: "POST", body: JSON.stringify(body) }),
-  summary: (period: "day" | "month" = "month") =>
-    api<UsageSummary>(`/usage/v1/summary?period=${period}`),
+  summary: (period: "day" | "month" = "month", environment?: UsageEnvironment) =>
+    api<UsageSummary>(`/usage/v1/summary?period=${period}${environment ? `&environment=${environment}` : ""}`),
   quotas: () => api<{ quotas: Quota[] }>("/usage/v1/quotas"),
-  setQuota: (body: { metric: UsageMetric; period?: "day" | "month"; hard_limit: number; soft_limit?: number }) =>
+  setQuota: (body: { metric: UsageMetric; period?: "day" | "month"; hard_limit: number; soft_limit?: number; overage_behavior?: OverageBehavior; billing_label?: string }) =>
     api<{ ok: boolean }>("/usage/v1/quotas", { method: "PUT", body: JSON.stringify(body) }),
 };

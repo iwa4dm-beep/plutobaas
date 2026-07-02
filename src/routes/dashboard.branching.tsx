@@ -1,8 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Loader2, Plus, Trash2, Play, RefreshCw, GitBranch, Wand2 } from "lucide-react";
+import { Loader2, Plus, Trash2, Play, RefreshCw, GitBranch, Wand2, Camera, Undo2 } from "lucide-react";
 import { PageHeader } from "@/components/pluto/PageHeader";
-import { isLive, branching, studio, type DbBranch, type BranchChange, type SchemaOp } from "@/lib/pluto/live";
+import { isLive, branching, studio, type DbBranch, type BranchChange, type BranchSnapshot, type SchemaOp } from "@/lib/pluto/live";
 
 export const Route = createFileRoute("/dashboard/branching")({ component: BranchingPage });
 
@@ -46,6 +46,8 @@ function BranchesTab() {
   const [copyFrom, setCopyFrom] = useState("public");
   const [selected, setSelected] = useState<string | null>(null);
   const [changes, setChanges] = useState<BranchChange[]>([]);
+  const [snapshots, setSnapshots] = useState<BranchSnapshot[]>([]);
+  const [snapReason, setSnapReason] = useState("");
   const [sql, setSql] = useState("");
   const [applying, setApplying] = useState(false);
 
@@ -58,8 +60,10 @@ function BranchesTab() {
   useEffect(() => { void load(); }, [load]);
 
   const loadChanges = useCallback(async (id: string) => {
-    try { const r = await branching.changes(id); setChanges(r.changes); }
-    catch (e) { setErr((e as Error).message); }
+    try {
+      const [c, s] = await Promise.all([branching.changes(id), branching.snapshots(id)]);
+      setChanges(c.changes); setSnapshots(s.snapshots);
+    } catch (e) { setErr((e as Error).message); }
   }, []);
 
   const create = async () => {
@@ -80,6 +84,23 @@ function BranchesTab() {
     try { await branching.apply(selected, sql); setSql(""); await loadChanges(selected); }
     catch (e) { setErr((e as Error).message); }
     finally { setApplying(false); }
+  };
+  const takeSnapshot = async () => {
+    if (!selected) return;
+    try { await branching.createSnapshot(selected, snapReason || undefined); setSnapReason(""); await loadChanges(selected); }
+    catch (e) { setErr((e as Error).message); }
+  };
+  const restore = async (snapId: string) => {
+    if (!selected) return;
+    if (!confirm("Restore this snapshot? The current branch schema will be swapped out.")) return;
+    try { await branching.restoreSnapshot(selected, snapId); await loadChanges(selected); }
+    catch (e) { setErr((e as Error).message); }
+  };
+  const dropSnap = async (snapId: string) => {
+    if (!selected) return;
+    if (!confirm("Delete this snapshot permanently?")) return;
+    try { await branching.deleteSnapshot(selected, snapId); await loadChanges(selected); }
+    catch (e) { setErr((e as Error).message); }
   };
 
   return (
@@ -144,6 +165,37 @@ function BranchesTab() {
               {!changes.length && <div className="p-3 text-xs text-muted-foreground">No changes recorded.</div>}
             </div>
           </div>
+
+          <div className="pt-2">
+            <div className="text-xs font-medium mb-2 flex items-center gap-2">
+              <Camera className="h-3 w-3" /> Snapshots (PITR-lite)
+            </div>
+            <div className="flex gap-1 mb-2">
+              <input value={snapReason} onChange={(e) => setSnapReason(e.target.value)}
+                disabled={!selected} placeholder="reason (optional)"
+                className="flex-1 bg-background border border-border rounded px-2 py-1 text-xs" />
+              <button onClick={() => void takeSnapshot()} disabled={!selected}
+                className="text-xs inline-flex items-center gap-1 border border-border rounded px-2 py-1 disabled:opacity-40">
+                <Camera className="h-3 w-3" /> Snapshot
+              </button>
+            </div>
+            <div className="max-h-[200px] overflow-auto border border-border rounded">
+              {snapshots.map((s) => (
+                <div key={s.id} className="border-b border-border p-2 text-[11px] flex items-center gap-2">
+                  <div className="flex-1">
+                    <div className="font-mono text-[10px]">{s.snapshot_schema}</div>
+                    <div className="text-muted-foreground">{new Date(s.created_at).toLocaleString()} · {s.status}</div>
+                    {s.reason && <div className="text-muted-foreground italic">{s.reason}</div>}
+                  </div>
+                  <button onClick={() => void restore(s.id)} title="Restore"
+                    className="text-primary hover:text-primary/80"><Undo2 className="h-3 w-3" /></button>
+                  <button onClick={() => void dropSnap(s.id)} title="Delete"
+                    className="text-muted-foreground hover:text-red-500"><Trash2 className="h-3 w-3" /></button>
+                </div>
+              ))}
+              {!snapshots.length && <div className="p-3 text-xs text-muted-foreground">No snapshots yet.</div>}
+            </div>
+          </div>
         </div>
       </div>
       {err && <div className="lg:col-span-2 text-xs text-red-500">{err}</div>}
@@ -165,6 +217,15 @@ function StudioTab() {
   const [result, setResult] = useState<Array<{ sql: string; ok: boolean; error?: string }> | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [branches, setBranches] = useState<DbBranch[]>([]);
+  const [branchId, setBranchId] = useState<string>("");
+  const [snapFirst, setSnapFirst] = useState(true);
+
+  useEffect(() => {
+    void (async () => {
+      try { const r = await branching.list(); setBranches(r.branches); } catch { /* offline */ }
+    })();
+  }, []);
 
   const op: SchemaOp | null = useMemo(() => {
     if (mode === "create_table" && table)
@@ -184,7 +245,7 @@ function StudioTab() {
     if (!op) return;
     setBusy(true); setErr(null); setResult(null);
     try {
-      const r = await studio.apply([op], { dry_run: true });
+      const r = await studio.apply([op], { dry_run: true, branch_id: branchId || undefined });
       setPreview((r.statements ?? []).map((s) => s.sql));
     } catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
   };
@@ -192,7 +253,11 @@ function StudioTab() {
     if (!op) return;
     setBusy(true); setErr(null);
     try {
-      const r = await studio.apply([op]);
+      if (branchId && snapFirst) {
+        try { await branching.createSnapshot(branchId, `pre-studio ${op.op} ${(op as { table?: string }).table ?? ""}`); }
+        catch (e) { setErr(`snapshot failed: ${(e as Error).message}`); setBusy(false); return; }
+      }
+      const r = await studio.apply([op], { branch_id: branchId || undefined });
       setResult(r.results ?? []);
       setPreview((r.results ?? []).map((s) => s.sql));
     } catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
@@ -258,12 +323,28 @@ function StudioTab() {
           </div>
         )}
 
+
+        <div className="pt-2 space-y-1 border-t border-border">
+          <div className="text-[11px] text-muted-foreground">Target</div>
+          <div className="flex flex-wrap gap-2 items-center">
+            <select value={branchId} onChange={(e) => setBranchId(e.target.value)}
+              className="text-xs bg-background border border-border rounded px-2 py-1">
+              <option value="">Live (public schema)</option>
+              {branches.map((b) => <option key={b.id} value={b.id}>{b.name} · {b.schema_name}</option>)}
+            </select>
+            <label className="text-[11px] inline-flex items-center gap-1 text-muted-foreground">
+              <input type="checkbox" checked={snapFirst} disabled={!branchId}
+                onChange={(e) => setSnapFirst(e.target.checked)} />
+              Snapshot branch before apply
+            </label>
+          </div>
+        </div>
         <div className="flex gap-2 pt-2">
           <button onClick={() => void dryRun()} disabled={!op || busy} className="text-xs inline-flex items-center gap-1 border border-border rounded px-3 py-1.5 disabled:opacity-40">
             <Wand2 className="h-3 w-3" /> Preview SQL
           </button>
           <button onClick={() => void apply()} disabled={!op || busy} className="text-xs inline-flex items-center gap-1 bg-primary text-primary-foreground rounded px-3 py-1.5 disabled:opacity-40">
-            {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />} Apply
+            {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />} {branchId ? "Apply to branch" : "Apply"}
           </button>
         </div>
         {err && <div className="text-xs text-red-500">{err}</div>}
