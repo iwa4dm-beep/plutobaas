@@ -1,21 +1,24 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
-import { Loader2, RefreshCw, Play } from "lucide-react";
+import { Loader2, RefreshCw, Play, Download, ExternalLink } from "lucide-react";
 import { PageHeader } from "@/components/pluto/PageHeader";
-import { isLive, observability, type GdprRequest, type MetricPoint } from "@/lib/pluto/live";
+import { isLive, observability, type GdprRequest, type MetricPoint, type TraceSpan, type TraceSummary } from "@/lib/pluto/live";
 
 export const Route = createFileRoute("/dashboard/observability")({
   component: ObservabilityPage,
 });
 
-// Observability & Compliance dashboard (Phase 18). Live metric
-// rollup, Prometheus scrape preview, and GDPR request workflow.
+// Observability & Compliance dashboard (Phase 18). Metric rollups,
+// Prometheus /metrics preview, recent request traces with drill-down,
+// and the GDPR export/erasure workflow.
 
 function ObservabilityPage() {
   const [metric, setMetric] = useState("http.request");
   const [agg, setAgg] = useState<"avg" | "sum" | "count" | "p95">("avg");
   const [points, setPoints] = useState<MetricPoint[]>([]);
   const [prom, setProm] = useState("");
+  const [traces, setTraces] = useState<TraceSummary[]>([]);
+  const [openTrace, setOpenTrace] = useState<{ trace_id: string; spans: TraceSpan[] } | null>(null);
   const [gdpr, setGdpr] = useState<GdprRequest[]>([]);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -25,12 +28,13 @@ function ObservabilityPage() {
     if (!isLive()) { setErr("Live backend not configured."); return; }
     setLoading(true); setErr(null);
     try {
-      const [q, p, g] = await Promise.all([
+      const [q, p, g, t] = await Promise.all([
         observability.queryMetric(metric, agg, 60),
-        observability.prometheus(),
+        observability.metricsText().catch(() => observability.prometheus().then((r) => r.body)),
         observability.gdprList(),
+        observability.traces(25),
       ]);
-      setPoints(q.points); setProm(p.body); setGdpr(g.requests);
+      setPoints(q.points); setProm(p); setGdpr(g.requests); setTraces(t.traces);
     } catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
     finally { setLoading(false); }
   }, [metric, agg]);
@@ -42,6 +46,11 @@ function ObservabilityPage() {
     catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
   };
   const runRequest = async (id: string) => { await observability.gdprRun(id); await load(); };
+  const openTraceDetail = async (traceId: string) => {
+    try { setOpenTrace(await observability.trace(traceId)); }
+    catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
+  };
+
 
   const max = points.reduce((m, p) => Math.max(m, p.v), 0) || 1;
 
