@@ -31,6 +31,7 @@ function AuditPage() {
   const [page, setPage] = useState<AuditPage | null>(null);
   const [action, setAction] = useState("");
   const [actor, setActor] = useState("");
+  const [actorId, setActorId] = useState("");
   const [status, setStatus] = useState<"" | "ok" | "error" | "dry_run">("");
   const [text, setText] = useState("");
   const [workspaceId, setWorkspaceId] = useState("");
@@ -48,17 +49,18 @@ function AuditPage() {
       const q: AuditQuery = { limit: PAGE_SIZE, offset };
       if (action) q.action = action;
       if (actor) q.actor = actor;
+      if (actorId) q.actor_id = actorId;
       if (status) q.status = status;
       if (text) q.q = text;
       if (workspaceId) q.workspace_id = workspaceId;
       setPage(await live.audit.list(q));
     } catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
-  }, [action, actor, status, text, workspaceId, offset]);
+  }, [action, actor, actorId, status, text, workspaceId, offset]);
 
   useEffect(() => { void load(); }, [load]);
 
   // Reset to first page when any filter changes.
-  useEffect(() => { setOffset(0); }, [action, actor, status, text, workspaceId]);
+  useEffect(() => { setOffset(0); }, [action, actor, actorId, status, text, workspaceId]);
 
   useEffect(() => {
     if (!isLive()) return;
@@ -74,6 +76,7 @@ function AuditPage() {
       }
       if (status && p.status !== status) return;
       if (actor && !(p.actor_email ?? "").toLowerCase().includes(actor.toLowerCase())) return;
+      if (actorId && p.actor_id !== actorId) return;
       if (workspaceId) {
         const md = (p.metadata ?? {}) as { workspace_id?: string };
         if (md.workspace_id !== workspaceId) return;
@@ -92,7 +95,7 @@ function AuditPage() {
       } : prev);
     });
     return () => { off(); setLiveConn(false); };
-  }, [action, actor, status, text, workspaceId, offset]);
+  }, [action, actor, actorId, status, text, workspaceId, offset]);
 
   const items = page?.items ?? [];
   const total = page?.total ?? 0;
