@@ -16,6 +16,7 @@ import { Route as DashboardIndexRouteImport } from './routes/dashboard.index'
 import { Route as DashboardWorkspacesRouteImport } from './routes/dashboard.workspaces'
 import { Route as DashboardVerifyRouteImport } from './routes/dashboard.verify'
 import { Route as DashboardUsersRouteImport } from './routes/dashboard.users'
+import { Route as DashboardUsageRouteImport } from './routes/dashboard.usage'
 import { Route as DashboardStorageRouteImport } from './routes/dashboard.storage'
 import { Route as DashboardSqlRouteImport } from './routes/dashboard.sql'
 import { Route as DashboardSettingsRouteImport } from './routes/dashboard.settings'
@@ -68,6 +69,11 @@ const DashboardVerifyRoute = DashboardVerifyRouteImport.update({
 const DashboardUsersRoute = DashboardUsersRouteImport.update({
   id: '/users',
   path: '/users',
+  getParentRoute: () => DashboardRoute,
+} as any)
+const DashboardUsageRoute = DashboardUsageRouteImport.update({
+  id: '/usage',
+  path: '/usage',
   getParentRoute: () => DashboardRoute,
 } as any)
 const DashboardStorageRoute = DashboardStorageRouteImport.update({
@@ -183,6 +189,7 @@ export interface FileRoutesByFullPath {
   '/dashboard/settings': typeof DashboardSettingsRoute
   '/dashboard/sql': typeof DashboardSqlRoute
   '/dashboard/storage': typeof DashboardStorageRoute
+  '/dashboard/usage': typeof DashboardUsageRoute
   '/dashboard/users': typeof DashboardUsersRoute
   '/dashboard/verify': typeof DashboardVerifyRoute
   '/dashboard/workspaces': typeof DashboardWorkspacesRoute
@@ -209,6 +216,7 @@ export interface FileRoutesByTo {
   '/dashboard/settings': typeof DashboardSettingsRoute
   '/dashboard/sql': typeof DashboardSqlRoute
   '/dashboard/storage': typeof DashboardStorageRoute
+  '/dashboard/usage': typeof DashboardUsageRoute
   '/dashboard/users': typeof DashboardUsersRoute
   '/dashboard/verify': typeof DashboardVerifyRoute
   '/dashboard/workspaces': typeof DashboardWorkspacesRoute
@@ -237,6 +245,7 @@ export interface FileRoutesById {
   '/dashboard/settings': typeof DashboardSettingsRoute
   '/dashboard/sql': typeof DashboardSqlRoute
   '/dashboard/storage': typeof DashboardStorageRoute
+  '/dashboard/usage': typeof DashboardUsageRoute
   '/dashboard/users': typeof DashboardUsersRoute
   '/dashboard/verify': typeof DashboardVerifyRoute
   '/dashboard/workspaces': typeof DashboardWorkspacesRoute
@@ -266,6 +275,7 @@ export interface FileRouteTypes {
     | '/dashboard/settings'
     | '/dashboard/sql'
     | '/dashboard/storage'
+    | '/dashboard/usage'
     | '/dashboard/users'
     | '/dashboard/verify'
     | '/dashboard/workspaces'
@@ -292,6 +302,7 @@ export interface FileRouteTypes {
     | '/dashboard/settings'
     | '/dashboard/sql'
     | '/dashboard/storage'
+    | '/dashboard/usage'
     | '/dashboard/users'
     | '/dashboard/verify'
     | '/dashboard/workspaces'
@@ -319,6 +330,7 @@ export interface FileRouteTypes {
     | '/dashboard/settings'
     | '/dashboard/sql'
     | '/dashboard/storage'
+    | '/dashboard/usage'
     | '/dashboard/users'
     | '/dashboard/verify'
     | '/dashboard/workspaces'
@@ -380,6 +392,13 @@ declare module '@tanstack/react-router' {
       path: '/users'
       fullPath: '/dashboard/users'
       preLoaderRoute: typeof DashboardUsersRouteImport
+      parentRoute: typeof DashboardRoute
+    }
+    '/dashboard/usage': {
+      id: '/dashboard/usage'
+      path: '/usage'
+      fullPath: '/dashboard/usage'
+      preLoaderRoute: typeof DashboardUsageRouteImport
       parentRoute: typeof DashboardRoute
     }
     '/dashboard/storage': {
@@ -530,6 +549,7 @@ interface DashboardRouteChildren {
   DashboardSettingsRoute: typeof DashboardSettingsRoute
   DashboardSqlRoute: typeof DashboardSqlRoute
   DashboardStorageRoute: typeof DashboardStorageRoute
+  DashboardUsageRoute: typeof DashboardUsageRoute
   DashboardUsersRoute: typeof DashboardUsersRoute
   DashboardVerifyRoute: typeof DashboardVerifyRoute
   DashboardWorkspacesRoute: typeof DashboardWorkspacesRoute
@@ -555,6 +575,7 @@ const DashboardRouteChildren: DashboardRouteChildren = {
   DashboardSettingsRoute: DashboardSettingsRoute,
   DashboardSqlRoute: DashboardSqlRoute,
   DashboardStorageRoute: DashboardStorageRoute,
+  DashboardUsageRoute: DashboardUsageRoute,
   DashboardUsersRoute: DashboardUsersRoute,
   DashboardVerifyRoute: DashboardVerifyRoute,
   DashboardWorkspacesRoute: DashboardWorkspacesRoute,
