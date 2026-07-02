@@ -63,6 +63,22 @@ function ApiEndpointsPage() {
 
   const openapiUrl = `${base.replace(/\/$/, "")}/admin/v1/schema/openapi.json`;
 
+  const downloadTypedClient = useCallback(() => {
+    if (tables.length === 0 || endpoints.length === 0) return;
+    const src = generateTypedClient({
+      tables, endpoints, baseUrl: base, workspaceSlug: active.slug,
+    });
+    const blob = new Blob([src], { type: "text/typescript;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `pluto-client.${active.slug || "workspace"}.ts`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }, [tables, endpoints, base, active.slug]);
+
   return (
     <div>
       <PageHeader
@@ -70,6 +86,14 @@ function ApiEndpointsPage() {
         description="Auto-generated from your live SQL schema. Each workspace-scoped table becomes a PostgREST-style resource under /rest/v1/. Refresh after new migrations to pick up changes."
         actions={
           <div className="flex gap-2">
+            <button
+              onClick={downloadTypedClient}
+              disabled={tables.length === 0 || endpoints.length === 0}
+              className="inline-flex items-center gap-1.5 text-sm rounded-md bg-primary text-primary-foreground px-3 py-1.5 hover:opacity-90 disabled:opacity-40"
+              title="Generate a typed TypeScript client from the current schema"
+            >
+              <Code2 className="h-3.5 w-3.5" /> Typed client
+            </button>
             <a
               href={openapiUrl}
               target="_blank" rel="noreferrer"
