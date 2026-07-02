@@ -442,6 +442,7 @@ export type SchemaEndpoint = {
   primary_key: string[]; columns: string[]; methods: string[]; base: string;
 };
 export type SchemaSummary = {
+
   workspace_id: string | null;
   role: "service_role" | "authenticated";
   endpoints: SchemaEndpoint[];
