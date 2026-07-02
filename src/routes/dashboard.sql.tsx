@@ -54,10 +54,19 @@ function SqlRunnerPage() {
     }
   }, [paramsText]);
 
+  const clientCheck = useMemo(
+    () => validateClientSql(sql, parsedParams.ok ? parsedParams.value : [], { readOnly }),
+    [sql, parsedParams, readOnly],
+  );
+  const hardBlocked = clientCheck.blocked.length > 0
+    || clientCheck.issues.some((i) => i.kind === "missing_placeholder" || i.kind === "gap")
+    || (readOnly && clientCheck.writeInReadOnly);
+
   const run = useCallback(async () => {
     if (!backendOk) { setError("Configure VITE_PLUTO_URL & VITE_PLUTO_SERVICE_KEY to run SQL."); return; }
     if (!readOnly && !confirmWrite) { setError("Write mode requires the confirmation checkbox."); return; }
     if (!parsedParams.ok) { setError(`Bad params: ${parsedParams.error}`); return; }
+    if (hardBlocked) { setError("Fix the highlighted validation issues before running."); return; }
     setError(null);
     setBusy(true);
     try {
@@ -75,7 +84,7 @@ function SqlRunnerPage() {
     } finally {
       setBusy(false);
     }
-  }, [backendOk, sql, readOnly, confirmWrite, loadHistory, active.id, parsedParams]);
+  }, [backendOk, sql, readOnly, confirmWrite, loadHistory, active.id, parsedParams, hardBlocked]);
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); void run(); }
