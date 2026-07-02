@@ -832,6 +832,7 @@ export type IntegrationCheck = { name: string; ok: boolean; detail?: string };
 export type IntegrationModule = {
   module: string; enabled: boolean; env_flag: string; ready: boolean;
   checks: IntegrationCheck[]; endpoints: string[];
+  throttle?: Array<{ key: string; hits: number; max: number; remaining: number; window_sec: number; reset_in_sec: number; blocked: number }>;
 };
 export type IntegrationHealth = {
   ok: boolean; generated_at: string; modules: IntegrationModule[];
