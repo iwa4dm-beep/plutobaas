@@ -120,6 +120,9 @@ async function main() {
   const { enterprisePlugin } = await import("./modules/enterprise/plugin.js");
   await app.register(devexPlugin);          // Phase 19 — /devex/v1/* — PLUTO_ENABLE_DEVEX=1
   await app.register(enterprisePlugin);     // Phase 20 — /enterprise/v1/* — PLUTO_ENABLE_ENTERPRISE=1
+  const { branchingPlugin, usagePlugin } = await import("./modules/branching/plugin.js");
+  await app.register(branchingPlugin);      // Phase 21 — /branches/v1/*, /schema/v1/* — PLUTO_ENABLE_BRANCHING=1
+  await app.register(usagePlugin);          // Phase 21 — /usage/v1/*                   — PLUTO_ENABLE_USAGE=1
 
   // Top-level Prometheus scrape target — proxies to the observability
   // module when enabled so scrapers hit a stable /metrics regardless of

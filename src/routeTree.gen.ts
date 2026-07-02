@@ -16,6 +16,7 @@ import { Route as DashboardIndexRouteImport } from './routes/dashboard.index'
 import { Route as DashboardWorkspacesRouteImport } from './routes/dashboard.workspaces'
 import { Route as DashboardVerifyRouteImport } from './routes/dashboard.verify'
 import { Route as DashboardUsersRouteImport } from './routes/dashboard.users'
+import { Route as DashboardUsageRouteImport } from './routes/dashboard.usage'
 import { Route as DashboardStorageRouteImport } from './routes/dashboard.storage'
 import { Route as DashboardSqlRouteImport } from './routes/dashboard.sql'
 import { Route as DashboardSettingsRouteImport } from './routes/dashboard.settings'
@@ -30,6 +31,7 @@ import { Route as DashboardIntegrationsRouteImport } from './routes/dashboard.in
 import { Route as DashboardEnterpriseRouteImport } from './routes/dashboard.enterprise'
 import { Route as DashboardDevexRouteImport } from './routes/dashboard.devex'
 import { Route as DashboardDatabaseRouteImport } from './routes/dashboard.database'
+import { Route as DashboardBranchingRouteImport } from './routes/dashboard.branching'
 import { Route as DashboardAuditRouteImport } from './routes/dashboard.audit'
 import { Route as DashboardApiRouteImport } from './routes/dashboard.api'
 import { Route as DashboardAiRouteImport } from './routes/dashboard.ai'
@@ -67,6 +69,11 @@ const DashboardVerifyRoute = DashboardVerifyRouteImport.update({
 const DashboardUsersRoute = DashboardUsersRouteImport.update({
   id: '/users',
   path: '/users',
+  getParentRoute: () => DashboardRoute,
+} as any)
+const DashboardUsageRoute = DashboardUsageRouteImport.update({
+  id: '/usage',
+  path: '/usage',
   getParentRoute: () => DashboardRoute,
 } as any)
 const DashboardStorageRoute = DashboardStorageRouteImport.update({
@@ -139,6 +146,11 @@ const DashboardDatabaseRoute = DashboardDatabaseRouteImport.update({
   path: '/database',
   getParentRoute: () => DashboardRoute,
 } as any)
+const DashboardBranchingRoute = DashboardBranchingRouteImport.update({
+  id: '/branching',
+  path: '/branching',
+  getParentRoute: () => DashboardRoute,
+} as any)
 const DashboardAuditRoute = DashboardAuditRouteImport.update({
   id: '/audit',
   path: '/audit',
@@ -162,6 +174,7 @@ export interface FileRoutesByFullPath {
   '/dashboard/ai': typeof DashboardAiRoute
   '/dashboard/api': typeof DashboardApiRoute
   '/dashboard/audit': typeof DashboardAuditRoute
+  '/dashboard/branching': typeof DashboardBranchingRoute
   '/dashboard/database': typeof DashboardDatabaseRoute
   '/dashboard/devex': typeof DashboardDevexRoute
   '/dashboard/enterprise': typeof DashboardEnterpriseRoute
@@ -176,6 +189,7 @@ export interface FileRoutesByFullPath {
   '/dashboard/settings': typeof DashboardSettingsRoute
   '/dashboard/sql': typeof DashboardSqlRoute
   '/dashboard/storage': typeof DashboardStorageRoute
+  '/dashboard/usage': typeof DashboardUsageRoute
   '/dashboard/users': typeof DashboardUsersRoute
   '/dashboard/verify': typeof DashboardVerifyRoute
   '/dashboard/workspaces': typeof DashboardWorkspacesRoute
@@ -187,6 +201,7 @@ export interface FileRoutesByTo {
   '/dashboard/ai': typeof DashboardAiRoute
   '/dashboard/api': typeof DashboardApiRoute
   '/dashboard/audit': typeof DashboardAuditRoute
+  '/dashboard/branching': typeof DashboardBranchingRoute
   '/dashboard/database': typeof DashboardDatabaseRoute
   '/dashboard/devex': typeof DashboardDevexRoute
   '/dashboard/enterprise': typeof DashboardEnterpriseRoute
@@ -201,6 +216,7 @@ export interface FileRoutesByTo {
   '/dashboard/settings': typeof DashboardSettingsRoute
   '/dashboard/sql': typeof DashboardSqlRoute
   '/dashboard/storage': typeof DashboardStorageRoute
+  '/dashboard/usage': typeof DashboardUsageRoute
   '/dashboard/users': typeof DashboardUsersRoute
   '/dashboard/verify': typeof DashboardVerifyRoute
   '/dashboard/workspaces': typeof DashboardWorkspacesRoute
@@ -214,6 +230,7 @@ export interface FileRoutesById {
   '/dashboard/ai': typeof DashboardAiRoute
   '/dashboard/api': typeof DashboardApiRoute
   '/dashboard/audit': typeof DashboardAuditRoute
+  '/dashboard/branching': typeof DashboardBranchingRoute
   '/dashboard/database': typeof DashboardDatabaseRoute
   '/dashboard/devex': typeof DashboardDevexRoute
   '/dashboard/enterprise': typeof DashboardEnterpriseRoute
@@ -228,6 +245,7 @@ export interface FileRoutesById {
   '/dashboard/settings': typeof DashboardSettingsRoute
   '/dashboard/sql': typeof DashboardSqlRoute
   '/dashboard/storage': typeof DashboardStorageRoute
+  '/dashboard/usage': typeof DashboardUsageRoute
   '/dashboard/users': typeof DashboardUsersRoute
   '/dashboard/verify': typeof DashboardVerifyRoute
   '/dashboard/workspaces': typeof DashboardWorkspacesRoute
@@ -242,6 +260,7 @@ export interface FileRouteTypes {
     | '/dashboard/ai'
     | '/dashboard/api'
     | '/dashboard/audit'
+    | '/dashboard/branching'
     | '/dashboard/database'
     | '/dashboard/devex'
     | '/dashboard/enterprise'
@@ -256,6 +275,7 @@ export interface FileRouteTypes {
     | '/dashboard/settings'
     | '/dashboard/sql'
     | '/dashboard/storage'
+    | '/dashboard/usage'
     | '/dashboard/users'
     | '/dashboard/verify'
     | '/dashboard/workspaces'
@@ -267,6 +287,7 @@ export interface FileRouteTypes {
     | '/dashboard/ai'
     | '/dashboard/api'
     | '/dashboard/audit'
+    | '/dashboard/branching'
     | '/dashboard/database'
     | '/dashboard/devex'
     | '/dashboard/enterprise'
@@ -281,6 +302,7 @@ export interface FileRouteTypes {
     | '/dashboard/settings'
     | '/dashboard/sql'
     | '/dashboard/storage'
+    | '/dashboard/usage'
     | '/dashboard/users'
     | '/dashboard/verify'
     | '/dashboard/workspaces'
@@ -293,6 +315,7 @@ export interface FileRouteTypes {
     | '/dashboard/ai'
     | '/dashboard/api'
     | '/dashboard/audit'
+    | '/dashboard/branching'
     | '/dashboard/database'
     | '/dashboard/devex'
     | '/dashboard/enterprise'
@@ -307,6 +330,7 @@ export interface FileRouteTypes {
     | '/dashboard/settings'
     | '/dashboard/sql'
     | '/dashboard/storage'
+    | '/dashboard/usage'
     | '/dashboard/users'
     | '/dashboard/verify'
     | '/dashboard/workspaces'
@@ -368,6 +392,13 @@ declare module '@tanstack/react-router' {
       path: '/users'
       fullPath: '/dashboard/users'
       preLoaderRoute: typeof DashboardUsersRouteImport
+      parentRoute: typeof DashboardRoute
+    }
+    '/dashboard/usage': {
+      id: '/dashboard/usage'
+      path: '/usage'
+      fullPath: '/dashboard/usage'
+      preLoaderRoute: typeof DashboardUsageRouteImport
       parentRoute: typeof DashboardRoute
     }
     '/dashboard/storage': {
@@ -468,6 +499,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardDatabaseRouteImport
       parentRoute: typeof DashboardRoute
     }
+    '/dashboard/branching': {
+      id: '/dashboard/branching'
+      path: '/branching'
+      fullPath: '/dashboard/branching'
+      preLoaderRoute: typeof DashboardBranchingRouteImport
+      parentRoute: typeof DashboardRoute
+    }
     '/dashboard/audit': {
       id: '/dashboard/audit'
       path: '/audit'
@@ -496,6 +534,7 @@ interface DashboardRouteChildren {
   DashboardAiRoute: typeof DashboardAiRoute
   DashboardApiRoute: typeof DashboardApiRoute
   DashboardAuditRoute: typeof DashboardAuditRoute
+  DashboardBranchingRoute: typeof DashboardBranchingRoute
   DashboardDatabaseRoute: typeof DashboardDatabaseRoute
   DashboardDevexRoute: typeof DashboardDevexRoute
   DashboardEnterpriseRoute: typeof DashboardEnterpriseRoute
@@ -510,6 +549,7 @@ interface DashboardRouteChildren {
   DashboardSettingsRoute: typeof DashboardSettingsRoute
   DashboardSqlRoute: typeof DashboardSqlRoute
   DashboardStorageRoute: typeof DashboardStorageRoute
+  DashboardUsageRoute: typeof DashboardUsageRoute
   DashboardUsersRoute: typeof DashboardUsersRoute
   DashboardVerifyRoute: typeof DashboardVerifyRoute
   DashboardWorkspacesRoute: typeof DashboardWorkspacesRoute
@@ -520,6 +560,7 @@ const DashboardRouteChildren: DashboardRouteChildren = {
   DashboardAiRoute: DashboardAiRoute,
   DashboardApiRoute: DashboardApiRoute,
   DashboardAuditRoute: DashboardAuditRoute,
+  DashboardBranchingRoute: DashboardBranchingRoute,
   DashboardDatabaseRoute: DashboardDatabaseRoute,
   DashboardDevexRoute: DashboardDevexRoute,
   DashboardEnterpriseRoute: DashboardEnterpriseRoute,
@@ -534,6 +575,7 @@ const DashboardRouteChildren: DashboardRouteChildren = {
   DashboardSettingsRoute: DashboardSettingsRoute,
   DashboardSqlRoute: DashboardSqlRoute,
   DashboardStorageRoute: DashboardStorageRoute,
+  DashboardUsageRoute: DashboardUsageRoute,
   DashboardUsersRoute: DashboardUsersRoute,
   DashboardVerifyRoute: DashboardVerifyRoute,
   DashboardWorkspacesRoute: DashboardWorkspacesRoute,

@@ -24,6 +24,8 @@ const items = [
   { to: "/dashboard/observability", label: "Observability", icon: LineChart },
   { to: "/dashboard/devex", label: "DevEx & webhooks", icon: Package },
   { to: "/dashboard/enterprise", label: "Enterprise", icon: Globe },
+  { to: "/dashboard/branching", label: "Branching & Studio", icon: GitBranch },
+  { to: "/dashboard/usage", label: "Usage & Quotas", icon: GaugeAlt },
   { to: "/dashboard/settings", label: "Settings", icon: Settings },
 ] as const;
 
