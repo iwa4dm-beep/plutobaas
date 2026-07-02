@@ -39,16 +39,20 @@ class LocalDriver implements StorageDriver {
   async remove(bucket: string, key: string) {
     await rm(this.path(bucket, key), { force: true });
   }
-  async signedUrl(bucket: string, key: string, expiresIn: number, mode: "read" | "write") {
+  async signedUrl(bucket: string, key: string, expiresIn: number, mode: "read" | "write", tokenId?: string) {
     const exp = Math.floor(Date.now() / 1000) + expiresIn;
-    const payload = `${mode}:${bucket}:${key}:${exp}`;
+    const tok = tokenId ?? "";
+    // `tok` is bound into the HMAC so a captured URL cannot be
+    // re-used with a different (revoked) grant id.
+    const payload = `${mode}:${bucket}:${key}:${exp}:${tok}`;
     const sig = createHmac("sha256", env.JWT_SECRET).update(payload).digest("hex");
     const q = new URLSearchParams({ exp: String(exp), sig, mode });
-    return `/storage/v1/object/${bucket}/${encodeURI(key)}?${q}`;
+    if (tok) q.set("tok", tok);
+    return `/storage/v1/object/signed/${bucket}/${encodeURI(key)}?${q}`;
   }
-  verifyLocalSig(bucket: string, key: string, exp: number, sig: string, mode: "read" | "write") {
+  verifyLocalSig(bucket: string, key: string, exp: number, sig: string, mode: "read" | "write", tokenId = "") {
     if (Date.now() / 1000 > exp) return false;
-    const expected = createHmac("sha256", env.JWT_SECRET).update(`${mode}:${bucket}:${key}:${exp}`).digest("hex");
+    const expected = createHmac("sha256", env.JWT_SECRET).update(`${mode}:${bucket}:${key}:${exp}:${tokenId}`).digest("hex");
     return expected === sig;
   }
   async statFile(bucket: string, key: string) {
