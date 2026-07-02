@@ -10,6 +10,7 @@ import { restRoutes } from "./modules/rest/routes.js";
 import { storageRoutes } from "./modules/storage/routes.js";
 import { adminRoutes } from "./modules/admin/routes.js";
 import { realtimeRoutes } from "./modules/realtime/routes.js";
+import { commsPlugin } from "./modules/comms/plugin.js";
 import { edgeRoutes } from "./modules/edge/routes.js";
 import { migrationRoutes } from "./modules/admin/migrations.js";
 import { jobsRoutes } from "./modules/jobs/routes.js";
@@ -102,6 +103,7 @@ async function main() {
   await app.register(jobsRoutes, { prefix: "/jobs/v1" });
   await app.register(realtimeRoutes, { prefix: "/realtime/v1" });
   await app.register(edgeRoutes, { prefix: "/functions/v1" });
+  await app.register(commsPlugin);   // Phase 14 — mounted at /comms/v1/*, gated by PLUTO_ENABLE_COMMS=1
 
   await app.listen({ host: "0.0.0.0", port: env.PORT });
   app.log.info(`Pluto API listening on :${env.PORT}`);

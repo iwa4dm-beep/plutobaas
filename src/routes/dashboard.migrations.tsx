@@ -100,15 +100,45 @@ function MigrationsPage() {
     finally { setBusy(null); }
   }
 
-  // Export the dry-run plan as either JSON (structured) or plain text
-  // (SQL preview + statement/diff summary). Downloaded to the browser
-  // so it can be attached to a change ticket / PR review.
-  function exportPlan(kind: "json" | "text") {
+  // Export the dry-run plan as JSON (structured), plain text (human report),
+  // or an executable .sql file (concatenated statements wrapped in a single
+  // transaction). All three are generated client-side from the plan that
+  // /admin/v1/migrations/dry-run already returned — no extra endpoint calls.
+  function exportPlan(kind: "json" | "text" | "sql") {
     if (!plan) return;
     const ts = new Date().toISOString().replace(/[:.]/g, "-");
     if (kind === "json") {
       const blob = new Blob([JSON.stringify({ generated_at: new Date().toISOString(), plan }, null, 2)], { type: "application/json" });
       triggerDownload(blob, `pluto-dryrun-${ts}.json`);
+      return;
+    }
+    if (kind === "sql") {
+      const out: string[] = [];
+      out.push(`-- Pluto migration dry-run · generated ${new Date().toISOString()}`);
+      out.push(`-- ${plan.length} migration(s). Review carefully before applying.`);
+      out.push(`-- Wrap the whole batch in a transaction so a mid-run failure rolls everything back.`);
+      out.push("");
+      out.push("BEGIN;");
+      out.push("");
+      for (const p of plan) {
+        out.push(`-- ══ ${p.version} · ${p.name} ══════════════════════════════`);
+        out.push(`-- reason=${p.reason}  statements=${p.statement_count}  bytes=${p.bytes}  down=${p.has_down}`);
+        if (p.diff.added.length)   out.push(`-- +added   : ${p.diff.added.join(", ")}`);
+        if (p.diff.removed.length) out.push(`-- -removed : ${p.diff.removed.join(", ")}`);
+        if (p.diff.changed.length) out.push(`-- ~changed : ${p.diff.changed.join(", ")}`);
+        if (p.simulation_error)    out.push(`-- ⚠  SIMULATION ERROR (would abort): ${p.simulation_error}`);
+        out.push("");
+        out.push(p.preview.trim());
+        out.push("");
+        out.push(`-- Record apply in ledger. Server does this automatically; kept here for parity if executed manually.`);
+        out.push(`INSERT INTO public.schema_migrations (version, name, checksum, applied_at)`);
+        out.push(`  VALUES ('${p.version}', '${p.name.replace(/'/g, "''")}', 'MANUAL-APPLY', now())`);
+        out.push(`  ON CONFLICT (version) DO NOTHING;`);
+        out.push("");
+      }
+      out.push("COMMIT;");
+      out.push("");
+      triggerDownload(new Blob([out.join("\n")], { type: "application/sql" }), `pluto-dryrun-${ts}.sql`);
       return;
     }
     const lines: string[] = [];
@@ -131,6 +161,7 @@ function MigrationsPage() {
     }
     triggerDownload(new Blob([lines.join("\n")], { type: "text/plain" }), `pluto-dryrun-${ts}.txt`);
   }
+
 
   const pendingCount = (entries ?? []).filter((e) => e.status === "pending" || e.status === "failed" || e.status === "rolled_back").length;
 
@@ -213,6 +244,15 @@ function MigrationsPage() {
               >
                 <Download className="h-3 w-3" /> Text
               </button>
+              <button
+                onClick={() => exportPlan("sql")}
+                disabled={plan.length === 0}
+                title="Download an executable .sql file wrapped in BEGIN/COMMIT"
+                className="inline-flex items-center gap-1 text-xs rounded-md border border-primary/40 bg-primary/10 text-primary px-2 py-1 hover:bg-primary/20 disabled:opacity-40"
+              >
+                <Download className="h-3 w-3" /> SQL
+              </button>
+
               <button onClick={() => setPlan(null)} className="text-xs text-muted-foreground hover:text-foreground">Dismiss</button>
             </div>
           </div>

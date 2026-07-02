@@ -14,6 +14,7 @@ import { Route as AuthRouteImport } from './routes/auth'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as DashboardIndexRouteImport } from './routes/dashboard.index'
 import { Route as DashboardWorkspacesRouteImport } from './routes/dashboard.workspaces'
+import { Route as DashboardVerifyRouteImport } from './routes/dashboard.verify'
 import { Route as DashboardUsersRouteImport } from './routes/dashboard.users'
 import { Route as DashboardStorageRouteImport } from './routes/dashboard.storage'
 import { Route as DashboardSqlRouteImport } from './routes/dashboard.sql'
@@ -49,6 +50,11 @@ const DashboardIndexRoute = DashboardIndexRouteImport.update({
 const DashboardWorkspacesRoute = DashboardWorkspacesRouteImport.update({
   id: '/workspaces',
   path: '/workspaces',
+  getParentRoute: () => DashboardRoute,
+} as any)
+const DashboardVerifyRoute = DashboardVerifyRouteImport.update({
+  id: '/verify',
+  path: '/verify',
   getParentRoute: () => DashboardRoute,
 } as any)
 const DashboardUsersRoute = DashboardUsersRouteImport.update({
@@ -122,6 +128,7 @@ export interface FileRoutesByFullPath {
   '/dashboard/sql': typeof DashboardSqlRoute
   '/dashboard/storage': typeof DashboardStorageRoute
   '/dashboard/users': typeof DashboardUsersRoute
+  '/dashboard/verify': typeof DashboardVerifyRoute
   '/dashboard/workspaces': typeof DashboardWorkspacesRoute
   '/dashboard/': typeof DashboardIndexRoute
 }
@@ -139,6 +146,7 @@ export interface FileRoutesByTo {
   '/dashboard/sql': typeof DashboardSqlRoute
   '/dashboard/storage': typeof DashboardStorageRoute
   '/dashboard/users': typeof DashboardUsersRoute
+  '/dashboard/verify': typeof DashboardVerifyRoute
   '/dashboard/workspaces': typeof DashboardWorkspacesRoute
   '/dashboard': typeof DashboardIndexRoute
 }
@@ -158,6 +166,7 @@ export interface FileRoutesById {
   '/dashboard/sql': typeof DashboardSqlRoute
   '/dashboard/storage': typeof DashboardStorageRoute
   '/dashboard/users': typeof DashboardUsersRoute
+  '/dashboard/verify': typeof DashboardVerifyRoute
   '/dashboard/workspaces': typeof DashboardWorkspacesRoute
   '/dashboard/': typeof DashboardIndexRoute
 }
@@ -178,6 +187,7 @@ export interface FileRouteTypes {
     | '/dashboard/sql'
     | '/dashboard/storage'
     | '/dashboard/users'
+    | '/dashboard/verify'
     | '/dashboard/workspaces'
     | '/dashboard/'
   fileRoutesByTo: FileRoutesByTo
@@ -195,6 +205,7 @@ export interface FileRouteTypes {
     | '/dashboard/sql'
     | '/dashboard/storage'
     | '/dashboard/users'
+    | '/dashboard/verify'
     | '/dashboard/workspaces'
     | '/dashboard'
   id:
@@ -213,6 +224,7 @@ export interface FileRouteTypes {
     | '/dashboard/sql'
     | '/dashboard/storage'
     | '/dashboard/users'
+    | '/dashboard/verify'
     | '/dashboard/workspaces'
     | '/dashboard/'
   fileRoutesById: FileRoutesById
@@ -258,6 +270,13 @@ declare module '@tanstack/react-router' {
       path: '/workspaces'
       fullPath: '/dashboard/workspaces'
       preLoaderRoute: typeof DashboardWorkspacesRouteImport
+      parentRoute: typeof DashboardRoute
+    }
+    '/dashboard/verify': {
+      id: '/dashboard/verify'
+      path: '/verify'
+      fullPath: '/dashboard/verify'
+      preLoaderRoute: typeof DashboardVerifyRouteImport
       parentRoute: typeof DashboardRoute
     }
     '/dashboard/users': {
@@ -352,6 +371,7 @@ interface DashboardRouteChildren {
   DashboardSqlRoute: typeof DashboardSqlRoute
   DashboardStorageRoute: typeof DashboardStorageRoute
   DashboardUsersRoute: typeof DashboardUsersRoute
+  DashboardVerifyRoute: typeof DashboardVerifyRoute
   DashboardWorkspacesRoute: typeof DashboardWorkspacesRoute
   DashboardIndexRoute: typeof DashboardIndexRoute
 }
@@ -368,6 +388,7 @@ const DashboardRouteChildren: DashboardRouteChildren = {
   DashboardSqlRoute: DashboardSqlRoute,
   DashboardStorageRoute: DashboardStorageRoute,
   DashboardUsersRoute: DashboardUsersRoute,
+  DashboardVerifyRoute: DashboardVerifyRoute,
   DashboardWorkspacesRoute: DashboardWorkspacesRoute,
   DashboardIndexRoute: DashboardIndexRoute,
 }

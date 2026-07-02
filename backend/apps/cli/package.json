@@ -1,0 +1,26 @@
+{
+  "name": "@pluto/cli",
+  "version": "0.1.0-phase14.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "pluto": "./dist/pluto.mjs"
+  },
+  "scripts": {
+    "dev": "bun run src/index.ts",
+    "build": "bun build src/index.ts --outfile=dist/pluto.mjs --target=node --minify",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "commander": "^12.1.0",
+    "kleur": "^4.1.5",
+    "prompts": "^2.4.2",
+    "undici": "^6.19.8",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.10",
+    "@types/prompts": "^2.4.9",
+    "typescript": "^5.5.3"
+  }
+}
