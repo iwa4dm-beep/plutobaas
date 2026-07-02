@@ -123,6 +123,8 @@ function AuditPage() {
         </select>
         <input value={actor} onChange={(e) => setActor(e.target.value)} placeholder="User email…"
           className="rounded-md border border-input bg-background px-3 py-1.5 text-sm w-44" />
+        <input value={actorId} onChange={(e) => setActorId(e.target.value.trim())} placeholder="User ID (UUID)…"
+          className="rounded-md border border-input bg-background px-3 py-1.5 text-sm w-56 font-mono" />
         <input value={workspaceId} onChange={(e) => setWorkspaceId(e.target.value.trim())}
           placeholder="Workspace UUID…"
           className="rounded-md border border-input bg-background px-3 py-1.5 text-sm w-64 font-mono" />
@@ -166,14 +168,26 @@ function AuditPage() {
                   </div>
                 </td>
                 <td className="px-3 py-2 text-xs">
-                  <div>{e.actor_email ?? <span className="text-muted-foreground">—</span>}</div>
-                  <div className="text-muted-foreground">{e.actor_role ?? ""}{e.ip ? ` · ${e.ip}` : ""}</div>
+                  <div>
+                    {e.actor_email ?? <span className="text-muted-foreground">—</span>}
+                    {e.actor_id && (
+                      <button
+                        type="button"
+                        onClick={() => setActorId(e.actor_id ?? "")}
+                        title="Filter by this user"
+                        className="ml-1 text-[10px] text-muted-foreground hover:text-foreground underline decoration-dotted"
+                      >filter</button>
+                    )}
+                  </div>
+                  <div className="text-muted-foreground">
+                    {e.actor_role ?? ""}
+                    {e.actor_id ? ` · ${e.actor_id.slice(0, 8)}…` : ""}
+                    {e.ip ? ` · ${e.ip}` : ""}
+                  </div>
                 </td>
                 <td className="px-3 py-2 text-xs font-mono">{e.target ?? "—"}</td>
                 <td className="px-3 py-2 text-xs">
-                  {e.metadata && Object.keys(e.metadata).length > 0 ? (
-                    <pre className="bg-muted/40 rounded p-1.5 text-[11px] whitespace-pre-wrap max-w-md">{JSON.stringify(e.metadata, null, 0)}</pre>
-                  ) : <span className="text-muted-foreground">—</span>}
+                  <AuditDetails ev={e} onFilterWorkspace={setWorkspaceId} />
                 </td>
               </tr>
             ))}
