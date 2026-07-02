@@ -98,6 +98,32 @@ function IntegrationsPage() {
                     </ul>
                   </details>
                 )}
+                {m.throttle && m.throttle.length > 0 && (
+                  <details className="text-xs" open>
+                    <summary className="cursor-pointer text-muted-foreground">
+                      Per-key throttle status ({m.throttle.length})
+                    </summary>
+                    <div className="mt-2 overflow-x-auto">
+                      <table className="w-full text-xs">
+                        <thead className="text-left text-muted-foreground">
+                          <tr><th className="py-1 pr-2">Key</th><th>Hits</th><th>Remaining</th><th>Blocked</th><th>Resets</th></tr>
+                        </thead>
+                        <tbody>
+                          {m.throttle.map((t) => (
+                            <tr key={t.key} className="border-t border-border/60">
+                              <td className="py-1 pr-2 font-mono truncate max-w-[16rem]">{t.key}</td>
+                              <td>{t.hits}/{t.max}</td>
+                              <td className={t.remaining === 0 ? "text-rose-500" : ""}>{t.remaining}</td>
+                              <td className={t.blocked > 0 ? "text-rose-500" : "text-muted-foreground"}>{t.blocked}</td>
+                              <td className="text-muted-foreground">{t.reset_in_sec}s</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </details>
+                )}
+
               </div>
             ))}
           </div>
