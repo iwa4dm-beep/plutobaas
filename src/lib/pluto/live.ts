@@ -1106,3 +1106,79 @@ export const usage = {
     return () => controller.abort();
   },
 };
+
+// -------------------- Phase 23: Realtime v2 --------------------
+export type Rt2Channel = { id: string; name: string; kind: "broadcast"|"presence"; created_at: string; members?: number };
+export type Rt2Message = { id: number; event: string; payload: Record<string, unknown>; sender: string|null; created_at: string };
+export type Rt2Member  = { member_key: string; metadata: Record<string, unknown>; last_seen: string };
+
+export const rt2 = {
+  channels:      ()                                                       => api<{ channels: Rt2Channel[] }>("/rt2/v1/channels"),
+  createChannel: (name: string, kind: "broadcast"|"presence" = "broadcast") =>
+    api<{ channel: Rt2Channel }>("/rt2/v1/channels", { method: "POST", body: JSON.stringify({ name, kind }) }),
+  messages:      (name: string, limit = 50) =>
+    api<{ messages: Rt2Message[] }>(`/rt2/v1/channels/${encodeURIComponent(name)}/messages?limit=${limit}`),
+  broadcast:     (name: string, event: string, payload: Record<string, unknown>, sender?: string) =>
+    api<{ ok: boolean; id: number }>(`/rt2/v1/channels/${encodeURIComponent(name)}/broadcast`,
+      { method: "POST", body: JSON.stringify({ event, payload, sender }) }),
+  presence:      (name: string) =>
+    api<{ members: Rt2Member[] }>(`/rt2/v1/channels/${encodeURIComponent(name)}/presence`),
+  join:          (name: string, member_key: string, metadata: Record<string, unknown> = {}) =>
+    api<{ ok: boolean }>(`/rt2/v1/channels/${encodeURIComponent(name)}/presence`,
+      { method: "POST", body: JSON.stringify({ member_key, metadata }) }),
+  leave:         (name: string, member_key: string) =>
+    api<{ ok: boolean }>(`/rt2/v1/channels/${encodeURIComponent(name)}/presence/${encodeURIComponent(member_key)}`,
+      { method: "DELETE" }),
+};
+
+// -------------------- Phase 23: Vector search --------------------
+export type VecCollection = { id: string; name: string; dims: number; docs: number; created_at: string };
+export type VecMatch      = { id: string; external_id: string|null; content: string; metadata: Record<string, unknown>; score: number };
+
+export const vector = {
+  collections:      ()                                     => api<{ collections: VecCollection[] }>("/vec/v1/collections"),
+  createCollection: (name: string, dims = 1536)            =>
+    api<{ collection: VecCollection }>("/vec/v1/collections", { method: "POST", body: JSON.stringify({ name, dims }) }),
+  docs:             (name: string) =>
+    api<{ docs: { id: string; external_id: string|null; content: string; metadata: Record<string, unknown>; created_at: string }[] }>(
+      `/vec/v1/collections/${encodeURIComponent(name)}/docs`),
+  upsert:           (name: string, docs: { id?: string; external_id?: string; content: string; embedding: number[]; metadata?: Record<string, unknown> }[]) =>
+    api<{ ok: boolean; inserted: number }>(`/vec/v1/collections/${encodeURIComponent(name)}/upsert`,
+      { method: "POST", body: JSON.stringify({ docs }) }),
+  query:            (name: string, embedding: number[], top_k = 5) =>
+    api<{ matches: VecMatch[] }>(`/vec/v1/collections/${encodeURIComponent(name)}/query`,
+      { method: "POST", body: JSON.stringify({ embedding, top_k }) }),
+};
+
+// -------------------- Phase 24: Edge Functions v2 --------------------
+export type FnSecret   = { id: string; function_slug: string; name: string; created_at: string };
+export type FnSchedule = { id: string; function_slug: string; cron: string; active: boolean; last_run_at: string|null; next_run_at: string|null; created_at: string };
+export type FnInvocation = { id: number; function_slug: string; trigger: "http"|"cron"|"manual"; status_code: number|null; duration_ms: number|null; cold_start: boolean; error: string|null; created_at: string };
+
+export const edgeV2 = {
+  secrets:       (slug?: string) => api<{ secrets: FnSecret[] }>(`/fn/v2/secrets${slug ? `?slug=${encodeURIComponent(slug)}` : ""}`),
+  setSecret:     (function_slug: string, name: string, value: string) =>
+    api<{ secret: FnSecret }>("/fn/v2/secrets", { method: "POST", body: JSON.stringify({ function_slug, name, value }) }),
+  deleteSecret:  (id: string) => api<{ ok: boolean }>(`/fn/v2/secrets/${id}`, { method: "DELETE" }),
+  schedules:     () => api<{ schedules: FnSchedule[] }>("/fn/v2/schedules"),
+  createSchedule:(function_slug: string, cron: string, active = true) =>
+    api<{ schedule: FnSchedule }>("/fn/v2/schedules", { method: "POST", body: JSON.stringify({ function_slug, cron, active }) }),
+  toggleSchedule:(id: string, active: boolean) =>
+    api<{ schedule: FnSchedule }>(`/fn/v2/schedules/${id}`, { method: "PATCH", body: JSON.stringify({ active }) }),
+  deleteSchedule:(id: string) => api<{ ok: boolean }>(`/fn/v2/schedules/${id}`, { method: "DELETE" }),
+  invocations:   (slug?: string, limit = 100) =>
+    api<{ invocations: FnInvocation[] }>(`/fn/v2/invocations?limit=${limit}${slug ? `&slug=${encodeURIComponent(slug)}` : ""}`),
+  logInvocation: (body: { function_slug: string; trigger?: "http"|"cron"|"manual"; status_code?: number; duration_ms?: number; cold_start?: boolean; error?: string }) =>
+    api<{ ok: boolean; id: number }>("/fn/v2/invocations", { method: "POST", body: JSON.stringify(body) }),
+};
+
+// -------------------- Phase 24: Backups --------------------
+export type BackupExport = { id: string; kind: "full"|"schema"|"table"; target: string|null; status: "pending"|"running"|"done"|"failed"; bytes: number; download_path: string|null; error: string|null; created_at: string; finished_at: string|null };
+
+export const backups = {
+  list:   ()                                                     => api<{ exports: BackupExport[] }>("/backups/v1"),
+  start:  (kind: "full"|"schema"|"table" = "full", target?: string) =>
+    api<{ export: BackupExport }>("/backups/v1", { method: "POST", body: JSON.stringify({ kind, target }) }),
+  get:    (id: string) => api<{ export: BackupExport }>(`/backups/v1/${id}`),
+  cancel: (id: string) => api<{ ok: boolean }>(`/backups/v1/${id}/cancel`, { method: "POST" }),
+};
