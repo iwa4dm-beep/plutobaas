@@ -123,6 +123,14 @@ async function main() {
   const { branchingPlugin, usagePlugin } = await import("./modules/branching/plugin.js");
   await app.register(branchingPlugin);      // Phase 21 — /branches/v1/*, /schema/v1/* — PLUTO_ENABLE_BRANCHING=1
   await app.register(usagePlugin);          // Phase 21 — /usage/v1/*                   — PLUTO_ENABLE_USAGE=1
+  const { realtimeV2Plugin } = await import("./modules/realtime_v2/plugin.js");
+  const { vectorPlugin } = await import("./modules/vector/plugin.js");
+  await app.register(realtimeV2Plugin);     // Phase 23 — /rt2/v1/*   — PLUTO_ENABLE_REALTIME_V2=1
+  await app.register(vectorPlugin);         // Phase 23 — /vec/v1/*   — PLUTO_ENABLE_VECTOR=1
+  const { edgeV2Plugin } = await import("./modules/edge_v2/plugin.js");
+  const { backupsPlugin } = await import("./modules/backups/plugin.js");
+  await app.register(edgeV2Plugin);         // Phase 24 — /fn/v2/*    — PLUTO_ENABLE_EDGE_V2=1
+  await app.register(backupsPlugin);        // Phase 24 — /backups/v1 — PLUTO_ENABLE_BACKUPS=1
 
   // Top-level Prometheus scrape target — proxies to the observability
   // module when enabled so scrapers hit a stable /metrics regardless of
