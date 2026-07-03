@@ -1,5 +1,5 @@
 import { Link, useRouterState } from "@tanstack/react-router";
-import { Activity, Building2, Database, Files, Gauge, GitBranch, Gauge as GaugeAlt, Globe, HeartPulse, KeyRound, LineChart, LogOut, Package, Radio, ScrollText, Settings, Shield, ShieldAlert, ShieldCheck, Sparkles, Terminal, Users, Waves, Zap } from "lucide-react";
+import { Activity, Archive, Building2, Cloud, Database, Files, Gauge, GitBranch, Gauge as GaugeAlt, Globe, HeartPulse, KeyRound, LineChart, LogOut, Package, Radio, ScrollText, Search, Settings, Shield, ShieldAlert, ShieldCheck, Sparkles, Terminal, Users, Waves, Zap } from "lucide-react";
 import { useAuth } from "@/lib/pluto/auth-context";
 import { WorkspaceSwitcher } from "@/components/pluto/WorkspaceSwitcher";
 
@@ -26,6 +26,10 @@ const items = [
   { to: "/dashboard/enterprise", label: "Enterprise", icon: Globe },
   { to: "/dashboard/branching", label: "Branching & Studio", icon: GitBranch },
   { to: "/dashboard/usage", label: "Usage & Quotas", icon: GaugeAlt },
+  { to: "/dashboard/realtime", label: "Realtime channels", icon: Radio },
+  { to: "/dashboard/vector", label: "Vector search", icon: Search },
+  { to: "/dashboard/functions", label: "Edge Functions", icon: Cloud },
+  { to: "/dashboard/backups", label: "Backups", icon: Archive },
   { to: "/dashboard/settings", label: "Settings", icon: Settings },
 ] as const;
 

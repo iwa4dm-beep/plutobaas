@@ -15,12 +15,14 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as DashboardIndexRouteImport } from './routes/dashboard.index'
 import { Route as DashboardWorkspacesRouteImport } from './routes/dashboard.workspaces'
 import { Route as DashboardVerifyRouteImport } from './routes/dashboard.verify'
+import { Route as DashboardVectorRouteImport } from './routes/dashboard.vector'
 import { Route as DashboardUsersRouteImport } from './routes/dashboard.users'
 import { Route as DashboardUsageRouteImport } from './routes/dashboard.usage'
 import { Route as DashboardStorageRouteImport } from './routes/dashboard.storage'
 import { Route as DashboardSqlRouteImport } from './routes/dashboard.sql'
 import { Route as DashboardSettingsRouteImport } from './routes/dashboard.settings'
 import { Route as DashboardScalingRouteImport } from './routes/dashboard.scaling'
+import { Route as DashboardRealtimeRouteImport } from './routes/dashboard.realtime'
 import { Route as DashboardProjectsRouteImport } from './routes/dashboard.projects'
 import { Route as DashboardObservabilityRouteImport } from './routes/dashboard.observability'
 import { Route as DashboardMigrationsRouteImport } from './routes/dashboard.migrations'
@@ -28,10 +30,12 @@ import { Route as DashboardMfaRouteImport } from './routes/dashboard.mfa'
 import { Route as DashboardLogsRouteImport } from './routes/dashboard.logs'
 import { Route as DashboardJobsRouteImport } from './routes/dashboard.jobs'
 import { Route as DashboardIntegrationsRouteImport } from './routes/dashboard.integrations'
+import { Route as DashboardFunctionsRouteImport } from './routes/dashboard.functions'
 import { Route as DashboardEnterpriseRouteImport } from './routes/dashboard.enterprise'
 import { Route as DashboardDevexRouteImport } from './routes/dashboard.devex'
 import { Route as DashboardDatabaseRouteImport } from './routes/dashboard.database'
 import { Route as DashboardBranchingRouteImport } from './routes/dashboard.branching'
+import { Route as DashboardBackupsRouteImport } from './routes/dashboard.backups'
 import { Route as DashboardAuditRouteImport } from './routes/dashboard.audit'
 import { Route as DashboardApiRouteImport } from './routes/dashboard.api'
 import { Route as DashboardAiRouteImport } from './routes/dashboard.ai'
@@ -66,6 +70,11 @@ const DashboardVerifyRoute = DashboardVerifyRouteImport.update({
   path: '/verify',
   getParentRoute: () => DashboardRoute,
 } as any)
+const DashboardVectorRoute = DashboardVectorRouteImport.update({
+  id: '/vector',
+  path: '/vector',
+  getParentRoute: () => DashboardRoute,
+} as any)
 const DashboardUsersRoute = DashboardUsersRouteImport.update({
   id: '/users',
   path: '/users',
@@ -94,6 +103,11 @@ const DashboardSettingsRoute = DashboardSettingsRouteImport.update({
 const DashboardScalingRoute = DashboardScalingRouteImport.update({
   id: '/scaling',
   path: '/scaling',
+  getParentRoute: () => DashboardRoute,
+} as any)
+const DashboardRealtimeRoute = DashboardRealtimeRouteImport.update({
+  id: '/realtime',
+  path: '/realtime',
   getParentRoute: () => DashboardRoute,
 } as any)
 const DashboardProjectsRoute = DashboardProjectsRouteImport.update({
@@ -131,6 +145,11 @@ const DashboardIntegrationsRoute = DashboardIntegrationsRouteImport.update({
   path: '/integrations',
   getParentRoute: () => DashboardRoute,
 } as any)
+const DashboardFunctionsRoute = DashboardFunctionsRouteImport.update({
+  id: '/functions',
+  path: '/functions',
+  getParentRoute: () => DashboardRoute,
+} as any)
 const DashboardEnterpriseRoute = DashboardEnterpriseRouteImport.update({
   id: '/enterprise',
   path: '/enterprise',
@@ -149,6 +168,11 @@ const DashboardDatabaseRoute = DashboardDatabaseRouteImport.update({
 const DashboardBranchingRoute = DashboardBranchingRouteImport.update({
   id: '/branching',
   path: '/branching',
+  getParentRoute: () => DashboardRoute,
+} as any)
+const DashboardBackupsRoute = DashboardBackupsRouteImport.update({
+  id: '/backups',
+  path: '/backups',
   getParentRoute: () => DashboardRoute,
 } as any)
 const DashboardAuditRoute = DashboardAuditRouteImport.update({
@@ -174,10 +198,12 @@ export interface FileRoutesByFullPath {
   '/dashboard/ai': typeof DashboardAiRoute
   '/dashboard/api': typeof DashboardApiRoute
   '/dashboard/audit': typeof DashboardAuditRoute
+  '/dashboard/backups': typeof DashboardBackupsRoute
   '/dashboard/branching': typeof DashboardBranchingRoute
   '/dashboard/database': typeof DashboardDatabaseRoute
   '/dashboard/devex': typeof DashboardDevexRoute
   '/dashboard/enterprise': typeof DashboardEnterpriseRoute
+  '/dashboard/functions': typeof DashboardFunctionsRoute
   '/dashboard/integrations': typeof DashboardIntegrationsRoute
   '/dashboard/jobs': typeof DashboardJobsRoute
   '/dashboard/logs': typeof DashboardLogsRoute
@@ -185,12 +211,14 @@ export interface FileRoutesByFullPath {
   '/dashboard/migrations': typeof DashboardMigrationsRoute
   '/dashboard/observability': typeof DashboardObservabilityRoute
   '/dashboard/projects': typeof DashboardProjectsRoute
+  '/dashboard/realtime': typeof DashboardRealtimeRoute
   '/dashboard/scaling': typeof DashboardScalingRoute
   '/dashboard/settings': typeof DashboardSettingsRoute
   '/dashboard/sql': typeof DashboardSqlRoute
   '/dashboard/storage': typeof DashboardStorageRoute
   '/dashboard/usage': typeof DashboardUsageRoute
   '/dashboard/users': typeof DashboardUsersRoute
+  '/dashboard/vector': typeof DashboardVectorRoute
   '/dashboard/verify': typeof DashboardVerifyRoute
   '/dashboard/workspaces': typeof DashboardWorkspacesRoute
   '/dashboard/': typeof DashboardIndexRoute
@@ -201,10 +229,12 @@ export interface FileRoutesByTo {
   '/dashboard/ai': typeof DashboardAiRoute
   '/dashboard/api': typeof DashboardApiRoute
   '/dashboard/audit': typeof DashboardAuditRoute
+  '/dashboard/backups': typeof DashboardBackupsRoute
   '/dashboard/branching': typeof DashboardBranchingRoute
   '/dashboard/database': typeof DashboardDatabaseRoute
   '/dashboard/devex': typeof DashboardDevexRoute
   '/dashboard/enterprise': typeof DashboardEnterpriseRoute
+  '/dashboard/functions': typeof DashboardFunctionsRoute
   '/dashboard/integrations': typeof DashboardIntegrationsRoute
   '/dashboard/jobs': typeof DashboardJobsRoute
   '/dashboard/logs': typeof DashboardLogsRoute
@@ -212,12 +242,14 @@ export interface FileRoutesByTo {
   '/dashboard/migrations': typeof DashboardMigrationsRoute
   '/dashboard/observability': typeof DashboardObservabilityRoute
   '/dashboard/projects': typeof DashboardProjectsRoute
+  '/dashboard/realtime': typeof DashboardRealtimeRoute
   '/dashboard/scaling': typeof DashboardScalingRoute
   '/dashboard/settings': typeof DashboardSettingsRoute
   '/dashboard/sql': typeof DashboardSqlRoute
   '/dashboard/storage': typeof DashboardStorageRoute
   '/dashboard/usage': typeof DashboardUsageRoute
   '/dashboard/users': typeof DashboardUsersRoute
+  '/dashboard/vector': typeof DashboardVectorRoute
   '/dashboard/verify': typeof DashboardVerifyRoute
   '/dashboard/workspaces': typeof DashboardWorkspacesRoute
   '/dashboard': typeof DashboardIndexRoute
@@ -230,10 +262,12 @@ export interface FileRoutesById {
   '/dashboard/ai': typeof DashboardAiRoute
   '/dashboard/api': typeof DashboardApiRoute
   '/dashboard/audit': typeof DashboardAuditRoute
+  '/dashboard/backups': typeof DashboardBackupsRoute
   '/dashboard/branching': typeof DashboardBranchingRoute
   '/dashboard/database': typeof DashboardDatabaseRoute
   '/dashboard/devex': typeof DashboardDevexRoute
   '/dashboard/enterprise': typeof DashboardEnterpriseRoute
+  '/dashboard/functions': typeof DashboardFunctionsRoute
   '/dashboard/integrations': typeof DashboardIntegrationsRoute
   '/dashboard/jobs': typeof DashboardJobsRoute
   '/dashboard/logs': typeof DashboardLogsRoute
@@ -241,12 +275,14 @@ export interface FileRoutesById {
   '/dashboard/migrations': typeof DashboardMigrationsRoute
   '/dashboard/observability': typeof DashboardObservabilityRoute
   '/dashboard/projects': typeof DashboardProjectsRoute
+  '/dashboard/realtime': typeof DashboardRealtimeRoute
   '/dashboard/scaling': typeof DashboardScalingRoute
   '/dashboard/settings': typeof DashboardSettingsRoute
   '/dashboard/sql': typeof DashboardSqlRoute
   '/dashboard/storage': typeof DashboardStorageRoute
   '/dashboard/usage': typeof DashboardUsageRoute
   '/dashboard/users': typeof DashboardUsersRoute
+  '/dashboard/vector': typeof DashboardVectorRoute
   '/dashboard/verify': typeof DashboardVerifyRoute
   '/dashboard/workspaces': typeof DashboardWorkspacesRoute
   '/dashboard/': typeof DashboardIndexRoute
@@ -260,10 +296,12 @@ export interface FileRouteTypes {
     | '/dashboard/ai'
     | '/dashboard/api'
     | '/dashboard/audit'
+    | '/dashboard/backups'
     | '/dashboard/branching'
     | '/dashboard/database'
     | '/dashboard/devex'
     | '/dashboard/enterprise'
+    | '/dashboard/functions'
     | '/dashboard/integrations'
     | '/dashboard/jobs'
     | '/dashboard/logs'
@@ -271,12 +309,14 @@ export interface FileRouteTypes {
     | '/dashboard/migrations'
     | '/dashboard/observability'
     | '/dashboard/projects'
+    | '/dashboard/realtime'
     | '/dashboard/scaling'
     | '/dashboard/settings'
     | '/dashboard/sql'
     | '/dashboard/storage'
     | '/dashboard/usage'
     | '/dashboard/users'
+    | '/dashboard/vector'
     | '/dashboard/verify'
     | '/dashboard/workspaces'
     | '/dashboard/'
@@ -287,10 +327,12 @@ export interface FileRouteTypes {
     | '/dashboard/ai'
     | '/dashboard/api'
     | '/dashboard/audit'
+    | '/dashboard/backups'
     | '/dashboard/branching'
     | '/dashboard/database'
     | '/dashboard/devex'
     | '/dashboard/enterprise'
+    | '/dashboard/functions'
     | '/dashboard/integrations'
     | '/dashboard/jobs'
     | '/dashboard/logs'
@@ -298,12 +340,14 @@ export interface FileRouteTypes {
     | '/dashboard/migrations'
     | '/dashboard/observability'
     | '/dashboard/projects'
+    | '/dashboard/realtime'
     | '/dashboard/scaling'
     | '/dashboard/settings'
     | '/dashboard/sql'
     | '/dashboard/storage'
     | '/dashboard/usage'
     | '/dashboard/users'
+    | '/dashboard/vector'
     | '/dashboard/verify'
     | '/dashboard/workspaces'
     | '/dashboard'
@@ -315,10 +359,12 @@ export interface FileRouteTypes {
     | '/dashboard/ai'
     | '/dashboard/api'
     | '/dashboard/audit'
+    | '/dashboard/backups'
     | '/dashboard/branching'
     | '/dashboard/database'
     | '/dashboard/devex'
     | '/dashboard/enterprise'
+    | '/dashboard/functions'
     | '/dashboard/integrations'
     | '/dashboard/jobs'
     | '/dashboard/logs'
@@ -326,12 +372,14 @@ export interface FileRouteTypes {
     | '/dashboard/migrations'
     | '/dashboard/observability'
     | '/dashboard/projects'
+    | '/dashboard/realtime'
     | '/dashboard/scaling'
     | '/dashboard/settings'
     | '/dashboard/sql'
     | '/dashboard/storage'
     | '/dashboard/usage'
     | '/dashboard/users'
+    | '/dashboard/vector'
     | '/dashboard/verify'
     | '/dashboard/workspaces'
     | '/dashboard/'
@@ -387,6 +435,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardVerifyRouteImport
       parentRoute: typeof DashboardRoute
     }
+    '/dashboard/vector': {
+      id: '/dashboard/vector'
+      path: '/vector'
+      fullPath: '/dashboard/vector'
+      preLoaderRoute: typeof DashboardVectorRouteImport
+      parentRoute: typeof DashboardRoute
+    }
     '/dashboard/users': {
       id: '/dashboard/users'
       path: '/users'
@@ -427,6 +482,13 @@ declare module '@tanstack/react-router' {
       path: '/scaling'
       fullPath: '/dashboard/scaling'
       preLoaderRoute: typeof DashboardScalingRouteImport
+      parentRoute: typeof DashboardRoute
+    }
+    '/dashboard/realtime': {
+      id: '/dashboard/realtime'
+      path: '/realtime'
+      fullPath: '/dashboard/realtime'
+      preLoaderRoute: typeof DashboardRealtimeRouteImport
       parentRoute: typeof DashboardRoute
     }
     '/dashboard/projects': {
@@ -478,6 +540,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardIntegrationsRouteImport
       parentRoute: typeof DashboardRoute
     }
+    '/dashboard/functions': {
+      id: '/dashboard/functions'
+      path: '/functions'
+      fullPath: '/dashboard/functions'
+      preLoaderRoute: typeof DashboardFunctionsRouteImport
+      parentRoute: typeof DashboardRoute
+    }
     '/dashboard/enterprise': {
       id: '/dashboard/enterprise'
       path: '/enterprise'
@@ -504,6 +573,13 @@ declare module '@tanstack/react-router' {
       path: '/branching'
       fullPath: '/dashboard/branching'
       preLoaderRoute: typeof DashboardBranchingRouteImport
+      parentRoute: typeof DashboardRoute
+    }
+    '/dashboard/backups': {
+      id: '/dashboard/backups'
+      path: '/backups'
+      fullPath: '/dashboard/backups'
+      preLoaderRoute: typeof DashboardBackupsRouteImport
       parentRoute: typeof DashboardRoute
     }
     '/dashboard/audit': {
@@ -534,10 +610,12 @@ interface DashboardRouteChildren {
   DashboardAiRoute: typeof DashboardAiRoute
   DashboardApiRoute: typeof DashboardApiRoute
   DashboardAuditRoute: typeof DashboardAuditRoute
+  DashboardBackupsRoute: typeof DashboardBackupsRoute
   DashboardBranchingRoute: typeof DashboardBranchingRoute
   DashboardDatabaseRoute: typeof DashboardDatabaseRoute
   DashboardDevexRoute: typeof DashboardDevexRoute
   DashboardEnterpriseRoute: typeof DashboardEnterpriseRoute
+  DashboardFunctionsRoute: typeof DashboardFunctionsRoute
   DashboardIntegrationsRoute: typeof DashboardIntegrationsRoute
   DashboardJobsRoute: typeof DashboardJobsRoute
   DashboardLogsRoute: typeof DashboardLogsRoute
@@ -545,12 +623,14 @@ interface DashboardRouteChildren {
   DashboardMigrationsRoute: typeof DashboardMigrationsRoute
   DashboardObservabilityRoute: typeof DashboardObservabilityRoute
   DashboardProjectsRoute: typeof DashboardProjectsRoute
+  DashboardRealtimeRoute: typeof DashboardRealtimeRoute
   DashboardScalingRoute: typeof DashboardScalingRoute
   DashboardSettingsRoute: typeof DashboardSettingsRoute
   DashboardSqlRoute: typeof DashboardSqlRoute
   DashboardStorageRoute: typeof DashboardStorageRoute
   DashboardUsageRoute: typeof DashboardUsageRoute
   DashboardUsersRoute: typeof DashboardUsersRoute
+  DashboardVectorRoute: typeof DashboardVectorRoute
   DashboardVerifyRoute: typeof DashboardVerifyRoute
   DashboardWorkspacesRoute: typeof DashboardWorkspacesRoute
   DashboardIndexRoute: typeof DashboardIndexRoute
@@ -560,10 +640,12 @@ const DashboardRouteChildren: DashboardRouteChildren = {
   DashboardAiRoute: DashboardAiRoute,
   DashboardApiRoute: DashboardApiRoute,
   DashboardAuditRoute: DashboardAuditRoute,
+  DashboardBackupsRoute: DashboardBackupsRoute,
   DashboardBranchingRoute: DashboardBranchingRoute,
   DashboardDatabaseRoute: DashboardDatabaseRoute,
   DashboardDevexRoute: DashboardDevexRoute,
   DashboardEnterpriseRoute: DashboardEnterpriseRoute,
+  DashboardFunctionsRoute: DashboardFunctionsRoute,
   DashboardIntegrationsRoute: DashboardIntegrationsRoute,
   DashboardJobsRoute: DashboardJobsRoute,
   DashboardLogsRoute: DashboardLogsRoute,
@@ -571,12 +653,14 @@ const DashboardRouteChildren: DashboardRouteChildren = {
   DashboardMigrationsRoute: DashboardMigrationsRoute,
   DashboardObservabilityRoute: DashboardObservabilityRoute,
   DashboardProjectsRoute: DashboardProjectsRoute,
+  DashboardRealtimeRoute: DashboardRealtimeRoute,
   DashboardScalingRoute: DashboardScalingRoute,
   DashboardSettingsRoute: DashboardSettingsRoute,
   DashboardSqlRoute: DashboardSqlRoute,
   DashboardStorageRoute: DashboardStorageRoute,
   DashboardUsageRoute: DashboardUsageRoute,
   DashboardUsersRoute: DashboardUsersRoute,
+  DashboardVectorRoute: DashboardVectorRoute,
   DashboardVerifyRoute: DashboardVerifyRoute,
   DashboardWorkspacesRoute: DashboardWorkspacesRoute,
   DashboardIndexRoute: DashboardIndexRoute,
