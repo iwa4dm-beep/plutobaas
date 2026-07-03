@@ -39,6 +39,10 @@ import { Route as DashboardBackupsRouteImport } from './routes/dashboard.backups
 import { Route as DashboardAuditRouteImport } from './routes/dashboard.audit'
 import { Route as DashboardApiRouteImport } from './routes/dashboard.api'
 import { Route as DashboardAiRouteImport } from './routes/dashboard.ai'
+import { Route as DashboardRealtimeRouteImport } from './routes/dashboard.realtime'
+import { Route as DashboardVectorRouteImport } from './routes/dashboard.vector'
+import { Route as DashboardFunctionsRouteImport } from './routes/dashboard.functions'
+import { Route as DashboardBackupsRouteImport } from './routes/dashboard.backups'
 
 const DashboardRoute = DashboardRouteImport.update({
   id: '/dashboard',
@@ -189,6 +193,18 @@ const DashboardAiRoute = DashboardAiRouteImport.update({
   id: '/ai',
   path: '/ai',
   getParentRoute: () => DashboardRoute,
+} as any)
+const DashboardRealtimeRoute = DashboardRealtimeRouteImport.update({
+  id: '/realtime', path: '/realtime', getParentRoute: () => DashboardRoute,
+} as any)
+const DashboardVectorRoute = DashboardVectorRouteImport.update({
+  id: '/vector', path: '/vector', getParentRoute: () => DashboardRoute,
+} as any)
+const DashboardFunctionsRoute = DashboardFunctionsRouteImport.update({
+  id: '/functions', path: '/functions', getParentRoute: () => DashboardRoute,
+} as any)
+const DashboardBackupsRoute = DashboardBackupsRouteImport.update({
+  id: '/backups', path: '/backups', getParentRoute: () => DashboardRoute,
 } as any)
 
 export interface FileRoutesByFullPath {
