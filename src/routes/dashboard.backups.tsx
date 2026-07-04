@@ -39,6 +39,7 @@ function BackupsPage() {
     catch (e) { toast.error((e as Error).message); }
   }
   useEffect(() => { refresh(); const t = setInterval(refresh, 4000); return () => clearInterval(t); }, []);
+  useEffect(() => { if (isLive()) branching.list().then(r => setBranches(r.branches)).catch(() => undefined); }, [wizard]);
 
   async function start() {
     try { await backups.start(kind, target || undefined); toast.success("Export started"); setTarget(""); refresh(); }
