@@ -103,3 +103,54 @@ export async function checkQuota(ws: string, metric: MeteredMetric, quantity: nu
   }
   return { ok: true, warn: overSoft || overHard, over_soft: overSoft, over_hard: overHard, used, hard_limit: quota.hard_limit };
 }
+
+// ---- Alert fan-out --------------------------------------------------------
+// Fires at most once per hour per (workspace, metric) — coalesces bursts.
+// Delivers webhook payloads (best-effort) for any registered receiver.
+async function maybeFireAlert(ws: string, metric: string, pct: number, used: number, hardLimit: number) {
+  try {
+    const existing = await q<{ id: string }>(
+      `select id from public.quota_alerts
+       where workspace_id=$1::uuid and metric=$2
+         and triggered_at > now() - interval '1 hour' and resolved_at is null
+       limit 1`, [ws, metric]);
+    if (existing.rows[0]) return;
+    const ins = await q<{ id: string }>(
+      `insert into public.quota_alerts (workspace_id, metric, pct, used, hard_limit)
+       values ($1::uuid, $2, $3, $4, $5) returning id`,
+      [ws, metric, pct.toFixed(2), used, hardLimit]);
+    const hooks = await q<{ id: string; url: string; secret: string | null; events: string[] }>(
+      `select id, url, secret, events from public.workspace_webhooks
+       where workspace_id=$1::uuid and active=true`, [ws]);
+    const body = JSON.stringify({
+      type: "quota.alert",
+      workspace_id: ws, metric, pct: Number(pct.toFixed(2)),
+      used, hard_limit: hardLimit, triggered_at: new Date().toISOString(),
+    });
+    for (const h of hooks.rows) {
+      if (h.events && h.events.length && !h.events.includes("quota.alert")) continue;
+      void deliverWebhook(h.id, h.url, h.secret, body);
+    }
+    await q(`update public.quota_alerts set notified=true where id=$1::uuid`, [ins.rows[0].id]);
+  } catch { /* metering must never throw */ }
+}
+
+async function deliverWebhook(id: string, url: string, secret: string | null, body: string) {
+  try {
+    const headers: Record<string, string> = { "content-type": "application/json" };
+    if (secret) {
+      const { createHmac } = await import("node:crypto");
+      headers["x-pluto-signature"] = createHmac("sha256", secret).update(body).digest("hex");
+    }
+    const res = await fetch(url, { method: "POST", headers, body,
+      signal: AbortSignal.timeout(5000) });
+    await q(`update public.workspace_webhooks
+             set last_status=$2, last_error=null, last_delivered_at=now() where id=$1::uuid`,
+            [id, res.status]);
+  } catch (e) {
+    await q(`update public.workspace_webhooks
+             set last_status=0, last_error=$2, last_delivered_at=now() where id=$1::uuid`,
+            [id, (e as Error).message.slice(0, 300)]).catch(() => undefined);
+  }
+}
+
