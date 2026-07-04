@@ -1,0 +1,79 @@
+name: Deploy backend to Fly.io
+
+# Auto-deploys backend/apps/server to Fly.io on push to main.
+#
+# One-time setup:
+#   1. `fly auth token` → copy the token
+#   2. GitHub → Settings → Secrets and variables → Actions → New repository secret
+#      Name:  FLY_API_TOKEN
+#      Value: <the token>
+#   3. Ensure backend/deploy/fly.toml is copied to backend/fly.toml (or update
+#      `--config` below) and that `fly launch` has been run once locally.
+#
+# Migrations run automatically via the `release_command` in fly.toml
+# (`node dist/db/migrate.js`) — no separate step needed.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "backend/apps/server/**"
+      - "backend/deploy/fly.toml"
+      - ".github/workflows/deploy-fly.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: fly-deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Fly.io deploy
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Fly CLI
+        uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Typecheck backend
+        working-directory: backend/apps/server
+        run: |
+          npm ci --no-audit --no-fund
+          npx tsc -p tsconfig.json --noEmit
+
+      - name: Deploy to Fly
+        working-directory: backend
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          flyctl deploy \
+            --config deploy/fly.toml \
+            --dockerfile apps/server/Dockerfile \
+            --remote-only \
+            --wait-timeout 300
+
+      - name: Verify /readyz
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          APP=$(grep '^app' backend/deploy/fly.toml | head -1 | cut -d'"' -f2)
+          URL="https://${APP}.fly.dev/readyz"
+          echo "Probing $URL"
+          for i in $(seq 1 20); do
+            code=$(curl -s -o /tmp/readyz.json -w "%{http_code}" "$URL" || echo "000")
+            if [ "$code" = "200" ]; then
+              echo "readyz OK"
+              cat /tmp/readyz.json
+              exit 0
+            fi
+            echo "attempt $i → $code, retrying"
+            sleep 5
+          done
+          echo "readyz never returned 200"
+          exit 1
