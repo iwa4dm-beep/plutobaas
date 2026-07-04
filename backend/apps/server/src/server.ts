@@ -131,6 +131,11 @@ async function main() {
   const { backupsPlugin } = await import("./modules/backups/plugin.js");
   await app.register(edgeV2Plugin);         // Phase 24 — /fn/v2/*    — PLUTO_ENABLE_EDGE_V2=1
   await app.register(backupsPlugin);        // Phase 24 — /backups/v1 — PLUTO_ENABLE_BACKUPS=1
+  const { logsPlugin, startLogRetentionSweeper } = await import("./modules/logs/plugin.js");
+  const { tokensPlugin } = await import("./modules/tokens/plugin.js");
+  await app.register(logsPlugin);           // Phase 27 — /logs/v1/*
+  await app.register(tokensPlugin);         // Phase 28 — /tokens/v1/*
+  startLogRetentionSweeper(app.log);
 
   // Top-level Prometheus scrape target — proxies to the observability
   // module when enabled so scrapers hit a stable /metrics regardless of
