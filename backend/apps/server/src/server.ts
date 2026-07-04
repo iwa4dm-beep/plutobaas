@@ -159,6 +159,8 @@ async function main() {
   await app.register(realtimeV3Plugin);     // Phase 43 — CDC + NATS backplane + RLS-aware channels + replay
   const { dataApiV2Plugin } = await import("./modules/data_api_v2/plugin.js");
   await app.register(dataApiV2Plugin);      // Phase 44 — embedded relations, DB webhooks, FDW registry
+  const { edgeV4Plugin } = await import("./modules/edge_v4/plugin.js");
+  await app.register(edgeV4Plugin);         // Phase 45 — multi-file bundles, npm/http imports, secrets, cron, domains
   startLogRetentionSweeper(app.log);
 
 
