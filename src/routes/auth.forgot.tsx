@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { Zap, ArrowLeft } from "lucide-react";
-import { isLive, pluto } from "@/lib/pluto/live";
+import { isLive, live } from "@/lib/pluto/live";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/auth/forgot")({
