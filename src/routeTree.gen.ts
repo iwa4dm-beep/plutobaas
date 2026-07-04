@@ -14,6 +14,7 @@ import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as DashboardIndexRouteImport } from './routes/dashboard.index'
+import { Route as DocsApiRouteImport } from './routes/docs.api'
 import { Route as DashboardWorkspacesRouteImport } from './routes/dashboard.workspaces'
 import { Route as DashboardVerifyRouteImport } from './routes/dashboard.verify'
 import { Route as DashboardVectorRouteImport } from './routes/dashboard.vector'
@@ -73,6 +74,11 @@ const DashboardIndexRoute = DashboardIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => DashboardRoute,
+} as any)
+const DocsApiRoute = DocsApiRouteImport.update({
+  id: '/docs/api',
+  path: '/docs/api',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const DashboardWorkspacesRoute = DashboardWorkspacesRouteImport.update({
   id: '/workspaces',
@@ -284,6 +290,7 @@ export interface FileRoutesByFullPath {
   '/dashboard/vector': typeof DashboardVectorRoute
   '/dashboard/verify': typeof DashboardVerifyRoute
   '/dashboard/workspaces': typeof DashboardWorkspacesRoute
+  '/docs/api': typeof DocsApiRoute
   '/dashboard/': typeof DashboardIndexRoute
 }
 export interface FileRoutesByTo {
@@ -324,6 +331,7 @@ export interface FileRoutesByTo {
   '/dashboard/vector': typeof DashboardVectorRoute
   '/dashboard/verify': typeof DashboardVerifyRoute
   '/dashboard/workspaces': typeof DashboardWorkspacesRoute
+  '/docs/api': typeof DocsApiRoute
   '/dashboard': typeof DashboardIndexRoute
 }
 export interface FileRoutesById {
@@ -366,6 +374,7 @@ export interface FileRoutesById {
   '/dashboard/vector': typeof DashboardVectorRoute
   '/dashboard/verify': typeof DashboardVerifyRoute
   '/dashboard/workspaces': typeof DashboardWorkspacesRoute
+  '/docs/api': typeof DocsApiRoute
   '/dashboard/': typeof DashboardIndexRoute
 }
 export interface FileRouteTypes {
@@ -409,6 +418,7 @@ export interface FileRouteTypes {
     | '/dashboard/vector'
     | '/dashboard/verify'
     | '/dashboard/workspaces'
+    | '/docs/api'
     | '/dashboard/'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -449,6 +459,7 @@ export interface FileRouteTypes {
     | '/dashboard/vector'
     | '/dashboard/verify'
     | '/dashboard/workspaces'
+    | '/docs/api'
     | '/dashboard'
   id:
     | '__root__'
@@ -490,6 +501,7 @@ export interface FileRouteTypes {
     | '/dashboard/vector'
     | '/dashboard/verify'
     | '/dashboard/workspaces'
+    | '/docs/api'
     | '/dashboard/'
   fileRoutesById: FileRoutesById
 }
@@ -498,6 +510,7 @@ export interface RootRouteChildren {
   AuthRoute: typeof AuthRouteWithChildren
   DashboardRoute: typeof DashboardRouteWithChildren
   StatusRoute: typeof StatusRoute
+  DocsApiRoute: typeof DocsApiRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -536,6 +549,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/dashboard/'
       preLoaderRoute: typeof DashboardIndexRouteImport
       parentRoute: typeof DashboardRoute
+    }
+    '/docs/api': {
+      id: '/docs/api'
+      path: '/docs/api'
+      fullPath: '/docs/api'
+      preLoaderRoute: typeof DocsApiRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/dashboard/workspaces': {
       id: '/dashboard/workspaces'
@@ -871,6 +891,7 @@ const rootRouteChildren: RootRouteChildren = {
   AuthRoute: AuthRouteWithChildren,
   DashboardRoute: DashboardRouteWithChildren,
   StatusRoute: StatusRoute,
+  DocsApiRoute: DocsApiRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

@@ -95,6 +95,14 @@ function ApiEndpointsPage() {
               <Code2 className="h-3.5 w-3.5" /> Typed client
             </button>
             <a
+              href="/docs/api"
+              target="_blank" rel="noreferrer"
+              className="inline-flex items-center gap-1.5 text-sm rounded-md bg-accent px-3 py-1.5 hover:opacity-90"
+              title="Browse REST + GraphQL endpoints in an interactive reference"
+            >
+              <Code2 className="h-3.5 w-3.5" /> API reference
+            </a>
+            <a
               href={openapiUrl}
               target="_blank" rel="noreferrer"
               className="inline-flex items-center gap-1.5 text-sm rounded-md border border-border px-3 py-1.5 hover:bg-accent"
