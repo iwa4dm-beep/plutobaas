@@ -181,7 +181,10 @@ async function main() {
   await app.register(storageV4Plugin);      // Phase 54 — object versioning, retention locks, cross-region replication
   const { edgeV6Plugin } = await import("./modules/edge_v6/plugin.js");
   await app.register(edgeV6Plugin);         // Phase 55 — host imports/fetch, Durable Objects, shared KV backplane
+  const { edgeV7Plugin } = await import("./modules/edge_v7/plugin.js");
+  await app.register(edgeV7Plugin);         // Phase 56 — replicated queues, cron triggers, signed bindings
   startLogRetentionSweeper(app.log);
+
 
 
 
