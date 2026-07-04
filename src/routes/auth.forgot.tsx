@@ -19,7 +19,7 @@ function ForgotPasswordPage() {
     e.preventDefault();
     setBusy(true);
     try {
-      if (isLive()) await pluto.auth.resetPasswordForEmail(email);
+      if (isLive()) await live.auth.resetPasswordForEmail(email);
       setSent(true);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Request failed");
