@@ -25,6 +25,7 @@ export async function verifyAccessToken(token: string): Promise<AccessClaims> {
   const { payload } = await jwtVerify(token, secret, { issuer: "pluto" });
   return {
     sub: payload.sub as string,
+    id: payload.sub as string,
     role: payload.role as "admin" | "user",
     email: payload.email as string,
   };
