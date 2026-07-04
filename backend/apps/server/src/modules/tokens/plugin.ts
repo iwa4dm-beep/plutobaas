@@ -152,4 +152,88 @@ export async function tokensPlugin(app: FastifyInstance) {
   app.get("/tokens/v1/whoami", { preHandler: [requireScope("usage:read")] }, async (req) => {
     return { workspace_id: req.token?.workspace_id ?? null, scopes: req.token?.scopes ?? [] };
   });
+
+  // Static catalog of endpoints protected by each scope, surfaced to the
+  // Tokens dashboard so operators can see exactly what a scope grants.
+  app.get("/tokens/v1/coverage", async () => ({ coverage: SCOPE_COVERAGE }));
+
+  // Rotate — mint a replacement token cloning the existing scopes/expiry,
+  // return plaintext ONCE, then revoke the old token.
+  app.post("/tokens/v1/tokens/:id/rotate", { preHandler: [requireWorkspaceAdmin] }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    if (!/^[0-9a-f-]{36}$/i.test(id)) return reply.code(400).send({ error: "bad_id" });
+    const body = z.object({
+      name: z.string().min(1).max(120).optional(),
+      expires_in_days: z.number().int().min(1).max(365).optional(),
+    }).safeParse(req.body ?? {});
+    if (!body.success) return reply.code(400).send({ error: "bad_body", issues: body.error.issues });
+    const ws = req.auth?.workspaceId;
+    if (!ws) return reply.code(400).send({ error: "workspace_required" });
+
+    const old = await db.selectFrom("workspace_tokens" as never)
+      .select(["id" as never, "name" as never, "scopes" as never,
+               "expires_at" as never, "revoked_at" as never])
+      .where("id" as never, "=", id as never)
+      .where("workspace_id" as never, "=", ws as never)
+      .executeTakeFirst() as
+        | { id: string; name: string; scopes: string[]; expires_at: Date | null; revoked_at: Date | null }
+        | undefined;
+    if (!old) return reply.code(404).send({ error: "not_found" });
+    if (old.revoked_at) return reply.code(409).send({ error: "already_revoked" });
+
+    const m = mint();
+    const expires_at = body.data.expires_in_days
+      ? new Date(Date.now() + body.data.expires_in_days * 24 * 3600 * 1000)
+      : old.expires_at;
+    const newName = body.data.name ?? `${old.name} (rotated ${new Date().toISOString().slice(0, 10)})`;
+
+    const inserted = await db.insertInto("workspace_tokens" as never).values({
+      workspace_id: ws, name: newName, prefix: m.prefix, token_hash: m.hash,
+      scopes: old.scopes, created_by: req.auth?.user?.sub ?? null, expires_at,
+    } as never).returning(["id" as never]).executeTakeFirst() as { id: string };
+
+    await db.updateTable("workspace_tokens" as never)
+      .set({ revoked_at: new Date() } as never)
+      .where("id" as never, "=", id as never)
+      .where("workspace_id" as never, "=", ws as never)
+      .execute();
+
+    await audit(req, { action: "tokens.rotate", target: inserted.id, status: "ok",
+      metadata: { workspace_id: ws, replaced: id, prefix: m.prefix, scopes: old.scopes, expires_at } });
+
+    return { id: inserted.id, name: newName, prefix: m.prefix,
+             scopes: old.scopes, expires_at, token: m.plaintext, replaced_id: id };
+  });
 }
+
+// Endpoint coverage per scope. Non-exhaustive but tracks the routes
+// currently gated (or intended to be gated) by `requireScope`.
+export const SCOPE_COVERAGE: Record<string, Array<{ method: string; path: string; description: string }>> = {
+  "usage:read": [
+    { method: "GET", path: "/tokens/v1/whoami", description: "Verify a token and inspect its scopes" },
+    { method: "GET", path: "/usage/v1/summary", description: "Workspace usage totals" },
+    { method: "GET", path: "/usage/v1/alerts", description: "Read alert events" },
+  ],
+  "usage:write":  [{ method: "PUT",  path: "/usage/v1/webhooks", description: "Configure usage webhook" }],
+  "quotas:read":  [{ method: "GET",  path: "/quotas/v1", description: "Read workspace quotas" }],
+  "quotas:write": [{ method: "PUT",  path: "/quotas/v1", description: "Update workspace quotas" }],
+  "functions:read":   [{ method: "GET",  path: "/edge/v2/functions", description: "List edge functions" }],
+  "functions:invoke": [{ method: "POST", path: "/edge/v2/invoke/:name", description: "Invoke an edge function" }],
+  "functions:write":  [{ method: "PUT",  path: "/edge/v2/functions/:name", description: "Deploy or update a function" }],
+  "backups:read":     [{ method: "GET",  path: "/backups/v1", description: "List backups" }],
+  "backups:restore":  [{ method: "POST", path: "/backups/v1/:id/restore", description: "Trigger a backup restore" }],
+  "logs:read": [
+    { method: "GET",  path: "/logs/v1/search", description: "Query structured logs" },
+    { method: "GET",  path: "/logs/v1/stream", description: "SSE tail of live logs" },
+    { method: "POST", path: "/logs/v1/export", description: "Start a logs export job" },
+  ],
+  "schema:read":  [{ method: "GET",  path: "/schema/v1", description: "Introspect schema" }],
+  "schema:apply": [{ method: "POST", path: "/schema/v1/apply", description: "Apply a schema migration" }],
+  "branches:read":  [{ method: "GET",  path: "/branches/v1", description: "List branches" }],
+  "branches:write": [{ method: "POST", path: "/branches/v1", description: "Create or merge branches" }],
+  "vector:read":  [{ method: "POST", path: "/vector/v1/search", description: "Vector similarity search" }],
+  "vector:write": [{ method: "POST", path: "/vector/v1/upsert", description: "Upsert vector embeddings" }],
+  "realtime:read":  [{ method: "GET",  path: "/rt/v1/channels", description: "Inspect realtime channels" }],
+  "realtime:write": [{ method: "POST", path: "/rt/v1/publish", description: "Publish realtime messages" }],
+};
+
