@@ -42,7 +42,7 @@ function RbacPage() {
     setBusy(true); setErr(null);
     try {
       await api(`/admin/v1/workspaces/${wsId}/members`, {
-        method: "POST", service: true, body: { email: invite, role },
+        method: "POST", service: true, body: JSON.stringify({ email: invite, role }),
       });
       setInvite(""); await refresh();
     } catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
@@ -52,7 +52,7 @@ function RbacPage() {
     setBusy(true);
     try {
       await api(`/admin/v1/workspaces/${wsId}/members/${uid}`, {
-        method: "PATCH", service: true, body: { role: next },
+        method: "PATCH", service: true, body: JSON.stringify({ role: next }),
       });
       await refresh();
     } catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
