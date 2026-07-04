@@ -1055,7 +1055,7 @@ export const usage = {
   summary: (period: "day" | "month" = "month", environment?: UsageEnvironment) =>
     api<UsageSummary>(`/usage/v1/summary?period=${period}${environment ? `&environment=${environment}` : ""}`),
   quotas: () => api<{ quotas: Quota[] }>("/usage/v1/quotas"),
-  setQuota: (body: { metric: UsageMetric; period?: "day" | "month"; hard_limit: number; soft_limit?: number; overage_behavior?: OverageBehavior; billing_label?: string }) =>
+  setQuota: (body: { metric: UsageMetric; period?: "day" | "month"; hard_limit: number; soft_limit?: number; overage_behavior?: OverageBehavior; billing_label?: string; alert_pct?: number }) =>
     api<{ ok: boolean }>("/usage/v1/quotas", { method: "PUT", body: JSON.stringify(body) }),
 
   // Phase 22b — Server-Sent Events stream. Fetch-based (EventSource can't
