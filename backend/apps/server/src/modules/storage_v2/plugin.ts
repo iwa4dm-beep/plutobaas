@@ -112,7 +112,7 @@ export async function storageV2Plugin(app: FastifyInstance) {
 
     const body = await readBody(req);
     const etag = md5hex(body);
-    await storage.putObject(bucket, `${PART_PREFIX}/${q.data.upload_id}/${q.data.part}`, body,
+    await storage.put(bucket, `${PART_PREFIX}/${q.data.upload_id}/${q.data.part}`, body,
       "application/octet-stream");
     await pgraw(
       `insert into public.storage_multipart_parts (upload_id, part_number, size, etag)
@@ -150,11 +150,11 @@ export async function storageV2Plugin(app: FastifyInstance) {
     }
     const finalBuf = Buffer.concat(buffers);
     const ct = (req.headers["content-type"] as string) ?? "application/octet-stream";
-    await storage.putObject(bucket, key, finalBuf, ct);
+    await storage.put(bucket, key, finalBuf, ct);
 
     // Cleanup staging.
     for (const p of parts.rows) {
-      try { await storage.deleteObject(bucket, `${PART_PREFIX}/${body.data.upload_id}/${p.part_number}`); } catch { /* ignore */ }
+      try { await storage.remove(bucket, `${PART_PREFIX}/${body.data.upload_id}/${p.part_number}`); } catch { /* ignore */ }
     }
     await pgraw(`update public.storage_multipart_uploads set completed_at=now() where id=$1`, [body.data.upload_id]);
     await enqueueScan(bucket, key, finalBuf.byteLength, ct);
@@ -169,7 +169,7 @@ export async function storageV2Plugin(app: FastifyInstance) {
       `select part_number from public.storage_multipart_parts where upload_id=$1`, [q.data.upload_id]);
     const { bucket } = req.params as { bucket: string };
     for (const p of parts.rows) {
-      try { await storage.deleteObject(bucket, `${PART_PREFIX}/${q.data.upload_id}/${p.part_number}`); } catch { /* ignore */ }
+      try { await storage.remove(bucket, `${PART_PREFIX}/${q.data.upload_id}/${p.part_number}`); } catch { /* ignore */ }
     }
     await pgraw(`update public.storage_multipart_uploads set aborted_at=now() where id=$1`, [q.data.upload_id]);
     return { ok: true };
@@ -230,7 +230,7 @@ export async function storageV2Plugin(app: FastifyInstance) {
     const safeName = filename.replace(/[^A-Za-z0-9._-]/g, "_").slice(0, 200);
     const objectKey = `${parsed.p.replace(/\/$/, "")}/${Date.now()}-${safeName}`;
     if (!KEY_RX.test(objectKey)) return bad(reply, 400, "invalid_key");
-    await storage.putObject(parsed.b, objectKey, body, contentType);
+    await storage.put(parsed.b, objectKey, body, contentType);
     await pgraw(
       `update public.storage_presigned_posts
           set consumed_at=now(), created_object_key=$2
