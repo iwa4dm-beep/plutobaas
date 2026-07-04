@@ -41,4 +41,48 @@ describe("rt2.subscribePresence", () => {
     await vi.advanceTimersByTimeAsync(50);
     expect(leave).toHaveBeenCalledWith("room-A", "u1");
   });
+
+  it("emits status transitions and gives up after maxAttempts", async () => {
+    vi.spyOn(rt2, "join").mockRejectedValue(new Error("boom"));
+    vi.spyOn(rt2, "leave").mockResolvedValue({ ok: true });
+    vi.spyOn(rt2, "presence").mockResolvedValue({ members: [] });
+
+    const states: string[] = [];
+    const unsub = rt2.subscribePresence("room-B", "u2", {
+      heartbeatMs: 1000, pollMs: 500,
+      maxAttempts: 3, maxBackoffMs: 50,
+      onStatus: (s) => states.push(s),
+    });
+
+    // Kick through backoff windows (bounded by maxBackoffMs=50 so this is fast).
+    await vi.advanceTimersByTimeAsync(2000);
+
+    expect(states[0]).toBe("connecting");
+    expect(states).toContain("retrying");
+    expect(states.at(-1)).toBe("failed");
+    unsub();
+  });
+
+  it("returns to live and clears attempt counter after reconnect", async () => {
+    let joinCalls = 0;
+    vi.spyOn(rt2, "join").mockImplementation(async () => {
+      joinCalls++;
+      if (joinCalls === 1) throw new Error("first-fail");
+      return { ok: true };
+    });
+    vi.spyOn(rt2, "leave").mockResolvedValue({ ok: true });
+    vi.spyOn(rt2, "presence").mockResolvedValue({ members: [] });
+
+    const reconnects: number[] = []; const states: string[] = [];
+    const unsub = rt2.subscribePresence("room-C", "u3", {
+      heartbeatMs: 10_000, pollMs: 500, maxBackoffMs: 20,
+      onReconnect: (n) => reconnects.push(n),
+      onStatus: (s) => states.push(s),
+    });
+
+    await vi.advanceTimersByTimeAsync(200);
+    expect(reconnects[0]).toBe(1);
+    expect(states).toContain("live");
+    unsub();
+  });
 });
