@@ -151,14 +151,8 @@ function RealtimePage() {
             </Card>
             <Card>
               <CardHeader><CardTitle className="text-sm">Recent messages</CardTitle></CardHeader>
-              <CardContent className="space-y-1 max-h-[400px] overflow-y-auto">
-                {messages.map(m => (
-                  <div key={m.id} className="text-xs p-2 rounded-md border border-border">
-                    <div className="flex justify-between"><span className="font-medium">{m.event}</span><span className="text-muted-foreground">{new Date(m.created_at).toLocaleTimeString()}</span></div>
-                    <pre className="text-[10px] font-mono text-muted-foreground overflow-x-auto">{JSON.stringify(m.payload)}</pre>
-                  </div>
-                ))}
-                {messages.length === 0 && <div className="text-xs text-muted-foreground">No messages.</div>}
+              <CardContent>
+                <MessagesTable messages={messages} />
               </CardContent>
             </Card>
           </div>
