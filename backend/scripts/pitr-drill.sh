@@ -73,10 +73,45 @@ else
   rpo="unknown"
 fi
 
+restore_status=$(curl_json GET "/pitr/v1/restore/${rid}" | jq -r '.status')
+correctness="unknown"
+case "$restore_status" in
+  done)   correctness="ok — dry-run validated WAL coverage to target_time" ;;
+  failed) correctness="FAIL — see pitr_restores.error for details" ;;
+  *)      correctness="timeout — restore never reached terminal status" ;;
+esac
+
 echo
 echo "===================== DRILL SUMMARY ====================="
 echo "  target_time : ${TARGET_TIME}"
 echo "  restore_id  : ${rid}"
 echo "  RTO (sec)   : ${rto}"
 echo "  RPO (sec)   : ${rpo}"
+echo "  correctness : ${correctness}"
 echo "========================================================="
+
+# Machine-readable report for CI artifact uploads. Set PITR_REPORT_FILE
+# to a path (usually under $GITHUB_STEP_SUMMARY or an artifact dir).
+if [[ -n "${PITR_REPORT_FILE:-}" ]]; then
+  {
+    echo "# PITR drill report"
+    echo
+    echo "| field | value |"
+    echo "|---|---|"
+    echo "| generated_at | $(date -u +%Y-%m-%dT%H:%M:%SZ) |"
+    echo "| target_time  | ${TARGET_TIME} |"
+    echo "| restore_id   | ${rid} |"
+    echo "| RTO (sec)    | ${rto} |"
+    echo "| RPO (sec)    | ${rpo} |"
+    echo "| status       | ${restore_status} |"
+    echo "| correctness  | ${correctness} |"
+    echo
+    echo "## Replicas"
+    echo '```json'
+    echo "$replicas" | jq '.replicas // []'
+    echo '```'
+  } > "$PITR_REPORT_FILE"
+fi
+
+# Fail the drill if the restore did not complete cleanly so CI turns red.
+[[ "$restore_status" == "done" ]] || exit 3

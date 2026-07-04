@@ -20,8 +20,41 @@ const buckets = new Map<string, Bucket>();
 
 // Config: capacity + refill (tokens per second).
 export type LimitConfig = { capacity: number; refillPerSec: number };
-export const DEFAULT_IP:  LimitConfig = { capacity: 60,  refillPerSec: 1 };   // 60 req burst, 1 rps sustained
-export const DEFAULT_TOK: LimitConfig = { capacity: 600, refillPerSec: 10 };  // 600 req burst, 10 rps
+
+// Env-driven overrides. Safe defaults chosen so a typical dashboard
+// user never hits them, but a runaway loop from a leaked key is capped
+// within seconds. Tune per deployment:
+//
+//   PLUTO_RL_IP_CAPACITY         (default 60)   burst per source IP
+//   PLUTO_RL_IP_REFILL           (default 1)    sustained rps per IP
+//   PLUTO_RL_TOKEN_CAPACITY      (default 600)  burst per API key / bearer
+//   PLUTO_RL_TOKEN_REFILL        (default 10)   sustained rps per token
+//   PLUTO_RL_STRICT_IP_CAPACITY  (default 20)   burst for AI / edge / backup
+//   PLUTO_RL_STRICT_IP_REFILL    (default 0.3)  ~1 req / 3s sustained
+//   PLUTO_RL_STRICT_TOK_CAPACITY (default 60)   token burst on strict routes
+//   PLUTO_RL_STRICT_TOK_REFILL   (default 1)    sustained rps on strict routes
+function num(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (raw === undefined || raw === "") return fallback;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? n : fallback;
+}
+export const DEFAULT_IP:  LimitConfig = {
+  capacity:     num("PLUTO_RL_IP_CAPACITY", 60),
+  refillPerSec: num("PLUTO_RL_IP_REFILL", 1),
+};
+export const DEFAULT_TOK: LimitConfig = {
+  capacity:     num("PLUTO_RL_TOKEN_CAPACITY", 600),
+  refillPerSec: num("PLUTO_RL_TOKEN_REFILL", 10),
+};
+export const STRICT_IP:  LimitConfig = {
+  capacity:     num("PLUTO_RL_STRICT_IP_CAPACITY", 20),
+  refillPerSec: num("PLUTO_RL_STRICT_IP_REFILL", 0.3),
+};
+export const STRICT_TOK: LimitConfig = {
+  capacity:     num("PLUTO_RL_STRICT_TOK_CAPACITY", 60),
+  refillPerSec: num("PLUTO_RL_STRICT_TOK_REFILL", 1),
+};
 
 function take(key: string, cfg: LimitConfig): { ok: boolean; retryAfter: number } {
   const now = Date.now();
@@ -74,7 +107,5 @@ export function rateLimit(opts: { ip?: LimitConfig; token?: LimitConfig } = {}) 
 }
 
 // Preset for expensive routes (AI, edge invoke, backup, restore).
-export const strictLimit = rateLimit({
-  ip:    { capacity: 20, refillPerSec: 0.3 },  // ~1 req / 3s sustained
-  token: { capacity: 60, refillPerSec: 1 },
-});
+// Both defaults and env overrides are honored via STRICT_IP / STRICT_TOK.
+export const strictLimit = rateLimit({ ip: STRICT_IP, token: STRICT_TOK });
