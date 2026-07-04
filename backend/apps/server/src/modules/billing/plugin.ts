@@ -18,9 +18,9 @@
 
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
-import { createHmac, timingSafeEqual } from "node:crypto";
 import { q } from "../../lib/pgraw.js";
 import { requireApiKey, requireServiceRole, requireWorkspaceAdmin } from "../../lib/apikey.js";
+import { verifyStripeSig } from "../../lib/stripe-sig.js";
 
 // ---- Plan lookup / enforcement ---------------------------------------
 type PlanRow = { code: string; features: Record<string, unknown>; limits: Record<string, number> };
