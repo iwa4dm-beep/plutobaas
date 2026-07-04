@@ -183,3 +183,46 @@ function BackupsPage() {
     </div>
   );
 }
+
+function ExportsTable({ rows, onRestore, onCancel }: {
+  rows: BackupExport[];
+  onRestore: (r: BackupExport) => void;
+  onCancel: (id: string) => Promise<void>;
+}) {
+  const t = usePaginatedTable(rows, { pageSize: 15, defaultSort: { key: "created_at", dir: "desc" } });
+  return (
+    <PaginatedTable
+      rows={t.rows} sorted={t.sorted}
+      page={t.page} pageSize={t.pageSize} totalPages={t.totalPages}
+      sortKey={t.sortKey} sortDir={t.sortDir}
+      onPage={t.setPage} onSort={t.toggleSort}
+      csvFilename="backup-exports.csv"
+      csvColumns={["created_at","kind","status","target","bytes","download_path","error"]}
+      columns={[
+        { key: "kind", label: "kind", className: "w-20" },
+        { key: "status", label: "status", className: "w-24",
+          render: (r) => <Badge variant={r.status === "done" ? "default" : r.status === "failed" ? "destructive" : "secondary"}>{r.status}</Badge> },
+        { key: "target", label: "target / path",
+          render: (r) => <span className="truncate text-muted-foreground">{r.target ?? "*"}{r.download_path ? ` · ${r.download_path}` : ""}{r.error ? ` · ${r.error}` : ""}</span> },
+        { key: "bytes", label: "size", className: "w-24",
+          render: (r) => <span>{fmtBytes(r.bytes)}</span> },
+        { key: "created_at", label: "created", className: "w-44",
+          render: (r) => <span className="text-muted-foreground">{new Date(r.created_at).toLocaleString()}</span> },
+        { key: "id", label: "", className: "w-32",
+          render: (r) => (
+            <div className="flex gap-1 justify-end">
+              {r.status === "done" && (
+                <Button size="sm" variant="outline" onClick={() => onRestore(r)}>
+                  <RotateCcw className="h-3 w-3 mr-1" /> Restore
+                </Button>
+              )}
+              {(r.status === "pending" || r.status === "running") && (
+                <Button size="sm" variant="ghost" onClick={() => onCancel(r.id)}><X className="h-3 w-3" /></Button>
+              )}
+            </div>
+          ) },
+      ]}
+      empty="No exports yet."
+    />
+  );
+}
