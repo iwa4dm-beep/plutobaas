@@ -30,6 +30,8 @@ const items = [
   { to: "/dashboard/vector", label: "Vector search", icon: Search },
   { to: "/dashboard/functions", label: "Edge Functions", icon: Cloud },
   { to: "/dashboard/backups", label: "Backups", icon: Archive },
+  { to: "/dashboard/logs-explorer", label: "Logs Explorer", icon: Search },
+  { to: "/dashboard/tokens", label: "API Tokens", icon: KeyRound },
   { to: "/dashboard/settings", label: "Settings", icon: Settings },
 ] as const;
 

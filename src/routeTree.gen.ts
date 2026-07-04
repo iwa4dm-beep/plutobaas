@@ -18,6 +18,7 @@ import { Route as DashboardVerifyRouteImport } from './routes/dashboard.verify'
 import { Route as DashboardVectorRouteImport } from './routes/dashboard.vector'
 import { Route as DashboardUsersRouteImport } from './routes/dashboard.users'
 import { Route as DashboardUsageRouteImport } from './routes/dashboard.usage'
+import { Route as DashboardTokensRouteImport } from './routes/dashboard.tokens'
 import { Route as DashboardStorageRouteImport } from './routes/dashboard.storage'
 import { Route as DashboardSqlRouteImport } from './routes/dashboard.sql'
 import { Route as DashboardSettingsRouteImport } from './routes/dashboard.settings'
@@ -27,6 +28,7 @@ import { Route as DashboardProjectsRouteImport } from './routes/dashboard.projec
 import { Route as DashboardObservabilityRouteImport } from './routes/dashboard.observability'
 import { Route as DashboardMigrationsRouteImport } from './routes/dashboard.migrations'
 import { Route as DashboardMfaRouteImport } from './routes/dashboard.mfa'
+import { Route as DashboardLogsExplorerRouteImport } from './routes/dashboard.logs-explorer'
 import { Route as DashboardLogsRouteImport } from './routes/dashboard.logs'
 import { Route as DashboardJobsRouteImport } from './routes/dashboard.jobs'
 import { Route as DashboardIntegrationsRouteImport } from './routes/dashboard.integrations'
@@ -85,6 +87,11 @@ const DashboardUsageRoute = DashboardUsageRouteImport.update({
   path: '/usage',
   getParentRoute: () => DashboardRoute,
 } as any)
+const DashboardTokensRoute = DashboardTokensRouteImport.update({
+  id: '/tokens',
+  path: '/tokens',
+  getParentRoute: () => DashboardRoute,
+} as any)
 const DashboardStorageRoute = DashboardStorageRouteImport.update({
   id: '/storage',
   path: '/storage',
@@ -128,6 +135,11 @@ const DashboardMigrationsRoute = DashboardMigrationsRouteImport.update({
 const DashboardMfaRoute = DashboardMfaRouteImport.update({
   id: '/mfa',
   path: '/mfa',
+  getParentRoute: () => DashboardRoute,
+} as any)
+const DashboardLogsExplorerRoute = DashboardLogsExplorerRouteImport.update({
+  id: '/logs-explorer',
+  path: '/logs-explorer',
   getParentRoute: () => DashboardRoute,
 } as any)
 const DashboardLogsRoute = DashboardLogsRouteImport.update({
@@ -207,6 +219,7 @@ export interface FileRoutesByFullPath {
   '/dashboard/integrations': typeof DashboardIntegrationsRoute
   '/dashboard/jobs': typeof DashboardJobsRoute
   '/dashboard/logs': typeof DashboardLogsRoute
+  '/dashboard/logs-explorer': typeof DashboardLogsExplorerRoute
   '/dashboard/mfa': typeof DashboardMfaRoute
   '/dashboard/migrations': typeof DashboardMigrationsRoute
   '/dashboard/observability': typeof DashboardObservabilityRoute
@@ -216,6 +229,7 @@ export interface FileRoutesByFullPath {
   '/dashboard/settings': typeof DashboardSettingsRoute
   '/dashboard/sql': typeof DashboardSqlRoute
   '/dashboard/storage': typeof DashboardStorageRoute
+  '/dashboard/tokens': typeof DashboardTokensRoute
   '/dashboard/usage': typeof DashboardUsageRoute
   '/dashboard/users': typeof DashboardUsersRoute
   '/dashboard/vector': typeof DashboardVectorRoute
@@ -238,6 +252,7 @@ export interface FileRoutesByTo {
   '/dashboard/integrations': typeof DashboardIntegrationsRoute
   '/dashboard/jobs': typeof DashboardJobsRoute
   '/dashboard/logs': typeof DashboardLogsRoute
+  '/dashboard/logs-explorer': typeof DashboardLogsExplorerRoute
   '/dashboard/mfa': typeof DashboardMfaRoute
   '/dashboard/migrations': typeof DashboardMigrationsRoute
   '/dashboard/observability': typeof DashboardObservabilityRoute
@@ -247,6 +262,7 @@ export interface FileRoutesByTo {
   '/dashboard/settings': typeof DashboardSettingsRoute
   '/dashboard/sql': typeof DashboardSqlRoute
   '/dashboard/storage': typeof DashboardStorageRoute
+  '/dashboard/tokens': typeof DashboardTokensRoute
   '/dashboard/usage': typeof DashboardUsageRoute
   '/dashboard/users': typeof DashboardUsersRoute
   '/dashboard/vector': typeof DashboardVectorRoute
@@ -271,6 +287,7 @@ export interface FileRoutesById {
   '/dashboard/integrations': typeof DashboardIntegrationsRoute
   '/dashboard/jobs': typeof DashboardJobsRoute
   '/dashboard/logs': typeof DashboardLogsRoute
+  '/dashboard/logs-explorer': typeof DashboardLogsExplorerRoute
   '/dashboard/mfa': typeof DashboardMfaRoute
   '/dashboard/migrations': typeof DashboardMigrationsRoute
   '/dashboard/observability': typeof DashboardObservabilityRoute
@@ -280,6 +297,7 @@ export interface FileRoutesById {
   '/dashboard/settings': typeof DashboardSettingsRoute
   '/dashboard/sql': typeof DashboardSqlRoute
   '/dashboard/storage': typeof DashboardStorageRoute
+  '/dashboard/tokens': typeof DashboardTokensRoute
   '/dashboard/usage': typeof DashboardUsageRoute
   '/dashboard/users': typeof DashboardUsersRoute
   '/dashboard/vector': typeof DashboardVectorRoute
@@ -305,6 +323,7 @@ export interface FileRouteTypes {
     | '/dashboard/integrations'
     | '/dashboard/jobs'
     | '/dashboard/logs'
+    | '/dashboard/logs-explorer'
     | '/dashboard/mfa'
     | '/dashboard/migrations'
     | '/dashboard/observability'
@@ -314,6 +333,7 @@ export interface FileRouteTypes {
     | '/dashboard/settings'
     | '/dashboard/sql'
     | '/dashboard/storage'
+    | '/dashboard/tokens'
     | '/dashboard/usage'
     | '/dashboard/users'
     | '/dashboard/vector'
@@ -336,6 +356,7 @@ export interface FileRouteTypes {
     | '/dashboard/integrations'
     | '/dashboard/jobs'
     | '/dashboard/logs'
+    | '/dashboard/logs-explorer'
     | '/dashboard/mfa'
     | '/dashboard/migrations'
     | '/dashboard/observability'
@@ -345,6 +366,7 @@ export interface FileRouteTypes {
     | '/dashboard/settings'
     | '/dashboard/sql'
     | '/dashboard/storage'
+    | '/dashboard/tokens'
     | '/dashboard/usage'
     | '/dashboard/users'
     | '/dashboard/vector'
@@ -368,6 +390,7 @@ export interface FileRouteTypes {
     | '/dashboard/integrations'
     | '/dashboard/jobs'
     | '/dashboard/logs'
+    | '/dashboard/logs-explorer'
     | '/dashboard/mfa'
     | '/dashboard/migrations'
     | '/dashboard/observability'
@@ -377,6 +400,7 @@ export interface FileRouteTypes {
     | '/dashboard/settings'
     | '/dashboard/sql'
     | '/dashboard/storage'
+    | '/dashboard/tokens'
     | '/dashboard/usage'
     | '/dashboard/users'
     | '/dashboard/vector'
@@ -456,6 +480,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardUsageRouteImport
       parentRoute: typeof DashboardRoute
     }
+    '/dashboard/tokens': {
+      id: '/dashboard/tokens'
+      path: '/tokens'
+      fullPath: '/dashboard/tokens'
+      preLoaderRoute: typeof DashboardTokensRouteImport
+      parentRoute: typeof DashboardRoute
+    }
     '/dashboard/storage': {
       id: '/dashboard/storage'
       path: '/storage'
@@ -517,6 +548,13 @@ declare module '@tanstack/react-router' {
       path: '/mfa'
       fullPath: '/dashboard/mfa'
       preLoaderRoute: typeof DashboardMfaRouteImport
+      parentRoute: typeof DashboardRoute
+    }
+    '/dashboard/logs-explorer': {
+      id: '/dashboard/logs-explorer'
+      path: '/logs-explorer'
+      fullPath: '/dashboard/logs-explorer'
+      preLoaderRoute: typeof DashboardLogsExplorerRouteImport
       parentRoute: typeof DashboardRoute
     }
     '/dashboard/logs': {
@@ -619,6 +657,7 @@ interface DashboardRouteChildren {
   DashboardIntegrationsRoute: typeof DashboardIntegrationsRoute
   DashboardJobsRoute: typeof DashboardJobsRoute
   DashboardLogsRoute: typeof DashboardLogsRoute
+  DashboardLogsExplorerRoute: typeof DashboardLogsExplorerRoute
   DashboardMfaRoute: typeof DashboardMfaRoute
   DashboardMigrationsRoute: typeof DashboardMigrationsRoute
   DashboardObservabilityRoute: typeof DashboardObservabilityRoute
@@ -628,6 +667,7 @@ interface DashboardRouteChildren {
   DashboardSettingsRoute: typeof DashboardSettingsRoute
   DashboardSqlRoute: typeof DashboardSqlRoute
   DashboardStorageRoute: typeof DashboardStorageRoute
+  DashboardTokensRoute: typeof DashboardTokensRoute
   DashboardUsageRoute: typeof DashboardUsageRoute
   DashboardUsersRoute: typeof DashboardUsersRoute
   DashboardVectorRoute: typeof DashboardVectorRoute
@@ -649,6 +689,7 @@ const DashboardRouteChildren: DashboardRouteChildren = {
   DashboardIntegrationsRoute: DashboardIntegrationsRoute,
   DashboardJobsRoute: DashboardJobsRoute,
   DashboardLogsRoute: DashboardLogsRoute,
+  DashboardLogsExplorerRoute: DashboardLogsExplorerRoute,
   DashboardMfaRoute: DashboardMfaRoute,
   DashboardMigrationsRoute: DashboardMigrationsRoute,
   DashboardObservabilityRoute: DashboardObservabilityRoute,
@@ -658,6 +699,7 @@ const DashboardRouteChildren: DashboardRouteChildren = {
   DashboardSettingsRoute: DashboardSettingsRoute,
   DashboardSqlRoute: DashboardSqlRoute,
   DashboardStorageRoute: DashboardStorageRoute,
+  DashboardTokensRoute: DashboardTokensRoute,
   DashboardUsageRoute: DashboardUsageRoute,
   DashboardUsersRoute: DashboardUsersRoute,
   DashboardVectorRoute: DashboardVectorRoute,
