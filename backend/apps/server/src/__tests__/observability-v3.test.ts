@@ -45,13 +45,13 @@ describe("audit trace correlation", () => {
 describe("slo tracker", () => {
   it("opens an incident when error rate exceeds target and resolves once it recovers", () => {
     slo.setTarget({ endpoint: "GET /x", window_ms: 60_000, max_error_rate: 0.1, p95_latency_ms: 1000 });
-    // 8 ok + 4 err = 33% error → breach
     for (let i = 0; i < 8; i++) slo.record({ endpoint: "GET /x", latency_ms: 10, ok: true });
-    let last: { incident?: slo.Incident; resolved?: slo.Incident } = {};
-    for (let i = 0; i < 4; i++) last = slo.record({ endpoint: "GET /x", latency_ms: 10, ok: false, trace_id: `t${i}` });
-    expect(last.incident?.breach).toBe("error_rate");
-    expect(last.incident?.sample_trace_id).toBeDefined();
+    for (let i = 0; i < 4; i++) slo.record({ endpoint: "GET /x", latency_ms: 10, ok: false, trace_id: `t${i}` });
+    const open = slo.listIncidents(true);
+    expect(open[0]?.breach).toBe("error_rate");
+    expect(open[0]?.sample_trace_id).toBeDefined();
     // Now flood with successes so the window ratio drops below the target.
+    let last: { resolved?: slo.Incident } = {};
     for (let i = 0; i < 200; i++) last = slo.record({ endpoint: "GET /x", latency_ms: 10, ok: true });
     expect(last.resolved).toBeDefined();
   });
