@@ -43,6 +43,21 @@ function UsagePage() {
   const [role, setRole] = useState<WorkspaceRole>("member");
   const canAdmin = role === "owner" || role === "admin" ||
                    role === "global_admin" || role === "service_role";
+  const [alerts, setAlerts] = useState<QuotaAlert[]>([]);
+  const [webhooks, setWebhooks] = useState<UsageWebhook[]>([]);
+  const [newHookUrl, setNewHookUrl] = useState("");
+  const [newHookSecret, setNewHookSecret] = useState("");
+
+  const loadAlerts = useCallback(async () => {
+    if (!isLive()) return;
+    try { const r = await usage.alerts(true); setAlerts(r.alerts); } catch { /* ignore */ }
+  }, []);
+  const loadWebhooks = useCallback(async () => {
+    if (!isLive()) return;
+    try { const r = await usage.webhooks(); setWebhooks(r.webhooks); } catch { /* ignore */ }
+  }, []);
+  useEffect(() => { void loadAlerts(); const t = setInterval(loadAlerts, 15_000); return () => clearInterval(t); }, [loadAlerts]);
+  useEffect(() => { void loadWebhooks(); }, [loadWebhooks]);
 
   // Merge quotas from either REST (fallback) or the SSE snapshot into UI state.
   const applyQuotas = useCallback((rows: Quota[]) => {
