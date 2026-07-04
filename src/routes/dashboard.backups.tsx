@@ -253,3 +253,70 @@ function ExportsTable({ rows, onRestore, onCancel }: {
     />
   );
 }
+
+function CompatibilityPanel({ compat, loading, onLoad, ack, onAck }: {
+  compat: BackupCompat | null; loading: boolean;
+  onLoad: () => Promise<void> | void;
+  ack: boolean; onAck: () => void;
+}) {
+  return (
+    <div className="space-y-2 p-3 rounded-md border border-border" data-testid="compat-panel">
+      <div className="flex items-center justify-between">
+        <div className="text-xs font-medium flex items-center gap-1"><Diff className="h-3 w-3" /> Schema compatibility</div>
+        <Button size="sm" variant="outline" onClick={() => void onLoad()} disabled={loading}>
+          {loading ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Diff className="h-3 w-3 mr-1" />}
+          {compat ? "Re-check" : "Check compatibility"}
+        </Button>
+      </div>
+      {!compat && !loading && (
+        <div className="text-[11px] text-muted-foreground">
+          Compare the export's DDL against the target schema before you apply.
+        </div>
+      )}
+      {compat && (
+        <div className="space-y-2 text-[11px]">
+          <div className="flex flex-wrap gap-2">
+            <Badge variant={compat.compatible ? "default" : "destructive"}>
+              {compat.compatible ? "compatible" : "incompatible"}
+            </Badge>
+            <span className="text-muted-foreground">target: <span className="font-mono">{compat.target_schema}</span></span>
+            <span className="text-muted-foreground">source: {compat.source_tables} tables · target: {compat.target_tables} tables</span>
+          </div>
+          {compat.added_tables.length > 0 && (
+            <div><span className="font-medium text-emerald-600">+ tables to create:</span> <span className="font-mono">{compat.added_tables.join(", ")}</span></div>
+          )}
+          {compat.removed_tables.length > 0 && (
+            <div><span className="font-medium text-destructive">− tables in target not in export:</span> <span className="font-mono">{compat.removed_tables.join(", ")}</span></div>
+          )}
+          {compat.columns.length > 0 && (
+            <div className="overflow-hidden border border-border rounded">
+              <div className="grid grid-cols-[60px,1fr,1fr,120px,120px] gap-2 bg-muted/40 px-2 py-1 text-[10px] font-medium">
+                <span>action</span><span>table</span><span>column</span><span>source</span><span>target</span>
+              </div>
+              <div className="max-h-[220px] overflow-y-auto">
+                {compat.columns.map((c, i) => (
+                  <div key={i} className="grid grid-cols-[60px,1fr,1fr,120px,120px] gap-2 px-2 py-1 border-t border-border">
+                    <Badge variant={c.action === "add" ? "default" : c.action === "drop" ? "destructive" : "secondary"}>{c.action}</Badge>
+                    <span className="font-mono truncate">{c.table}</span>
+                    <span className="font-mono truncate">{c.column}</span>
+                    <span className="text-muted-foreground truncate">{c.source_type ?? "—"}</span>
+                    <span className="text-muted-foreground truncate">{c.target_type ?? "—"}{c.nullable_change ? ` (${c.nullable_change})` : ""}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {!compat.compatible && !ack && (
+            <label className="flex items-center gap-2 text-[11px]">
+              <input type="checkbox" onChange={onAck} data-testid="compat-ack" />
+              I've reviewed the diff and want to proceed anyway.
+            </label>
+          )}
+          {!compat.compatible && ack && (
+            <div className="text-[11px] text-amber-600">Acknowledged — you may now enable "Allow restore over incompatible schema" and apply.</div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
