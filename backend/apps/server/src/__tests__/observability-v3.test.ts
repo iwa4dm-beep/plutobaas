@@ -51,9 +51,13 @@ describe("slo tracker", () => {
     expect(open[0]?.breach).toBe("error_rate");
     expect(open[0]?.sample_trace_id).toBeDefined();
     // Now flood with successes so the window ratio drops below the target.
-    let last: { resolved?: slo.Incident } = {};
-    for (let i = 0; i < 200; i++) last = slo.record({ endpoint: "GET /x", latency_ms: 10, ok: true });
-    expect(last.resolved).toBeDefined();
+    let resolved: slo.Incident | undefined;
+    for (let i = 0; i < 200; i++) {
+      const r = slo.record({ endpoint: "GET /x", latency_ms: 10, ok: true });
+      if (r.resolved) resolved = r.resolved;
+    }
+    expect(resolved).toBeDefined();
+    expect(resolved?.closed_at).toBeDefined();
   });
   it("opens on latency breach when p95 exceeds target", () => {
     slo.setTarget({ endpoint: "POST /y", window_ms: 60_000, max_error_rate: 1, p95_latency_ms: 100 });
