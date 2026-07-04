@@ -56,7 +56,7 @@ export async function cdcPlugin(app: FastifyInstance) {
     await db.insertInto("cdc_config" as never).values({
       workspace_id: ws, schema_name: body.data.schema, table_name: body.data.table,
       enabled: true, updated_at: new Date(),
-    } as never).onConflict((c: unknown) =>
+    } as never).onConflict((c: any) =>
       (c as { columns: (k: string[]) => { doUpdateSet: (u: unknown) => unknown } })
         .columns(["workspace_id", "schema_name", "table_name"])
         .doUpdateSet({ enabled: true, updated_at: new Date() })).execute();

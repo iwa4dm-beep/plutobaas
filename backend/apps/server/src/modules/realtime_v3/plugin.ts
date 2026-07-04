@@ -59,7 +59,7 @@ export async function realtimeV3Plugin(app: FastifyInstance) {
       rls_predicate: body.data.rls_predicate ?? null,
       require_role: body.data.require_role ?? null,
       replay_window_s: body.data.replay_window_s,
-    } as never).onConflict((c: unknown) =>
+    } as never).onConflict((c: any) =>
       (c as { columns: (k: string[]) => { doUpdateSet: (u: unknown) => unknown } })
         .columns(["workspace_id", "name"])
         .doUpdateSet({
@@ -209,7 +209,7 @@ export async function realtimeV3Plugin(app: FastifyInstance) {
       user_id: req.auth?.userId ?? null,
       last_event_id: body.data.last_event_id,
       last_seen: new Date(),
-    } as never).onConflict((c: unknown) =>
+    } as never).onConflict((c: any) =>
       (c as { columns: (k: string[]) => { doUpdateSet: (u: unknown) => unknown } })
         .columns(["channel_id", "subscriber_id"])
         .doUpdateSet({ last_event_id: body.data.last_event_id, last_seen: new Date() })).execute();

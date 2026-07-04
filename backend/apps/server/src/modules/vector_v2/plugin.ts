@@ -71,7 +71,7 @@ export const vectorV2Plugin: FastifyPluginAsync = async (app) => {
     const ws = wsFor(req);
     const row = await db.insertInto("ai_models" as never).values({
       workspace_id: ws, ...body.data,
-    } as never).onConflict((c: unknown) =>
+    } as never).onConflict((c: any) =>
       (c as { columns: (k: string[]) => { doUpdateSet: (u: unknown) => unknown } })
         .columns(["workspace_id", "slug"]).doUpdateSet({
           provider: body.data.provider, kind: body.data.kind,
@@ -117,7 +117,7 @@ export const vectorV2Plugin: FastifyPluginAsync = async (app) => {
 
     await db.insertInto("vec_index_config" as never).values({
       collection_id: id, ...body.data, applied: false,
-    } as never).onConflict((c: unknown) =>
+    } as never).onConflict((c: any) =>
       (c as { column: (k: string) => { doUpdateSet: (u: unknown) => unknown } })
         .column("collection_id").doUpdateSet({ ...body.data, applied: false })).execute();
     return { ok: true };

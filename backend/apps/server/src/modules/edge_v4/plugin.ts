@@ -199,7 +199,7 @@ export const edgeV4Plugin: FastifyPluginAsync = async (app) => {
     await db.insertInto("fn_v4_secrets" as never).values({
       workspace_id: ws, slug: body.data.slug ?? null,
       name: body.data.name, ciphertext,
-    } as never).onConflict((c: unknown) =>
+    } as never).onConflict((c: any) =>
       (c as { columns: (k: string[]) => { doUpdateSet: (u: unknown) => unknown } })
         .columns(["workspace_id", "slug", "name"])
         .doUpdateSet({ ciphertext, updated_at: new Date() })).execute();

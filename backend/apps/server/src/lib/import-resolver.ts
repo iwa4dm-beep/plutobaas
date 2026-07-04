@@ -43,7 +43,7 @@ async function saveCache(r: Omit<ResolvedImport, "from_cache">): Promise<void> {
   await db.insertInto("fn_v4_imports" as never).values({
     specifier: r.specifier, resolved_url: r.resolved_url,
     integrity: r.integrity, size_bytes: r.size_bytes,
-  } as never).onConflict((c: unknown) =>
+  } as never).onConflict((c: any) =>
     (c as { column: (k: string) => { doUpdateSet: (u: unknown) => unknown } })
       .column("specifier").doUpdateSet({
         resolved_url: r.resolved_url, integrity: r.integrity, size_bytes: r.size_bytes,

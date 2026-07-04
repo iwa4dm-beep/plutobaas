@@ -119,7 +119,7 @@ export async function storageExtPlugin(app: FastifyInstance) {
       await db.insertInto("render_cache" as never).values({
         cache_key: ckey, bucket_name: bucket, source_key: key,
         params_json: params, content_type: result.contentType, bytes: outBuf.length,
-      } as never).onConflict((c: unknown) =>
+      } as never).onConflict((c: any) =>
         (c as { column: (k: string) => { doNothing: () => unknown } }).column("cache_key").doNothing()).execute();
 
       reply.header("x-cache", "miss").header("content-type", result.contentType)

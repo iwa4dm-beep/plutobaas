@@ -125,7 +125,7 @@ export async function storageV3Plugin(app: FastifyInstance) {
       await db.insertInto("st3_upload_parts" as never).values({
         session_id: req.params.id, part_number: partN, etag, size_bytes: len,
       } as never)
-        .onConflict((oc: never) => (oc as unknown as { columns: (c: string[]) => { doUpdateSet: (v: unknown) => unknown } })
+        .onConflict((oc: any) => (oc as unknown as { columns: (c: string[]) => { doUpdateSet: (v: unknown) => unknown } })
           .columns(["session_id","part_number"]).doUpdateSet({ etag, size_bytes: len, received_at: new Date() } as never))
         .execute();
       await db.updateTable("st3_upload_sessions" as never)
@@ -221,7 +221,7 @@ export async function storageV3Plugin(app: FastifyInstance) {
         size_bytes: 0, etag: cache_key.slice(-16), cdn_url,
         expires_at: new Date(Date.now() + ttl_s * 1000),
       } as never)
-        .onConflict((oc: never) => (oc as unknown as { column: (c: string) => { doNothing: () => unknown } })
+        .onConflict((oc: any) => (oc as unknown as { column: (c: string) => { doNothing: () => unknown } })
           .column("cache_key").doNothing())
         .execute();
       return reply.redirect(cdn_url, 302);
@@ -246,7 +246,7 @@ export async function storageV3Plugin(app: FastifyInstance) {
     const [row] = await db.insertInto("st3_lifecycle_rules" as never).values({
       workspace_id: req.auth?.workspaceId ?? null, ...body.data,
     } as never)
-      .onConflict((oc: never) => (oc as unknown as { columns: (c: string[]) => { doUpdateSet: (v: unknown) => unknown } })
+      .onConflict((oc: any) => (oc as unknown as { columns: (c: string[]) => { doUpdateSet: (v: unknown) => unknown } })
         .columns(["workspace_id","bucket","name"]).doUpdateSet({
           prefix: body.data.prefix, action: body.data.action,
           after_days: body.data.after_days, target_tier: body.data.target_tier ?? null,
