@@ -1,0 +1,53 @@
+# fly.toml — Pluto BaaS server on Fly.io
+#
+# One-time setup:
+#   fly launch --no-deploy --copy-config --dockerfile ../apps/server/Dockerfile
+#   fly postgres create --name pluto-db && fly postgres attach pluto-db
+#   fly secrets set \
+#     JWT_SECRET="$(openssl rand -hex 32)" \
+#     ANON_KEY="pk_anon_$(openssl rand -hex 8)" \
+#     SERVICE_ROLE_KEY="sk_svc_$(openssl rand -hex 16)" \
+#     S3_ENDPOINT="https://<accountid>.r2.cloudflarestorage.com" \
+#     S3_ACCESS_KEY="..." S3_SECRET_KEY="..." \
+#     S3_BUCKET="pluto-prod" S3_REGION="auto" S3_FORCE_PATH_STYLE="true"
+#   fly deploy
+#
+# `fly postgres attach` auto-injects DATABASE_URL as a secret.
+
+app = "pluto-server"                # change to your app name
+primary_region = "iad"              # pick region near your users
+
+[build]
+  dockerfile = "../apps/server/Dockerfile"
+
+[env]
+  NODE_ENV = "production"
+  PORT = "3000"
+  STORAGE_DRIVER = "s3"
+  PLUTO_ENABLE_OBSERVABILITY = "1"
+  PLUTO_ENABLE_SCALING = "1"
+  PLUTO_ENABLE_LEGACY = "0"
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  auto_stop_machines = "stop"       # scale to zero when idle
+  auto_start_machines = true
+  min_machines_running = 1          # keep 1 warm; set 0 for pure scale-to-zero
+  processes = ["app"]
+
+  [[http_service.checks]]
+    grace_period = "20s"
+    interval = "15s"
+    method = "GET"
+    timeout = "5s"
+    path = "/readyz"
+
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 1
+  memory_mb = 512                   # bump to 1024 under real load
+
+[deploy]
+  release_command = "node dist/db/migrate.js"   # run migrations on every deploy
+  strategy = "rolling"

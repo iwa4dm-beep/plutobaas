@@ -1,0 +1,48 @@
+# render.yaml — deploy Pluto server + managed Postgres on Render.com
+# Create a new Blueprint from this file in the Render dashboard.
+
+services:
+  - type: web
+    name: pluto-server
+    runtime: docker
+    plan: starter                # bump to `standard` for production
+    region: oregon
+    healthCheckPath: /readyz
+    dockerfilePath: ./apps/server/Dockerfile
+    dockerContext: ./apps/server
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3000
+      - key: STORAGE_DRIVER
+        value: s3
+      - key: PLUTO_ENABLE_OBSERVABILITY
+        value: "1"
+      - key: PLUTO_ENABLE_LEGACY
+        value: "0"
+      - key: DATABASE_URL
+        fromDatabase: { name: pluto-db, property: connectionString }
+      - key: JWT_SECRET
+        generateValue: true
+      - key: ANON_KEY
+        sync: false              # set manually in dashboard
+      - key: SERVICE_ROLE_KEY
+        sync: false
+      - key: S3_ENDPOINT
+        sync: false
+      - key: S3_ACCESS_KEY
+        sync: false
+      - key: S3_SECRET_KEY
+        sync: false
+      - key: S3_BUCKET
+        sync: false
+      - key: S3_REGION
+        value: us-east-1
+      - key: S3_FORCE_PATH_STYLE
+        value: "true"
+
+databases:
+  - name: pluto-db
+    plan: starter                # 256 MB / 1 GB storage; bump for prod
+    postgresMajorVersion: 16
