@@ -7,11 +7,22 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import { createHash, randomBytes } from "node:crypto";
 import { z } from "zod";
+import { createRemoteJWKSet, jwtVerify, type JWTPayload } from "jose";
 import { q } from "../../lib/pgraw.js";
 import { aesEncrypt, aesDecrypt } from "../../lib/aes.js";
 import { db } from "../../db/index.js";
 import { env } from "../../config.js";
 import { signAccessToken } from "../../lib/jwt.js";
+
+// Cache one JWKS fetcher per issuer. `createRemoteJWKSet` handles
+// caching/rotation internally (5-min cool-down between refreshes) so this
+// map just avoids duplicating that state across concurrent verifications.
+const jwksCache = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
+function getJWKS(jwksUri: string) {
+  let j = jwksCache.get(jwksUri);
+  if (!j) { j = createRemoteJWKSet(new URL(jwksUri)); jwksCache.set(jwksUri, j); }
+  return j;
+}
 
 function requireService(req: FastifyRequest, reply: FastifyReply): boolean {
   if (req.auth?.apiKey !== "service_role") { reply.code(403).send({ error: "service_role_required" }); return false; }
