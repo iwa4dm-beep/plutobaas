@@ -143,22 +143,66 @@ export const backupsPlugin: FastifyPluginAsync = async (app) => {
 
   app.post("/backups/v1/:id/restore", { preHandler: requireWorkspaceAdmin }, async (req, reply) => {
     const { id } = req.params as { id: string };
-    const b = z.object({ dry_run: z.boolean().default(true),
-                          confirm: z.string().optional() }).parse(req.body ?? {});
+    const b = z.object({
+      dry_run: z.boolean().default(true),
+      confirm: z.string().optional(),
+      target_branch_id: z.string().uuid().optional(),
+      create_branch: z.string().min(1).max(40).optional(),
+      allow_incompatible: z.boolean().default(false),
+    }).parse(req.body ?? {});
     if (!b.dry_run && b.confirm !== "RESTORE") {
       reply.code(400);
       return { error: "safety_check_failed", hint: "Set confirm='RESTORE' for a live restore." };
     }
-    const exp = await q<{ workspace_id: string | null; status: string }>(
-      `select workspace_id, status from public.backup_exports where id=$1::uuid`, [id]);
+    const exp = await q<{ workspace_id: string | null; status: string; kind: string; target: string | null }>(
+      `select workspace_id, status, kind, target from public.backup_exports where id=$1::uuid`, [id]);
     if (!exp.rows[0]) { reply.code(404); return { error: "export_not_found" }; }
     if (exp.rows[0].status !== "done") { reply.code(409); return { error: "export_not_ready" }; }
+
+    // Resolve target branch (existing or newly-created).
+    let targetBranchId: string | null = null;
+    let targetSchema: string | null = null;
+    if (b.create_branch) {
+      const nm = /^[a-z_][a-z0-9_]{0,40}$/i.test(b.create_branch) ? b.create_branch : null;
+      if (!nm) { reply.code(400); return { error: "invalid_branch_name" }; }
+      const schema = `br_${nm}_${Math.random().toString(36).slice(2, 8)}`;
+      await q(`create schema if not exists "${schema}"`);
+      const ins = await q<{ id: string }>(
+        `insert into public.db_branches (workspace_id, name, schema_name)
+         values ($1::uuid,$2,$3) returning id`, [exp.rows[0].workspace_id, nm, schema]);
+      targetBranchId = ins.rows[0].id; targetSchema = schema;
+    } else if (b.target_branch_id) {
+      const br = await q<{ schema_name: string }>(
+        `select schema_name from public.db_branches where id=$1::uuid and workspace_id is not distinct from $2::uuid`,
+        [b.target_branch_id, exp.rows[0].workspace_id]);
+      if (!br.rows[0]) { reply.code(404); return { error: "branch_not_found" }; }
+      targetBranchId = b.target_branch_id; targetSchema = br.rows[0].schema_name;
+    }
+
+    // Compatibility check: for a schema/table export, ensure the target schema
+    // exists (or is fresh). Skippable via allow_incompatible.
+    if (targetSchema && !b.allow_incompatible && (exp.rows[0].kind === "schema" || exp.rows[0].kind === "table")) {
+      const chk = await q<{ n: string }>(
+        `select count(*)::text as n from information_schema.tables where table_schema=$1`, [targetSchema]);
+      if (Number(chk.rows[0].n) > 0 && exp.rows[0].kind === "schema") {
+        reply.code(409);
+        return { error: "incompatible_schema", hint: "Target branch already has tables. Set allow_incompatible=true to override or pick an empty branch." };
+      }
+    }
+
     const r = await q(
       `insert into public.backup_restores (workspace_id, export_id, dry_run, status)
        values ($1::uuid, $2::uuid, $3, 'pending') returning id, created_at`,
       [exp.rows[0].workspace_id, id, b.dry_run]);
     void runRestore(r.rows[0].id);
-    return { restore: { id: r.rows[0].id, dry_run: b.dry_run, status: "pending", created_at: r.rows[0].created_at } };
+    const { audit } = await import("../../lib/audit.js");
+    await audit(req, {
+      action: "backup.restore", target: id,
+      status: b.dry_run ? "dry_run" : "ok",
+      metadata: { restore_id: r.rows[0].id, target_branch_id: targetBranchId, target_schema: targetSchema, kind: exp.rows[0].kind },
+    });
+    return { restore: { id: r.rows[0].id, dry_run: b.dry_run, status: "pending", created_at: r.rows[0].created_at,
+                        target_branch_id: targetBranchId, target_schema: targetSchema } };
   });
 
   app.get("/backups/v1/restores/:rid", { preHandler: requireApiKey }, async (req, reply) => {

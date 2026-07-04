@@ -1055,7 +1055,7 @@ export const usage = {
   summary: (period: "day" | "month" = "month", environment?: UsageEnvironment) =>
     api<UsageSummary>(`/usage/v1/summary?period=${period}${environment ? `&environment=${environment}` : ""}`),
   quotas: () => api<{ quotas: Quota[] }>("/usage/v1/quotas"),
-  setQuota: (body: { metric: UsageMetric; period?: "day" | "month"; hard_limit: number; soft_limit?: number; overage_behavior?: OverageBehavior; billing_label?: string }) =>
+  setQuota: (body: { metric: UsageMetric; period?: "day" | "month"; hard_limit: number; soft_limit?: number; overage_behavior?: OverageBehavior; billing_label?: string; alert_pct?: number }) =>
     api<{ ok: boolean }>("/usage/v1/quotas", { method: "PUT", body: JSON.stringify(body) }),
 
   // Phase 22b — Server-Sent Events stream. Fetch-based (EventSource can't
@@ -1106,7 +1106,20 @@ export const usage = {
     })();
     return () => controller.abort();
   },
+
+  alerts: (unresolved = true) =>
+    api<{ alerts: QuotaAlert[] }>(`/usage/v1/alerts${unresolved ? "?unresolved=1" : ""}`),
+  resolveAlert: (id: string) =>
+    api<{ ok: boolean }>(`/usage/v1/alerts/${id}/resolve`, { method: "POST" }),
+  webhooks: () => api<{ webhooks: UsageWebhook[] }>("/usage/v1/webhooks"),
+  createWebhook: (body: { url: string; secret?: string; events?: string[] }) =>
+    api<{ webhook: UsageWebhook }>("/usage/v1/webhooks", { method: "POST", body: JSON.stringify(body) }),
+  deleteWebhook: (id: string) =>
+    api<{ ok: boolean }>(`/usage/v1/webhooks/${id}`, { method: "DELETE" }),
 };
+
+export type QuotaAlert = { id: string; metric: UsageMetric; pct: number; used: number; hard_limit: number | null; triggered_at: string; notified: boolean; resolved_at: string | null };
+export type UsageWebhook = { id: string; url: string; events: string[]; active: boolean; last_status: number | null; last_error: string | null; last_delivered_at: string | null; created_at: string };
 
 // -------------------- Phase 23: Realtime v2 --------------------
 export type Rt2Channel = { id: string; name: string; kind: "broadcast"|"presence"; created_at: string; members?: number };
@@ -1241,7 +1254,7 @@ export const edgeV2 = {
     api<{ function: FnCatalog }>("/fn/v2/functions", { method: "POST", body: JSON.stringify(body) }),
   deleteFunction: (slug: string) => api<{ ok: boolean }>(`/fn/v2/functions/${encodeURIComponent(slug)}`, { method: "DELETE" }),
   invoke:         (slug: string, payload: Record<string, unknown> = {}, simulate_error = false) =>
-    api<{ ok: boolean; status_code: number; duration_ms: number; echoed: Record<string, unknown> }>(
+    api<{ ok: boolean; status_code: number; duration_ms: number; echoed: Record<string, unknown>; error: { message: string; type?: string; stack?: string } | null }>(
       `/fn/v2/functions/${encodeURIComponent(slug)}/invoke`,
       { method: "POST", body: JSON.stringify({ payload, simulate_error }) }),
 };
@@ -1260,9 +1273,10 @@ export const backups = {
   cancel: (id: string) => api<{ ok: boolean }>(`/backups/v1/${id}/cancel`, { method: "POST" }),
   // Restore workflow (Phase 25) — dry_run by default, requires confirm='RESTORE' for live.
   restores: (exportId: string) => api<{ restores: BackupRestore[] }>(`/backups/v1/${exportId}/restores`),
-  startRestore: (exportId: string, opts: { dry_run?: boolean; confirm?: string } = {}) =>
-    api<{ restore: BackupRestore }>(`/backups/v1/${exportId}/restore`,
-      { method: "POST", body: JSON.stringify({ dry_run: opts.dry_run ?? true, confirm: opts.confirm }) }),
+  startRestore: (exportId: string, opts: { dry_run?: boolean; confirm?: string; target_branch_id?: string; create_branch?: string; allow_incompatible?: boolean } = {}) =>
+    api<{ restore: BackupRestore & { target_branch_id?: string | null; target_schema?: string | null } }>(`/backups/v1/${exportId}/restore`,
+      { method: "POST", body: JSON.stringify({ dry_run: opts.dry_run ?? true, confirm: opts.confirm,
+        target_branch_id: opts.target_branch_id, create_branch: opts.create_branch, allow_incompatible: opts.allow_incompatible }) }),
   restoreStatus: (rid: string) => api<{ restore: BackupRestore }>(`/backups/v1/restores/${rid}`),
   cancelRestore: (rid: string) => api<{ ok: boolean }>(`/backups/v1/restores/${rid}/cancel`, { method: "POST" }),
   // SSE progress stream: yields BackupRestore rows until status is terminal.

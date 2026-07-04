@@ -1,11 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Loader2, RefreshCw, Save, Activity, ShieldAlert, Radio, Lock } from "lucide-react";
+import { Loader2, RefreshCw, Save, Activity, ShieldAlert, Radio, Lock, Bell, Webhook, Trash2 } from "lucide-react";
 import { PageHeader } from "@/components/pluto/PageHeader";
 import {
   isLive, usage, me,
   type UsageMetric, type UsageSummary, type Quota,
   type OverageBehavior, type UsageEnvironment, type WorkspaceRole,
+  type QuotaAlert, type UsageWebhook,
 } from "@/lib/pluto/live";
 
 export const Route = createFileRoute("/dashboard/usage")({ component: UsagePage });
@@ -25,7 +26,7 @@ const METRICS: { key: UsageMetric; label: string; unit: string }[] = [
 const ENVS: UsageEnvironment[] = ["production", "staging", "preview", "development"];
 const OVERAGES: OverageBehavior[] = ["allow", "warn", "block"];
 
-type Draft = { hard: string; soft: string; overage: OverageBehavior; label: string };
+type Draft = { hard: string; soft: string; overage: OverageBehavior; label: string; alertPct: string };
 
 function UsagePage() {
   const [period, setPeriod] = useState<"day" | "month">("month");
@@ -42,6 +43,21 @@ function UsagePage() {
   const [role, setRole] = useState<WorkspaceRole>("member");
   const canAdmin = role === "owner" || role === "admin" ||
                    role === "global_admin" || role === "service_role";
+  const [alerts, setAlerts] = useState<QuotaAlert[]>([]);
+  const [webhooks, setWebhooks] = useState<UsageWebhook[]>([]);
+  const [newHookUrl, setNewHookUrl] = useState("");
+  const [newHookSecret, setNewHookSecret] = useState("");
+
+  const loadAlerts = useCallback(async () => {
+    if (!isLive()) return;
+    try { const r = await usage.alerts(true); setAlerts(r.alerts); } catch { /* ignore */ }
+  }, []);
+  const loadWebhooks = useCallback(async () => {
+    if (!isLive()) return;
+    try { const r = await usage.webhooks(); setWebhooks(r.webhooks); } catch { /* ignore */ }
+  }, []);
+  useEffect(() => { void loadAlerts(); const t = setInterval(loadAlerts, 15_000); return () => clearInterval(t); }, [loadAlerts]);
+  useEffect(() => { void loadWebhooks(); }, [loadWebhooks]);
 
   // Merge quotas from either REST (fallback) or the SSE snapshot into UI state.
   const applyQuotas = useCallback((rows: Quota[]) => {
@@ -54,6 +70,7 @@ function UsagePage() {
         soft: qu.soft_limit == null ? "" : String(qu.soft_limit),
         overage: qu.overage_behavior ?? "warn",
         label: qu.billing_label ?? "",
+        alertPct: qu.alert_pct == null ? "" : String(qu.alert_pct),
       };
     }
     setQuotas(map);
@@ -100,6 +117,7 @@ function UsagePage() {
     const d = drafts[metric]; if (!d) return;
     const hard = Number(d.hard); if (!isFinite(hard) || hard < 0) return;
     const soft = d.soft === "" ? undefined : Number(d.soft);
+    const alertPct = d.alertPct === "" ? undefined : Number(d.alertPct);
     setSavingKey(metric);
     try {
       await usage.setQuota({
@@ -107,8 +125,8 @@ function UsagePage() {
         soft_limit: soft,
         overage_behavior: d.overage,
         billing_label: d.label || undefined,
+        alert_pct: alertPct,
       });
-      // SSE will repaint; also force one immediate REST fetch when offline.
       if (!live) await loadOnce();
     } catch (e) { setErr((e as Error).message); }
     finally { setSavingKey(null); }
@@ -137,6 +155,22 @@ function UsagePage() {
       {!isLive() && (
         <div className="rounded-md border border-yellow-500/40 bg-yellow-500/10 p-3 text-xs">
           Set <code>VITE_PLUTO_URL</code> to a running Pluto instance to see live usage.
+        </div>
+      )}
+      {alerts.length > 0 && (
+        <div className="rounded-md border border-red-500/40 bg-red-500/10 p-3 text-xs space-y-2">
+          <div className="flex items-center gap-2 font-medium text-red-600 dark:text-red-400">
+            <Bell className="h-4 w-4" /> {alerts.length} active quota alert{alerts.length > 1 ? "s" : ""}
+          </div>
+          {alerts.slice(0, 5).map(a => (
+            <div key={a.id} className="flex items-center justify-between gap-2">
+              <span><strong>{a.metric}</strong> at {Number(a.pct).toFixed(1)}% ({a.used.toLocaleString(undefined, { maximumFractionDigits: 2 })}/{a.hard_limit ?? "∞"}) · {new Date(a.triggered_at).toLocaleString()}</span>
+              {canAdmin && (
+                <button className="text-[11px] px-2 py-0.5 border border-border rounded hover:bg-background"
+                        onClick={async () => { await usage.resolveAlert(a.id); void loadAlerts(); }}>Resolve</button>
+              )}
+            </div>
+          ))}
         </div>
       )}
       <div className="flex flex-wrap items-center gap-2">
@@ -238,6 +272,9 @@ function UsagePage() {
                 <input value={draft.soft} disabled={!canAdmin} onChange={(e) => setDrafts((d) => ({ ...d, [m.key]: { ...draft, soft: e.target.value } }))}
                   placeholder="soft" className="bg-background border border-border rounded px-2 py-1 text-xs disabled:opacity-50 disabled:cursor-not-allowed" />
               </div>
+              <input value={draft.alertPct} disabled={!canAdmin}
+                onChange={(e) => setDrafts((d) => ({ ...d, [m.key]: { ...draft, alertPct: e.target.value } }))}
+                placeholder="alert at % (default 80)" className="w-full bg-background border border-border rounded px-2 py-1 text-xs disabled:opacity-50 disabled:cursor-not-allowed" />
               <div className="grid grid-cols-[1fr_1fr_auto] gap-1 items-center">
                 <select value={draft.overage} disabled={!canAdmin}
                   onChange={(e) => setDrafts((d) => ({ ...d, [m.key]: { ...draft, overage: e.target.value as OverageBehavior } }))}
@@ -261,6 +298,46 @@ function UsagePage() {
       <div className="rounded-lg border border-border bg-card p-4 text-xs text-muted-foreground space-y-1">
         <div className="text-sm text-foreground font-medium mb-1">Overage behavior</div>
         <p><strong>allow</strong> — record and permit; <strong>warn</strong> — record, flag, still permit; <strong>block</strong> — deny further actions until reset or quota bump. Billing labels group usage per subsystem (e.g. <code>storage:avatars</code>, <code>fn:image-resize</code>).</p>
+      </div>
+
+      <div className="rounded-lg border border-border bg-card p-4 space-y-3">
+        <div className="text-sm font-medium flex items-center gap-2"><Webhook className="h-4 w-4" /> Alert webhooks</div>
+        <p className="text-xs text-muted-foreground">POSTed with a <code>x-pluto-signature</code> HMAC-SHA256 header when a quota crosses its alert threshold.</p>
+        {canAdmin && (
+          <div className="flex gap-2">
+            <input value={newHookUrl} onChange={e => setNewHookUrl(e.target.value)} placeholder="https://example.com/webhook"
+                   className="flex-1 bg-background border border-border rounded px-2 py-1 text-xs" />
+            <input value={newHookSecret} onChange={e => setNewHookSecret(e.target.value)} placeholder="signing secret (optional)" type="password"
+                   className="w-48 bg-background border border-border rounded px-2 py-1 text-xs" />
+            <button
+              className="text-xs inline-flex items-center gap-1 bg-primary text-primary-foreground rounded px-3 py-1 disabled:opacity-40"
+              disabled={!newHookUrl.trim()}
+              onClick={async () => {
+                try {
+                  await usage.createWebhook({ url: newHookUrl.trim(), secret: newHookSecret || undefined });
+                  setNewHookUrl(""); setNewHookSecret(""); void loadWebhooks();
+                } catch (e) { setErr((e as Error).message); }
+              }}>Add</button>
+          </div>
+        )}
+        <div className="space-y-1">
+          {webhooks.map(h => (
+            <div key={h.id} className="flex items-center justify-between text-xs p-2 border border-border rounded-md">
+              <div>
+                <div className="font-mono truncate max-w-[420px]">{h.url}</div>
+                <div className="text-[10px] text-muted-foreground">
+                  events: {h.events.join(",")} · last: {h.last_status ?? "—"}
+                  {h.last_error && <span className="text-destructive"> · {h.last_error}</span>}
+                </div>
+              </div>
+              {canAdmin && (
+                <button onClick={async () => { await usage.deleteWebhook(h.id); void loadWebhooks(); }}
+                        className="p-1 border border-border rounded hover:bg-background"><Trash2 className="h-3 w-3" /></button>
+              )}
+            </div>
+          ))}
+          {webhooks.length === 0 && <div className="text-xs text-muted-foreground">No webhooks configured.</div>}
+        </div>
       </div>
     </div>
   );

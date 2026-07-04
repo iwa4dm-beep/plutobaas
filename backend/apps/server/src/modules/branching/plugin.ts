@@ -385,7 +385,7 @@ export const usagePlugin: FastifyPluginAsync = async (app) => {
   app.get("/usage/v1/quotas", { preHandler: requireApiKey }, async (req) => {
     const ws = (req.headers["x-workspace-id"] as string) ?? null;
     const r = await q(
-      `select metric, period, hard_limit, soft_limit, overage_behavior, billing_label, updated_at
+      `select metric, period, hard_limit, soft_limit, overage_behavior, billing_label, alert_pct, updated_at
        from public.workspace_quotas where workspace_id=$1::uuid order by metric`, [ws]);
     return { quotas: r.rows };
   });
@@ -400,15 +400,70 @@ export const usagePlugin: FastifyPluginAsync = async (app) => {
       soft_limit: z.number().nonnegative().optional(),
       overage_behavior: z.enum(["allow","warn","block"]).default("warn"),
       billing_label: z.string().max(80).optional(),
+      alert_pct: z.number().min(1).max(100).optional(),
     }).parse(req.body);
     await q(
-      `insert into public.workspace_quotas (workspace_id, metric, period, hard_limit, soft_limit, overage_behavior, billing_label, updated_at)
-       values ($1,$2,$3,$4,$5,$6,$7,now())
+      `insert into public.workspace_quotas (workspace_id, metric, period, hard_limit, soft_limit, overage_behavior, billing_label, alert_pct, updated_at)
+       values ($1,$2,$3,$4,$5,$6,$7,$8,now())
        on conflict (workspace_id, metric, period)
        do update set hard_limit=excluded.hard_limit, soft_limit=excluded.soft_limit,
                      overage_behavior=excluded.overage_behavior, billing_label=excluded.billing_label,
-                     updated_at=now()`,
-      [ws, b.metric, b.period, b.hard_limit, b.soft_limit ?? null, b.overage_behavior, b.billing_label ?? null]);
+                     alert_pct=excluded.alert_pct, updated_at=now()`,
+      [ws, b.metric, b.period, b.hard_limit, b.soft_limit ?? null, b.overage_behavior, b.billing_label ?? null, b.alert_pct ?? null]);
+    const { audit } = await import("../../lib/audit.js");
+    await audit(req, { action: "quota.update", target: `${b.metric}:${b.period}`,
+                       metadata: { hard_limit: b.hard_limit, soft_limit: b.soft_limit, overage: b.overage_behavior, alert_pct: b.alert_pct } });
+    return { ok: true };
+  });
+
+  // ---- Alerts & Webhooks (Phase 26) ----
+  app.get("/usage/v1/alerts", { preHandler: requireApiKey }, async (req) => {
+    const ws = (req.headers["x-workspace-id"] as string) ?? null;
+    const query = req.query as { unresolved?: string };
+    const clause = query?.unresolved === "1" ? "and resolved_at is null" : "";
+    const r = await q(
+      `select id, metric, pct, used, hard_limit, triggered_at, notified, resolved_at
+       from public.quota_alerts where workspace_id=$1::uuid ${clause}
+       order by triggered_at desc limit 100`, [ws]);
+    return { alerts: r.rows };
+  });
+
+  app.post("/usage/v1/alerts/:id/resolve", { preHandler: requireWorkspaceAdmin }, async (req) => {
+    const { id } = req.params as { id: string };
+    await q(`update public.quota_alerts set resolved_at=now() where id=$1::uuid`, [id]);
+    return { ok: true };
+  });
+
+  app.get("/usage/v1/webhooks", { preHandler: requireApiKey }, async (req) => {
+    const ws = (req.headers["x-workspace-id"] as string) ?? null;
+    const r = await q(
+      `select id, url, events, active, last_status, last_error, last_delivered_at, created_at
+       from public.workspace_webhooks where workspace_id=$1::uuid order by created_at desc`, [ws]);
+    return { webhooks: r.rows };
+  });
+
+  app.post("/usage/v1/webhooks", { preHandler: requireWorkspaceAdmin }, async (req, reply) => {
+    const ws = (req.headers["x-workspace-id"] as string) ?? null;
+    if (!ws) { reply.code(400); return { error: "workspace_required" }; }
+    const b = z.object({
+      url: z.string().url().max(500),
+      secret: z.string().max(200).optional(),
+      events: z.array(z.string()).default(["quota.alert"]),
+    }).parse(req.body);
+    const r = await q(
+      `insert into public.workspace_webhooks (workspace_id, url, secret, events)
+       values ($1::uuid,$2,$3,$4) returning id, url, events, active, created_at`,
+      [ws, b.url, b.secret ?? null, b.events]);
+    const { audit } = await import("../../lib/audit.js");
+    await audit(req, { action: "webhook.create", target: b.url, metadata: { events: b.events } });
+    return { webhook: r.rows[0] };
+  });
+
+  app.delete("/usage/v1/webhooks/:id", { preHandler: requireWorkspaceAdmin }, async (req) => {
+    const { id } = req.params as { id: string };
+    await q(`delete from public.workspace_webhooks where id=$1::uuid`, [id]);
+    const { audit } = await import("../../lib/audit.js");
+    await audit(req, { action: "webhook.delete", target: id });
     return { ok: true };
   });
 

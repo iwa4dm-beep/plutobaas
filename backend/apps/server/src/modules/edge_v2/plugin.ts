@@ -89,6 +89,8 @@ export const edgeV2Plugin: FastifyPluginAsync = async (app) => {
          do update set value_cipher=excluded.value_cipher
          returning id, function_slug, name, created_at`,
         [ws, b.function_slug, b.name, encrypt(b.value)]);
+      const { audit } = await import("../../lib/audit.js");
+      await audit(req, { action: "fn.secret.set", target: `${b.function_slug}:${b.name}` });
       return { secret: r.rows[0] };
     } catch (e) { reply.code(400); return { error: (e as Error).message }; }
   });
@@ -247,8 +249,9 @@ export const edgeV2Plugin: FastifyPluginAsync = async (app) => {
       [ws, slug, status, duration, b.simulate_error ? "simulated_error" : null]);
     await recordUsage({ workspaceId: ws, metric: "function_invocations", quantity: 1,
                         billingLabel: slug, meta: { trigger: "manual", status_code: status } });
+    const errorDetail = b.simulate_error ? { message: "simulated_error", type: "SimulatedError", stack: `at invoke(${slug})` } : null;
     return { ok: !b.simulate_error, status_code: status, duration_ms: duration,
-             echoed: b.payload };
+             echoed: b.payload, error: errorDetail };
   });
 
   app.log.info("[edge2] Edge v2 enabled — /fn/v2/*");

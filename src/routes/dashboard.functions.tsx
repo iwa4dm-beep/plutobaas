@@ -22,7 +22,10 @@ function FunctionsPage() {
   const [newSlug, setNewSlug] = useState(""); const [newName, setNewName] = useState("");
   const [runtime, setRuntime] = useState<"node20"|"deno1"|"bun1">("node20");
   const [invokePayload, setInvokePayload] = useState<string>('{"hello":"world"}');
-  const [invokeResult, setInvokeResult] = useState<{ status_code: number; duration_ms: number; echoed: unknown } | null>(null);
+  const [invokeResult, setInvokeResult] = useState<{ status_code: number; duration_ms: number; echoed: unknown; error: { message: string; type?: string; stack?: string } | null } | null>(null);
+  const [invokeErr, setInvokeErr] = useState<string | null>(null);
+  const [showSecret, setShowSecret] = useState(false);
+  const jsonErr = (() => { if (!invokePayload.trim()) return null; try { JSON.parse(invokePayload); return null; } catch (e) { return (e as Error).message; } })();
 
   async function refresh() {
     if (!isLive()) return;
@@ -52,11 +55,15 @@ function FunctionsPage() {
     } catch (e) { toast.error((e as Error).message); }
   }
   async function invoke() {
+    setInvokeErr(null);
+    if (jsonErr) { setInvokeErr(`Invalid JSON: ${jsonErr}`); toast.error("Fix payload JSON first"); return; }
     try {
       const body = invokePayload.trim() ? JSON.parse(invokePayload) : {};
       const r = await edgeV2.invoke(slug, body); setInvokeResult(r);
-      toast.success(`Invoked ${slug} → ${r.status_code} in ${r.duration_ms}ms`); await refresh();
-    } catch (e) { toast.error((e as Error).message); }
+      if (r.error) { setInvokeErr(`${r.error.type ?? "Error"}: ${r.error.message}`); toast.error(`Invocation failed (${r.status_code})`); }
+      else toast.success(`Invoked ${slug} → ${r.status_code} in ${r.duration_ms}ms`);
+      await refresh();
+    } catch (e) { setInvokeErr((e as Error).message); toast.error((e as Error).message); }
   }
 
   // Preview upcoming cron runs (client-side, mirrors backend nextRun MVP).
@@ -112,11 +119,19 @@ function FunctionsPage() {
           <Card>
             <CardHeader><CardTitle className="text-sm flex items-center gap-2"><Zap className="h-4 w-4" /> Test invoke {slug}</CardTitle></CardHeader>
             <CardContent className="space-y-2">
-              <textarea className="w-full min-h-[80px] font-mono text-xs p-2 rounded-md border border-border bg-background"
+              <textarea className={"w-full min-h-[80px] font-mono text-xs p-2 rounded-md border bg-background " + (jsonErr ? "border-destructive" : "border-border")}
                         value={invokePayload} onChange={e => setInvokePayload(e.target.value)} />
-              <div className="flex justify-end"><Button size="sm" onClick={invoke}><Play className="h-4 w-4 mr-1" /> Run</Button></div>
+              {jsonErr && <div className="text-[11px] text-destructive">Invalid JSON: {jsonErr}</div>}
+              <div className="flex justify-end"><Button size="sm" onClick={invoke} disabled={!!jsonErr}><Play className="h-4 w-4 mr-1" /> Run</Button></div>
+              {invokeErr && (
+                <div className="p-2 rounded-md bg-destructive/10 border border-destructive/40 text-xs">
+                  <div className="font-medium text-destructive">Invocation error</div>
+                  <div className="font-mono mt-1">{invokeErr}</div>
+                  {invokeResult?.error?.stack && <pre className="text-[10px] font-mono mt-1 text-muted-foreground whitespace-pre-wrap">{invokeResult.error.stack}</pre>}
+                </div>
+              )}
               {invokeResult && (
-                <pre className="text-[10px] font-mono p-2 rounded-md bg-muted">{JSON.stringify(invokeResult, null, 2)}</pre>
+                <pre className="text-[10px] font-mono p-2 rounded-md bg-muted max-h-[200px] overflow-auto">{JSON.stringify(invokeResult, null, 2)}</pre>
               )}
             </CardContent>
           </Card>
@@ -155,9 +170,14 @@ function FunctionsPage() {
           <CardContent className="space-y-3">
             <div className="flex gap-2">
               <Input placeholder="NAME (UPPER_SNAKE)" value={secName} onChange={e => setSecName(e.target.value.toUpperCase())} />
-              <Input placeholder="value" type="password" value={secVal} onChange={e => setSecVal(e.target.value)} />
+              <Input placeholder="value (masked)" type={showSecret ? "text" : "password"} autoComplete="off"
+                     value={secVal} onChange={e => setSecVal(e.target.value)} />
+              <Button size="sm" variant="outline" onClick={() => setShowSecret(v => !v)} title={showSecret ? "Hide" : "Reveal while typing"}>
+                {showSecret ? "Hide" : "Show"}
+              </Button>
               <Button size="sm" onClick={addSecret}><Plus className="h-4 w-4" /> Save</Button>
             </div>
+            <div className="text-[11px] text-muted-foreground">Secret values are AES-256-GCM encrypted at rest and never returned by the API.</div>
             <div className="space-y-1">
               {secrets.map(s => (
                 <div key={s.id} className="flex items-center justify-between p-2 border border-border rounded-md text-sm">

@@ -1,12 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { backups, isLive, type BackupExport, type BackupRestore } from "@/lib/pluto/live";
+import { backups, branching, isLive, type BackupExport, type BackupRestore, type DbBranch } from "@/lib/pluto/live";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { Archive, RefreshCw, Play, X, RotateCcw, ShieldAlert } from "lucide-react";
+import { Archive, RefreshCw, Play, X, RotateCcw, ShieldAlert, GitBranch } from "lucide-react";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/dashboard/backups")({ component: BackupsPage });
@@ -25,8 +25,13 @@ function BackupsPage() {
   const [wizard, setWizard] = useState<BackupExport | null>(null);
   const [dryRun, setDryRun] = useState(true);
   const [confirm, setConfirm] = useState("");
-  const [restore, setRestore] = useState<BackupRestore | null>(null);
+  const [restore, setRestore] = useState<(BackupRestore & { target_schema?: string | null; target_branch_id?: string | null }) | null>(null);
   const [restoreLog, setRestoreLog] = useState<string>("");
+  const [branches, setBranches] = useState<DbBranch[]>([]);
+  const [targetMode, setTargetMode] = useState<"existing"|"new"|"inplace">("inplace");
+  const [targetBranchId, setTargetBranchId] = useState<string>("");
+  const [newBranchName, setNewBranchName] = useState<string>("");
+  const [allowIncompat, setAllowIncompat] = useState(false);
 
   async function refresh() {
     if (!isLive()) return;
@@ -34,6 +39,7 @@ function BackupsPage() {
     catch (e) { toast.error((e as Error).message); }
   }
   useEffect(() => { refresh(); const t = setInterval(refresh, 4000); return () => clearInterval(t); }, []);
+  useEffect(() => { if (isLive()) branching.list().then(r => setBranches(r.branches)).catch(() => undefined); }, [wizard]);
 
   async function start() {
     try { await backups.start(kind, target || undefined); toast.success("Export started"); setTarget(""); refresh(); }
@@ -44,8 +50,15 @@ function BackupsPage() {
   async function beginRestore() {
     if (!wizard) return;
     if (!dryRun && confirm !== "RESTORE") { toast.error("Type RESTORE to confirm live restore."); return; }
+    if (targetMode === "existing" && !targetBranchId) { toast.error("Pick a target branch."); return; }
+    if (targetMode === "new" && !/^[a-z_][a-z0-9_]{0,40}$/i.test(newBranchName)) { toast.error("Enter a valid branch name."); return; }
     try {
-      const r = await backups.startRestore(wizard.id, { dry_run: dryRun, confirm: dryRun ? undefined : confirm });
+      const r = await backups.startRestore(wizard.id, {
+        dry_run: dryRun, confirm: dryRun ? undefined : confirm,
+        target_branch_id: targetMode === "existing" ? targetBranchId : undefined,
+        create_branch: targetMode === "new" ? newBranchName : undefined,
+        allow_incompatible: allowIncompat,
+      });
       setRestore(r.restore); setRestoreLog("");
       const stop = backups.streamRestore(r.restore.id, {
         onEvent: (ev) => {
@@ -56,7 +69,6 @@ function BackupsPage() {
         },
         onError: (e) => toast.error(e.message),
       });
-      // Auto-cleanup on unmount by attaching to wizard state.
       return stop;
     } catch (e) { toast.error((e as Error).message); }
   }
@@ -123,6 +135,33 @@ function BackupsPage() {
             <div className="text-xs text-muted-foreground">
               Source: <span className="font-mono">{wizard.download_path}</span> · {fmtBytes(wizard.bytes)}
             </div>
+
+            <div className="space-y-2 p-3 rounded-md border border-border">
+              <div className="text-xs font-medium flex items-center gap-1"><GitBranch className="h-3 w-3" /> Restore target</div>
+              <div className="flex gap-3 text-xs">
+                {(["inplace","existing","new"] as const).map(m => (
+                  <label key={m} className="flex items-center gap-1">
+                    <input type="radio" checked={targetMode===m} onChange={() => setTargetMode(m)} />
+                    {m === "inplace" ? "In-place" : m === "existing" ? "Existing branch" : "New branch"}
+                  </label>
+                ))}
+              </div>
+              {targetMode === "existing" && (
+                <select value={targetBranchId} onChange={e => setTargetBranchId(e.target.value)}
+                        className="w-full h-8 text-xs px-2 rounded-md border border-border bg-background">
+                  <option value="">Pick branch…</option>
+                  {branches.map(b => <option key={b.id} value={b.id}>{b.name} ({b.schema_name})</option>)}
+                </select>
+              )}
+              {targetMode === "new" && (
+                <Input placeholder="new-branch-name" value={newBranchName} onChange={e => setNewBranchName(e.target.value)} />
+              )}
+              <label className="flex items-center gap-2 text-[11px] text-muted-foreground">
+                <input type="checkbox" checked={allowIncompat} onChange={e => setAllowIncompat(e.target.checked)} />
+                Allow restore over incompatible schema (skips safety check)
+              </label>
+            </div>
+
             <label className="flex items-center gap-2 text-sm">
               <input type="checkbox" checked={dryRun} onChange={e => setDryRun(e.target.checked)} />
               Dry-run preview (log statements without applying)
