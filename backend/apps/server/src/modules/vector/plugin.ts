@@ -94,18 +94,27 @@ export const vectorPlugin: FastifyPluginAsync = async (app) => {
   app.post("/vec/v1/collections/:name/query", { preHandler: requireApiKey }, async (req, reply) => {
     const ws = wsFor(req);
     const { name } = req.params as { name: string };
-    const b = z.object({ embedding: z.array(z.number()).min(1), top_k: z.number().int().min(1).max(50).default(5) }).parse(req.body);
+    const b = z.object({
+      embedding: z.array(z.number()).min(1),
+      top_k: z.number().int().min(1).max(50).default(5),
+      embedding_field: z.string().max(120).optional(), // JSON path inside metadata to pull embedding from
+    }).parse(req.body);
     const c = await findColl(ws, name);
     if (!c) { reply.code(404); return { error: "no_such_collection" }; }
-    // Portable fallback: pull docs and rank in JS. Adequate for MVP corpora
-    // (~thousands). Swap to pgvector <-> operator when extension is present.
     const r = await q(
       `select id, external_id, content, embedding, metadata from public.vec_documents
        where collection_id=$1::uuid`, [c.id]);
-    const scored = r.rows.map((row: { id: string; external_id: string | null; content: string; embedding: number[] | string; metadata: unknown; }) => {
-      const emb: number[] = Array.isArray(row.embedding) ? row.embedding : JSON.parse(row.embedding as string);
+    const scored = r.rows.map((row: { id: string; external_id: string | null; content: string; embedding: number[] | string; metadata: Record<string, unknown>; }) => {
+      let emb: number[] = [];
+      if (b.embedding_field) {
+        const raw = (row.metadata ?? {})[b.embedding_field];
+        if (Array.isArray(raw)) emb = raw as number[];
+      }
+      if (emb.length === 0) emb = Array.isArray(row.embedding) ? row.embedding : JSON.parse(row.embedding as string);
       return { id: row.id, external_id: row.external_id, content: row.content, metadata: row.metadata, score: cosine(b.embedding, emb) };
     }).sort((a: {score: number}, z_: {score: number}) => z_.score - a.score).slice(0, b.top_k);
+    await recordUsage({ workspaceId: ws, metric: "ai_tokens", quantity: b.embedding.length,
+                        billingLabel: `vector:${name}`, meta: { top_k: b.top_k, field: b.embedding_field ?? null } });
     return { matches: scored };
   });
 
