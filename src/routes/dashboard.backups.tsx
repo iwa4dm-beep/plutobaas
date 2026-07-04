@@ -131,7 +131,7 @@ function BackupsPage() {
           <CardHeader>
             <CardTitle className="text-sm flex items-center justify-between">
               <span className="flex items-center gap-2"><RotateCcw className="h-4 w-4" /> Restore wizard — {wizard.kind}{wizard.target ? `:${wizard.target}` : ""}</span>
-              <Button size="sm" variant="ghost" onClick={() => { setWizard(null); setRestore(null); }}><X className="h-4 w-4" /></Button>
+              <Button size="sm" variant="ghost" onClick={() => { stopRef.current?.(); stopRef.current = null; setWizard(null); setRestore(null); }}><X className="h-4 w-4" /></Button>
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
