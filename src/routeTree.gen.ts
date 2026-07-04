@@ -9,6 +9,7 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as StatusRouteImport } from './routes/status'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as IndexRouteImport } from './routes/index'
@@ -24,6 +25,7 @@ import { Route as DashboardSqlRouteImport } from './routes/dashboard.sql'
 import { Route as DashboardSettingsRouteImport } from './routes/dashboard.settings'
 import { Route as DashboardScalingRouteImport } from './routes/dashboard.scaling'
 import { Route as DashboardRealtimeRouteImport } from './routes/dashboard.realtime'
+import { Route as DashboardRbacRouteImport } from './routes/dashboard.rbac'
 import { Route as DashboardProjectsRouteImport } from './routes/dashboard.projects'
 import { Route as DashboardObservabilityRouteImport } from './routes/dashboard.observability'
 import { Route as DashboardMigrationsRouteImport } from './routes/dashboard.migrations'
@@ -47,6 +49,11 @@ import { Route as AuthPhoneRouteImport } from './routes/auth.phone'
 import { Route as AuthForgotRouteImport } from './routes/auth.forgot'
 import { Route as AuthConfirmEmailRouteImport } from './routes/auth.confirm-email'
 
+const StatusRoute = StatusRouteImport.update({
+  id: '/status',
+  path: '/status',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const DashboardRoute = DashboardRouteImport.update({
   id: '/dashboard',
   path: '/dashboard',
@@ -120,6 +127,11 @@ const DashboardScalingRoute = DashboardScalingRouteImport.update({
 const DashboardRealtimeRoute = DashboardRealtimeRouteImport.update({
   id: '/realtime',
   path: '/realtime',
+  getParentRoute: () => DashboardRoute,
+} as any)
+const DashboardRbacRoute = DashboardRbacRouteImport.update({
+  id: '/rbac',
+  path: '/rbac',
   getParentRoute: () => DashboardRoute,
 } as any)
 const DashboardProjectsRoute = DashboardProjectsRouteImport.update({
@@ -237,6 +249,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/auth': typeof AuthRouteWithChildren
   '/dashboard': typeof DashboardRouteWithChildren
+  '/status': typeof StatusRoute
   '/auth/confirm-email': typeof AuthConfirmEmailRoute
   '/auth/forgot': typeof AuthForgotRoute
   '/auth/phone': typeof AuthPhoneRoute
@@ -259,6 +272,7 @@ export interface FileRoutesByFullPath {
   '/dashboard/migrations': typeof DashboardMigrationsRoute
   '/dashboard/observability': typeof DashboardObservabilityRoute
   '/dashboard/projects': typeof DashboardProjectsRoute
+  '/dashboard/rbac': typeof DashboardRbacRoute
   '/dashboard/realtime': typeof DashboardRealtimeRoute
   '/dashboard/scaling': typeof DashboardScalingRoute
   '/dashboard/settings': typeof DashboardSettingsRoute
@@ -275,6 +289,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/auth': typeof AuthRouteWithChildren
+  '/status': typeof StatusRoute
   '/auth/confirm-email': typeof AuthConfirmEmailRoute
   '/auth/forgot': typeof AuthForgotRoute
   '/auth/phone': typeof AuthPhoneRoute
@@ -297,6 +312,7 @@ export interface FileRoutesByTo {
   '/dashboard/migrations': typeof DashboardMigrationsRoute
   '/dashboard/observability': typeof DashboardObservabilityRoute
   '/dashboard/projects': typeof DashboardProjectsRoute
+  '/dashboard/rbac': typeof DashboardRbacRoute
   '/dashboard/realtime': typeof DashboardRealtimeRoute
   '/dashboard/scaling': typeof DashboardScalingRoute
   '/dashboard/settings': typeof DashboardSettingsRoute
@@ -315,6 +331,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/auth': typeof AuthRouteWithChildren
   '/dashboard': typeof DashboardRouteWithChildren
+  '/status': typeof StatusRoute
   '/auth/confirm-email': typeof AuthConfirmEmailRoute
   '/auth/forgot': typeof AuthForgotRoute
   '/auth/phone': typeof AuthPhoneRoute
@@ -337,6 +354,7 @@ export interface FileRoutesById {
   '/dashboard/migrations': typeof DashboardMigrationsRoute
   '/dashboard/observability': typeof DashboardObservabilityRoute
   '/dashboard/projects': typeof DashboardProjectsRoute
+  '/dashboard/rbac': typeof DashboardRbacRoute
   '/dashboard/realtime': typeof DashboardRealtimeRoute
   '/dashboard/scaling': typeof DashboardScalingRoute
   '/dashboard/settings': typeof DashboardSettingsRoute
@@ -356,6 +374,7 @@ export interface FileRouteTypes {
     | '/'
     | '/auth'
     | '/dashboard'
+    | '/status'
     | '/auth/confirm-email'
     | '/auth/forgot'
     | '/auth/phone'
@@ -378,6 +397,7 @@ export interface FileRouteTypes {
     | '/dashboard/migrations'
     | '/dashboard/observability'
     | '/dashboard/projects'
+    | '/dashboard/rbac'
     | '/dashboard/realtime'
     | '/dashboard/scaling'
     | '/dashboard/settings'
@@ -394,6 +414,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/auth'
+    | '/status'
     | '/auth/confirm-email'
     | '/auth/forgot'
     | '/auth/phone'
@@ -416,6 +437,7 @@ export interface FileRouteTypes {
     | '/dashboard/migrations'
     | '/dashboard/observability'
     | '/dashboard/projects'
+    | '/dashboard/rbac'
     | '/dashboard/realtime'
     | '/dashboard/scaling'
     | '/dashboard/settings'
@@ -433,6 +455,7 @@ export interface FileRouteTypes {
     | '/'
     | '/auth'
     | '/dashboard'
+    | '/status'
     | '/auth/confirm-email'
     | '/auth/forgot'
     | '/auth/phone'
@@ -455,6 +478,7 @@ export interface FileRouteTypes {
     | '/dashboard/migrations'
     | '/dashboard/observability'
     | '/dashboard/projects'
+    | '/dashboard/rbac'
     | '/dashboard/realtime'
     | '/dashboard/scaling'
     | '/dashboard/settings'
@@ -473,10 +497,18 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AuthRoute: typeof AuthRouteWithChildren
   DashboardRoute: typeof DashboardRouteWithChildren
+  StatusRoute: typeof StatusRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/status': {
+      id: '/status'
+      path: '/status'
+      fullPath: '/status'
+      preLoaderRoute: typeof StatusRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/dashboard': {
       id: '/dashboard'
       path: '/dashboard'
@@ -580,6 +612,13 @@ declare module '@tanstack/react-router' {
       path: '/realtime'
       fullPath: '/dashboard/realtime'
       preLoaderRoute: typeof DashboardRealtimeRouteImport
+      parentRoute: typeof DashboardRoute
+    }
+    '/dashboard/rbac': {
+      id: '/dashboard/rbac'
+      path: '/rbac'
+      fullPath: '/dashboard/rbac'
+      preLoaderRoute: typeof DashboardRbacRouteImport
       parentRoute: typeof DashboardRoute
     }
     '/dashboard/projects': {
@@ -774,6 +813,7 @@ interface DashboardRouteChildren {
   DashboardMigrationsRoute: typeof DashboardMigrationsRoute
   DashboardObservabilityRoute: typeof DashboardObservabilityRoute
   DashboardProjectsRoute: typeof DashboardProjectsRoute
+  DashboardRbacRoute: typeof DashboardRbacRoute
   DashboardRealtimeRoute: typeof DashboardRealtimeRoute
   DashboardScalingRoute: typeof DashboardScalingRoute
   DashboardSettingsRoute: typeof DashboardSettingsRoute
@@ -807,6 +847,7 @@ const DashboardRouteChildren: DashboardRouteChildren = {
   DashboardMigrationsRoute: DashboardMigrationsRoute,
   DashboardObservabilityRoute: DashboardObservabilityRoute,
   DashboardProjectsRoute: DashboardProjectsRoute,
+  DashboardRbacRoute: DashboardRbacRoute,
   DashboardRealtimeRoute: DashboardRealtimeRoute,
   DashboardScalingRoute: DashboardScalingRoute,
   DashboardSettingsRoute: DashboardSettingsRoute,
@@ -829,6 +870,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthRoute: AuthRouteWithChildren,
   DashboardRoute: DashboardRouteWithChildren,
+  StatusRoute: StatusRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
