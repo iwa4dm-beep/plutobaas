@@ -7,20 +7,23 @@ import websocket from "@fastify/websocket";
 import { authRoutes } from "./modules/auth/routes.js";
 import { oauthRoutes } from "./modules/auth/oauth.js";
 import { restRoutes } from "./modules/rest/routes.js";
-import { storageRoutes } from "./modules/storage/routes.js";
 import { adminRoutes } from "./modules/admin/routes.js";
-import { realtimeRoutes } from "./modules/realtime/routes.js";
 import { commsPlugin } from "./modules/comms/plugin.js";
 import { advancedAuthPlugin } from "./modules/advanced_auth/plugin.js";
 import { templatesPlugin } from "./modules/templates/plugin.js";
 import { aiPlugin } from "./modules/ai/plugin.js";
-import { edgeRoutes } from "./modules/edge/routes.js";
 import { migrationRoutes } from "./modules/admin/migrations.js";
-import { jobsRoutes } from "./modules/jobs/routes.js";
 import { workspacesRoutes } from "./modules/admin/workspaces.js";
 import { sqlRunnerRoutes } from "./modules/admin/sql.js";
 import { schemaRoutes } from "./modules/admin/schema.js";
 import { env } from "./config.js";
+
+// Legacy modules archived under ./modules/_archive/. To re-enable during the
+// v4/v5 migration window, set PLUTO_ENABLE_LEGACY=1. Wave 2 consolidation:
+// canonical versions are auth+auth_v4, storage_v4, realtime_v5, edge_v7,
+// data_api_v4, vector_v3, observability_v3, jobs_v2. Migrations untouched.
+const ENABLE_LEGACY = process.env.PLUTO_ENABLE_LEGACY === "1";
+
 
 async function main() {
   // Structured JSON logging — one line per request/error, easy to grep &
