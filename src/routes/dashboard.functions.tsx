@@ -22,7 +22,10 @@ function FunctionsPage() {
   const [newSlug, setNewSlug] = useState(""); const [newName, setNewName] = useState("");
   const [runtime, setRuntime] = useState<"node20"|"deno1"|"bun1">("node20");
   const [invokePayload, setInvokePayload] = useState<string>('{"hello":"world"}');
-  const [invokeResult, setInvokeResult] = useState<{ status_code: number; duration_ms: number; echoed: unknown } | null>(null);
+  const [invokeResult, setInvokeResult] = useState<{ status_code: number; duration_ms: number; echoed: unknown; error: { message: string; type?: string; stack?: string } | null } | null>(null);
+  const [invokeErr, setInvokeErr] = useState<string | null>(null);
+  const [showSecret, setShowSecret] = useState(false);
+  const jsonErr = (() => { if (!invokePayload.trim()) return null; try { JSON.parse(invokePayload); return null; } catch (e) { return (e as Error).message; } })();
 
   async function refresh() {
     if (!isLive()) return;
