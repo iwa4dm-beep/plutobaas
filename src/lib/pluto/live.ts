@@ -359,6 +359,49 @@ export const live = {
       signInWithOAuth(provider, opts),
     /** Consume `#access_token=...` fragment on redirect-back. Call on app boot. */
     completeOAuthRedirect: () => completeOAuthRedirect(),
+
+    // ---- Phase 31 — Auth completion ----
+    /** Retrieve public auth config (which flows are enabled server-side). */
+    config: () => api<{
+      require_email_confirmation: boolean; sms_otp_enabled: boolean;
+      email_provider: string; sms_provider: string;
+    }>("/auth/v1/config"),
+
+    /** Send a password-reset email. Always resolves — no user-enumeration. */
+    resetPasswordForEmail: (email: string) =>
+      api<{ ok: true }>("/auth/v1/recover", { method: "POST", body: JSON.stringify({ email }) }),
+
+    /** Consume a reset token and set a new password. Returns a fresh session. */
+    verifyPasswordRecovery: (token: string, new_password: string) =>
+      api<{ ok: true; session: AuthSession & { user: AuthUser } }>(
+        "/auth/v1/verify-recovery",
+        { method: "POST", body: JSON.stringify({ token, new_password }) },
+      ).then((r) => { persistSession(r.session, r.session.user); return r; }),
+
+    /** Send an email-confirmation link to the currently signed-in user. */
+    sendEmailConfirmation: () =>
+      api<{ ok: true; already_confirmed?: boolean }>("/auth/v1/send-email-confirmation", { method: "POST" }),
+
+    /** Consume an email-confirmation token from the link the user clicked. */
+    confirmEmail: (token: string) =>
+      api<{ ok: true }>("/auth/v1/confirm-email", { method: "POST", body: JSON.stringify({ token }) }),
+
+    /** Anonymous resend (rate-limited server-side to one every 60s). */
+    resendConfirmation: (email: string) =>
+      api<{ ok: true }>("/auth/v1/resend-confirmation", { method: "POST", body: JSON.stringify({ email }) }),
+
+    /** Request a 6-digit SMS OTP. `channel` may be "sms" or "whatsapp". */
+    signInWithOtp: (input: { phone: string; channel?: "sms" | "whatsapp" }) =>
+      api<{ ok: true; ttl_sec: number }>("/auth/v1/otp/send",
+        { method: "POST", body: JSON.stringify({ phone: input.phone, channel: input.channel ?? "sms" }) }),
+
+    /** Verify an OTP code; persists the returned session. */
+    verifyOtp: async (input: { phone: string; token: string }) => {
+      const r = await api<{ session: AuthSession & { user: AuthUser } }>("/auth/v1/otp/verify",
+        { method: "POST", body: JSON.stringify({ phone: input.phone, code: input.token }) });
+      persistSession(r.session, r.session.user);
+      return r;
+    },
   },
 
   /** Realtime — subscribe to broadcast channels or Postgres row changes. */
