@@ -1305,3 +1305,81 @@ export const backups = {
     return () => controller.abort();
   },
 };
+
+// ============================================================
+// Phase 27 — Logs Explorer SDK
+// ============================================================
+export type LogRow = { id: string; ts: string; source: string; level: string; message: string; user_id: string | null };
+export type LogSearch = {
+  source?: string; level?: string; q?: string; since?: string; until?: string; limit?: number; offset?: number;
+};
+
+export const logsV2 = {
+  async search(p: LogSearch = {}): Promise<{ logs: LogRow[] }> {
+    const qs = new URLSearchParams();
+    for (const [k, v] of Object.entries(p)) if (v != null && v !== "") qs.set(k, String(v));
+    return api(`/logs/v1/search?${qs.toString()}`);
+  },
+  async facets(): Promise<{ by_source: Array<{ source: string; n: string }>; by_level: Array<{ level: string; n: string }> }> {
+    return api(`/logs/v1/facets`);
+  },
+  async retention(): Promise<{ keep_days: number }> { return api(`/logs/v1/retention`); },
+  async setRetention(keep_days: number): Promise<{ ok: true; keep_days: number }> {
+    return api(`/logs/v1/retention`, { method: "PUT", body: JSON.stringify({ keep_days }) });
+  },
+  tail(p: { source?: string; level?: string; q?: string }, opts: { onRow: (r: LogRow) => void; onError?: (e: Error) => void }): () => void {
+    const controller = new AbortController();
+    const qs = new URLSearchParams();
+    for (const [k, v] of Object.entries(p)) if (v != null && v !== "") qs.set(k, String(v));
+    (async () => {
+      try {
+        const cfg = liveConfig(); if (!cfg) throw new Error("Pluto backend not configured");
+        const res = await fetch(cfg.url.replace(/\/$/, "") + `/logs/v1/stream?${qs.toString()}`, {
+          signal: controller.signal, headers: { accept: "text/event-stream", ...bearer(false) },
+        });
+        if (!res.ok || !res.body) throw new Error(`SSE ${res.status}`);
+        const reader = res.body.getReader(); const dec = new TextDecoder(); let buf = "";
+        for (;;) {
+          const { value, done } = await reader.read(); if (done) break;
+          buf += dec.decode(value, { stream: true });
+          const parts = buf.split("\n\n"); buf = parts.pop() ?? "";
+          for (const p of parts) {
+            const line = p.split("\n").find(l => l.startsWith("data: "));
+            if (!line) continue;
+            try { opts.onRow(JSON.parse(line.slice(6)) as LogRow); } catch { /* ignore */ }
+          }
+        }
+      } catch (e) { if ((e as Error).name !== "AbortError") opts.onError?.(e as Error); }
+    })();
+    return () => controller.abort();
+  },
+};
+
+// ============================================================
+// Phase 28 — Workspace API tokens SDK
+// ============================================================
+export type WorkspaceToken = {
+  id: string; workspace_id: string; name: string; prefix: string; scopes: string[];
+  created_at: string; last_used_at: string | null; expires_at: string | null; revoked_at: string | null;
+};
+export type WorkspaceTokenMint = WorkspaceToken & { token: string };
+
+export const tokens = {
+  async scopes(): Promise<{ scopes: string[] }> { return api(`/tokens/v1/scopes`); },
+  async list(): Promise<{ tokens: WorkspaceToken[] }> { return api(`/tokens/v1/tokens`); },
+  async create(input: { name: string; scopes: string[]; expires_in_days?: number }): Promise<WorkspaceTokenMint> {
+    return api(`/tokens/v1/tokens`, { method: "POST", body: JSON.stringify(input) });
+  },
+  async revoke(id: string): Promise<{ ok: true }> {
+    return api(`/tokens/v1/tokens/${id}`, { method: "DELETE" });
+  },
+  async whoami(bearer: string): Promise<{ workspace_id: string | null; scopes: string[] }> {
+    const cfg = liveConfig(); if (!cfg) throw new Error("Pluto backend not configured");
+    const res = await fetch(cfg.url.replace(/\/$/, "") + `/tokens/v1/whoami`, {
+      headers: { apikey: cfg.anon, Authorization: `Bearer ${bearer}` },
+    });
+    const j = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error((j as { error?: string }).error ?? `HTTP ${res.status}`);
+    return j as { workspace_id: string | null; scopes: string[] };
+  },
+};
