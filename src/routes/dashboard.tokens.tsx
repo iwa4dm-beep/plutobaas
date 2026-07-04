@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { KeyRound, Plus, Trash2, Copy, Check, RefreshCw, ShieldCheck, ChevronDown, ChevronRight, Zap } from "lucide-react";
+import { KeyRound, Plus, Trash2, Copy, Check, RefreshCw, ShieldCheck, ChevronDown, ChevronRight, Zap, Download } from "lucide-react";
 import { toast } from "sonner";
 import { isLive, tokens, type WorkspaceToken, type WorkspaceTokenMint, type ScopeCoverage, type BulkRevokeResult } from "@/lib/pluto/live";
 
