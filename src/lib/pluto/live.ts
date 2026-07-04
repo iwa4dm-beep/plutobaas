@@ -1335,6 +1335,13 @@ export const backups = {
     api<{ export: BackupExport }>("/backups/v1", { method: "POST", body: JSON.stringify({ kind, target }) }),
   get:    (id: string) => api<{ export: BackupExport }>(`/backups/v1/${id}`),
   cancel: (id: string) => api<{ ok: boolean }>(`/backups/v1/${id}/cancel`, { method: "POST" }),
+  // Phase 30 — schema compatibility diff for the restore wizard.
+  compat: (exportId: string, params: { target_branch_id?: string; target_schema?: string } = {}) => {
+    const qs = new URLSearchParams();
+    if (params.target_branch_id) qs.set("target_branch_id", params.target_branch_id);
+    if (params.target_schema)    qs.set("target_schema",    params.target_schema);
+    return api<BackupCompat>(`/backups/v1/${exportId}/compat${qs.size ? `?${qs}` : ""}`);
+  },
   // Restore workflow (Phase 25) — dry_run by default, requires confirm='RESTORE' for live.
   restores: (exportId: string) => api<{ restores: BackupRestore[] }>(`/backups/v1/${exportId}/restores`),
   startRestore: (exportId: string, opts: { dry_run?: boolean; confirm?: string; target_branch_id?: string; create_branch?: string; allow_incompatible?: boolean } = {}) =>
