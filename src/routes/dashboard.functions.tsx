@@ -193,7 +193,11 @@ function FunctionsPage() {
               {secrets.map(s => (
                 <div key={s.id} className="flex items-center justify-between p-2 border border-border rounded-md text-sm">
                   <div><span className="font-mono">{s.name}</span> <span className="text-muted-foreground text-xs">· {new Date(s.created_at).toLocaleString()}</span></div>
-                  <Button size="sm" variant="ghost" onClick={async () => { await edgeV2.deleteSecret(s.id); refresh(); }}>
+                  <Button size="sm" variant="ghost" title="Delete secret" onClick={async () => {
+                    if (!confirm(`Delete secret "${s.name}"?`)) return;
+                    try { await edgeV2.deleteSecret(s.id); toast.success("Secret deleted"); refresh(); }
+                    catch (e) { toast.error((e as Error).message); }
+                  }}>
                     <Trash2 className="h-3 w-3" />
                   </Button>
                 </div>
