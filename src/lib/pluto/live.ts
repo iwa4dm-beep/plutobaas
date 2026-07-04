@@ -1513,6 +1513,15 @@ export type WorkspaceToken = {
 export type WorkspaceTokenMint = WorkspaceToken & { token: string; replaced_id?: string };
 export type ScopeCoverageEntry = { method: string; path: string; description: string };
 export type ScopeCoverage = Record<string, ScopeCoverageEntry[]>;
+export type BulkRevokeInput = {
+  scope?: string; created_by?: string; last_used_before?: string;
+  never_used?: boolean; include_expired?: boolean; ids?: string[]; dry_run?: boolean;
+};
+export type BulkRevokeMatch = {
+  id: string; name: string; prefix: string; scopes: string[];
+  created_by: string | null; last_used_at: string | null; expires_at: string | null;
+};
+export type BulkRevokeResult = { dry_run: boolean; matched: number; revoked: string[]; tokens: BulkRevokeMatch[] };
 
 export const tokens = {
   async scopes(): Promise<{ scopes: string[] }> { return api(`/tokens/v1/scopes`); },
@@ -1527,6 +1536,9 @@ export const tokens = {
     return api(`/tokens/v1/tokens/${id}/rotate`, { method: "POST", body: JSON.stringify(input) });
   },
   async coverage(): Promise<{ coverage: ScopeCoverage }> { return api(`/tokens/v1/coverage`); },
+  async bulkRevoke(input: BulkRevokeInput): Promise<BulkRevokeResult> {
+    return api(`/tokens/v1/tokens/bulk-revoke`, { method: "POST", body: JSON.stringify(input) });
+  },
   async whoami(bearer: string): Promise<{ workspace_id: string | null; scopes: string[] }> {
     const cfg = liveConfig(); if (!cfg) throw new Error("Pluto backend not configured");
     const res = await fetch(cfg.url.replace(/\/$/, "") + `/tokens/v1/whoami`, {

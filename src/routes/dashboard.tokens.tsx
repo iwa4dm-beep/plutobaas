@@ -4,9 +4,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { KeyRound, Plus, Trash2, Copy, Check, RefreshCw, ShieldCheck, ChevronDown, ChevronRight } from "lucide-react";
+import { KeyRound, Plus, Trash2, Copy, Check, RefreshCw, ShieldCheck, ChevronDown, ChevronRight, Zap } from "lucide-react";
 import { toast } from "sonner";
-import { isLive, tokens, type WorkspaceToken, type WorkspaceTokenMint, type ScopeCoverage } from "@/lib/pluto/live";
+import { isLive, tokens, type WorkspaceToken, type WorkspaceTokenMint, type ScopeCoverage, type BulkRevokeResult } from "@/lib/pluto/live";
 
 export const Route = createFileRoute("/dashboard/tokens")({ component: TokensPage });
 
@@ -21,6 +21,12 @@ function TokensPage() {
   const [minted, setMinted] = useState<WorkspaceTokenMint | null>(null);
   const [copied, setCopied] = useState(false);
   const [rotatingId, setRotatingId] = useState<string | null>(null);
+  const [bulkScope, setBulkScope] = useState("");
+  const [bulkCreatedBy, setBulkCreatedBy] = useState("");
+  const [bulkUnusedDays, setBulkUnusedDays] = useState("");
+  const [bulkNeverUsed, setBulkNeverUsed] = useState(false);
+  const [bulkPreview, setBulkPreview] = useState<BulkRevokeResult | null>(null);
+  const [bulkBusy, setBulkBusy] = useState(false);
 
   async function refresh() {
     if (!isLive()) return;
@@ -66,6 +72,42 @@ function TokensPage() {
       await refresh();
     } catch (e) { toast.error((e as Error).message); }
     finally { setRotatingId(null); }
+  }
+
+  function bulkPayload(dry: boolean) {
+    const days = bulkUnusedDays.trim() ? Number(bulkUnusedDays) : NaN;
+    const cutoff = Number.isFinite(days) && days > 0
+      ? new Date(Date.now() - days * 24 * 3600 * 1000).toISOString() : undefined;
+    return {
+      scope: bulkScope.trim() || undefined,
+      created_by: bulkCreatedBy.trim() || undefined,
+      last_used_before: cutoff,
+      never_used: bulkNeverUsed || undefined,
+      dry_run: dry,
+    };
+  }
+
+  async function bulkPreviewFn() {
+    setBulkBusy(true);
+    try {
+      const res = await tokens.bulkRevoke(bulkPayload(true));
+      setBulkPreview(res);
+      if (res.matched === 0) toast.info("No tokens match those filters.");
+    } catch (e) { toast.error((e as Error).message); }
+    finally { setBulkBusy(false); }
+  }
+
+  async function bulkConfirm() {
+    if (!bulkPreview || bulkPreview.matched === 0) return;
+    if (!confirm(`Revoke ${bulkPreview.matched} token(s)? This cannot be undone.`)) return;
+    setBulkBusy(true);
+    try {
+      const res = await tokens.bulkRevoke(bulkPayload(false));
+      setBulkPreview(res);
+      toast.success(`Revoked ${res.revoked.length} token(s).`);
+      await refresh();
+    } catch (e) { toast.error((e as Error).message); }
+    finally { setBulkBusy(false); }
   }
 
   return (
@@ -178,6 +220,78 @@ function TokensPage() {
           </div>
         </CardContent>
       </Card>
+
+      <Card>
+        <CardHeader><CardTitle className="text-sm flex items-center gap-2">
+          <Zap className="h-4 w-4" /> Bulk revoke
+        </CardTitle></CardHeader>
+        <CardContent className="space-y-3">
+          <p className="text-xs text-muted-foreground">
+            Revoke many tokens at once by scope, creator user id, or last-used cutoff.
+            Preview first — nothing changes until you confirm.
+          </p>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+            <div>
+              <div className="text-[10px] text-muted-foreground mb-1">Scope contains</div>
+              <select value={bulkScope} onChange={e => setBulkScope(e.target.value)}
+                      className="w-full text-xs px-2 py-1.5 rounded border border-border bg-background">
+                <option value="">(any)</option>
+                {scopeCatalog.map(s => <option key={s} value={s}>{s}</option>)}
+                <option value="*">* (wildcard)</option>
+              </select>
+            </div>
+            <div>
+              <div className="text-[10px] text-muted-foreground mb-1">Created by (user id)</div>
+              <Input value={bulkCreatedBy} onChange={e => setBulkCreatedBy(e.target.value)} placeholder="uuid or subject" />
+            </div>
+            <div>
+              <div className="text-[10px] text-muted-foreground mb-1">Unused for N days</div>
+              <Input type="number" min={1} value={bulkUnusedDays}
+                     onChange={e => setBulkUnusedDays(e.target.value)} placeholder="e.g. 30" />
+            </div>
+            <label className="flex items-end gap-2 text-xs pb-1">
+              <input type="checkbox" checked={bulkNeverUsed}
+                     onChange={e => setBulkNeverUsed(e.target.checked)} />
+              Never used
+            </label>
+          </div>
+          <div className="flex gap-2">
+            <Button size="sm" variant="outline" disabled={bulkBusy} onClick={bulkPreviewFn}>
+              Preview matches
+            </Button>
+            <Button size="sm" variant="destructive"
+                    disabled={bulkBusy || !bulkPreview || bulkPreview.matched === 0 || bulkPreview.revoked.length > 0}
+                    onClick={bulkConfirm}>
+              Confirm revoke{bulkPreview ? ` (${bulkPreview.matched})` : ""}
+            </Button>
+            {bulkPreview && (
+              <Button size="sm" variant="ghost" onClick={() => setBulkPreview(null)}>Clear</Button>
+            )}
+          </div>
+          {bulkPreview && (
+            <div className="border border-border rounded-md p-2 space-y-1 max-h-64 overflow-auto">
+              <div className="text-[11px] text-muted-foreground">
+                {bulkPreview.revoked.length > 0
+                  ? <>✔ Revoked <b>{bulkPreview.revoked.length}</b> token(s).</>
+                  : <>Preview: <b>{bulkPreview.matched}</b> token(s) would be revoked.</>}
+              </div>
+              {bulkPreview.tokens.map(t => (
+                <div key={t.id} className="grid grid-cols-[1fr,120px,140px] gap-2 text-[11px] items-center">
+                  <div>
+                    <span className="font-medium">{t.name}</span>
+                    <span className="text-muted-foreground font-mono ml-2">plt_{t.prefix}_…</span>
+                  </div>
+                  <span className="text-muted-foreground truncate">{t.scopes.join(", ")}</span>
+                  <span className="text-muted-foreground">
+                    {t.last_used_at ? `used ${new Date(t.last_used_at).toLocaleDateString()}` : "never used"}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
 
       <Card>
         <CardHeader><CardTitle className="text-sm">Existing tokens ({rows.length})</CardTitle></CardHeader>

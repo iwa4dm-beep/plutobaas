@@ -146,6 +146,65 @@ export async function tokensPlugin(app: FastifyInstance) {
     return { ok: true };
   });
 
+  // Bulk revoke — filter by scope, creator user, last-used cutoff, or a
+  // caller-supplied id list. `dry_run: true` returns the matching token
+  // set without mutating anything so the UI can preview the blast radius.
+  app.post("/tokens/v1/tokens/bulk-revoke", { preHandler: [requireWorkspaceAdmin] }, async (req, reply) => {
+    const body = z.object({
+      scope:             z.string().min(1).max(64).optional(),
+      created_by:        z.string().min(1).max(200).optional(),
+      last_used_before:  z.string().datetime().optional(),
+      never_used:        z.boolean().optional(),   // last_used_at IS NULL
+      include_expired:   z.boolean().default(false),
+      ids:               z.array(z.string().uuid()).max(500).optional(),
+      dry_run:           z.boolean().default(false),
+    }).safeParse(req.body ?? {});
+    if (!body.success) return reply.code(400).send({ error: "bad_body", issues: body.error.issues });
+    const ws = req.auth?.workspaceId;
+    if (!ws) return reply.code(400).send({ error: "workspace_required" });
+    const f = body.data;
+    const hasFilter = f.scope || f.created_by || f.last_used_before || f.never_used || (f.ids && f.ids.length);
+    if (!hasFilter) return reply.code(400).send({ error: "filter_required",
+      message: "Provide at least one of: scope, created_by, last_used_before, never_used, ids" });
+
+    let q = db.selectFrom("workspace_tokens" as never)
+      .select(["id" as never, "name" as never, "prefix" as never, "scopes" as never,
+               "created_by" as never, "last_used_at" as never, "expires_at" as never])
+      .where("workspace_id" as never, "=", ws as never)
+      .where("revoked_at" as never, "is", null as never);
+    if (f.ids?.length)         q = q.where("id" as never, "in", f.ids as never);
+    if (f.created_by)          q = q.where("created_by" as never, "=", f.created_by as never);
+    if (f.scope)               q = q.where("scopes" as never, "@>", [f.scope] as never);
+    if (f.last_used_before)    q = q.where("last_used_at" as never, "<", new Date(f.last_used_before) as never);
+    if (f.never_used)          q = q.where("last_used_at" as never, "is", null as never);
+    if (!f.include_expired)    q = q.where((eb: unknown) => (eb as { or: (a: unknown[]) => unknown; eb: (a: string, b: string, c: unknown) => unknown; }).or([
+      (eb as { eb: (a: string, b: string, c: unknown) => unknown }).eb("expires_at" as never, "is", null as never),
+      (eb as { eb: (a: string, b: string, c: unknown) => unknown }).eb("expires_at" as never, ">", new Date() as never),
+    ]));
+
+    const matched = await q.execute() as Array<{
+      id: string; name: string; prefix: string; scopes: string[];
+      created_by: string | null; last_used_at: Date | null; expires_at: Date | null;
+    }>;
+
+    if (f.dry_run || matched.length === 0) {
+      return { dry_run: true, matched: matched.length, tokens: matched, revoked: [] };
+    }
+
+    const ids = matched.map(m => m.id);
+    await db.updateTable("workspace_tokens" as never)
+      .set({ revoked_at: new Date() } as never)
+      .where("id" as never, "in", ids as never)
+      .where("workspace_id" as never, "=", ws as never)
+      .execute();
+
+    await audit(req, { action: "tokens.bulk_revoke", status: "ok",
+      metadata: { workspace_id: ws, count: ids.length, filter: f,
+                  revoked_ids: ids.slice(0, 100) } });
+
+    return { dry_run: false, matched: matched.length, revoked: ids, tokens: matched };
+  });
+
   // Test endpoint for token scope enforcement — echoes the scopes the
   // caller's bearer resolved to. Useful for verifying a freshly minted
   // token works before wiring it into external clients.
