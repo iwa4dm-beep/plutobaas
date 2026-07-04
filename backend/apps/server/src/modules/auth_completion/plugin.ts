@@ -36,8 +36,8 @@ function frontendBase(req: FastifyRequest): string {
   return `${proto}://${host}`;
 }
 
-async function issueSession(user: { id: string; email: string | null; role: "admin" | "user" }) {
-  const access_token = await signAccessToken({ sub: user.id, role: user.role, email: user.email ?? undefined });
+async function issueSession(user: { id: string; email: string; role: "admin" | "user" }) {
+  const access_token = await signAccessToken({ sub: user.id, role: user.role, email: user.email });
   const refresh_token = randomBytes(32).toString("hex");
   await db.insertInto("refresh_tokens").values({
     id: crypto.randomUUID(),
