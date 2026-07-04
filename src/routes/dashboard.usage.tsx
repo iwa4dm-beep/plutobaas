@@ -55,6 +55,7 @@ function UsagePage() {
         soft: qu.soft_limit == null ? "" : String(qu.soft_limit),
         overage: qu.overage_behavior ?? "warn",
         label: qu.billing_label ?? "",
+        alertPct: qu.alert_pct == null ? "" : String(qu.alert_pct),
       };
     }
     setQuotas(map);
