@@ -48,6 +48,22 @@ function BackupsPage() {
   useEffect(() => { refresh(); const t = setInterval(refresh, 4000); return () => clearInterval(t); }, []);
   useEffect(() => { if (isLive()) branching.list().then(r => setBranches(r.branches)).catch(() => undefined); }, [wizard]);
 
+  // Reset compatibility diff when the target changes so stale results don't
+  // authorise a restore against a different branch.
+  useEffect(() => { setCompat(null); setCompatAck(false); }, [wizard?.id, targetMode, targetBranchId, newBranchName]);
+
+  async function loadCompat() {
+    if (!wizard) return;
+    setCompatLoading(true);
+    try {
+      const c = await backups.compat(wizard.id, {
+        target_branch_id: targetMode === "existing" ? targetBranchId : undefined,
+      });
+      setCompat(c); setCompatAck(false);
+    } catch (e) { toast.error((e as Error).message); }
+    finally { setCompatLoading(false); }
+  }
+
   async function start() {
     try { await backups.start(kind, target || undefined); toast.success("Export started"); setTarget(""); refresh(); }
     catch (e) { toast.error((e as Error).message); }
