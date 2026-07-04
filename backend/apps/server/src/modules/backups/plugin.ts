@@ -223,17 +223,23 @@ export const backupsPlugin: FastifyPluginAsync = async (app) => {
     });
     let done = false;
     const send = (obj: unknown) => reply.raw.write(`data: ${JSON.stringify(obj)}\n\n`);
+    // Heartbeat every 25s keeps proxies/CDNs (typical 30–60s idle kill)
+    // from severing the SSE mid-restore during quiet polling windows.
+    const hb = setInterval(() => {
+      if (done) return;
+      try { reply.raw.write(`: ping\n\n`); } catch { /* closed */ }
+    }, 25_000);
     const timer = setInterval(async () => {
       if (done) return;
       const r = await q(`select status, progress, applied_statements, total_statements, log, error
                          from public.backup_restores where id=$1::uuid`, [rid]);
-      const row = r.rows[0]; if (!row) { done = true; reply.raw.end(); return; }
+      const row = r.rows[0]; if (!row) { done = true; clearInterval(hb); reply.raw.end(); return; }
       send(row);
       if (row.status === "done" || row.status === "failed" || row.status === "canceled") {
-        done = true; clearInterval(timer); reply.raw.end();
+        done = true; clearInterval(timer); clearInterval(hb); reply.raw.end();
       }
     }, 500);
-    reply.raw.on("close", () => { done = true; clearInterval(timer); });
+    reply.raw.on("close", () => { done = true; clearInterval(timer); clearInterval(hb); });
   });
 
   app.post("/backups/v1/restores/:rid/cancel", { preHandler: requireWorkspaceAdmin }, async (req) => {
