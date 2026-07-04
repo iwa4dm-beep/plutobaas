@@ -70,14 +70,7 @@ async function stripeCall(path: string, method: "GET" | "POST", body?: Record<st
   return data;
 }
 
-// Stripe signs webhooks with HMAC-SHA256 over `{timestamp}.{payload}`.
-function verifyStripeSig(sigHeader: string, payload: string, secret: string): boolean {
-  const parts = Object.fromEntries(sigHeader.split(",").map((kv) => kv.split("=")));
-  const t = parts.t, v1 = parts.v1;
-  if (!t || !v1) return false;
-  const mac = createHmac("sha256", secret).update(`${t}.${payload}`).digest("hex");
-  try { return timingSafeEqual(Buffer.from(mac), Buffer.from(v1)); } catch { return false; }
-}
+// Signature verification lives in lib/stripe-sig.ts so tests can share it.
 
 // ---- Plugin ----------------------------------------------------------
 export const billingPlugin: FastifyPluginAsync = async (app) => {
