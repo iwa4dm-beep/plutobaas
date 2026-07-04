@@ -56,10 +56,9 @@ describe("data_api_v4 RPC HTTP", () => {
     expect(doc.paths["/rest/v4/rpc/ping"]).toBeDefined();
   });
 
-  afterEachCleanup();
 });
 
-function afterEachCleanup() { /* keep registry between tests to build up state */ void resetRpcRegistry; }
+void resetRpcRegistry; // keep the import used across suites without resetting mid-run
 
 describe("data_api_v4 cursor pagination", () => {
   it("iterates the full dataset in stable order without gaps or duplicates", async () => {
