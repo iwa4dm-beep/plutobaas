@@ -1159,7 +1159,7 @@ export const usage = {
 
 export type QuotaAlert = { id: string; metric: UsageMetric; pct: number; used: number; hard_limit: number | null; triggered_at: string; notified: boolean; resolved_at: string | null };
 export type UsageWebhook = { id: string; url: string; events: string[]; active: boolean; last_status: number | null; last_error: string | null; last_delivered_at: string | null; created_at: string };
-export type WebhookDelivery = {
+export type UsageWebhookDelivery = {
   id: string; webhook_id: string; alert_id: string | null; event: string;
   attempt: number; status_code: number | null; response_time_ms: number | null;
   error: string | null; delivered_at: string; next_retry_at: string | null;
