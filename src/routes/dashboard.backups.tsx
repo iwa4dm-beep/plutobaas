@@ -50,8 +50,15 @@ function BackupsPage() {
   async function beginRestore() {
     if (!wizard) return;
     if (!dryRun && confirm !== "RESTORE") { toast.error("Type RESTORE to confirm live restore."); return; }
+    if (targetMode === "existing" && !targetBranchId) { toast.error("Pick a target branch."); return; }
+    if (targetMode === "new" && !/^[a-z_][a-z0-9_]{0,40}$/i.test(newBranchName)) { toast.error("Enter a valid branch name."); return; }
     try {
-      const r = await backups.startRestore(wizard.id, { dry_run: dryRun, confirm: dryRun ? undefined : confirm });
+      const r = await backups.startRestore(wizard.id, {
+        dry_run: dryRun, confirm: dryRun ? undefined : confirm,
+        target_branch_id: targetMode === "existing" ? targetBranchId : undefined,
+        create_branch: targetMode === "new" ? newBranchName : undefined,
+        allow_incompatible: allowIncompat,
+      });
       setRestore(r.restore); setRestoreLog("");
       const stop = backups.streamRestore(r.restore.id, {
         onEvent: (ev) => {
@@ -62,7 +69,6 @@ function BackupsPage() {
         },
         onError: (e) => toast.error(e.message),
       });
-      // Auto-cleanup on unmount by attaching to wizard state.
       return stop;
     } catch (e) { toast.error((e as Error).message); }
   }
