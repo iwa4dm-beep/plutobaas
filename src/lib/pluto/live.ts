@@ -1106,7 +1106,20 @@ export const usage = {
     })();
     return () => controller.abort();
   },
+
+  alerts: (unresolved = true) =>
+    api<{ alerts: QuotaAlert[] }>(`/usage/v1/alerts${unresolved ? "?unresolved=1" : ""}`),
+  resolveAlert: (id: string) =>
+    api<{ ok: boolean }>(`/usage/v1/alerts/${id}/resolve`, { method: "POST" }),
+  webhooks: () => api<{ webhooks: UsageWebhook[] }>("/usage/v1/webhooks"),
+  createWebhook: (body: { url: string; secret?: string; events?: string[] }) =>
+    api<{ webhook: UsageWebhook }>("/usage/v1/webhooks", { method: "POST", body: JSON.stringify(body) }),
+  deleteWebhook: (id: string) =>
+    api<{ ok: boolean }>(`/usage/v1/webhooks/${id}`, { method: "DELETE" }),
 };
+
+export type QuotaAlert = { id: string; metric: UsageMetric; pct: number; used: number; hard_limit: number | null; triggered_at: string; notified: boolean; resolved_at: string | null };
+export type UsageWebhook = { id: string; url: string; events: string[]; active: boolean; last_status: number | null; last_error: string | null; last_delivered_at: string | null; created_at: string };
 
 // -------------------- Phase 23: Realtime v2 --------------------
 export type Rt2Channel = { id: string; name: string; kind: "broadcast"|"presence"; created_at: string; members?: number };
