@@ -80,6 +80,11 @@ function AuthPage() {
             </button>
           </form>
 
+          <div className="mt-3 flex items-center justify-between text-[11px]">
+            <Link to="/auth/forgot" className="text-muted-foreground hover:text-foreground">Forgot password?</Link>
+            <Link to="/auth/phone" className="text-muted-foreground hover:text-foreground">Sign in with phone</Link>
+          </div>
+
           <p className="mt-4 text-[11px] text-muted-foreground text-center">
             Mock mode: যেকোনো email/password দিয়ে log in করতে পারবেন।
           </p>
