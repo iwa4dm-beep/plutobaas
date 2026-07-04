@@ -57,7 +57,38 @@ function UsagePage() {
     if (!isLive()) return;
     try { const r = await usage.webhooks(); setWebhooks(r.webhooks); } catch { /* ignore */ }
   }, []);
-  useEffect(() => { void loadAlerts(); const t = setInterval(loadAlerts, 15_000); return () => clearInterval(t); }, [loadAlerts]);
+
+  // Alerts: SSE-driven with a slow (60s) fallback poll if the stream is down.
+  const alertStopRef = useRef<null | (() => void)>(null);
+  useEffect(() => {
+    if (!isLive()) return;
+    void loadAlerts();
+    let fallback: ReturnType<typeof setInterval> | null = null;
+    const start = () => {
+      alertStopRef.current?.();
+      alertStopRef.current = usage.streamAlerts({
+        onEvent: (ev: AlertEventPayload) => {
+          setAlerts((prev) => {
+            if (prev.some((a) => a.id === ev.alert_id)) return prev;
+            const inserted: QuotaAlert = {
+              id: ev.alert_id, metric: ev.metric, pct: ev.pct, used: ev.used,
+              hard_limit: ev.hard_limit, triggered_at: ev.triggered_at,
+              notified: true, resolved_at: null,
+            };
+            return [inserted, ...prev];
+          });
+          toast.warning(`Quota alert: ${ev.metric} at ${ev.pct.toFixed(1)}%`);
+        },
+        onError: () => {
+          // stream dropped — retry it in 5s and keep a slow poll as a safety net.
+          if (!fallback) fallback = setInterval(() => void loadAlerts(), 60_000);
+          setTimeout(start, 5_000);
+        },
+      });
+    };
+    start();
+    return () => { alertStopRef.current?.(); alertStopRef.current = null; if (fallback) clearInterval(fallback); };
+  }, [loadAlerts]);
   useEffect(() => { void loadWebhooks(); }, [loadWebhooks]);
 
   // Merge quotas from either REST (fallback) or the SSE snapshot into UI state.
