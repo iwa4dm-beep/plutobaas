@@ -119,11 +119,19 @@ function FunctionsPage() {
           <Card>
             <CardHeader><CardTitle className="text-sm flex items-center gap-2"><Zap className="h-4 w-4" /> Test invoke {slug}</CardTitle></CardHeader>
             <CardContent className="space-y-2">
-              <textarea className="w-full min-h-[80px] font-mono text-xs p-2 rounded-md border border-border bg-background"
+              <textarea className={"w-full min-h-[80px] font-mono text-xs p-2 rounded-md border bg-background " + (jsonErr ? "border-destructive" : "border-border")}
                         value={invokePayload} onChange={e => setInvokePayload(e.target.value)} />
-              <div className="flex justify-end"><Button size="sm" onClick={invoke}><Play className="h-4 w-4 mr-1" /> Run</Button></div>
+              {jsonErr && <div className="text-[11px] text-destructive">Invalid JSON: {jsonErr}</div>}
+              <div className="flex justify-end"><Button size="sm" onClick={invoke} disabled={!!jsonErr}><Play className="h-4 w-4 mr-1" /> Run</Button></div>
+              {invokeErr && (
+                <div className="p-2 rounded-md bg-destructive/10 border border-destructive/40 text-xs">
+                  <div className="font-medium text-destructive">Invocation error</div>
+                  <div className="font-mono mt-1">{invokeErr}</div>
+                  {invokeResult?.error?.stack && <pre className="text-[10px] font-mono mt-1 text-muted-foreground whitespace-pre-wrap">{invokeResult.error.stack}</pre>}
+                </div>
+              )}
               {invokeResult && (
-                <pre className="text-[10px] font-mono p-2 rounded-md bg-muted">{JSON.stringify(invokeResult, null, 2)}</pre>
+                <pre className="text-[10px] font-mono p-2 rounded-md bg-muted max-h-[200px] overflow-auto">{JSON.stringify(invokeResult, null, 2)}</pre>
               )}
             </CardContent>
           </Card>
