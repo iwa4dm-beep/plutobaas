@@ -166,6 +166,35 @@ export const observabilityPlugin: FastifyPluginAsync = async (app: FastifyInstan
       const p = p95map.get(row.metric);
       if (p != null) lines.push(`pluto_metric_p95{name="${safe}"} ${p}`);
     }
+
+    // ---- Auth / token activity ----
+    // Grouped by auth_kind × outcome × token_scope so operators can spot
+    // spikes in `unauthorized` requests from anon keys, or a single
+    // token_scope suddenly hitting `rate_limited`. Cardinality bound:
+    // (~4 auth_kinds) × (5 outcomes) × (small scope set) ≤ ~100 series.
+    const authq = await q<{ auth_kind: string; outcome: string; token_scope: string; n: number; v: number }>(
+      `select coalesce(labels->>'auth_kind','none')    as auth_kind,
+              coalesce(labels->>'outcome','ok')        as outcome,
+              coalesce(labels->>'token_scope','none')  as token_scope,
+              count(*)::int                            as n,
+              avg(value)::float8                       as v
+         from public.metrics_samples
+        where metric = 'http.request'
+          and observed_at > now() - interval '5 minutes'
+        group by 1,2,3`).catch(() => ({ rows: [] as Array<{ auth_kind: string; outcome: string; token_scope: string; n: number; v: number }> }));
+    lines.push(
+      "# HELP pluto_http_requests_total count of HTTP requests in the last 5m, labeled by auth kind, outcome, and token scope",
+      "# TYPE pluto_http_requests_total counter",
+      "# HELP pluto_http_request_duration_ms_avg mean HTTP request duration ms, same labels",
+      "# TYPE pluto_http_request_duration_ms_avg gauge",
+    );
+    const esc = (s: string) => s.replace(/\\/g, "\\\\").replace(/"/g, '\\"').slice(0, 60);
+    for (const r of authq.rows) {
+      const l = `auth_kind="${esc(r.auth_kind)}",outcome="${esc(r.outcome)}",token_scope="${esc(r.token_scope)}"`;
+      lines.push(`pluto_http_requests_total{${l}} ${r.n}`);
+      lines.push(`pluto_http_request_duration_ms_avg{${l}} ${r.v}`);
+    }
+
     lines.push("# HELP pluto_queue_jobs jobs grouped by status", "# TYPE pluto_queue_jobs gauge");
     for (const row of qLen.rows) lines.push(`pluto_queue_jobs{status="${row.status}"} ${row.n}`);
     return lines.join("\n") + "\n";
