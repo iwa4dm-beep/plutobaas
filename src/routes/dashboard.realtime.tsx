@@ -20,18 +20,36 @@ function RealtimePage() {
   const [event, setEvent] = useState("update");
   const [payload, setPayload] = useState('{"hello":"world"}');
   const [memberKey, setMemberKey] = useState("user-" + Math.floor(Math.random()*1000));
+  const [presenceStatus, setPresenceStatus] = useState<PresenceStatus>("idle");
+  const [presenceAttempt, setPresenceAttempt] = useState(0);
+  const [presenceError, setPresenceError] = useState<string | null>(null);
+  const [joined, setJoined] = useState(false);
+  const presenceStopRef = useRef<null | (() => void)>(null);
 
   async function refresh() {
     if (!isLive()) return;
     try { const r = await rt2.channels(); setChannels(r.channels); if (!active && r.channels[0]) setActive(r.channels[0].name); }
     catch (e) { toast.error((e as Error).message); }
   }
-  async function refreshChannel(name: string) {
-    try { const [m, p] = await Promise.all([rt2.messages(name, 50), rt2.presence(name)]); setMessages(m.messages); setMembers(p.members); }
+  // Messages still poll (broadcast history); presence uses the hardened subscription.
+  async function refreshMessages(name: string) {
+    try { const m = await rt2.messages(name, 50); setMessages(m.messages); }
     catch (e) { toast.error((e as Error).message); }
   }
   useEffect(() => { refresh(); }, []);
-  useEffect(() => { if (!active) return; refreshChannel(active); const t = setInterval(() => refreshChannel(active), 3000); return () => clearInterval(t); }, [active]);
+  useEffect(() => {
+    if (!active) return;
+    refreshMessages(active);
+    const t = setInterval(() => refreshMessages(active), 3000);
+    return () => clearInterval(t);
+  }, [active]);
+
+  // Tear down presence subscription when switching channels or unmounting.
+  useEffect(() => () => { presenceStopRef.current?.(); presenceStopRef.current = null; }, []);
+  useEffect(() => {
+    presenceStopRef.current?.(); presenceStopRef.current = null;
+    setJoined(false); setPresenceStatus("idle"); setMembers([]); setPresenceError(null); setPresenceAttempt(0);
+  }, [active]);
 
   async function createChannel() {
     if (!newName.trim()) return;
@@ -40,12 +58,28 @@ function RealtimePage() {
   }
   async function send() {
     if (!active) return;
-    try { const parsed = JSON.parse(payload); await rt2.broadcast(active, event, parsed, memberKey); await refreshChannel(active); }
+    try { const parsed = JSON.parse(payload); await rt2.broadcast(active, event, parsed, memberKey); await refreshMessages(active); }
     catch (e) { toast.error((e as Error).message); }
   }
-  async function join() {
-    if (!active) return;
-    await rt2.join(active, memberKey, { joinedAt: new Date().toISOString() }); await refreshChannel(active);
+  function join() {
+    if (!active || joined) return;
+    setJoined(true);
+    presenceStopRef.current = rt2.subscribePresence(active, memberKey, {
+      metadata: { joinedAt: new Date().toISOString() },
+      onMembers: (m) => setMembers(m),
+      onError:   (e) => setPresenceError(e.message),
+      onReconnect: (n) => toast.info(`Presence reconnected (attempt ${n})`),
+      onStatus:  (s, n, err) => {
+        setPresenceStatus(s); setPresenceAttempt(n);
+        if (err) setPresenceError(err.message);
+        if (s === "live") setPresenceError(null);
+        if (s === "failed") toast.error("Presence disconnected after retries — click Join to try again.");
+      },
+    });
+  }
+  function leave() {
+    presenceStopRef.current?.(); presenceStopRef.current = null;
+    setJoined(false); setPresenceStatus("idle"); setMembers([]);
   }
 
   return (
