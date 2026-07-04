@@ -1260,9 +1260,10 @@ export const backups = {
   cancel: (id: string) => api<{ ok: boolean }>(`/backups/v1/${id}/cancel`, { method: "POST" }),
   // Restore workflow (Phase 25) — dry_run by default, requires confirm='RESTORE' for live.
   restores: (exportId: string) => api<{ restores: BackupRestore[] }>(`/backups/v1/${exportId}/restores`),
-  startRestore: (exportId: string, opts: { dry_run?: boolean; confirm?: string } = {}) =>
-    api<{ restore: BackupRestore }>(`/backups/v1/${exportId}/restore`,
-      { method: "POST", body: JSON.stringify({ dry_run: opts.dry_run ?? true, confirm: opts.confirm }) }),
+  startRestore: (exportId: string, opts: { dry_run?: boolean; confirm?: string; target_branch_id?: string; create_branch?: string; allow_incompatible?: boolean } = {}) =>
+    api<{ restore: BackupRestore & { target_branch_id?: string | null; target_schema?: string | null } }>(`/backups/v1/${exportId}/restore`,
+      { method: "POST", body: JSON.stringify({ dry_run: opts.dry_run ?? true, confirm: opts.confirm,
+        target_branch_id: opts.target_branch_id, create_branch: opts.create_branch, allow_incompatible: opts.allow_incompatible }) }),
   restoreStatus: (rid: string) => api<{ restore: BackupRestore }>(`/backups/v1/restores/${rid}`),
   cancelRestore: (rid: string) => api<{ ok: boolean }>(`/backups/v1/restores/${rid}/cancel`, { method: "POST" }),
   // SSE progress stream: yields BackupRestore rows until status is terminal.
