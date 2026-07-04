@@ -187,6 +187,8 @@ async function main() {
   await app.register(authV4Plugin);         // Phase 57 — SAML SSO enterprise, SCIM provisioning, session isolation
   const { observabilityV3Plugin } = await import("./modules/observability_v3/plugin.js");
   await app.register(observabilityV3Plugin); // Phase 58 — distributed traces, live audit tail, SLO alerting
+  const { dataApiV4Plugin } = await import("./modules/data_api_v4/plugin.js");
+  await app.register(dataApiV4Plugin);      // Phase 59 — RPC-style typed functions, cursor pagination, streaming JSON
   startLogRetentionSweeper(app.log);
 
 
