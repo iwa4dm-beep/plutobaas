@@ -151,6 +151,8 @@ async function main() {
   await app.register(billingPlugin);        // Phase 36 — /billing/v1/*
   await app.register(pitrPlugin);           // Phase 36 — /pitr/v1/*
   await app.register(compliancePlugin);     // Phase 40 — /compliance/v1/*
+  const { authPhase41Plugin } = await import("./modules/auth_phase41/plugin.js");
+  await app.register(authPhase41Plugin);    // Phase 41 — magic-link, anonymous, link-anon
   startLogRetentionSweeper(app.log);
 
 
