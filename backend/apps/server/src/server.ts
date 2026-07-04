@@ -185,6 +185,8 @@ async function main() {
   await app.register(edgeV7Plugin);         // Phase 56 — replicated queues, cron triggers, signed bindings
   const { authV4Plugin } = await import("./modules/auth_v4/plugin.js");
   await app.register(authV4Plugin);         // Phase 57 — SAML SSO enterprise, SCIM provisioning, session isolation
+  const { observabilityV3Plugin } = await import("./modules/observability_v3/plugin.js");
+  await app.register(observabilityV3Plugin); // Phase 58 — distributed traces, live audit tail, SLO alerting
   startLogRetentionSweeper(app.log);
 
 
