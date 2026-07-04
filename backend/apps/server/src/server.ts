@@ -169,6 +169,8 @@ async function main() {
   await app.register(broadcastV2Plugin);    // Phase 48 — WS fan-out, presence sync, ephemeral broadcast
   const { storageV3Plugin } = await import("./modules/storage_v3/plugin.js");
   await app.register(storageV3Plugin);      // Phase 49 — signed uploads, multipart, transform cache, lifecycle
+  const { authV3Plugin } = await import("./modules/auth_v3/plugin.js");
+  await app.register(authV3Plugin);         // Phase 50 — WebAuthn/passkeys, TOTP v2, risk scoring, devices
   startLogRetentionSweeper(app.log);
 
 
