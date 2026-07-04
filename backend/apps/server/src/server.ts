@@ -176,8 +176,11 @@ async function main() {
   const { dataApiV3Plugin } = await import("./modules/data_api_v3/plugin.js");
   await app.register(dataApiV3Plugin);      // Phase 52 — nested writes, computed fields, generated types, schema cache
   const { edgeV5Plugin } = await import("./modules/edge_v5/plugin.js");
-  await app.register(edgeV5Plugin);         // Phase 53 — WASM runtime, warm pool, per-region, custom domains v2
+  await app.register(edgeV5Plugin);         // Phase 53 — WASM runtime, warm pool, per-region, custom domains v2, KV, queues, streaming
+  const { storageV4Plugin } = await import("./modules/storage_v4/plugin.js");
+  await app.register(storageV4Plugin);      // Phase 54 — object versioning, retention locks, cross-region replication
   startLogRetentionSweeper(app.log);
+
 
 
 
