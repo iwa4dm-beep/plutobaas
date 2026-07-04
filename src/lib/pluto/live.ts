@@ -1523,6 +1523,10 @@ export const tokens = {
   async revoke(id: string): Promise<{ ok: true }> {
     return api(`/tokens/v1/tokens/${id}`, { method: "DELETE" });
   },
+  async rotate(id: string, input: { name?: string; expires_in_days?: number } = {}): Promise<WorkspaceTokenMint> {
+    return api(`/tokens/v1/tokens/${id}/rotate`, { method: "POST", body: JSON.stringify(input) });
+  },
+  async coverage(): Promise<{ coverage: ScopeCoverage }> { return api(`/tokens/v1/coverage`); },
   async whoami(bearer: string): Promise<{ workspace_id: string | null; scopes: string[] }> {
     const cfg = liveConfig(); if (!cfg) throw new Error("Pluto backend not configured");
     const res = await fetch(cfg.url.replace(/\/$/, "") + `/tokens/v1/whoami`, {
