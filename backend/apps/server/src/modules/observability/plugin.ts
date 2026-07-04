@@ -65,9 +65,12 @@ export const observabilityPlugin: FastifyPluginAsync = async (app: FastifyInstan
     // the Prometheus text (would explode series count on scrape). Those
     // land in the trace row for per-request drill-down instead.
     const wsId = (req.headers["x-workspace-id"] as string) || null;
-    const authKind = req.auth?.apiKey ?? "none";        // anon | service_role | token | none
+    const authKind = req.auth?.apiKey ?? "none";        // anon | service_role | none
     const userId   = req.auth?.user?.sub ?? null;
-    const scope    = req.auth?.tokenScopes?.[0] ?? null;
+    // Best-effort token scope surface: workspace tokens carry their scope
+    // list on the JWT claims; use the first as a low-cardinality label.
+    const claims   = req.auth?.user as (null | (AccessClaims & { scopes?: string[] }));
+    const scope    = claims?.scopes?.[0] ?? null;
     const outcome  = reply.statusCode >= 500 ? "error"
                    : reply.statusCode === 401 || reply.statusCode === 403 ? "unauthorized"
                    : reply.statusCode === 429 ? "rate_limited"
