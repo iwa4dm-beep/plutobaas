@@ -219,7 +219,7 @@ function UsagePage() {
           const draft = drafts[m.key] ?? {
             hard: hard == null ? "" : String(hard),
             soft: soft == null ? "" : String(soft),
-            overage: behavior, label,
+            overage: behavior, label, alertPct: "",
           };
           const over = hard != null && used > hard;
           const nearSoft = soft != null && used >= soft;

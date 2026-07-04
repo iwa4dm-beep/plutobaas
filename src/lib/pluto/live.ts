@@ -1183,7 +1183,7 @@ export const rt2 = {
           }, heartbeatMs);
           pollTimer = setInterval(async () => {
             try { const r = await rt2.presence(name); opts.onMembers?.(r.members); }
-            catch (e) { opts.onError?.(e as Error); throw e; }
+            catch (e) { opts.onError?.(e as Error); }
           }, pollMs);
           // Wait until a poll fails — we detect via a promise that never resolves; timers handle themselves.
           await new Promise<void>((resolve) => {

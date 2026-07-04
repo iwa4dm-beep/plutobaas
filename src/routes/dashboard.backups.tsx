@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { backups, branching, isLive, type BackupExport, type BackupRestore, type DbBranch } from "@/lib/pluto/live";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -38,6 +38,8 @@ function BackupsPage() {
     try { const r = await backups.list(); setRows(r.exports); }
     catch (e) { toast.error((e as Error).message); }
   }
+  const stopRef = useRef<null | (() => void)>(null);
+  useEffect(() => () => { stopRef.current?.(); }, []);
   useEffect(() => { refresh(); const t = setInterval(refresh, 4000); return () => clearInterval(t); }, []);
   useEffect(() => { if (isLive()) branching.list().then(r => setBranches(r.branches)).catch(() => undefined); }, [wizard]);
 
@@ -53,6 +55,7 @@ function BackupsPage() {
     if (targetMode === "existing" && !targetBranchId) { toast.error("Pick a target branch."); return; }
     if (targetMode === "new" && !/^[a-z_][a-z0-9_]{0,40}$/i.test(newBranchName)) { toast.error("Enter a valid branch name."); return; }
     try {
+      stopRef.current?.(); stopRef.current = null;
       const r = await backups.startRestore(wizard.id, {
         dry_run: dryRun, confirm: dryRun ? undefined : confirm,
         target_branch_id: targetMode === "existing" ? targetBranchId : undefined,
@@ -64,12 +67,12 @@ function BackupsPage() {
         onEvent: (ev) => {
           setRestore(prev => prev ? { ...prev, ...ev } : ev);
           if (ev.log) setRestoreLog(ev.log);
-          if (ev.status === "done") toast.success("Restore complete");
-          if (ev.status === "failed") toast.error(`Restore failed: ${ev.error ?? ""}`);
+          if (ev.status === "done") { toast.success("Restore complete"); stopRef.current?.(); stopRef.current = null; }
+          if (ev.status === "failed") { toast.error(`Restore failed: ${ev.error ?? ""}`); stopRef.current?.(); stopRef.current = null; }
         },
         onError: (e) => toast.error(e.message),
       });
-      return stop;
+      stopRef.current = stop;
     } catch (e) { toast.error((e as Error).message); }
   }
 
@@ -128,7 +131,7 @@ function BackupsPage() {
           <CardHeader>
             <CardTitle className="text-sm flex items-center justify-between">
               <span className="flex items-center gap-2"><RotateCcw className="h-4 w-4" /> Restore wizard — {wizard.kind}{wizard.target ? `:${wizard.target}` : ""}</span>
-              <Button size="sm" variant="ghost" onClick={() => { setWizard(null); setRestore(null); }}><X className="h-4 w-4" /></Button>
+              <Button size="sm" variant="ghost" onClick={() => { stopRef.current?.(); stopRef.current = null; setWizard(null); setRestore(null); }}><X className="h-4 w-4" /></Button>
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">

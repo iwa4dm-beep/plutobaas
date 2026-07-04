@@ -25,6 +25,7 @@ function FunctionsPage() {
   const [invokeResult, setInvokeResult] = useState<{ status_code: number; duration_ms: number; echoed: unknown; error: { message: string; type?: string; stack?: string } | null } | null>(null);
   const [invokeErr, setInvokeErr] = useState<string | null>(null);
   const [showSecret, setShowSecret] = useState(false);
+  const [invoking, setInvoking] = useState(false);
   const jsonErr = (() => { if (!invokePayload.trim()) return null; try { JSON.parse(invokePayload); return null; } catch (e) { return (e as Error).message; } })();
 
   async function refresh() {
@@ -57,6 +58,7 @@ function FunctionsPage() {
   async function invoke() {
     setInvokeErr(null);
     if (jsonErr) { setInvokeErr(`Invalid JSON: ${jsonErr}`); toast.error("Fix payload JSON first"); return; }
+    setInvoking(true);
     try {
       const body = invokePayload.trim() ? JSON.parse(invokePayload) : {};
       const r = await edgeV2.invoke(slug, body); setInvokeResult(r);
@@ -64,6 +66,7 @@ function FunctionsPage() {
       else toast.success(`Invoked ${slug} → ${r.status_code} in ${r.duration_ms}ms`);
       await refresh();
     } catch (e) { setInvokeErr((e as Error).message); toast.error((e as Error).message); }
+    finally { setInvoking(false); }
   }
 
   // Preview upcoming cron runs (client-side, mirrors backend nextRun MVP).
@@ -89,7 +92,9 @@ function FunctionsPage() {
         <div className="flex gap-2">
           <Input value={slug} onChange={e => setSlug(e.target.value)} className="w-40" placeholder="function-slug" />
           <Button variant="outline" size="sm" onClick={refresh}><RefreshCw className="h-4 w-4 mr-1" /> Refresh</Button>
-          <Button size="sm" onClick={invoke}><Play className="h-4 w-4 mr-1" /> Invoke</Button>
+          <Button size="sm" onClick={invoke} disabled={invoking || !!jsonErr}>
+            {invoking ? <RefreshCw className="h-4 w-4 mr-1 animate-spin" /> : <Play className="h-4 w-4 mr-1" />} Invoke
+          </Button>
         </div>
       </div>
 
@@ -122,7 +127,9 @@ function FunctionsPage() {
               <textarea className={"w-full min-h-[80px] font-mono text-xs p-2 rounded-md border bg-background " + (jsonErr ? "border-destructive" : "border-border")}
                         value={invokePayload} onChange={e => setInvokePayload(e.target.value)} />
               {jsonErr && <div className="text-[11px] text-destructive">Invalid JSON: {jsonErr}</div>}
-              <div className="flex justify-end"><Button size="sm" onClick={invoke} disabled={!!jsonErr}><Play className="h-4 w-4 mr-1" /> Run</Button></div>
+              <div className="flex justify-end"><Button size="sm" onClick={invoke} disabled={!!jsonErr || invoking}>
+                {invoking ? <RefreshCw className="h-4 w-4 mr-1 animate-spin" /> : <Play className="h-4 w-4 mr-1" />} Run
+              </Button></div>
               {invokeErr && (
                 <div className="p-2 rounded-md bg-destructive/10 border border-destructive/40 text-xs">
                   <div className="font-medium text-destructive">Invocation error</div>
@@ -151,7 +158,11 @@ function FunctionsPage() {
                     <span>{f.schedules} cron</span>
                     <span>{f.invocations_24h}/24h</span>
                     <div className="flex justify-end gap-1">
-                      <Button size="sm" variant="ghost" onClick={async () => { await edgeV2.deleteFunction(f.slug); refresh(); }}>
+                      <Button size="sm" variant="ghost" title="Delete function" onClick={async () => {
+                        if (!confirm(`Delete function "${f.slug}"? This removes secrets, schedules, and invocation history.`)) return;
+                        try { await edgeV2.deleteFunction(f.slug); toast.success("Function deleted"); refresh(); }
+                        catch (e) { toast.error((e as Error).message); }
+                      }}>
                         <Trash2 className="h-3 w-3" />
                       </Button>
                     </div>
@@ -182,7 +193,11 @@ function FunctionsPage() {
               {secrets.map(s => (
                 <div key={s.id} className="flex items-center justify-between p-2 border border-border rounded-md text-sm">
                   <div><span className="font-mono">{s.name}</span> <span className="text-muted-foreground text-xs">· {new Date(s.created_at).toLocaleString()}</span></div>
-                  <Button size="sm" variant="ghost" onClick={async () => { await edgeV2.deleteSecret(s.id); refresh(); }}>
+                  <Button size="sm" variant="ghost" title="Delete secret" onClick={async () => {
+                    if (!confirm(`Delete secret "${s.name}"?`)) return;
+                    try { await edgeV2.deleteSecret(s.id); toast.success("Secret deleted"); refresh(); }
+                    catch (e) { toast.error((e as Error).message); }
+                  }}>
                     <Trash2 className="h-3 w-3" />
                   </Button>
                 </div>
@@ -218,7 +233,11 @@ function FunctionsPage() {
                     <Button size="sm" variant="ghost" onClick={async () => { await edgeV2.toggleSchedule(s.id, !s.active); refresh(); }}>
                       {s.active ? <Pause className="h-3 w-3" /> : <Play className="h-3 w-3" />}
                     </Button>
-                    <Button size="sm" variant="ghost" onClick={async () => { await edgeV2.deleteSchedule(s.id); refresh(); }}>
+                    <Button size="sm" variant="ghost" title="Delete schedule" onClick={async () => {
+                      if (!confirm(`Delete cron "${s.cron}" for ${s.function_slug}?`)) return;
+                      try { await edgeV2.deleteSchedule(s.id); toast.success("Schedule deleted"); refresh(); }
+                      catch (e) { toast.error((e as Error).message); }
+                    }}>
                       <Trash2 className="h-3 w-3" />
                     </Button>
                   </div>
