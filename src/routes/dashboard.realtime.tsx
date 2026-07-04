@@ -8,6 +8,8 @@ import { Badge } from "@/components/ui/badge";
 import { Radio, Users2, Send, Plus, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { PresenceIndicator, type PresenceStatus } from "@/components/pluto/PresenceIndicator";
+import { PaginatedTable } from "@/components/pluto/PaginatedTable";
+import { usePaginatedTable } from "@/lib/pluto/usePaginatedTable";
 
 export const Route = createFileRoute("/dashboard/realtime")({ component: RealtimePage });
 
