@@ -43,6 +43,12 @@ async function readBody(req: FastifyRequest): Promise<Buffer> {
   for await (const c of raw) chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(c));
   return Buffer.concat(chunks);
 }
+async function readStorage(bucket: string, key: string): Promise<Buffer> {
+  const s = await storage.get(bucket, key);
+  const chunks: Buffer[] = [];
+  for await (const c of s) chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(c));
+  return Buffer.concat(chunks);
+}
 
 function policySignature(payload: object): { hash: string; signed: string } {
   const canon = JSON.stringify(payload);
