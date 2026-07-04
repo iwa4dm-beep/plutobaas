@@ -27,8 +27,10 @@ function FunctionsPage() {
   async function refresh() {
     if (!isLive()) return;
     try {
-      const [s, sc, iv] = await Promise.all([edgeV2.secrets(slug), edgeV2.schedules(), edgeV2.invocations(slug, 100)]);
-      setSecrets(s.secrets); setSchedules(sc.schedules); setInvos(iv.invocations);
+      const [f, s, sc, iv] = await Promise.all([
+        edgeV2.functions(), edgeV2.secrets(slug), edgeV2.schedules(), edgeV2.invocations(slug, 100),
+      ]);
+      setFunctions(f.functions); setSecrets(s.secrets); setSchedules(sc.schedules); setInvos(iv.invocations);
     } catch (e) { toast.error((e as Error).message); }
   }
   useEffect(() => { refresh(); }, [slug]);
@@ -42,11 +44,32 @@ function FunctionsPage() {
     try { await edgeV2.createSchedule(slug, cron.trim()); toast.success("Schedule added"); await refresh(); }
     catch (e) { toast.error((e as Error).message); }
   }
-  async function fakeInvoke() {
-    const start = Date.now();
-    await new Promise(r => setTimeout(r, 40 + Math.random()*100));
-    await edgeV2.logInvocation({ function_slug: slug, trigger: "manual", status_code: 200, duration_ms: Date.now()-start });
-    toast.success("Invocation recorded"); refresh();
+  async function createFn() {
+    if (!newSlug.trim()) return;
+    try {
+      await edgeV2.upsertFunction({ slug: newSlug.trim(), display_name: newName.trim() || undefined, runtime });
+      setNewSlug(""); setNewName(""); toast.success("Function saved"); await refresh();
+    } catch (e) { toast.error((e as Error).message); }
+  }
+  async function invoke() {
+    try {
+      const body = invokePayload.trim() ? JSON.parse(invokePayload) : {};
+      const r = await edgeV2.invoke(slug, body); setInvokeResult(r);
+      toast.success(`Invoked ${slug} → ${r.status_code} in ${r.duration_ms}ms`); await refresh();
+    } catch (e) { toast.error((e as Error).message); }
+  }
+
+  // Preview upcoming cron runs (client-side, mirrors backend nextRun MVP).
+  function previewCron(expr: string, n = 3): string[] {
+    const parts = expr.trim().split(/\s+/); if (parts.length !== 5) return [];
+    const match = (v: number, f: string) => f === "*" || (f.startsWith("*/") ? v % Number(f.slice(2)) === 0 : f.split(",").some(s => Number(s) === v));
+    const out: string[] = []; const d = new Date(); d.setSeconds(0, 0); d.setMinutes(d.getMinutes() + 1);
+    for (let i = 0; i < 60 * 24 * 7 && out.length < n; i++) {
+      if (match(d.getMinutes(), parts[0]) && match(d.getHours(), parts[1]) && match(d.getDate(), parts[2]) &&
+          match(d.getMonth() + 1, parts[3]) && match(d.getDay(), parts[4])) out.push(d.toLocaleString());
+      d.setMinutes(d.getMinutes() + 1);
+    }
+    return out;
   }
 
   return (
