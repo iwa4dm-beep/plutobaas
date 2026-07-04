@@ -103,28 +103,9 @@ function BackupsPage() {
       <Card>
         <CardHeader><CardTitle className="text-sm">Recent exports</CardTitle></CardHeader>
         <CardContent>
-          <div className="space-y-1">
-            {rows.map(r => (
-              <div key={r.id} className="grid grid-cols-[80px,80px,1fr,100px,180px,140px] gap-2 items-center text-xs p-2 border border-border rounded-md">
-                <span>{r.kind}</span>
-                <Badge variant={r.status === "done" ? "default" : r.status === "failed" ? "destructive" : "secondary"}>{r.status}</Badge>
-                <span className="truncate text-muted-foreground">{r.target ?? "*"} {r.download_path && `· ${r.download_path}`} {r.error && `· ${r.error}`}</span>
-                <span>{fmtBytes(r.bytes)}</span>
-                <span className="text-muted-foreground">{new Date(r.created_at).toLocaleString()}</span>
-                <div className="flex gap-1 justify-end">
-                  {r.status === "done" && (
-                    <Button size="sm" variant="outline" onClick={() => { setWizard(r); setDryRun(true); setConfirm(""); setRestore(null); setRestoreLog(""); }}>
-                      <RotateCcw className="h-3 w-3 mr-1" /> Restore
-                    </Button>
-                  )}
-                  {(r.status === "pending" || r.status === "running") && (
-                    <Button size="sm" variant="ghost" onClick={() => cancel(r.id)}><X className="h-3 w-3" /></Button>
-                  )}
-                </div>
-              </div>
-            ))}
-            {rows.length === 0 && <div className="text-xs text-muted-foreground">No exports yet.</div>}
-          </div>
+          <ExportsTable rows={rows}
+            onRestore={(r) => { setWizard(r); setDryRun(true); setConfirm(""); setRestore(null); setRestoreLog(""); }}
+            onCancel={cancel} />
         </CardContent>
       </Card>
 
