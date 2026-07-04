@@ -173,6 +173,8 @@ async function main() {
   await app.register(authV3Plugin);         // Phase 50 — WebAuthn/passkeys, TOTP v2, risk scoring, devices
   const { realtimeV4Plugin } = await import("./modules/realtime_v4/plugin.js");
   await app.register(realtimeV4Plugin);     // Phase 51 — presence CRDTs, offline queue, delta compression
+  const { dataApiV3Plugin } = await import("./modules/data_api_v3/plugin.js");
+  await app.register(dataApiV3Plugin);      // Phase 52 — nested writes, computed fields, generated types, schema cache
   startLogRetentionSweeper(app.log);
 
 
