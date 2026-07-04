@@ -59,6 +59,21 @@ function StatusPage() {
           </table>
         </div>
       )}
+      <section className="mt-10 rounded border p-4">
+        <h2 className="text-lg font-semibold mb-1">Disaster recovery</h2>
+        <p className="text-sm text-muted-foreground mb-2">
+          Latest cross-region PITR drill — measured RPO, RTO, and
+          restore-correctness are published as a durable artifact on
+          every merge to <code>main</code>.
+        </p>
+        <a
+          className="text-sm underline"
+          href="https://github.com/lovable-dev/pluto/blob/main/docs/pitr/latest.md"
+          target="_blank" rel="noreferrer"
+        >
+          View the latest drill report →
+        </a>
+      </section>
     </main>
   );
 }

@@ -34,3 +34,14 @@ region every 30s and surfaces:
 Rollups live in `metrics_samples` under `metric='http.request'`.
 Ninety-day historical uptime is available via
 `GET /obs/v1/metrics/query?metric=http.request&window=90d`.
+
+## Disaster recovery
+
+We publish the last measured RPO / RTO and restore-correctness result
+from our cross-region PITR drill as a durable artifact:
+
+- Latest drill report: [`docs/pitr/latest.md`](./pitr/latest.md)
+- Runbook + SLO definitions: [`docs/runbooks/pitr-drill.md`](./runbooks/pitr-drill.md)
+- CI job: `backend » cross-region PITR drill` — refreshes the report
+  on every merge to `main`, mirrors it into `docs/pitr/latest.md`, and
+  uploads the raw markdown as a 90-day workflow artifact.
