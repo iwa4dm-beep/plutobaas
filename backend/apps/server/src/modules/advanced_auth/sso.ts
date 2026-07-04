@@ -190,8 +190,11 @@ export function mountSso(app: FastifyInstance) {
     const cfg = p.config as { issuer: string; client_id: string; redirect_uri: string;
       client_secret_ct?: string; client_secret_nonce?: string };
     const disc = await fetch(cfg.issuer.replace(/\/$/, "") + "/.well-known/openid-configuration").then((r) => r.json()) as {
-      token_endpoint: string; userinfo_endpoint: string;
+      issuer: string; token_endpoint: string; userinfo_endpoint: string; jwks_uri: string;
     };
+    if (!disc.jwks_uri || !disc.issuer) {
+      return reply.code(502).send({ error: "invalid_provider_discovery" });
+    }
     const params = new URLSearchParams({
       grant_type: "authorization_code",
       code, redirect_uri: cfg.redirect_uri, client_id: cfg.client_id,
@@ -209,12 +212,22 @@ export function mountSso(app: FastifyInstance) {
     if (!tok.ok) return reply.code(400).send({ error: "token_exchange_failed", detail: await tok.text() });
     const tokJson = await tok.json() as { access_token: string; id_token?: string };
 
-    // Decode id_token payload (signature verification is provider-trusted for now — TODO: jwks)
+    // Verify id_token via the provider's JWKS. Rejects unsigned / forged
+    // tokens, mismatched issuer/audience, and expired tokens. Nonce is
+    // rechecked against the session we minted at /start.
     let email: string | undefined; let name: string | undefined;
     if (tokJson.id_token) {
-      const [, payload] = tokJson.id_token.split(".");
-      const claims = JSON.parse(Buffer.from(payload!, "base64url").toString("utf8")) as { email?: string; name?: string; nonce?: string };
-      if (claims.nonce && claims.nonce !== s.nonce) return reply.code(400).send({ error: "nonce_mismatch" });
+      let claims: JWTPayload & { email?: string; name?: string; nonce?: string };
+      try {
+        const { payload } = await jwtVerify(tokJson.id_token, getJWKS(disc.jwks_uri), {
+          issuer: disc.issuer,
+          audience: cfg.client_id,
+        });
+        claims = payload as typeof claims;
+      } catch (e) {
+        return reply.code(400).send({ error: "id_token_verification_failed", detail: (e as Error).message });
+      }
+      if (claims.nonce !== s.nonce) return reply.code(400).send({ error: "nonce_mismatch" });
       email = claims.email; name = claims.name;
     }
     if (!email) {
