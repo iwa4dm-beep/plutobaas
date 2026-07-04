@@ -122,7 +122,7 @@ async function runStep<Ctx>(
 
 export async function runWorkflow<Ctx>(wf: WorkflowDef<Ctx>, input: Ctx, run_id?: string): Promise<RunState<Ctx>> {
   const id = run_id ?? `run_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-  const order = topoSort(wf.steps);
+  const order = topoSort(wf.steps as any);
   const stepsById = new Map(wf.steps.map((s) => [s.id, s]));
   const run: RunState<Ctx> = {
     run_id: id, workflow: wf.name, version: wf.version, status: "running",

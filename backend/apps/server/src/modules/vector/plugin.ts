@@ -104,7 +104,7 @@ export const vectorPlugin: FastifyPluginAsync = async (app) => {
     const r = await q(
       `select id, external_id, content, embedding, metadata from public.vec_documents
        where collection_id=$1::uuid`, [c.id]);
-    const scored = r.rows.map((row: { id: string; external_id: string | null; content: string; embedding: number[] | string; metadata: Record<string, unknown>; }) => {
+    const scored = (r.rows as any[]).map((row: { id: string; external_id: string | null; content: string; embedding: number[] | string; metadata: Record<string, unknown>; }) => {
       let emb: number[] = [];
       if (b.embedding_field) {
         const raw = (row.metadata ?? {})[b.embedding_field];

@@ -93,7 +93,7 @@ export async function storageExtPlugin(app: FastifyInstance) {
       if (cached) {
         // Update hit counters (fire-and-forget).
         void db.updateTable("render_cache" as never)
-          .set({ hit_count: db.fn("hit_count" as never).add(1 as never) as never, last_hit_at: new Date() } as never)
+          .set({ hit_count: (db.fn as any)("hit_count").add(1) as never, last_hit_at: new Date() } as never)
           .where("cache_key" as never, "=", ckey as never).execute().catch(() => undefined);
         reply.header("x-cache", "hit").header("content-type", cached.content_type)
              .header("cache-control", "public, max-age=86400, immutable");

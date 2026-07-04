@@ -120,7 +120,7 @@ export async function cdcPlugin(app: FastifyInstance) {
     if (!IDENT.test(body.data.schema) || !IDENT.test(body.data.table)) {
       return reply.code(400).send({ error: "invalid_identifier" });
     }
-    let filter = null;
+    let filter: any = null;
     if (body.data.filter) {
       try { filter = parseCdcFilter(body.data.filter); }
       catch (e) { return reply.code(400).send({ error: "invalid_filter", message: (e as Error).message }); }

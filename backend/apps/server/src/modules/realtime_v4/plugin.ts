@@ -101,7 +101,7 @@ export async function realtimeV4Plugin(app: FastifyInstance) {
     });
     const p = schema.safeParse(req.body);
     if (!p.success) { reply.code(400); return { error: "bad_request", issues: p.error.issues }; }
-    const item = enqueue(p.data);
+    const item = enqueue(p.data as any);
     return { ok: true, item, queue_size: size(p.data.channel, p.data.subscriber) };
   });
 
