@@ -19,6 +19,12 @@ const planByWs: Record<string, { code: string; features: Record<string, unknown>
   "ws-pro":  { code: "pro",   features: { branching: true },    limits: { storage_gb: 50, edge_fns: 20 } },
 };
 
+vi.mock("../lib/apikey.js", () => ({
+  requireApiKey: async () => {},
+  requireServiceRole: async () => {},
+  requireWorkspaceAdmin: async () => {},
+}));
+
 vi.mock("../lib/pgraw.js", () => ({
   q: vi.fn(async (sql: string, params?: unknown[]) => {
     if (/from public\.billing_plans p/i.test(sql)) {
