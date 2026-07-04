@@ -299,6 +299,46 @@ function UsagePage() {
         <div className="text-sm text-foreground font-medium mb-1">Overage behavior</div>
         <p><strong>allow</strong> — record and permit; <strong>warn</strong> — record, flag, still permit; <strong>block</strong> — deny further actions until reset or quota bump. Billing labels group usage per subsystem (e.g. <code>storage:avatars</code>, <code>fn:image-resize</code>).</p>
       </div>
+
+      <div className="rounded-lg border border-border bg-card p-4 space-y-3">
+        <div className="text-sm font-medium flex items-center gap-2"><Webhook className="h-4 w-4" /> Alert webhooks</div>
+        <p className="text-xs text-muted-foreground">POSTed with a <code>x-pluto-signature</code> HMAC-SHA256 header when a quota crosses its alert threshold.</p>
+        {canAdmin && (
+          <div className="flex gap-2">
+            <input value={newHookUrl} onChange={e => setNewHookUrl(e.target.value)} placeholder="https://example.com/webhook"
+                   className="flex-1 bg-background border border-border rounded px-2 py-1 text-xs" />
+            <input value={newHookSecret} onChange={e => setNewHookSecret(e.target.value)} placeholder="signing secret (optional)" type="password"
+                   className="w-48 bg-background border border-border rounded px-2 py-1 text-xs" />
+            <button
+              className="text-xs inline-flex items-center gap-1 bg-primary text-primary-foreground rounded px-3 py-1 disabled:opacity-40"
+              disabled={!newHookUrl.trim()}
+              onClick={async () => {
+                try {
+                  await usage.createWebhook({ url: newHookUrl.trim(), secret: newHookSecret || undefined });
+                  setNewHookUrl(""); setNewHookSecret(""); void loadWebhooks();
+                } catch (e) { setErr((e as Error).message); }
+              }}>Add</button>
+          </div>
+        )}
+        <div className="space-y-1">
+          {webhooks.map(h => (
+            <div key={h.id} className="flex items-center justify-between text-xs p-2 border border-border rounded-md">
+              <div>
+                <div className="font-mono truncate max-w-[420px]">{h.url}</div>
+                <div className="text-[10px] text-muted-foreground">
+                  events: {h.events.join(",")} · last: {h.last_status ?? "—"}
+                  {h.last_error && <span className="text-destructive"> · {h.last_error}</span>}
+                </div>
+              </div>
+              {canAdmin && (
+                <button onClick={async () => { await usage.deleteWebhook(h.id); void loadWebhooks(); }}
+                        className="p-1 border border-border rounded hover:bg-background"><Trash2 className="h-3 w-3" /></button>
+              )}
+            </div>
+          ))}
+          {webhooks.length === 0 && <div className="text-xs text-muted-foreground">No webhooks configured.</div>}
+        </div>
+      </div>
     </div>
   );
 }
