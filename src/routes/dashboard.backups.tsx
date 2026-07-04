@@ -25,8 +25,13 @@ function BackupsPage() {
   const [wizard, setWizard] = useState<BackupExport | null>(null);
   const [dryRun, setDryRun] = useState(true);
   const [confirm, setConfirm] = useState("");
-  const [restore, setRestore] = useState<BackupRestore | null>(null);
+  const [restore, setRestore] = useState<(BackupRestore & { target_schema?: string | null; target_branch_id?: string | null }) | null>(null);
   const [restoreLog, setRestoreLog] = useState<string>("");
+  const [branches, setBranches] = useState<DbBranch[]>([]);
+  const [targetMode, setTargetMode] = useState<"existing"|"new"|"inplace">("inplace");
+  const [targetBranchId, setTargetBranchId] = useState<string>("");
+  const [newBranchName, setNewBranchName] = useState<string>("");
+  const [allowIncompat, setAllowIncompat] = useState(false);
 
   async function refresh() {
     if (!isLive()) return;
