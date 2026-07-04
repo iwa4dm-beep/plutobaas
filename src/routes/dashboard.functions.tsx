@@ -6,6 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { KeyRound, Clock, ScrollText, Plus, RefreshCw, Trash2, Play, Pause, Boxes, Zap } from "lucide-react";
+import { PaginatedTable } from "@/components/pluto/PaginatedTable";
+import { usePaginatedTable } from "@/lib/pluto/usePaginatedTable";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/dashboard/functions")({ component: FunctionsPage });
