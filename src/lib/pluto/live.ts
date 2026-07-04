@@ -1122,7 +1122,7 @@ export const usage = {
     const qs = new URLSearchParams();
     if (params.limit)  qs.set("limit",  String(params.limit));
     if (params.offset) qs.set("offset", String(params.offset));
-    return api<{ deliveries: WebhookDelivery[] }>(
+    return api<{ deliveries: UsageWebhookDelivery[] }>(
       `/usage/v1/webhooks/${webhookId}/deliveries${qs.size ? `?${qs}` : ""}`);
   },
   redeliver: (webhookId: string, deliveryId: string) =>
