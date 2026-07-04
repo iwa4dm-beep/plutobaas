@@ -179,7 +179,10 @@ async function main() {
   await app.register(edgeV5Plugin);         // Phase 53 — WASM runtime, warm pool, per-region, custom domains v2, KV, queues, streaming
   const { storageV4Plugin } = await import("./modules/storage_v4/plugin.js");
   await app.register(storageV4Plugin);      // Phase 54 — object versioning, retention locks, cross-region replication
+  const { edgeV6Plugin } = await import("./modules/edge_v6/plugin.js");
+  await app.register(edgeV6Plugin);         // Phase 55 — host imports/fetch, Durable Objects, shared KV backplane
   startLogRetentionSweeper(app.log);
+
 
 
 
