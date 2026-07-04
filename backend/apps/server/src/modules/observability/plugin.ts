@@ -61,20 +61,45 @@ export const observabilityPlugin: FastifyPluginAsync = async (app: FastifyInstan
     const t = (req as unknown as { plutoTrace: { traceId: string; startedAt: number } | null }).plutoTrace;
     if (!t) return;
     const dur = Date.now() - t.startedAt;
+    // Labels intentionally low-cardinality: no user_id / workspace_id in
+    // the Prometheus text (would explode series count on scrape). Those
+    // land in the trace row for per-request drill-down instead.
     const wsId = (req.headers["x-workspace-id"] as string) || null;
+    const authKind = req.auth?.apiKey ?? "none";        // anon | service_role | token | none
+    const userId   = req.auth?.user?.sub ?? null;
+    const scope    = req.auth?.tokenScopes?.[0] ?? null;
+    const outcome  = reply.statusCode >= 500 ? "error"
+                   : reply.statusCode === 401 || reply.statusCode === 403 ? "unauthorized"
+                   : reply.statusCode === 429 ? "rate_limited"
+                   : reply.statusCode >= 400 ? "client_error"
+                   : "ok";
+    const routePath = (req.routeOptions?.url ?? req.url.split("?")[0]).slice(0, 120);
     try {
       await q(
         `insert into public.trace_spans
            (trace_id, workspace_id, name, kind, attributes, started_at, ended_at, duration_ms)
          values ($1,$2,$3,'server',$4::jsonb, to_timestamp($5/1000.0), now(), $6)`,
         [t.traceId, wsId, `${req.method} ${req.url.split("?")[0]}`,
-         JSON.stringify({ method: req.method, url: req.url, status: reply.statusCode, request_id: req.id }),
+         JSON.stringify({
+           method: req.method, url: req.url, status: reply.statusCode,
+           request_id: req.id, auth_kind: authKind, user_id: userId,
+           token_scope: scope, outcome,
+         }),
          t.startedAt, dur]);
-      // Also emit an http.request duration metric so /metrics + charts work.
+      // Emit http.request duration metric with the labels Prometheus
+      // needs for auth/token slicing. `route` is the templated path
+      // (e.g. /rest/v1/:table) — bounded cardinality — not req.url.
       await q(
         `insert into public.metrics_samples (workspace_id, metric, value, labels)
          values ($1,'http.request',$2,$3::jsonb)`,
-        [wsId, dur, JSON.stringify({ method: req.method, status: String(reply.statusCode) })]);
+        [wsId, dur, JSON.stringify({
+          method: req.method,
+          status: String(reply.statusCode),
+          route:  routePath,
+          auth_kind: authKind,
+          token_scope: scope ?? "none",
+          outcome,
+        })]);
     } catch { /* observability must never break the request path */ }
   });
 
