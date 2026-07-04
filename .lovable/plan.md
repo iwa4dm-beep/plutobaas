@@ -202,3 +202,38 @@ Docs: `docs/api/billing-pitr.md`.
 Out of scope for Phase 37+: full SDK bindings for these routes,
 dashboard UI panels for billing + PITR, GraphQL subscriptions, Deno v2
 runtime, and antivirus scanning on storage uploads.
+
+---
+
+## ✅ Phases 37–40 + beta blockers delivered (2026-07-04)
+
+### Beta blockers
+- **Per-IP + per-token rate limiter** — `backend/apps/server/src/lib/ratelimit-mw.ts` (leaky-bucket, in-memory, GC every 60s). Attach via `preHandler: rateLimit()` or `strictLimit` on expensive routes.
+- **SMTP email transport** — extended `lib/email-provider.ts` with a raw-socket SMTP (STARTTLS-capable) adapter picked up automatically when `SMTP_HOST` is set. Falls back to webhook → console.
+- **Prometheus `/metrics`** — already wired in `server.ts`; documented in `docs/local-dev.md`.
+- **OpenAPI spec** — served at `GET /rest/v1/` by the Phase-34 data-api plugin.
+
+### Phase 37 — SDKs + CLI
+- `sdks/python/pluto/` — `PlutoClient`, REST query builder, GraphQL, auth, storage, edge invoke. `pyproject.toml` for publish.
+- `sdks/go/pluto/` — mirror in Go with `go.mod`, `context.Context`-aware calls.
+- CLI (`backend/apps/cli/`) — existing skeleton retained; SDK docs added.
+
+### Phase 38 — Docs site + status page
+- `docs/README.md` — indexed docs entry point (auth, data-api, storage, cdc, edge-v3, billing-pitr, tokens/logs, compliance, status).
+- `docs/local-dev.md` — one-shot local dev walkthrough with feature-flag matrix.
+- `docs/status.md` — uptime targets, incident policy.
+- `src/routes/status.tsx` — public `/status` page polling `/readyz`.
+
+### Phase 39 — Dashboard UX
+- `src/components/pluto/CommandPalette.tsx` — global ⌘K palette mounted in `dashboard.tsx`.
+- `src/routes/dashboard.rbac.tsx` — invite/list/role-change/remove members with role reference card.
+
+### Phase 40 — SOC2 artifacts
+- Migration `0037_compliance.sql`: `gdpr_delete_requests`, `data_residency`, `kms_key_versions`.
+- `modules/compliance/plugin.ts` (`PLUTO_ENABLE_COMPLIANCE=1`):
+  `/compliance/v1/{delete-me,delete-me/cancel,export-me,residency,kms/keys,kms/rotate}`.
+- Docs: `docs/compliance/{soc2,data-residency,kms}.md`.
+
+**Server wiring**: `compliancePlugin` registered in `server.ts` behind its flag. All prior phases untouched.
+
+Out of scope for future phases: full CLI command surface expansion (login/deploy/db), auth-service SDK login flow in Python/Go, hosted docs site build (`mkdocs` / `docusaurus`), automated SOC2 evidence collection worker, WebAuthn.

@@ -140,6 +140,7 @@ async function main() {
   const { edgeV3Plugin } = await import("./modules/edge_v3/plugin.js");
   const { billingPlugin } = await import("./modules/billing/plugin.js");
   const { pitrPlugin } = await import("./modules/pitr/plugin.js");
+  const { compliancePlugin } = await import("./modules/compliance/plugin.js");
   await app.register(logsPlugin);           // Phase 27 — /logs/v1/*
   await app.register(tokensPlugin);         // Phase 28 — /tokens/v1/*
   await app.register(authCompletionPlugin); // Phase 31 — /auth/v1/recover, /confirm-email, /otp/*
@@ -149,7 +150,9 @@ async function main() {
   await app.register(edgeV3Plugin);         // Phase 35 — /fn/v3/*  (hardened isolate)
   await app.register(billingPlugin);        // Phase 36 — /billing/v1/*
   await app.register(pitrPlugin);           // Phase 36 — /pitr/v1/*
+  await app.register(compliancePlugin);     // Phase 40 — /compliance/v1/*
   startLogRetentionSweeper(app.log);
+
 
 
   // Top-level Prometheus scrape target — proxies to the observability

@@ -1,8 +1,10 @@
 import { createFileRoute, Outlet, useNavigate } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { Sidebar } from "@/components/pluto/Sidebar";
+import { CommandPalette } from "@/components/pluto/CommandPalette";
 import { useAuth } from "@/lib/pluto/auth-context";
 import { WorkspaceProvider } from "@/lib/pluto/workspace-context";
+
 
 export const Route = createFileRoute("/dashboard")({
   ssr: false,
@@ -34,7 +36,9 @@ function DashboardLayout() {
             <Outlet />
           </div>
         </main>
+        <CommandPalette />
       </div>
     </WorkspaceProvider>
+
   );
 }
