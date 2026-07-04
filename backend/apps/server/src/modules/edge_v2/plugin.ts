@@ -249,8 +249,9 @@ export const edgeV2Plugin: FastifyPluginAsync = async (app) => {
       [ws, slug, status, duration, b.simulate_error ? "simulated_error" : null]);
     await recordUsage({ workspaceId: ws, metric: "function_invocations", quantity: 1,
                         billingLabel: slug, meta: { trigger: "manual", status_code: status } });
+    const errorDetail = b.simulate_error ? { message: "simulated_error", type: "SimulatedError", stack: `at invoke(${slug})` } : null;
     return { ok: !b.simulate_error, status_code: status, duration_ms: duration,
-             echoed: b.payload };
+             echoed: b.payload, error: errorDetail };
   });
 
   app.log.info("[edge2] Edge v2 enabled — /fn/v2/*");
