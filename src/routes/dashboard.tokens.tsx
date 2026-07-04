@@ -74,6 +74,42 @@ function TokensPage() {
     finally { setRotatingId(null); }
   }
 
+  function bulkPayload(dry: boolean) {
+    const days = bulkUnusedDays.trim() ? Number(bulkUnusedDays) : NaN;
+    const cutoff = Number.isFinite(days) && days > 0
+      ? new Date(Date.now() - days * 24 * 3600 * 1000).toISOString() : undefined;
+    return {
+      scope: bulkScope.trim() || undefined,
+      created_by: bulkCreatedBy.trim() || undefined,
+      last_used_before: cutoff,
+      never_used: bulkNeverUsed || undefined,
+      dry_run: dry,
+    };
+  }
+
+  async function bulkPreviewFn() {
+    setBulkBusy(true);
+    try {
+      const res = await tokens.bulkRevoke(bulkPayload(true));
+      setBulkPreview(res);
+      if (res.matched === 0) toast.info("No tokens match those filters.");
+    } catch (e) { toast.error((e as Error).message); }
+    finally { setBulkBusy(false); }
+  }
+
+  async function bulkConfirm() {
+    if (!bulkPreview || bulkPreview.matched === 0) return;
+    if (!confirm(`Revoke ${bulkPreview.matched} token(s)? This cannot be undone.`)) return;
+    setBulkBusy(true);
+    try {
+      const res = await tokens.bulkRevoke(bulkPayload(false));
+      setBulkPreview(res);
+      toast.success(`Revoked ${res.revoked.length} token(s).`);
+      await refresh();
+    } catch (e) { toast.error((e as Error).message); }
+    finally { setBulkBusy(false); }
+  }
+
   return (
     <div className="p-6 space-y-6">
       <div>
