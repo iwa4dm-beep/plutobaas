@@ -102,6 +102,7 @@ function UsagePage() {
     const d = drafts[metric]; if (!d) return;
     const hard = Number(d.hard); if (!isFinite(hard) || hard < 0) return;
     const soft = d.soft === "" ? undefined : Number(d.soft);
+    const alertPct = d.alertPct === "" ? undefined : Number(d.alertPct);
     setSavingKey(metric);
     try {
       await usage.setQuota({
@@ -109,8 +110,8 @@ function UsagePage() {
         soft_limit: soft,
         overage_behavior: d.overage,
         billing_label: d.label || undefined,
+        alert_pct: alertPct,
       });
-      // SSE will repaint; also force one immediate REST fetch when offline.
       if (!live) await loadOnce();
     } catch (e) { setErr((e as Error).message); }
     finally { setSavingKey(null); }
