@@ -189,6 +189,8 @@ async function main() {
   await app.register(observabilityV3Plugin); // Phase 58 — distributed traces, live audit tail, SLO alerting
   const { dataApiV4Plugin } = await import("./modules/data_api_v4/plugin.js");
   await app.register(dataApiV4Plugin);      // Phase 59 — RPC-style typed functions, cursor pagination, streaming JSON
+  const { realtimeV5Plugin } = await import("./modules/realtime_v5/plugin.js");
+  await app.register(realtimeV5Plugin);     // Phase 60 — presence sharding, room-level backpressure, ordered delivery
   startLogRetentionSweeper(app.log);
 
 
