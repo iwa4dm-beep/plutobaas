@@ -33,6 +33,7 @@ const items = [
   { to: "/dashboard/backups", label: "Backups", icon: Archive },
   { to: "/dashboard/logs-explorer", label: "Logs Explorer", icon: Search },
   { to: "/dashboard/tokens", label: "API Tokens", icon: KeyRound },
+  { to: "/dashboard/sdk-demo", label: "SDK Demo", icon: Zap },
   { to: "/dashboard/settings", label: "Settings", icon: Settings },
 ] as const;
 
