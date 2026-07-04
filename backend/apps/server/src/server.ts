@@ -7,20 +7,23 @@ import websocket from "@fastify/websocket";
 import { authRoutes } from "./modules/auth/routes.js";
 import { oauthRoutes } from "./modules/auth/oauth.js";
 import { restRoutes } from "./modules/rest/routes.js";
-import { storageRoutes } from "./modules/storage/routes.js";
 import { adminRoutes } from "./modules/admin/routes.js";
-import { realtimeRoutes } from "./modules/realtime/routes.js";
 import { commsPlugin } from "./modules/comms/plugin.js";
 import { advancedAuthPlugin } from "./modules/advanced_auth/plugin.js";
 import { templatesPlugin } from "./modules/templates/plugin.js";
 import { aiPlugin } from "./modules/ai/plugin.js";
-import { edgeRoutes } from "./modules/edge/routes.js";
 import { migrationRoutes } from "./modules/admin/migrations.js";
-import { jobsRoutes } from "./modules/jobs/routes.js";
 import { workspacesRoutes } from "./modules/admin/workspaces.js";
 import { sqlRunnerRoutes } from "./modules/admin/sql.js";
 import { schemaRoutes } from "./modules/admin/schema.js";
 import { env } from "./config.js";
+
+// Legacy modules archived under ./modules/_archive/. To re-enable during the
+// v4/v5 migration window, set PLUTO_ENABLE_LEGACY=1. Wave 2 consolidation:
+// canonical versions are auth+auth_v4, storage_v4, realtime_v5, edge_v7,
+// data_api_v4, vector_v3, observability_v3, jobs_v2. Migrations untouched.
+const ENABLE_LEGACY = process.env.PLUTO_ENABLE_LEGACY === "1";
+
 
 async function main() {
   // Structured JSON logging — one line per request/error, easy to grep &
@@ -97,7 +100,6 @@ async function main() {
   await app.register(authRoutes, { prefix: "/auth/v1" });
   await app.register(oauthRoutes, { prefix: "/auth/v1" });
   await app.register(restRoutes, { prefix: "/rest/v1" });
-  await app.register(storageRoutes, { prefix: "/storage/v1" });
   await app.register(adminRoutes, { prefix: "/admin/v1" });
   await app.register(migrationRoutes, { prefix: "/admin/v1/migrations" });
   await app.register(workspacesRoutes, { prefix: "/admin/v1/workspaces" });
@@ -105,9 +107,6 @@ async function main() {
   await app.register(schemaRoutes,     { prefix: "/admin/v1/schema" });
   const { integrationsRoutes } = await import("./modules/admin/integrations.js");
   await app.register(integrationsRoutes, { prefix: "/admin/v1" });
-  await app.register(jobsRoutes, { prefix: "/jobs/v1" });
-  await app.register(realtimeRoutes, { prefix: "/realtime/v1" });
-  await app.register(edgeRoutes, { prefix: "/functions/v1" });
   await app.register(commsPlugin);         // Phase 14 — /comms/v1/*, PLUTO_ENABLE_COMMS=1
   await app.register(advancedAuthPlugin);  // Phase 15 — /auth/v1/mfa|sso, /push/v1/*, PLUTO_ENABLE_ADVANCED_AUTH=1
   await app.register(templatesPlugin);     // Phase 15 — /templates/v1/*, PLUTO_ENABLE_TEMPLATES=1
@@ -115,86 +114,111 @@ async function main() {
   const { scalingPlugin, startQueueWorker } = await import("./modules/scaling/plugin.js");
   const { observabilityPlugin } = await import("./modules/observability/plugin.js");
   await app.register(scalingPlugin);        // Phase 17 — /queue/v1/*, /cache/v1/*, /admin/v1/rate-limits — PLUTO_ENABLE_SCALING=1
-  await app.register(observabilityPlugin);  // Phase 18 — /obs/v1/*, /compliance/v1/* — PLUTO_ENABLE_OBSERVABILITY=1
+  await app.register(observabilityPlugin);  // Phase 18 — base /obs/v1/* — required by top-level /metrics proxy
   const { devexPlugin } = await import("./modules/devex/plugin.js");
   const { enterprisePlugin } = await import("./modules/enterprise/plugin.js");
-  await app.register(devexPlugin);          // Phase 19 — /devex/v1/* — PLUTO_ENABLE_DEVEX=1
-  await app.register(enterprisePlugin);     // Phase 20 — /enterprise/v1/* — PLUTO_ENABLE_ENTERPRISE=1
+  await app.register(devexPlugin);
+  await app.register(enterprisePlugin);
   const { branchingPlugin, usagePlugin } = await import("./modules/branching/plugin.js");
-  await app.register(branchingPlugin);      // Phase 21 — /branches/v1/*, /schema/v1/* — PLUTO_ENABLE_BRANCHING=1
-  await app.register(usagePlugin);          // Phase 21 — /usage/v1/*                   — PLUTO_ENABLE_USAGE=1
-  const { realtimeV2Plugin } = await import("./modules/realtime_v2/plugin.js");
-  const { vectorPlugin } = await import("./modules/vector/plugin.js");
-  await app.register(realtimeV2Plugin);     // Phase 23 — /rt2/v1/*   — PLUTO_ENABLE_REALTIME_V2=1
-  await app.register(vectorPlugin);         // Phase 23 — /vec/v1/*   — PLUTO_ENABLE_VECTOR=1
-  const { edgeV2Plugin } = await import("./modules/edge_v2/plugin.js");
+  await app.register(branchingPlugin);
+  await app.register(usagePlugin);
   const { backupsPlugin } = await import("./modules/backups/plugin.js");
-  await app.register(edgeV2Plugin);         // Phase 24 — /fn/v2/*    — PLUTO_ENABLE_EDGE_V2=1
-  await app.register(backupsPlugin);        // Phase 24 — /backups/v1 — PLUTO_ENABLE_BACKUPS=1
+  await app.register(backupsPlugin);
   const { logsPlugin, startLogRetentionSweeper } = await import("./modules/logs/plugin.js");
   const { tokensPlugin } = await import("./modules/tokens/plugin.js");
-  const { authCompletionPlugin } = await import("./modules/auth_completion/plugin.js");
   const { storageExtPlugin } = await import("./modules/storage_ext/plugin.js");
   const { cdcPlugin } = await import("./modules/cdc/plugin.js");
-  const { dataApiPlugin } = await import("./modules/data_api/plugin.js");
-  const { edgeV3Plugin } = await import("./modules/edge_v3/plugin.js");
   const { billingPlugin } = await import("./modules/billing/plugin.js");
   const { pitrPlugin } = await import("./modules/pitr/plugin.js");
   const { compliancePlugin } = await import("./modules/compliance/plugin.js");
-  await app.register(logsPlugin);           // Phase 27 — /logs/v1/*
-  await app.register(tokensPlugin);         // Phase 28 — /tokens/v1/*
-  await app.register(authCompletionPlugin); // Phase 31 — /auth/v1/recover, /confirm-email, /otp/*
-  await app.register(storageExtPlugin);     // Phase 32 — /storage/v1/render/*, /storage/v1/upload/resumable
-  await app.register(cdcPlugin);            // Phase 33 — /rt/v2/cdc/*
-  await app.register(dataApiPlugin);        // Phase 34 — /rest/v1/(introspect), /graphql/v1
-  await app.register(edgeV3Plugin);         // Phase 35 — /fn/v3/*  (hardened isolate)
-  await app.register(billingPlugin);        // Phase 36 — /billing/v1/*
-  await app.register(pitrPlugin);           // Phase 36 — /pitr/v1/*
-  await app.register(compliancePlugin);     // Phase 40 — /compliance/v1/*
-  const { authPhase41Plugin } = await import("./modules/auth_phase41/plugin.js");
-  await app.register(authPhase41Plugin);    // Phase 41 — magic-link, anonymous, link-anon
-  const { storageV2Plugin } = await import("./modules/storage_v2/plugin.js");
-  await app.register(storageV2Plugin);      // Phase 42 — multipart, presigned POST, AV scan, CDN purge, imgproxy
-  const { realtimeV3Plugin } = await import("./modules/realtime_v3/plugin.js");
-  await app.register(realtimeV3Plugin);     // Phase 43 — CDC + NATS backplane + RLS-aware channels + replay
-  const { dataApiV2Plugin } = await import("./modules/data_api_v2/plugin.js");
-  await app.register(dataApiV2Plugin);      // Phase 44 — embedded relations, DB webhooks, FDW registry
-  const { edgeV4Plugin } = await import("./modules/edge_v4/plugin.js");
-  await app.register(edgeV4Plugin);         // Phase 45 — multi-file bundles, npm/http imports, secrets, cron, domains
-  const { vectorV2Plugin } = await import("./modules/vector_v2/plugin.js");
-  await app.register(vectorV2Plugin);       // Phase 46 — HNSW indexes, embed pipeline, hybrid+RAG, model registry
-  const { observabilityV2Plugin } = await import("./modules/observability_v2/plugin.js");
-  await app.register(observabilityV2Plugin); // Phase 47 — OTel, RED metrics, SLO burn-rate, log alerts
+  await app.register(logsPlugin);
+  await app.register(tokensPlugin);
+  await app.register(storageExtPlugin);
+  await app.register(cdcPlugin);
+  await app.register(billingPlugin);
+  await app.register(pitrPlugin);
+  await app.register(compliancePlugin);
   const { broadcastV2Plugin } = await import("./modules/broadcast_v2/plugin.js");
-  await app.register(broadcastV2Plugin);    // Phase 48 — WS fan-out, presence sync, ephemeral broadcast
-  const { storageV3Plugin } = await import("./modules/storage_v3/plugin.js");
-  await app.register(storageV3Plugin);      // Phase 49 — signed uploads, multipart, transform cache, lifecycle
-  const { authV3Plugin } = await import("./modules/auth_v3/plugin.js");
-  await app.register(authV3Plugin);         // Phase 50 — WebAuthn/passkeys, TOTP v2, risk scoring, devices
-  const { realtimeV4Plugin } = await import("./modules/realtime_v4/plugin.js");
-  await app.register(realtimeV4Plugin);     // Phase 51 — presence CRDTs, offline queue, delta compression
-  const { dataApiV3Plugin } = await import("./modules/data_api_v3/plugin.js");
-  await app.register(dataApiV3Plugin);      // Phase 52 — nested writes, computed fields, generated types, schema cache
-  const { edgeV5Plugin } = await import("./modules/edge_v5/plugin.js");
-  await app.register(edgeV5Plugin);         // Phase 53 — WASM runtime, warm pool, per-region, custom domains v2, KV, queues, streaming
+  await app.register(broadcastV2Plugin);
+  // Canonical (Wave 2) — one plugin per domain.
   const { storageV4Plugin } = await import("./modules/storage_v4/plugin.js");
-  await app.register(storageV4Plugin);      // Phase 54 — object versioning, retention locks, cross-region replication
-  const { edgeV6Plugin } = await import("./modules/edge_v6/plugin.js");
-  await app.register(edgeV6Plugin);         // Phase 55 — host imports/fetch, Durable Objects, shared KV backplane
+  await app.register(storageV4Plugin);      // Canonical Storage
   const { edgeV7Plugin } = await import("./modules/edge_v7/plugin.js");
-  await app.register(edgeV7Plugin);         // Phase 56 — replicated queues, cron triggers, signed bindings
+  await app.register(edgeV7Plugin);         // Canonical Edge Functions
   const { authV4Plugin } = await import("./modules/auth_v4/plugin.js");
-  await app.register(authV4Plugin);         // Phase 57 — SAML SSO enterprise, SCIM provisioning, session isolation
+  await app.register(authV4Plugin);         // Canonical Auth addon (SAML SSO / SCIM)
   const { observabilityV3Plugin } = await import("./modules/observability_v3/plugin.js");
-  await app.register(observabilityV3Plugin); // Phase 58 — distributed traces, live audit tail, SLO alerting
+  await app.register(observabilityV3Plugin); // Canonical Observability
   const { dataApiV4Plugin } = await import("./modules/data_api_v4/plugin.js");
-  await app.register(dataApiV4Plugin);      // Phase 59 — RPC-style typed functions, cursor pagination, streaming JSON
+  await app.register(dataApiV4Plugin);      // Canonical Data API
   const { realtimeV5Plugin } = await import("./modules/realtime_v5/plugin.js");
-  await app.register(realtimeV5Plugin);     // Phase 60 — presence sharding, room-level backpressure, ordered delivery
+  await app.register(realtimeV5Plugin);     // Canonical Realtime
   const { vectorV3Plugin } = await import("./modules/vector_v3/plugin.js");
-  await app.register(vectorV3Plugin);       // Phase 61 — hybrid rerankers, per-tenant HNSW tuning, streaming embeddings
+  await app.register(vectorV3Plugin);       // Canonical Vector
   const { jobsV2Plugin } = await import("./modules/jobs_v2/plugin.js");
-  await app.register(jobsV2Plugin);         // Phase 62 — durable DAG workflows, exactly-once side effects, retries
+  await app.register(jobsV2Plugin);         // Canonical Jobs
+
+  // Legacy modules — archived under modules/_archive/. Loaded only when
+  // PLUTO_ENABLE_LEGACY=1 to help clients migrate to canonical versions.
+  if (ENABLE_LEGACY) {
+    const legacy = await Promise.all([
+      import("./modules/_archive/storage/routes.js"),
+      import("./modules/_archive/realtime/routes.js"),
+      import("./modules/_archive/edge/routes.js"),
+      import("./modules/_archive/jobs/routes.js"),
+      import("./modules/_archive/auth_completion/plugin.js"),
+      import("./modules/_archive/auth_phase41/plugin.js"),
+      import("./modules/_archive/auth_v3/plugin.js"),
+      import("./modules/_archive/storage_v2/plugin.js"),
+      import("./modules/_archive/storage_v3/plugin.js"),
+      import("./modules/_archive/realtime_v2/plugin.js"),
+      import("./modules/_archive/realtime_v3/plugin.js"),
+      import("./modules/_archive/realtime_v4/plugin.js"),
+      import("./modules/_archive/edge_v2/plugin.js"),
+      import("./modules/_archive/edge_v3/plugin.js"),
+      import("./modules/_archive/edge_v4/plugin.js"),
+      import("./modules/_archive/edge_v5/plugin.js"),
+      import("./modules/_archive/edge_v6/plugin.js"),
+      import("./modules/_archive/data_api/plugin.js"),
+      import("./modules/_archive/data_api_v2/plugin.js"),
+      import("./modules/_archive/data_api_v3/plugin.js"),
+      import("./modules/_archive/vector/plugin.js"),
+      import("./modules/_archive/vector_v2/plugin.js"),
+      import("./modules/_archive/observability_v2/plugin.js"),
+    ]);
+    const [
+      st, rt, ed, jb,
+      authComp, authP41, authV3,
+      sv2, sv3, rv2, rv3, rv4,
+      ev2, ev3, ev4, ev5, ev6,
+      da1, da2, da3, vec1, vec2, ov2,
+    ] = legacy;
+    await app.register(st.storageRoutes, { prefix: "/storage/v1" });
+    await app.register(rt.realtimeRoutes, { prefix: "/realtime/v1" });
+    await app.register(ed.edgeRoutes, { prefix: "/functions/v1" });
+    await app.register(jb.jobsRoutes, { prefix: "/jobs/v1" });
+    await app.register(authComp.authCompletionPlugin);
+    await app.register(authP41.authPhase41Plugin);
+    await app.register(authV3.authV3Plugin);
+    await app.register(sv2.storageV2Plugin);
+    await app.register(sv3.storageV3Plugin);
+    await app.register(rv2.realtimeV2Plugin);
+    await app.register(rv3.realtimeV3Plugin);
+    await app.register(rv4.realtimeV4Plugin);
+    await app.register(ev2.edgeV2Plugin);
+    await app.register(ev3.edgeV3Plugin);
+    await app.register(ev4.edgeV4Plugin);
+    await app.register(ev5.edgeV5Plugin);
+    await app.register(ev6.edgeV6Plugin);
+    await app.register(da1.dataApiPlugin);
+    await app.register(da2.dataApiV2Plugin);
+    await app.register(da3.dataApiV3Plugin);
+    await app.register(vec1.vectorPlugin);
+    await app.register(vec2.vectorV2Plugin);
+    await app.register(ov2.observabilityV2Plugin);
+    app.log.warn("PLUTO_ENABLE_LEGACY=1 — 23 archived modules re-mounted");
+  }
+
   startLogRetentionSweeper(app.log);
 
 

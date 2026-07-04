@@ -20,7 +20,7 @@ describe("Phase 41 auth-hooks dispatcher", () => {
 
 describe("Phase 41 route surface", () => {
   it("exports a Fastify plugin factory", async () => {
-    const mod = await import("../modules/auth_phase41/plugin.js");
+    const mod = await import("../modules/_archive/auth_phase41/plugin.js");
     expect(typeof mod.authPhase41Plugin).toBe("function");
   });
 });

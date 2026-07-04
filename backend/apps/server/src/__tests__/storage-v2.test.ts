@@ -37,7 +37,7 @@ describe("storage_v2 plugin exports", () => {
     vi.doMock("../db/index.js", () => ({ db: {} }));
     vi.doMock("../lib/apikey.js", () => ({ requireApiKey: async () => {} }));
     vi.doMock("../lib/logs.js", () => ({ log: async () => {} }));
-    const mod = await import("../modules/storage_v2/plugin.js");
+    const mod = await import("../modules/_archive/storage_v2/plugin.js");
     expect(typeof mod.storageV2Plugin).toBe("function");
   });
 });

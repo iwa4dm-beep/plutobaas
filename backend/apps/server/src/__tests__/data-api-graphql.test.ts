@@ -20,7 +20,7 @@ process.env.JWT_SECRET       ??= "test-jwt-secret-please-ignore-32chars-min-xxxx
 process.env.ANON_KEY         ??= "anon-test-key";
 process.env.SERVICE_ROLE_KEY ??= "service-test-key";
 
-vi.mock("../modules/data_api/introspect.js", () => ({
+vi.mock("../modules/_archive/data_api/introspect.js", () => ({
   getSchemaSnapshot: async () => ({
     tables: [
       { name: "todos",   columns: [{ name: "id" }, { name: "title" }, { name: "done" }, { name: "user_id" }] },
@@ -29,7 +29,7 @@ vi.mock("../modules/data_api/introspect.js", () => ({
   }),
 }));
 
-const { executeGraphql } = await import("../modules/data_api/graphql.js");
+const { executeGraphql } = await import("../modules/_archive/data_api/graphql.js");
 
 type Call = { sql: string; params: unknown[] };
 function makeClient(rows: unknown[] = []) {

@@ -204,14 +204,14 @@ d("REST/GraphQL RLS end-to-end (real Postgres)", () => {
 
   // ---------- GraphQL surface (drives the same builder + connection) ----------
   it("GraphQL SELECT — obeys tier gate identical to REST", async () => {
-    const { executeGraphql } = await import("../modules/data_api/graphql.js");
+    const { executeGraphql } = await import("../modules/_archive/data_api/graphql.js");
     // Reuse the schema snapshot mocking pattern isn't available here
     // (we're a live-DB test); we call the builder against a client
     // whose GUCs were set as a free-tier user, and assert results.
     const c = await asUser(alice, wsFree, "user");
     try {
       // Patch introspection to expose our scratch table.
-      const introspect = await import("../modules/data_api/introspect.js");
+      const introspect = await import("../modules/_archive/data_api/introspect.js");
       (introspect as unknown as { getSchemaSnapshot: () => Promise<unknown> }).getSchemaSnapshot =
         async () => ({ tables: [{ name: T, columns: [{ name: "id" }, { name: "note" }, { name: "user_id" }, { name: "workspace_id" }] }] });
       const res = await executeGraphql(

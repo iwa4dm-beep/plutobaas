@@ -6,7 +6,7 @@
 // hardening (no eval, no require, deadline enforcement).
 
 import { describe, expect, it } from "vitest";
-import { invokeIsolate } from "../modules/edge_v3/isolate.js";
+import { invokeIsolate } from "../modules/_archive/edge_v3/isolate.js";
 
 const REQ = { method: "GET", url: "/x?name=world", headers: {}, body: undefined };
 const OPTS = { timeoutMs: 3000, memoryMb: 64, allowHosts: [] as string[] };
