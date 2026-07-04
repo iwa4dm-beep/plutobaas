@@ -77,6 +77,8 @@ export const realtimeV2Plugin: FastifyPluginAsync = async (app) => {
       `insert into public.rt_broadcasts (channel_id, event, payload, sender)
        values ($1::uuid, $2, $3::jsonb, $4) returning id, created_at`,
       [ch.id, b.event, JSON.stringify(b.payload), b.sender ?? null]);
+    await recordUsage({ workspaceId: ws, metric: "realtime_msgs", quantity: 1,
+                        billingLabel: `channel:${name}`, meta: { event: b.event } });
     return { ok: true, id: r.rows[0].id, at: r.rows[0].created_at };
   });
 
