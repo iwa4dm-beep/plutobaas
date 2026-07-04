@@ -53,7 +53,7 @@ async function loadSecretsFor(workspaceId: string | null, slug: string): Promise
   const rows = await db.selectFrom("fn_v4_secrets" as never)
     .select(["slug" as never, "name" as never, "ciphertext" as never])
     .where("workspace_id" as never, "is not distinct from", workspaceId as never)
-    .execute() as Array<{ slug: string | null; name: string; ciphertext: string }>;
+    .execute() as unknown as Array<{ slug: string | null; name: string; ciphertext: string }>;
   const out: Record<string, string> = {};
   // workspace-wide first, then per-fn overrides
   for (const r of rows.sort((a, b) => (a.slug ? 1 : 0) - (b.slug ? 1 : 0))) {

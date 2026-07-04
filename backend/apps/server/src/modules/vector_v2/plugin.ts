@@ -322,7 +322,7 @@ async function runEmbedTick(req: FastifyRequest | null, limit: number) {
   const jobs = await db.selectFrom("vec_embed_jobs" as never).selectAll()
     .where("status" as never, "=", "pending" as never)
     .where("next_retry_at" as never, "<=", now as never)
-    .orderBy("id" as never, "asc").limit(limit).execute() as Array<{
+    .orderBy("id" as never, "asc").limit(limit).execute() as unknown as Array<{
       id: number; workspace_id: string | null; collection_id: string; source_id: string | null;
       external_id: string | null; content: string; metadata: Record<string, unknown>;
       model_slug: string | null; attempt: number;

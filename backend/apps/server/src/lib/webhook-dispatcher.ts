@@ -22,7 +22,7 @@ export async function enqueueWebhookEvent(input: {
     .where("enabled" as never, "=", true as never)
     .where("schema_name" as never, "=", input.schema as never)
     .where("table_name" as never, "=", input.table as never)
-    .execute() as Array<{ id: string; events: string[] }>;
+    .execute() as unknown as Array<{ id: string; events: string[] }>;
 
   const matched = hooks.filter(h => (h.events ?? []).includes(input.event));
   if (matched.length === 0) return 0;
@@ -50,7 +50,7 @@ export async function dispatchDueDeliveries(log?: FastifyBaseLogger, limit = 25)
     .where("next_retry_at" as never, "<=", now as never)
     .orderBy("id" as never, "asc")
     .limit(limit)
-    .execute() as Array<{
+    .execute() as unknown as Array<{
       id: number; webhook_id: string; event_type: string;
       payload: Record<string, unknown>; attempt: number;
     }>;
