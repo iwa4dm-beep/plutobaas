@@ -26,6 +26,7 @@ export type AuthEvent = {
   action: string;              // e.g. "session.create", "session.reuse_denied", "admin.check"
   status: "ok" | "denied" | "error";
   meta?: Record<string, unknown>;
+  trace_id?: string;           // Phase 58: correlate with distributed trace
 };
 
 const sessions = new Map<string, Session>();
