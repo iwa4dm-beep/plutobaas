@@ -48,6 +48,59 @@ const providers: Record<string, ProviderCfg> = {
       return { id: String(u.id), email };
     },
   },
+  // Phase 41 — additional first-class OAuth providers.
+  apple: {
+    // Apple returns email in the id_token claims (JWT), not userinfo.
+    // Client secret is a signed JWT the caller must supply via env.
+    authUrl: "https://appleid.apple.com/auth/authorize",
+    tokenUrl: "https://appleid.apple.com/auth/token",
+    userUrl: "https://appleid.apple.com/auth/keys",
+    scope: "name email",
+    clientId: process.env.APPLE_CLIENT_ID,
+    clientSecret: process.env.APPLE_CLIENT_SECRET,
+    parseUser: async (_u, token) => {
+      // Decode id_token payload (unverified — Apple already validated).
+      const [, payload] = token.split(".");
+      const claims = JSON.parse(Buffer.from(payload, "base64url").toString());
+      return { id: String(claims.sub), email: String(claims.email) };
+    },
+  },
+  discord: {
+    authUrl: "https://discord.com/api/oauth2/authorize",
+    tokenUrl: "https://discord.com/api/oauth2/token",
+    userUrl: "https://discord.com/api/users/@me",
+    scope: "identify email",
+    clientId: process.env.DISCORD_CLIENT_ID,
+    clientSecret: process.env.DISCORD_CLIENT_SECRET,
+    parseUser: async (u) => ({ id: String(u.id), email: String(u.email) }),
+  },
+  facebook: {
+    authUrl: "https://www.facebook.com/v18.0/dialog/oauth",
+    tokenUrl: "https://graph.facebook.com/v18.0/oauth/access_token",
+    userUrl: "https://graph.facebook.com/me?fields=id,email,name",
+    scope: "email public_profile",
+    clientId: process.env.FACEBOOK_CLIENT_ID,
+    clientSecret: process.env.FACEBOOK_CLIENT_SECRET,
+    parseUser: async (u) => ({ id: String(u.id), email: String(u.email ?? `${u.id}@facebook.local`) }),
+  },
+  azure: {
+    authUrl: "https://login.microsoftonline.com/common/oauth2/v2.0/authorize",
+    tokenUrl: "https://login.microsoftonline.com/common/oauth2/v2.0/token",
+    userUrl: "https://graph.microsoft.com/oidc/userinfo",
+    scope: "openid email profile",
+    clientId: process.env.AZURE_CLIENT_ID,
+    clientSecret: process.env.AZURE_CLIENT_SECRET,
+    parseUser: async (u) => ({ id: String(u.sub), email: String(u.email ?? u.preferred_username) }),
+  },
+  linkedin: {
+    authUrl: "https://www.linkedin.com/oauth/v2/authorization",
+    tokenUrl: "https://www.linkedin.com/oauth/v2/accessToken",
+    userUrl: "https://api.linkedin.com/v2/userinfo",
+    scope: "openid profile email",
+    clientId: process.env.LINKEDIN_CLIENT_ID,
+    clientSecret: process.env.LINKEDIN_CLIENT_SECRET,
+    parseUser: async (u) => ({ id: String(u.sub), email: String(u.email) }),
+  },
 };
 
 // Short-lived signed state so we don't need server sessions.
