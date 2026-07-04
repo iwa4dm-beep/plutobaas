@@ -1116,10 +1116,59 @@ export const usage = {
     api<{ webhook: UsageWebhook }>("/usage/v1/webhooks", { method: "POST", body: JSON.stringify(body) }),
   deleteWebhook: (id: string) =>
     api<{ ok: boolean }>(`/usage/v1/webhooks/${id}`, { method: "DELETE" }),
+
+  // Phase 29 — webhook delivery attempts + on-demand redelivery.
+  deliveries: (webhookId: string, params: { limit?: number; offset?: number } = {}) => {
+    const qs = new URLSearchParams();
+    if (params.limit)  qs.set("limit",  String(params.limit));
+    if (params.offset) qs.set("offset", String(params.offset));
+    return api<{ deliveries: WebhookDelivery[] }>(
+      `/usage/v1/webhooks/${webhookId}/deliveries${qs.size ? `?${qs}` : ""}`);
+  },
+  redeliver: (webhookId: string, deliveryId: string) =>
+    api<{ ok: boolean }>(`/usage/v1/webhooks/${webhookId}/redeliver/${deliveryId}`, { method: "POST" }),
+
+  // Phase 29 — quota-alert SSE (replaces the 15s polling banner refresh).
+  // Fires "quota.alert" events for the caller's workspace as they happen,
+  // plus a snapshot of currently-unresolved alerts on connect.
+  streamAlerts(opts: { onEvent: (payload: AlertEventPayload) => void; onError?: (e: Error) => void }): () => void {
+    const controller = new AbortController();
+    (async () => {
+      try {
+        const cfg = liveConfig(); if (!cfg) throw new Error("Pluto backend not configured");
+        const res = await fetch(cfg.url.replace(/\/$/, "") + `/usage/v1/alerts/stream`, {
+          signal: controller.signal, headers: { accept: "text/event-stream", ...bearer(false) },
+        });
+        if (!res.ok || !res.body) throw new Error(`SSE ${res.status}`);
+        const reader = res.body.getReader(); const dec = new TextDecoder(); let buf = "";
+        for (;;) {
+          const { value, done } = await reader.read(); if (done) break;
+          buf += dec.decode(value, { stream: true });
+          const parts = buf.split("\n\n"); buf = parts.pop() ?? "";
+          for (const p of parts) {
+            const dataLine = p.split("\n").find(l => l.startsWith("data: "));
+            if (!dataLine) continue;
+            try { opts.onEvent(JSON.parse(dataLine.slice(6))); } catch { /* ignore */ }
+          }
+        }
+      } catch (e) { if ((e as Error).name !== "AbortError") opts.onError?.(e as Error); }
+    })();
+    return () => controller.abort();
+  },
 };
 
 export type QuotaAlert = { id: string; metric: UsageMetric; pct: number; used: number; hard_limit: number | null; triggered_at: string; notified: boolean; resolved_at: string | null };
 export type UsageWebhook = { id: string; url: string; events: string[]; active: boolean; last_status: number | null; last_error: string | null; last_delivered_at: string | null; created_at: string };
+export type WebhookDelivery = {
+  id: string; webhook_id: string; alert_id: string | null; event: string;
+  attempt: number; status_code: number | null; response_time_ms: number | null;
+  error: string | null; delivered_at: string; next_retry_at: string | null;
+  succeeded: boolean; payload_hash: string;
+};
+export type AlertEventPayload = {
+  type: "quota.alert"; workspace_id: string; alert_id: string;
+  metric: UsageMetric; pct: number; used: number; hard_limit: number | null; triggered_at: string;
+};
 
 // -------------------- Phase 23: Realtime v2 --------------------
 export type Rt2Channel = { id: string; name: string; kind: "broadcast"|"presence"; created_at: string; members?: number };
