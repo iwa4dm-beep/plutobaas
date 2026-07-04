@@ -151,7 +151,7 @@ export async function storageV2Plugin(app: FastifyInstance) {
     const buffers: Buffer[] = [];
     for (const p of parts.rows) {
       const partKey = `${PART_PREFIX}/${body.data.upload_id}/${p.part_number}`;
-      const b = await storage.getObject(bucket, partKey);
+      const b = await readStorage(bucket, partKey);
       buffers.push(b);
     }
     const finalBuf = Buffer.concat(buffers);
@@ -265,7 +265,7 @@ export async function storageV2Plugin(app: FastifyInstance) {
     const key = (req.params as { "*": string })["*"];
     if (!clamavEnabled()) return bad(reply, 501, "clamav_disabled");
     try {
-      const bytes = await storage.getObject(bucket, key);
+      const bytes = await readStorage(bucket, key);
       const started = Date.now();
       await pgraw(`update public.storage_scan_queue set status='scanning', attempts=attempts+1
                     where bucket_name=$1 and object_key=$2`, [bucket, key]);
