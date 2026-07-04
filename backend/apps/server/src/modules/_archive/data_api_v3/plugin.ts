@@ -17,10 +17,10 @@
 
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { requireApiKey } from "../../lib/apikey.js";
-import { planNestedInsert, type Schema } from "../../lib/nested-writes.js";
-import { getSchema, invalidate, digestOf } from "../../lib/schema-cache.js";
-import { generateTypes, type SchemaWithTypes } from "../../lib/type-gen.js";
+import { requireApiKey } from "../../../lib/apikey.js";
+import { planNestedInsert, type Schema } from "../../../lib/nested-writes.js";
+import { getSchema, invalidate, digestOf } from "../../../lib/schema-cache.js";
+import { generateTypes, type SchemaWithTypes } from "../../../lib/type-gen.js";
 
 const enabled = process.env.PLUTO_ENABLE_DATA_API_V3 === "1";
 

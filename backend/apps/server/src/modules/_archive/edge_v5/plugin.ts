@@ -12,12 +12,12 @@
 
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { requireApiKey } from "../../lib/apikey.js";
-import { registerModule, getModule, listModules, hashWasm } from "../../lib/wasm-registry.js";
-import { configure, acquire, release, stats, poolKey } from "../../lib/warm-pool.js";
-import { pickDeployment, type Deployment } from "../../lib/region-router.js";
-import { kvPut, kvGet, kvDelete, kvList } from "../../lib/edge-kv.js";
-import { bind as qbind, enqueue as qenqueue, drain as qdrain, pending as qpending, subscribers as qsubs } from "../../lib/edge-queue.js";
+import { requireApiKey } from "../../../lib/apikey.js";
+import { registerModule, getModule, listModules, hashWasm } from "../../../lib/wasm-registry.js";
+import { configure, acquire, release, stats, poolKey } from "../../../lib/warm-pool.js";
+import { pickDeployment, type Deployment } from "../../../lib/region-router.js";
+import { kvPut, kvGet, kvDelete, kvList } from "../../../lib/edge-kv.js";
+import { bind as qbind, enqueue as qenqueue, drain as qdrain, pending as qpending, subscribers as qsubs } from "../../../lib/edge-queue.js";
 
 
 const enabled = process.env.PLUTO_ENABLE_EDGE_V5 === "1";

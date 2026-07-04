@@ -33,12 +33,12 @@
 
 import type { FastifyPluginAsync, FastifyRequest } from "fastify";
 import { z } from "zod";
-import { db } from "../../db/index.js";
-import { requireApiKey, requireWorkspaceAdmin } from "../../lib/apikey.js";
-import { aesEncrypt, aesDecrypt } from "../../lib/aes.js";
-import { resolveImport, resolveImportMap } from "../../lib/import-resolver.js";
-import { parseCron, nextRunAt } from "../../lib/cron.js";
-import { audit } from "../../lib/audit.js";
+import { db } from "../../../db/index.js";
+import { requireApiKey, requireWorkspaceAdmin } from "../../../lib/apikey.js";
+import { aesEncrypt, aesDecrypt } from "../../../lib/aes.js";
+import { resolveImport, resolveImportMap } from "../../../lib/import-resolver.js";
+import { parseCron, nextRunAt } from "../../../lib/cron.js";
+import { audit } from "../../../lib/audit.js";
 import { invokeIsolate } from "../edge_v3/isolate.js";
 
 const SLUG = /^[a-z0-9][a-z0-9_-]{0,79}$/;

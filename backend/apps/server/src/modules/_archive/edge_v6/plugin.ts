@@ -14,10 +14,10 @@
 
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { requireApiKey } from "../../lib/apikey.js";
-import { hostFetch, setAllowlist } from "../../lib/host-fetch.js";
-import { callDo, getState } from "../../lib/durable-objects.js";
-import { bpPut, bpGet, bpDelete, bpApplyRemote, bpKeys } from "../../lib/kv-backplane.js";
+import { requireApiKey } from "../../../lib/apikey.js";
+import { hostFetch, setAllowlist } from "../../../lib/host-fetch.js";
+import { callDo, getState } from "../../../lib/durable-objects.js";
+import { bpPut, bpGet, bpDelete, bpApplyRemote, bpKeys } from "../../../lib/kv-backplane.js";
 
 const enabled = process.env.PLUTO_ENABLE_EDGE_V6 === "1";
 const NS = /^[a-z0-9_\-]{1,64}$/;

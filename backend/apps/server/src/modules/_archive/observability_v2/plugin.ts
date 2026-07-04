@@ -19,16 +19,16 @@
 
 import type { FastifyInstance, FastifyPluginAsync } from "fastify";
 import { z } from "zod";
-import { q } from "../../lib/pgraw.js";
-import { requireApiKey, requireAdmin } from "../../lib/apikey.js";
+import { q } from "../../../lib/pgraw.js";
+import { requireApiKey, requireAdmin } from "../../../lib/apikey.js";
 import {
   newTraceId, newSpanId, parseTraceparent, formatTraceparent,
   toOtlpPayload, exportOtlp, type OtelSpan,
-} from "../../lib/otel.js";
-import { recordRequest, toPrometheus, snapshot as redSnapshot } from "../../lib/red-metrics.js";
-import { BURN_WINDOWS, burnRate, type SloRow } from "../../lib/slo.js";
-import { evaluateErrorRatio } from "../../lib/slo-eval.js";
-import { pushLog, recentLogs, matchesRule, type LogAlertRule } from "../../lib/log-buffer.js";
+} from "../../../lib/otel.js";
+import { recordRequest, toPrometheus, snapshot as redSnapshot } from "../../../lib/red-metrics.js";
+import { BURN_WINDOWS, burnRate, type SloRow } from "../../../lib/slo.js";
+import { evaluateErrorRatio } from "../../../lib/slo-eval.js";
+import { pushLog, recentLogs, matchesRule, type LogAlertRule } from "../../../lib/log-buffer.js";
 
 const spanIngest = z.object({
   spans: z.array(z.object({

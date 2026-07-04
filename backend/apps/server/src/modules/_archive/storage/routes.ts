@@ -7,13 +7,13 @@ import { Readable } from "node:stream";
 import type { FastifyInstance } from "fastify";
 import { sql } from "kysely";
 import { z } from "zod";
-import { db } from "../../db/index.js";
-import { env } from "../../config.js";
-import { requireApiKey, requireServiceRole } from "../../lib/apikey.js";
-import { storage, localDriver } from "../../lib/storage.js";
-import { log } from "../../lib/logs.js";
-import { checkStorageAccess, checkUploadCaps } from "../../lib/storage-access.js";
-import { audit } from "../../lib/audit.js";
+import { db } from "../../../db/index.js";
+import { env } from "../../../config.js";
+import { requireApiKey, requireServiceRole } from "../../../lib/apikey.js";
+import { storage, localDriver } from "../../../lib/storage.js";
+import { log } from "../../../lib/logs.js";
+import { checkStorageAccess, checkUploadCaps } from "../../../lib/storage-access.js";
+import { audit } from "../../../lib/audit.js";
 
 const IDENT = /^[a-zA-Z0-9_-]+$/;
 // Object keys: forbid absolute paths, backrefs, and shell/HTML metas.
@@ -196,7 +196,7 @@ export async function storageRoutes(app: FastifyInstance) {
         target: `${bucket}/${key}`, status: "ok",
         metadata: { size: buf.length, content_type: ct, mode: "single" },
       });
-      const { recordUsage } = await import("../../lib/metering.js");
+      const { recordUsage } = await import("../../../lib/metering.js");
       void recordUsage({ workspaceId: req.auth?.workspaceId ?? null, metric: "storage_gb",
         quantity: buf.length / 1_073_741_824, billingLabel: `storage:${bucket}`,
         meta: { bucket, key, bytes: buf.length } });
@@ -215,7 +215,7 @@ export async function storageRoutes(app: FastifyInstance) {
       if (!decision.ok) return reply.code(decision.status).send({ error: decision.error });
       reply.header("content-type", obj.content_type);
       reply.header("content-length", String(obj.size));
-      const { recordUsage } = await import("../../lib/metering.js");
+      const { recordUsage } = await import("../../../lib/metering.js");
       void recordUsage({ workspaceId: req.auth?.workspaceId ?? null, metric: "egress_gb",
         quantity: (obj.size ?? 0) / 1_073_741_824, billingLabel: `egress:${bucket}`,
         meta: { bucket, key, bytes: obj.size } });

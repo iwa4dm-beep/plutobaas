@@ -1,6 +1,6 @@
 // Schema introspection: reads information_schema and caches a snapshot
 // used by the OpenAPI + GraphQL adapters.
-import { q } from "../../lib/pgraw.js";
+import { q } from "../../../lib/pgraw.js";
 
 export type ColumnInfo = {
   name: string;

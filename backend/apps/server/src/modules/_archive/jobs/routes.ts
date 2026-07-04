@@ -24,11 +24,11 @@ import { createHash, randomBytes } from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import pg from "pg";
 import { z } from "zod";
-import { env } from "../../config.js";
-import { db } from "../../db/index.js";
-import { requireApiKey, requireAdmin } from "../../lib/apikey.js";
-import { audit } from "../../lib/audit.js";
-import { log } from "../../lib/logs.js";
+import { env } from "../../../config.js";
+import { db } from "../../../db/index.js";
+import { requireApiKey, requireAdmin } from "../../../lib/apikey.js";
+import { audit } from "../../../lib/audit.js";
+import { log } from "../../../lib/logs.js";
 
 // Dedicated low-privilege pool. Credentials come from env; if unset we
 // fall back to the app DATABASE_URL for local dev, with a loud warning.

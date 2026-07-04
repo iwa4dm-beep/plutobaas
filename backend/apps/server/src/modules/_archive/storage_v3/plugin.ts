@@ -17,12 +17,12 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { createHash } from "node:crypto";
-import { db } from "../../db/index.js";
-import { requireApiKey } from "../../lib/apikey.js";
-import { audit } from "../../lib/audit.js";
-import { mintUploadToken, verifyUploadToken } from "../../lib/signed-upload.js";
-import { normalizeVariant, transformCacheKey, cdnUrlFor, type ImageVariant } from "../../lib/image-cache.js";
-import { evaluateRule, type LifecycleRule, type ObjectRow } from "../../lib/lifecycle.js";
+import { db } from "../../../db/index.js";
+import { requireApiKey } from "../../../lib/apikey.js";
+import { audit } from "../../../lib/audit.js";
+import { mintUploadToken, verifyUploadToken } from "../../../lib/signed-upload.js";
+import { normalizeVariant, transformCacheKey, cdnUrlFor, type ImageVariant } from "../../../lib/image-cache.js";
+import { evaluateRule, type LifecycleRule, type ObjectRow } from "../../../lib/lifecycle.js";
 
 const enabled = process.env.PLUTO_ENABLE_STORAGE_V3 === "1";
 const BUCKET = /^[a-z0-9][a-z0-9_.-]{1,62}$/i;

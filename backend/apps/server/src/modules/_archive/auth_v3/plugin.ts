@@ -27,21 +27,21 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { createHash, randomBytes } from "node:crypto";
-import { db as _kysely } from "../../db/index.js";
-import { pgPool } from "../../lib/pgraw.js";
+import { db as _kysely } from "../../../db/index.js";
+import { pgPool } from "../../../lib/pgraw.js";
 // Legacy shim: auth_v3 was written against a raw pg-style `.query()` API.
 // Keep the name `db` but back it with the shared pg pool so we don't rewrite
 // 30+ call sites during the Wave 1 boot restoration.
 const db = { query: (text: string, params?: unknown[]) => pgPool.query(text, params as never) };
 void _kysely;
-import { requireApiKey } from "../../lib/apikey.js";
-import { audit } from "../../lib/audit.js";
+import { requireApiKey } from "../../../lib/apikey.js";
+import { audit } from "../../../lib/audit.js";
 import {
   buildRegistrationOptions, buildAuthenticationOptions,
   newChallenge, checkAssertionCounter, b64url,
-} from "../../lib/webauthn.js";
-import { generateTotpSecret, verifyTotp, base32Decode, otpauthUrl } from "../../lib/totp.js";
-import { scoreSession, deviceHash, type RiskSignals } from "../../lib/risk-score.js";
+} from "../../../lib/webauthn.js";
+import { generateTotpSecret, verifyTotp, base32Decode, otpauthUrl } from "../../../lib/totp.js";
+import { scoreSession, deviceHash, type RiskSignals } from "../../../lib/risk-score.js";
 
 const enabled = process.env.PLUTO_ENABLE_AUTH_V3 === "1";
 const RP_ID   = () => process.env.PLUTO_WEBAUTHN_RP_ID   ?? "localhost";

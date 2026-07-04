@@ -14,10 +14,10 @@
 
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { requireApiKey } from "../../lib/apikey.js";
-import { apply, merge, members, empty, type PresenceEntry, type PresenceState } from "../../lib/presence-crdt.js";
-import { enqueue, drain, ack, size } from "../../lib/offline-queue.js";
-import { encodeDelta, decodeDelta, hashPayload, type DeltaEnvelope } from "../../lib/delta-codec.js";
+import { requireApiKey } from "../../../lib/apikey.js";
+import { apply, merge, members, empty, type PresenceEntry, type PresenceState } from "../../../lib/presence-crdt.js";
+import { enqueue, drain, ack, size } from "../../../lib/offline-queue.js";
+import { encodeDelta, decodeDelta, hashPayload, type DeltaEnvelope } from "../../../lib/delta-codec.js";
 
 const enabled = process.env.PLUTO_ENABLE_REALTIME_V4 === "1";
 const CHAN = /^[a-z0-9_:.\-]{1,128}$/i;

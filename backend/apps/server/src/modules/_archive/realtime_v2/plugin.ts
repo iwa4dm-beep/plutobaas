@@ -10,9 +10,9 @@
 //   GET  /rt2/v1/channels/:name/presence           — current members
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
-import { q } from "../../lib/pgraw.js";
-import { requireApiKey } from "../../lib/apikey.js";
-import { recordUsage } from "../../lib/metering.js";
+import { q } from "../../../lib/pgraw.js";
+import { requireApiKey } from "../../../lib/apikey.js";
+import { recordUsage } from "../../../lib/metering.js";
 
 export const realtimeV2Plugin: FastifyPluginAsync = async (app) => {
   if (process.env.PLUTO_ENABLE_REALTIME_V2 !== "1") {

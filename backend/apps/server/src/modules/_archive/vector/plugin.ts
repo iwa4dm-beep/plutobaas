@@ -7,9 +7,9 @@
 //   GET  /vec/v1/collections/:name/docs
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
-import { q } from "../../lib/pgraw.js";
-import { requireApiKey } from "../../lib/apikey.js";
-import { recordUsage } from "../../lib/metering.js";
+import { q } from "../../../lib/pgraw.js";
+import { requireApiKey } from "../../../lib/apikey.js";
+import { recordUsage } from "../../../lib/metering.js";
 
 function cosine(a: number[], b: number[]): number {
   const n = Math.min(a.length, b.length);

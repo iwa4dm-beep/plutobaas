@@ -11,9 +11,9 @@
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import { createHash, randomBytes, createCipheriv, createDecipheriv } from "crypto";
-import { q } from "../../lib/pgraw.js";
-import { requireApiKey, requireWorkspaceAdmin } from "../../lib/apikey.js";
-import { recordUsage } from "../../lib/metering.js";
+import { q } from "../../../lib/pgraw.js";
+import { requireApiKey, requireWorkspaceAdmin } from "../../../lib/apikey.js";
+import { recordUsage } from "../../../lib/metering.js";
 
 // Lightweight AES-256-GCM using a derived key. Persists as base64(iv|tag|ct).
 function keyBytes(): Buffer {
@@ -89,7 +89,7 @@ export const edgeV2Plugin: FastifyPluginAsync = async (app) => {
          do update set value_cipher=excluded.value_cipher
          returning id, function_slug, name, created_at`,
         [ws, b.function_slug, b.name, encrypt(b.value)]);
-      const { audit } = await import("../../lib/audit.js");
+      const { audit } = await import("../../../lib/audit.js");
       await audit(req, { action: "fn.secret.set", target: `${b.function_slug}:${b.name}` });
       return { secret: r.rows[0] };
     } catch (e) { reply.code(400); return { error: (e as Error).message }; }

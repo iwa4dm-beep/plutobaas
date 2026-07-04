@@ -14,8 +14,8 @@
 
 import type { FastifyInstance } from "fastify";
 import pg from "pg";
-import { env } from "../../config.js";
-import { verifyAccessToken } from "../../lib/jwt.js";
+import { env } from "../../../config.js";
+import { verifyAccessToken } from "../../../lib/jwt.js";
 
 type Sub = { channel: string; filter?: { col: string; value: string } };
 type Client = {

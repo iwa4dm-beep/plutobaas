@@ -23,14 +23,14 @@ import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import pg from "pg";
 import { randomBytes } from "node:crypto";
-import { env } from "../../config.js";
-import { db } from "../../db/index.js";
-import { requireApiKey, requireWorkspaceAdmin } from "../../lib/apikey.js";
-import { audit } from "../../lib/audit.js";
-import { parseSelect, expandEmbeds, scalarColumns } from "../../lib/embed.js";
+import { env } from "../../../config.js";
+import { db } from "../../../db/index.js";
+import { requireApiKey, requireWorkspaceAdmin } from "../../../lib/apikey.js";
+import { audit } from "../../../lib/audit.js";
+import { parseSelect, expandEmbeds, scalarColumns } from "../../../lib/embed.js";
 import {
   dispatchDueDeliveries, enqueueWebhookEvent, startWebhookSweeper,
-} from "../../lib/webhook-dispatcher.js";
+} from "../../../lib/webhook-dispatcher.js";
 
 const IDENT = /^[a-z_][a-z0-9_]{0,62}$/i;
 const WRAPPERS = new Set(["postgres_fdw", "file_fdw"]);

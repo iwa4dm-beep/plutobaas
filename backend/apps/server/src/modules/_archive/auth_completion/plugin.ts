@@ -8,13 +8,13 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 import argon2 from "argon2";
 import { createHash, randomBytes, randomInt } from "node:crypto";
-import { db } from "../../db/index.js";
-import { env } from "../../config.js";
-import { signAccessToken } from "../../lib/jwt.js";
-import { requireApiKey } from "../../lib/apikey.js";
-import { log } from "../../lib/logs.js";
-import { emailProvider, passwordResetEmail, emailConfirmEmail } from "../../lib/email-provider.js";
-import { smsProvider } from "../../lib/sms-provider.js";
+import { db } from "../../../db/index.js";
+import { env } from "../../../config.js";
+import { signAccessToken } from "../../../lib/jwt.js";
+import { requireApiKey } from "../../../lib/apikey.js";
+import { log } from "../../../lib/logs.js";
+import { emailProvider, passwordResetEmail, emailConfirmEmail } from "../../../lib/email-provider.js";
+import { smsProvider } from "../../../lib/sms-provider.js";
 
 const RESET_TTL_MIN   = 30;
 const CONFIRM_TTL_MIN = 60 * 24;   // 24h

@@ -10,8 +10,8 @@
 
 import type { FastifyPluginAsync } from "fastify";
 import pg from "pg";
-import { env } from "../../config.js";
-import { requireApiKey } from "../../lib/apikey.js";
+import { env } from "../../../config.js";
+import { requireApiKey } from "../../../lib/apikey.js";
 import { getSchemaSnapshot, invalidateSchemaCache } from "./introspect.js";
 import { buildOpenApiDoc } from "./openapi.js";
 import { executeGraphql } from "./graphql.js";

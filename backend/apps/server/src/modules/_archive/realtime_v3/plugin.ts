@@ -15,11 +15,11 @@
 
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { db } from "../../db/index.js";
-import { requireApiKey, requireWorkspaceAdmin } from "../../lib/apikey.js";
-import { audit } from "../../lib/audit.js";
-import { connectNats, natsStatus, publishBackplane } from "../../lib/nats-backplane.js";
-import { parsePredicate, type PredicateContext } from "../../lib/rls-predicate.js";
+import { db } from "../../../db/index.js";
+import { requireApiKey, requireWorkspaceAdmin } from "../../../lib/apikey.js";
+import { audit } from "../../../lib/audit.js";
+import { connectNats, natsStatus, publishBackplane } from "../../../lib/nats-backplane.js";
+import { parsePredicate, type PredicateContext } from "../../../lib/rls-predicate.js";
 
 const enabled = process.env.PLUTO_ENABLE_REALTIME_V3 === "1";
 const IDENT = /^[a-z_][a-z0-9_]{0,62}$/i;

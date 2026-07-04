@@ -23,12 +23,12 @@
 import type { FastifyPluginAsync, FastifyRequest } from "fastify";
 import { z } from "zod";
 import pg from "pg";
-import { env } from "../../config.js";
-import { db } from "../../db/index.js";
-import { requireApiKey, requireWorkspaceAdmin } from "../../lib/apikey.js";
-import { audit } from "../../lib/audit.js";
-import { embedTexts, chunkText } from "../../lib/lovable-embeddings.js";
-import { rrf } from "../../lib/rrf.js";
+import { env } from "../../../config.js";
+import { db } from "../../../db/index.js";
+import { requireApiKey, requireWorkspaceAdmin } from "../../../lib/apikey.js";
+import { audit } from "../../../lib/audit.js";
+import { embedTexts, chunkText } from "../../../lib/lovable-embeddings.js";
+import { rrf } from "../../../lib/rrf.js";
 
 const IDENT = /^[a-z_][a-z0-9_]{0,62}$/i;
 const SLUG  = /^[a-z0-9][a-z0-9_\-.]{0,79}$/i;

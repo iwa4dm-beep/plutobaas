@@ -9,8 +9,8 @@
 
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
-import { q } from "../../lib/pgraw.js";
-import { requireApiKey, requireWorkspaceAdmin } from "../../lib/apikey.js";
+import { q } from "../../../lib/pgraw.js";
+import { requireApiKey, requireWorkspaceAdmin } from "../../../lib/apikey.js";
 import { invokeIsolate } from "./isolate.js";
 
 const CreateBody = z.object({
