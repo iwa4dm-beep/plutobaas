@@ -161,30 +161,7 @@ export const billingPlugin: FastifyPluginAsync = async (app) => {
       [evt.type, evt.id, JSON.stringify(evt)]);
     if (dup.rows.length === 0) return { ok: true, duplicate: true };
 
-    const obj = evt.data.object;
-    const meta = (obj.metadata ?? {}) as Record<string, string>;
-    const ws = meta.workspace_id || null;
-    if (evt.type === "checkout.session.completed" && ws) {
-      await q(
-        `insert into public.billing_subscriptions
-          (workspace_id, plan_code, stripe_customer_id, stripe_subscription_id, status)
-         values ($1::uuid, $2, $3, $4, 'active')
-         on conflict (workspace_id) do update set
-           plan_code=excluded.plan_code,
-           stripe_customer_id=excluded.stripe_customer_id,
-           stripe_subscription_id=excluded.stripe_subscription_id,
-           status='active', updated_at=now()`,
-        [ws, meta.plan_code || "pro", obj.customer, obj.subscription]);
-      bustPlanCache(ws);
-    } else if (evt.type === "customer.subscription.updated" || evt.type === "customer.subscription.deleted") {
-      const status = evt.type === "customer.subscription.deleted" ? "canceled" : (obj.status as string);
-      await q(
-        `update public.billing_subscriptions
-         set status=$1, current_period_end=to_timestamp($2), updated_at=now()
-         where stripe_subscription_id=$3`,
-        [status, obj.current_period_end, obj.id]);
-      planCache.clear();
-    }
+    await applyStripeEvent(evt);
     return { ok: true };
   });
 
