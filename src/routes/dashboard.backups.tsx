@@ -163,7 +163,7 @@ function BackupsPage() {
               )}
               <label className="flex items-center gap-2 text-[11px] text-muted-foreground">
                 <input type="checkbox" checked={allowIncompat}
-                       disabled={compat && !compat.compatible && !compatAck}
+                       disabled={!!(compat && !compat.compatible && !compatAck)}
                        onChange={e => setAllowIncompat(e.target.checked)} />
                 Allow restore over incompatible schema (skips safety check)
                 {compat && !compat.compatible && !compatAck && <span className="text-destructive">— review diff first</span>}
