@@ -50,8 +50,8 @@ export async function recordUsage(input: MeterInput): Promise<MeterResult> {
   const label = input.billingLabel ?? null;
 
   // Check quota first (if any).
-  const qrow = await q<{ hard_limit: number; soft_limit: number | null; period: string; overage_behavior: string; billing_label: string | null }>(
-    `select hard_limit, soft_limit, period, overage_behavior, billing_label
+  const qrow = await q<{ hard_limit: number; soft_limit: number | null; period: string; overage_behavior: string; billing_label: string | null; alert_pct: number | null }>(
+    `select hard_limit, soft_limit, period, overage_behavior, billing_label, alert_pct
      from public.workspace_quotas
      where workspace_id=$1::uuid and metric=$2
      order by case when period='day' then 0 else 1 end
@@ -70,6 +70,12 @@ export async function recordUsage(input: MeterInput): Promise<MeterResult> {
       `insert into public.usage_events (workspace_id, metric, quantity, meta, environment, billing_label)
        values ($1,$2,$3,$4::jsonb,$5,$6)`,
       [ws, input.metric, input.quantity, JSON.stringify(input.meta ?? {}), env, label ?? quota.billing_label]);
+    // Alert threshold trigger — fire-and-forget so metering stays cheap.
+    const pct = quota.hard_limit > 0 ? (projected / quota.hard_limit) * 100 : 0;
+    const alertPct = quota.alert_pct ?? 80;
+    if (pct >= alertPct) {
+      void maybeFireAlert(ws, input.metric, pct, projected, quota.hard_limit);
+    }
     return { ok: true, warn: (overSoft || overHard) && quota.overage_behavior !== "allow",
              over_soft: overSoft, over_hard: overHard, used: projected, hard_limit: quota.hard_limit };
   }
