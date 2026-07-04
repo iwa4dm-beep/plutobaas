@@ -217,17 +217,45 @@ jobs:
         run: |
           chmod +x backend/scripts/pitr-drill.sh
           backend/scripts/pitr-drill.sh
-          cat "$PITR_REPORT_FILE" >> "$GITHUB_STEP_SUMMARY"
+          # 1) Publish into the GitHub build summary so it is visible on
+          #    every workflow run without downloading an artifact.
+          {
+            echo "## Cross-region PITR drill"
+            echo
+            cat "$PITR_REPORT_FILE"
+          } >> "$GITHUB_STEP_SUMMARY"
+          # 2) Mirror into docs/pitr/latest.md so the last known-good
+          #    numbers survive artifact expiry and ship with the docs
+          #    site + /status page.
+          python3 - "$PITR_REPORT_FILE" "$GITHUB_WORKSPACE/docs/pitr/latest.md" <<'PY'
+          import sys, pathlib, re
+          src, dst = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2])
+          report = src.read_text()
+          page = dst.read_text()
+          new = re.sub(
+              r"<!-- BEGIN:PITR_REPORT -->.*?<!-- END:PITR_REPORT -->",
+              "<!-- BEGIN:PITR_REPORT -->\n" + report + "\n<!-- END:PITR_REPORT -->",
+              page, flags=re.S,
+          )
+          dst.write_text(new)
+          PY
       - name: shutdown server
         if: always()
         run: kill "$(cat /tmp/pluto-pitr.pid)" || true
-      - name: upload drill report
+      - name: upload drill report (workflow artifact, 90d retention)
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: pitr-drill-report
           path: pitr-drill-report.md
+          retention-days: 90
           if-no-files-found: warn
+      - name: commit durable report to docs/pitr/latest.md
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "docs(pitr): refresh latest drill report [skip ci]"
+          file_pattern: docs/pitr/latest.md
 
   frontend:
     name: frontend build
