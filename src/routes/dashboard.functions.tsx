@@ -127,7 +127,9 @@ function FunctionsPage() {
               <textarea className={"w-full min-h-[80px] font-mono text-xs p-2 rounded-md border bg-background " + (jsonErr ? "border-destructive" : "border-border")}
                         value={invokePayload} onChange={e => setInvokePayload(e.target.value)} />
               {jsonErr && <div className="text-[11px] text-destructive">Invalid JSON: {jsonErr}</div>}
-              <div className="flex justify-end"><Button size="sm" onClick={invoke} disabled={!!jsonErr}><Play className="h-4 w-4 mr-1" /> Run</Button></div>
+              <div className="flex justify-end"><Button size="sm" onClick={invoke} disabled={!!jsonErr || invoking}>
+                {invoking ? <RefreshCw className="h-4 w-4 mr-1 animate-spin" /> : <Play className="h-4 w-4 mr-1" />} Run
+              </Button></div>
               {invokeErr && (
                 <div className="p-2 rounded-md bg-destructive/10 border border-destructive/40 text-xs">
                   <div className="font-medium text-destructive">Invocation error</div>
