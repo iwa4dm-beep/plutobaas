@@ -3,7 +3,8 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/pluto/PageHeader";
-import { live } from "@/lib/pluto/live";
+import { api } from "@/lib/pluto/live";
+import { useWorkspace } from "@/lib/pluto/workspace-context";
 
 export const Route = createFileRoute("/dashboard/rbac")({
   head: () => ({
@@ -15,11 +16,14 @@ export const Route = createFileRoute("/dashboard/rbac")({
   component: RbacPage,
 });
 
+
 type Member = { user_id: string; email: string; role: "owner" | "admin" | "developer" | "viewer" };
 
 const ROLES = ["owner", "admin", "developer", "viewer"] as const;
 
 function RbacPage() {
+  const { active } = useWorkspace();
+  const wsId = active.id;
   const [members, setMembers] = useState<Member[]>([]);
   const [invite, setInvite] = useState("");
   const [role, setRole] = useState<Member["role"]>("developer");
@@ -28,17 +32,17 @@ function RbacPage() {
 
   const refresh = async () => {
     try {
-      const r = (await live.fetch("/admin/v1/workspaces/current/members")) as { members: Member[] };
+      const r = await api<{ members: Member[] }>(`/admin/v1/workspaces/${wsId}/members`, { service: true });
       setMembers(r.members ?? []);
     } catch (e) { setErr((e as Error).message); }
   };
-  useEffect(() => { void refresh(); }, []);
+  useEffect(() => { void refresh(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [wsId]);
 
   const doInvite = async () => {
     setBusy(true); setErr(null);
     try {
-      await live.fetch("/admin/v1/workspaces/current/members", {
-        method: "POST", body: JSON.stringify({ email: invite, role }),
+      await api(`/admin/v1/workspaces/${wsId}/members`, {
+        method: "POST", service: true, body: { email: invite, role },
       });
       setInvite(""); await refresh();
     } catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
@@ -47,8 +51,8 @@ function RbacPage() {
   const setMemberRole = async (uid: string, next: Member["role"]) => {
     setBusy(true);
     try {
-      await live.fetch(`/admin/v1/workspaces/current/members/${uid}`, {
-        method: "PATCH", body: JSON.stringify({ role: next }),
+      await api(`/admin/v1/workspaces/${wsId}/members/${uid}`, {
+        method: "PATCH", service: true, body: { role: next },
       });
       await refresh();
     } catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
@@ -58,10 +62,11 @@ function RbacPage() {
     if (!confirm("Remove this member from the workspace?")) return;
     setBusy(true);
     try {
-      await live.fetch(`/admin/v1/workspaces/current/members/${uid}`, { method: "DELETE" });
+      await api(`/admin/v1/workspaces/${wsId}/members/${uid}`, { method: "DELETE", service: true });
       await refresh();
     } catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
   };
+
 
   return (
     <div className="space-y-6">
