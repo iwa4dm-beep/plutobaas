@@ -293,12 +293,15 @@ export async function authCompletionPlugin(app: FastifyInstance) {
     // Find-or-create user for this phone.
     let user = await db.selectFrom("users").select(["id", "email", "role"])
       .where("phone" as never, "=", phone as never).executeTakeFirst() as
-        | { id: string; email: string | null; role: "admin" | "user" } | undefined;
+        | { id: string; email: string; role: "admin" | "user" } | undefined;
     if (!user) {
       const id = crypto.randomUUID();
+      // Placeholder email — schema requires NOT NULL. Users can attach a real
+      // email later via a linking flow; the placeholder is unique per phone.
+      const placeholderEmail = `phone+${phone.replace(/[^\d]/g, "")}@phone.pluto.local`;
       await db.insertInto("users").values({
         id,
-        email: null as unknown as string,       // schema-compat: email may be null for phone-only users
+        email: placeholderEmail,
         password_hash: "!otp",
         role: "user",
         email_verified: false,
@@ -306,7 +309,7 @@ export async function authCompletionPlugin(app: FastifyInstance) {
         phone_confirmed_at: new Date(),
         created_at: new Date(),
       } as never).execute();
-      user = { id, email: null, role: "user" };
+      user = { id, email: placeholderEmail, role: "user" };
     } else {
       await db.updateTable("users")
         .set({ phone_confirmed_at: new Date() } as never)
