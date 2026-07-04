@@ -12,6 +12,7 @@ import type { FastifyInstance, FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import { q } from "../../lib/pgraw.js";
 import { requireApiKey, requireAdmin } from "../../lib/apikey.js";
+import type { AccessClaims } from "../../lib/jwt.js";
 
 const metricBody = z.object({
   samples: z.array(z.object({
@@ -61,20 +62,48 @@ export const observabilityPlugin: FastifyPluginAsync = async (app: FastifyInstan
     const t = (req as unknown as { plutoTrace: { traceId: string; startedAt: number } | null }).plutoTrace;
     if (!t) return;
     const dur = Date.now() - t.startedAt;
+    // Labels intentionally low-cardinality: no user_id / workspace_id in
+    // the Prometheus text (would explode series count on scrape). Those
+    // land in the trace row for per-request drill-down instead.
     const wsId = (req.headers["x-workspace-id"] as string) || null;
+    const authKind = req.auth?.apiKey ?? "none";        // anon | service_role | none
+    const userId   = req.auth?.user?.sub ?? null;
+    // Best-effort token scope surface: workspace tokens carry their scope
+    // list on the JWT claims; use the first as a low-cardinality label.
+    const claims   = req.auth?.user as (null | (AccessClaims & { scopes?: string[] }));
+    const scope    = claims?.scopes?.[0] ?? null;
+    const outcome  = reply.statusCode >= 500 ? "error"
+                   : reply.statusCode === 401 || reply.statusCode === 403 ? "unauthorized"
+                   : reply.statusCode === 429 ? "rate_limited"
+                   : reply.statusCode >= 400 ? "client_error"
+                   : "ok";
+    const routePath = (req.routeOptions?.url ?? req.url.split("?")[0]).slice(0, 120);
     try {
       await q(
         `insert into public.trace_spans
            (trace_id, workspace_id, name, kind, attributes, started_at, ended_at, duration_ms)
          values ($1,$2,$3,'server',$4::jsonb, to_timestamp($5/1000.0), now(), $6)`,
         [t.traceId, wsId, `${req.method} ${req.url.split("?")[0]}`,
-         JSON.stringify({ method: req.method, url: req.url, status: reply.statusCode, request_id: req.id }),
+         JSON.stringify({
+           method: req.method, url: req.url, status: reply.statusCode,
+           request_id: req.id, auth_kind: authKind, user_id: userId,
+           token_scope: scope, outcome,
+         }),
          t.startedAt, dur]);
-      // Also emit an http.request duration metric so /metrics + charts work.
+      // Emit http.request duration metric with the labels Prometheus
+      // needs for auth/token slicing. `route` is the templated path
+      // (e.g. /rest/v1/:table) — bounded cardinality — not req.url.
       await q(
         `insert into public.metrics_samples (workspace_id, metric, value, labels)
          values ($1,'http.request',$2,$3::jsonb)`,
-        [wsId, dur, JSON.stringify({ method: req.method, status: String(reply.statusCode) })]);
+        [wsId, dur, JSON.stringify({
+          method: req.method,
+          status: String(reply.statusCode),
+          route:  routePath,
+          auth_kind: authKind,
+          token_scope: scope ?? "none",
+          outcome,
+        })]);
     } catch { /* observability must never break the request path */ }
   });
 
@@ -141,6 +170,35 @@ export const observabilityPlugin: FastifyPluginAsync = async (app: FastifyInstan
       const p = p95map.get(row.metric);
       if (p != null) lines.push(`pluto_metric_p95{name="${safe}"} ${p}`);
     }
+
+    // ---- Auth / token activity ----
+    // Grouped by auth_kind × outcome × token_scope so operators can spot
+    // spikes in `unauthorized` requests from anon keys, or a single
+    // token_scope suddenly hitting `rate_limited`. Cardinality bound:
+    // (~4 auth_kinds) × (5 outcomes) × (small scope set) ≤ ~100 series.
+    const authq = await q<{ auth_kind: string; outcome: string; token_scope: string; n: number; v: number }>(
+      `select coalesce(labels->>'auth_kind','none')    as auth_kind,
+              coalesce(labels->>'outcome','ok')        as outcome,
+              coalesce(labels->>'token_scope','none')  as token_scope,
+              count(*)::int                            as n,
+              avg(value)::float8                       as v
+         from public.metrics_samples
+        where metric = 'http.request'
+          and observed_at > now() - interval '5 minutes'
+        group by 1,2,3`).catch(() => ({ rows: [] as Array<{ auth_kind: string; outcome: string; token_scope: string; n: number; v: number }> }));
+    lines.push(
+      "# HELP pluto_http_requests_total count of HTTP requests in the last 5m, labeled by auth kind, outcome, and token scope",
+      "# TYPE pluto_http_requests_total counter",
+      "# HELP pluto_http_request_duration_ms_avg mean HTTP request duration ms, same labels",
+      "# TYPE pluto_http_request_duration_ms_avg gauge",
+    );
+    const esc = (s: string) => s.replace(/\\/g, "\\\\").replace(/"/g, '\\"').slice(0, 60);
+    for (const r of authq.rows) {
+      const l = `auth_kind="${esc(r.auth_kind)}",outcome="${esc(r.outcome)}",token_scope="${esc(r.token_scope)}"`;
+      lines.push(`pluto_http_requests_total{${l}} ${r.n}`);
+      lines.push(`pluto_http_request_duration_ms_avg{${l}} ${r.v}`);
+    }
+
     lines.push("# HELP pluto_queue_jobs jobs grouped by status", "# TYPE pluto_queue_jobs gauge");
     for (const row of qLen.rows) lines.push(`pluto_queue_jobs{status="${row.status}"} ${row.n}`);
     return lines.join("\n") + "\n";

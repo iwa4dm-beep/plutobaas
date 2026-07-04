@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { KeyRound, Plus, Trash2, Copy, Check, RefreshCw, ShieldCheck, ChevronDown, ChevronRight, Zap } from "lucide-react";
+import { KeyRound, Plus, Trash2, Copy, Check, RefreshCw, ShieldCheck, ChevronDown, ChevronRight, Zap, Download } from "lucide-react";
 import { toast } from "sonner";
 import { isLive, tokens, type WorkspaceToken, type WorkspaceTokenMint, type ScopeCoverage, type BulkRevokeResult } from "@/lib/pluto/live";
 
@@ -108,6 +108,55 @@ function TokensPage() {
       await refresh();
     } catch (e) { toast.error((e as Error).message); }
     finally { setBulkBusy(false); }
+  }
+
+  // ---- Export helpers -------------------------------------------------
+  // Reports mirror the current filter state so an auditor can reproduce
+  // the exact preview or execution set. Both formats include the filters
+  // that produced the result so the file is self-describing.
+  function activeFilters() {
+    return {
+      scope: bulkScope || null,
+      created_by: bulkCreatedBy || null,
+      unused_days: bulkUnusedDays ? Number(bulkUnusedDays) : null,
+      never_used: bulkNeverUsed,
+    };
+  }
+  function downloadBlob(name: string, mime: string, body: string) {
+    const url = URL.createObjectURL(new Blob([body], { type: mime }));
+    const a = document.createElement("a");
+    a.href = url; a.download = name; a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+  }
+  function exportJSON() {
+    if (!bulkPreview) return;
+    const payload = {
+      generated_at: new Date().toISOString(),
+      filters: activeFilters(),
+      dry_run: bulkPreview.revoked.length === 0,
+      matched: bulkPreview.matched,
+      revoked_ids: bulkPreview.revoked,
+      tokens: bulkPreview.tokens,
+    };
+    downloadBlob(`bulk-revoke-${Date.now()}.json`, "application/json",
+      JSON.stringify(payload, null, 2));
+  }
+  function exportCSV() {
+    if (!bulkPreview) return;
+    const esc = (v: unknown) => {
+      const s = v == null ? "" : String(v);
+      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const header = ["id", "name", "prefix", "scopes", "created_by", "last_used_at", "expires_at"];
+    const rows = bulkPreview.tokens.map((t) => [
+      t.id, t.name, t.prefix, t.scopes.join("|"),
+      t.created_by ?? "", t.last_used_at ?? "", t.expires_at ?? "",
+    ]);
+    // Prepend a `# filters=…` comment line so the audit context travels
+    // with the file even after tools that strip file metadata.
+    const meta = `# filters=${JSON.stringify(activeFilters())} matched=${bulkPreview.matched} revoked=${bulkPreview.revoked.length}\n`;
+    const body = meta + [header, ...rows].map((r) => r.map(esc).join(",")).join("\n") + "\n";
+    downloadBlob(`bulk-revoke-${Date.now()}.csv`, "text/csv", body);
   }
 
   return (
@@ -265,7 +314,15 @@ function TokensPage() {
               Confirm revoke{bulkPreview ? ` (${bulkPreview.matched})` : ""}
             </Button>
             {bulkPreview && (
-              <Button size="sm" variant="ghost" onClick={() => setBulkPreview(null)}>Clear</Button>
+              <>
+                <Button size="sm" variant="outline" onClick={exportCSV} title="Download results as CSV">
+                  <Download className="h-3 w-3 mr-1" /> CSV
+                </Button>
+                <Button size="sm" variant="outline" onClick={exportJSON} title="Download results as JSON">
+                  <Download className="h-3 w-3 mr-1" /> JSON
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => setBulkPreview(null)}>Clear</Button>
+              </>
             )}
           </div>
           {bulkPreview && (

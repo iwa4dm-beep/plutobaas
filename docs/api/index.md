@@ -61,18 +61,32 @@ with HTTP 200, per GraphQL convention.
 suitable for a scrape target. Enabled by setting
 `PLUTO_ENABLE_OBSERVABILITY=1`. Metrics currently exposed:
 
-| Metric                   | Type   | Labels                       | Meaning                                  |
-|--------------------------|--------|------------------------------|------------------------------------------|
-| `pluto_metric_avg`       | gauge  | `name`                       | Avg of `metrics_samples` over last 5 min |
-| `pluto_metric_p95`       | gauge  | `name`                       | p95 of `metrics_samples`                 |
-| `pluto_metric_count`     | gauge  | `name`                       | Sample count                             |
-| `pluto_queue_jobs`       | gauge  | `status`                     | Jobs by state (`queued`, `running`, …)   |
+| Metric                                | Type    | Labels                                       | Meaning                                        |
+|---------------------------------------|---------|----------------------------------------------|------------------------------------------------|
+| `pluto_metric_avg`                    | gauge   | `name`                                       | Avg of `metrics_samples` over last 5 min       |
+| `pluto_metric_p95`                    | gauge   | `name`                                       | p95 of `metrics_samples`                       |
+| `pluto_metric_count`                  | gauge   | `name`                                       | Sample count                                   |
+| `pluto_queue_jobs`                    | gauge   | `status`                                     | Jobs by state (`queued`, `running`, …)         |
+| `pluto_http_requests_total`           | counter | `auth_kind`, `outcome`, `token_scope`        | Request count in last 5 min, sliced by auth    |
+| `pluto_http_request_duration_ms_avg`  | gauge   | `auth_kind`, `outcome`, `token_scope`        | Mean request latency ms, same slice            |
 
-The `http.request` metric is emitted automatically per request with
-`method` and `status` labels — enough to build a request-rate + error-rate
-dashboard without instrumenting handlers by hand. Token/auth activity is
-attributed by the `x-workspace-id` label ingested on the `/obs/v1/metrics`
-POST path.
+### Label reference (auth / token activity)
+
+* **`auth_kind`** — `anon`, `service_role`, or `none`. Lets you separate
+  scraper traffic (typically `anon`) from privileged edge-function or
+  admin traffic (`service_role`) and unauthenticated hits (`none`).
+* **`outcome`** — one of `ok`, `client_error` (4xx that isn't auth/rate),
+  `unauthorized` (401/403), `rate_limited` (429), `error` (5xx). Sudden
+  spikes in `unauthorized` are the standard "leaked/rotated key" alert.
+* **`token_scope`** — the first scope on the caller's workspace JWT
+  (`logs:read`, `admin:*`, …) or `none`. Deliberately low-cardinality
+  (~10s of scopes), safe to alert on.
+
+Full per-request identity — `workspace_id`, `user_id`, `route`,
+`request_id` — is stored on `trace_spans.attributes` for drill-down at
+`/dashboard/observability`. It's intentionally kept out of the
+Prometheus text to bound scrape cardinality.
+
 
 ## Token bulk revocation
 
