@@ -92,7 +92,9 @@ function FunctionsPage() {
         <div className="flex gap-2">
           <Input value={slug} onChange={e => setSlug(e.target.value)} className="w-40" placeholder="function-slug" />
           <Button variant="outline" size="sm" onClick={refresh}><RefreshCw className="h-4 w-4 mr-1" /> Refresh</Button>
-          <Button size="sm" onClick={invoke}><Play className="h-4 w-4 mr-1" /> Invoke</Button>
+          <Button size="sm" onClick={invoke} disabled={invoking || !!jsonErr}>
+            {invoking ? <RefreshCw className="h-4 w-4 mr-1 animate-spin" /> : <Play className="h-4 w-4 mr-1" />} Invoke
+          </Button>
         </div>
       </div>
 
