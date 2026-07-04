@@ -8,6 +8,8 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Archive, RefreshCw, Play, X, RotateCcw, ShieldAlert, GitBranch } from "lucide-react";
 import { toast } from "sonner";
+import { PaginatedTable } from "@/components/pluto/PaginatedTable";
+import { usePaginatedTable } from "@/lib/pluto/usePaginatedTable";
 
 export const Route = createFileRoute("/dashboard/backups")({ component: BackupsPage });
 
