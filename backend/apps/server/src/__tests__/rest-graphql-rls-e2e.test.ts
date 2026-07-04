@@ -127,7 +127,7 @@ d("REST/GraphQL RLS end-to-end (real Postgres)", () => {
     const c = await asUser(alice, wsFree, "user");
     try {
       const r = await c.query(`select note from public.${T} order by id`);
-      expect(r.rows.map((x) => x.note).sort()).toEqual(["alice-free-1", "alice-free-2"]);
+      expect(r.rows.map((x: { note: string }) => x.note).sort()).toEqual(["alice-free-1", "alice-free-2"]);
     } finally { await c.query("rollback"); c.release(); }
   });
 
