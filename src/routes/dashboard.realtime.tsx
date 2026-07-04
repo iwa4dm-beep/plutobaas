@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
-import { rt2, isLive, type Rt2Channel, type Rt2Message, type Rt2Member } from "@/lib/pluto/live";
+import { rt2, cdc, isLive, type Rt2Channel, type Rt2Message, type Rt2Member, type CdcTable } from "@/lib/pluto/live";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
