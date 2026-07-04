@@ -128,14 +128,34 @@ export async function storageV4Plugin(app: FastifyInstance) {
     return { ok: true, job: result };
   });
 
-  app.get("/storage/v4/replication/status", async (req, reply) => {
+  // Streaming SSE — emits a snapshot every 250 ms until all jobs for the
+  // given (bucket, object_key, version_id) reach a terminal state, or up to
+  // `max_events` frames. Clients close the stream at any time.
+  app.get("/storage/v4/replication/stream", async (req, reply) => {
     const p = z.object({
       bucket: z.string(), object_key: z.string(), version_id: z.string(),
+      max_events: z.coerce.number().int().min(1).max(120).optional(),
     }).safeParse(req.query);
     if (!p.success) { reply.code(400); return { error: "bad_request" }; }
-    return { jobs: statusFor(p.data.bucket, p.data.object_key, p.data.version_id) };
+    reply.raw.writeHead(200, {
+      "content-type": "text/event-stream",
+      "cache-control": "no-cache",
+      "x-storage-v4-stream": "replication",
+    });
+    const cap = p.data.max_events ?? 60;
+    let sent = 0;
+    const terminal = new Set(["succeeded", "failed", "skipped"]);
+    while (sent < cap) {
+      const jobs = statusFor(p.data.bucket, p.data.object_key, p.data.version_id);
+      reply.raw.write(`data: ${JSON.stringify({ ts: Date.now(), jobs })}\n\n`);
+      sent++;
+      if (jobs.length > 0 && jobs.every((j) => terminal.has(j.status))) break;
+      await new Promise((r) => setTimeout(r, 250));
+    }
+    reply.raw.end();
   });
 }
+
 
 export { sha256Hex };
 export default storageV4Plugin;
