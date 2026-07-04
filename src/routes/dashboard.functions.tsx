@@ -55,11 +55,15 @@ function FunctionsPage() {
     } catch (e) { toast.error((e as Error).message); }
   }
   async function invoke() {
+    setInvokeErr(null);
+    if (jsonErr) { setInvokeErr(`Invalid JSON: ${jsonErr}`); toast.error("Fix payload JSON first"); return; }
     try {
       const body = invokePayload.trim() ? JSON.parse(invokePayload) : {};
       const r = await edgeV2.invoke(slug, body); setInvokeResult(r);
-      toast.success(`Invoked ${slug} → ${r.status_code} in ${r.duration_ms}ms`); await refresh();
-    } catch (e) { toast.error((e as Error).message); }
+      if (r.error) { setInvokeErr(`${r.error.type ?? "Error"}: ${r.error.message}`); toast.error(`Invocation failed (${r.status_code})`); }
+      else toast.success(`Invoked ${slug} → ${r.status_code} in ${r.duration_ms}ms`);
+      await refresh();
+    } catch (e) { setInvokeErr((e as Error).message); toast.error((e as Error).message); }
   }
 
   // Preview upcoming cron runs (client-side, mirrors backend nextRun MVP).
