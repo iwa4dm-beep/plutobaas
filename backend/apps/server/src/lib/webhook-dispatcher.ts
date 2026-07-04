@@ -59,7 +59,7 @@ export async function dispatchDueDeliveries(log?: FastifyBaseLogger, limit = 25)
   for (const d of due) {
     const hook = await db.selectFrom("db_webhooks" as never).selectAll()
       .where("id" as never, "=", d.webhook_id as never)
-      .executeTakeFirst() as {
+      .executeTakeFirst() as unknown as {
         url: string; secret: string; headers: Record<string, string>;
         max_retries: number; timeout_ms: number;
       } | undefined;

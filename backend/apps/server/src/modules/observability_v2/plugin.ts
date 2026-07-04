@@ -201,7 +201,7 @@ export const observabilityV2Plugin: FastifyPluginAsync = async (app: FastifyInst
   // ----- SLO CRUD + evaluation --------------------------------------
   app.post("/obs/v2/slos", async (req, reply) => {
     await requireApiKey(req, reply); if (reply.sent) return;
-    if (!requireAdmin(req, reply)) return;
+    requireAdmin(req, reply); if (reply.sent) return;
     const p = sloBody.safeParse(req.body);
     if (!p.success) { reply.code(400); return { error: "invalid_body", details: p.error.flatten() }; }
     if (p.data.kind === "latency" && !p.data.threshold_ms) {
@@ -231,7 +231,7 @@ export const observabilityV2Plugin: FastifyPluginAsync = async (app: FastifyInst
 
   app.post<{ Params: { id: string } }>("/obs/v2/slos/:id/evaluate", async (req, reply) => {
     await requireApiKey(req, reply); if (reply.sent) return;
-    if (!requireAdmin(req, reply)) return;
+    requireAdmin(req, reply); if (reply.sent) return;
     const rows = await q<SloRow>(
       `select id, slug, service, route_pattern, kind, objective, threshold_ms, window_days
          from public.obs_v2_slos where id = $1`, [req.params.id],
@@ -269,7 +269,7 @@ export const observabilityV2Plugin: FastifyPluginAsync = async (app: FastifyInst
   // ----- Log-based alerts -------------------------------------------
   app.post("/obs/v2/log-alerts", async (req, reply) => {
     await requireApiKey(req, reply); if (reply.sent) return;
-    if (!requireAdmin(req, reply)) return;
+    requireAdmin(req, reply); if (reply.sent) return;
     const p = logAlertBody.safeParse(req.body);
     if (!p.success) { reply.code(400); return { error: "invalid_body", details: p.error.flatten() }; }
     const [row] = await q<LogAlertRule>(
@@ -297,7 +297,7 @@ export const observabilityV2Plugin: FastifyPluginAsync = async (app: FastifyInst
 
   app.post("/obs/v2/log-alerts/tick", async (req, reply) => {
     await requireApiKey(req, reply); if (reply.sent) return;
-    if (!requireAdmin(req, reply)) return;
+    requireAdmin(req, reply); if (reply.sent) return;
     const rules = await q<LogAlertRule>(
       `select id, slug, level, contains, route_regex, threshold, window_secs, webhook_url, enabled
          from public.obs_v2_log_alerts where enabled = true`,

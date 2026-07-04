@@ -118,7 +118,7 @@ export const edgeV4Plugin: FastifyPluginAsync = async (app) => {
       .select(["version" as never])
       .where("workspace_id" as never, "is not distinct from", ws as never)
       .where("slug" as never, "=", body.data.slug as never)
-      .orderBy("version" as never, "desc").limit(1).executeTakeFirst() as { version: number } | undefined;
+      .orderBy("version" as never, "desc").limit(1).executeTakeFirst() as unknown as { version: number } | undefined;
     const version = (maxRow?.version ?? 0) + 1;
 
     if (body.data.activate) {
@@ -135,7 +135,7 @@ export const edgeV4Plugin: FastifyPluginAsync = async (app) => {
       env: body.data.env, timeout_ms: body.data.timeout_ms, memory_mb: body.data.memory_mb,
       allow_hosts: body.data.allow_hosts, traffic_pct: body.data.traffic_pct,
       active: body.data.activate, created_by: req.auth?.user?.sub ?? null,
-    } as never).returning(["id" as never]).executeTakeFirst() as { id: string };
+    } as never).returning(["id" as never]).executeTakeFirst() as unknown as { id: string };
 
     await audit(req, { action: "edge.v4.deploy", status: "ok",
       metadata: { slug: body.data.slug, version, id: row.id, imports: Object.keys(resolved).length } });
@@ -263,7 +263,7 @@ export const edgeV4Plugin: FastifyPluginAsync = async (app) => {
     const ws = wsFor(req);
     const row = await db.insertInto("fn_v4_domains" as never).values({
       workspace_id: ws, ...body.data,
-    } as never).returning(["id" as never]).executeTakeFirst() as { id: string };
+    } as never).returning(["id" as never]).executeTakeFirst() as unknown as { id: string };
     await audit(req, { action: "edge.v4.domain.create", status: "ok", metadata: body.data });
     return { id: row.id };
   });
@@ -301,7 +301,7 @@ export const edgeV4Plugin: FastifyPluginAsync = async (app) => {
     const row = await db.insertInto("fn_v4_cron" as never).values({
       workspace_id: ws, slug: body.data.slug, cron_expr: body.data.cron_expr,
       next_run_at: next,
-    } as never).returning(["id" as never]).executeTakeFirst() as { id: string };
+    } as never).returning(["id" as never]).executeTakeFirst() as unknown as { id: string };
     return { id: row.id, next_run_at: next.toISOString() };
   });
 

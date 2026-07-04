@@ -78,7 +78,7 @@ export const vectorV2Plugin: FastifyPluginAsync = async (app) => {
           vendor_model: body.data.vendor_model, dims: body.data.dims ?? null,
           price_per_1k: body.data.price_per_1k ?? null,
         }))
-      .returning(["id" as never]).executeTakeFirst() as { id: string };
+      .returning(["id" as never]).executeTakeFirst() as unknown as { id: string };
     await audit(req, { action: "ai.model.register", status: "ok", metadata: { slug: body.data.slug } });
     return { id: row.id };
   });
@@ -127,7 +127,7 @@ export const vectorV2Plugin: FastifyPluginAsync = async (app) => {
     const { id } = req.params as { id: string };
     const cfg = await db.selectFrom("vec_index_config" as never).selectAll()
       .where("collection_id" as never, "=", id as never)
-      .executeTakeFirst() as {
+      .executeTakeFirst() as unknown as {
         index_type: string; m: number; ef_construction: number; lists: number; operator: string;
       } | undefined;
     if (!cfg) return reply.code(404).send({ error: "no_config" });
@@ -283,7 +283,7 @@ export const vectorV2Plugin: FastifyPluginAsync = async (app) => {
       payload: { query: body.data.query, top_k: body.data.top_k, model_slug: body.data.model_slug },
     });
     if (search.statusCode >= 400) { reply.code(search.statusCode); return search.json(); }
-    const hits = (search.json() as { hits: Array<{ doc: { content: string; metadata: unknown } }> }).hits;
+    const hits = (search.json() as unknown as { hits: Array<{ doc: { content: string; metadata: unknown } }> }).hits;
 
     // Concatenate top hits into a bounded context block, with source
     // headers so the caller LLM can cite them.
@@ -351,7 +351,7 @@ async function runEmbedTick(req: FastifyRequest | null, limit: number) {
           collection_id: j.collection_id, external_id: j.external_id,
           content: j.content, embedding: vectors[i], metadata: j.metadata,
           model_id: model.id, source_id: j.source_id,
-        } as never).returning(["id" as never]).executeTakeFirst() as { id: string };
+        } as never).returning(["id" as never]).executeTakeFirst() as unknown as { id: string };
         await db.updateTable("vec_embed_jobs" as never)
           .set({ status: "done", document_id: doc.id, attempt: j.attempt + 1 } as never)
           .where("id" as never, "=", j.id as never).execute();

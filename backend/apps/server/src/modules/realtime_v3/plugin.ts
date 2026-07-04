@@ -108,7 +108,7 @@ export async function realtimeV3Plugin(app: FastifyInstance) {
     const chan = await db.selectFrom("rt3_channels" as never).selectAll()
       .where("workspace_id" as never, "is not distinct from", ws as never)
       .where("name" as never, "=", body.data.channel as never)
-      .executeTakeFirst() as { name: string } | undefined;
+      .executeTakeFirst() as unknown as { name: string } | undefined;
     if (!chan) return reply.code(404).send({ error: "channel_not_found" });
 
     const subject = `${process.env.PLUTO_NATS_SUBJECT_PREFIX ?? "pluto.rt3"}.${body.data.channel}`;
@@ -200,7 +200,7 @@ export async function realtimeV3Plugin(app: FastifyInstance) {
     const chan = await db.selectFrom("rt3_channels" as never).select(["id" as never])
       .where("workspace_id" as never, "is not distinct from", ws as never)
       .where("name" as never, "=", body.data.channel as never)
-      .executeTakeFirst() as { id: string } | undefined;
+      .executeTakeFirst() as unknown as { id: string } | undefined;
     if (!chan) return reply.code(404).send({ error: "channel_not_found" });
 
     await db.insertInto("rt3_subscriptions" as never).values({

@@ -54,7 +54,7 @@ export async function storageRoutes(app: FastifyInstance) {
   app.get("/object/signed/:bucket/*", async (req, reply) => {
     const { bucket } = req.params as { bucket: string; "*": string };
     const key = (req.params as Record<string, string>)["*"];
-    const q = (req.query ?? {}) as { exp?: string; sig?: string; tok?: string; mode?: string };
+    const q = (req.query ?? {}) as unknown as { exp?: string; sig?: string; tok?: string; mode?: string };
     if (!q.sig || !q.exp || !localDriver) return reply.code(400).send({ error: "missing_sig" });
     const mode = (q.mode === "write" ? "write" : "read");
     if (!localDriver.verifyLocalSig(bucket, key, Number(q.exp), q.sig, mode, q.tok ?? "")) {
@@ -294,7 +294,7 @@ export async function storageRoutes(app: FastifyInstance) {
     scoped.get("/object/sign/grants", async (req, reply) => {
       requireServiceRole(req, reply);
       if (reply.sent) return;
-      const q = (req.query ?? {}) as { bucket?: string; active?: string };
+      const q = (req.query ?? {}) as unknown as { bucket?: string; active?: string };
       let query = db.selectFrom("storage_signed_grants" as never).selectAll();
       if (q.bucket) query = query.where("bucket" as never, "=", q.bucket as never);
       if (q.active === "true") {
@@ -322,7 +322,7 @@ export async function storageRoutes(app: FastifyInstance) {
     // ── List ───────────────────────────────────────────────────────
     scoped.get("/list/:bucket", async (req, reply) => {
       const { bucket } = req.params as { bucket: string };
-      const q = (req.query ?? {}) as { prefix?: string; limit?: string };
+      const q = (req.query ?? {}) as unknown as { prefix?: string; limit?: string };
       const preflight = await checkStorageAccess(req, { bucket, key: "*", action: "read", ownerId: null });
       if (!preflight.ok && preflight.status === 404) return reply.code(404).send({ error: preflight.error });
 
@@ -330,7 +330,7 @@ export async function storageRoutes(app: FastifyInstance) {
       if (q.prefix) query = query.where("key", "like", `${q.prefix}%`);
       if (req.auth?.apiKey !== "service_role" && req.auth?.user?.sub) {
         const b = await db.selectFrom("buckets" as never).select(["owner_only" as never])
-          .where("name" as never, "=", bucket as never).executeTakeFirst() as { owner_only: boolean } | undefined;
+          .where("name" as never, "=", bucket as never).executeTakeFirst() as unknown as { owner_only: boolean } | undefined;
         if (b?.owner_only) query = query.where("owner_id", "=", req.auth.user.sub);
       }
       return query.orderBy("created_at", "desc").limit(Math.min(1000, Number(q.limit ?? 100))).execute();
@@ -432,7 +432,7 @@ export async function storageRoutes(app: FastifyInstance) {
       // Reject over-run: sum-so-far must not exceed declared size.
       const priorRows = await db.selectFrom("storage_upload_parts" as never)
         .select(sql<string>`coalesce(sum(size),0)::text`.as("s"))
-        .where("upload_id" as never, "=", up.id as never).executeTakeFirst() as { s: string } | undefined;
+        .where("upload_id" as never, "=", up.id as never).executeTakeFirst() as unknown as { s: string } | undefined;
       const priorTotal = Number(priorRows?.s ?? 0);
       if (priorTotal + st.size > up.size) {
         await rm(partPath, { force: true });
@@ -472,7 +472,7 @@ export async function storageRoutes(app: FastifyInstance) {
       const stored = await db.selectFrom("storage_upload_parts" as never).selectAll()
         .where("upload_id" as never, "=", up.id as never)
         .orderBy("part_number" as never, "asc")
-        .execute() as { part_number: number; etag: string; size: number }[];
+        .execute() as unknown as { part_number: number; etag: string; size: number }[];
       const byNum = new Map(stored.map(p => [p.part_number, p]));
       let total = 0;
       const ordered = body.data.parts.slice().sort((a, b) => a.part_number - b.part_number);
