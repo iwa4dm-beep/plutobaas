@@ -189,8 +189,13 @@ export async function authV4Plugin(app: FastifyInstance) {
   });
 
   app.get("/auth/v4/audit/events", async (req) => {
-    const limit = Number((req.query as { limit?: string }).limit ?? 100);
-    return { events: iso.listEvents(ws(req), limit) };
+    const q = req.query as { limit?: string; action?: string; status?: string; since?: string };
+    return { events: iso.listEvents(ws(req), {
+      limit:  q.limit  ? Number(q.limit)  : 100,
+      action: q.action,
+      status: q.status,
+      since:  q.since  ? Number(q.since)  : undefined,
+    }) };
   });
 }
 

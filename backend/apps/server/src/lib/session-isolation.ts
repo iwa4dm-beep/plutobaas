@@ -26,21 +26,42 @@ export type AuthEvent = {
   action: string;              // e.g. "session.create", "session.reuse_denied", "admin.check"
   status: "ok" | "denied" | "error";
   meta?: Record<string, unknown>;
+  trace_id?: string;           // Phase 58: correlate with distributed trace
 };
 
 const sessions = new Map<string, Session>();
 const events: AuthEvent[] = [];
 const MAX_EVENTS = 5000;
 
+// Optional context provider — the plugin injects the current request's
+// trace id via `setAuthEventContext` so every logAuth call auto-attaches
+// it. Keeps call sites unchanged while enabling audit → trace pivots.
+let contextProvider: (() => { trace_id?: string } | undefined) | null = null;
+export function setAuthEventContext(fn: (() => { trace_id?: string } | undefined) | null) { contextProvider = fn; }
+
+type Subscriber = (e: AuthEvent) => void;
+const subscribers = new Set<Subscriber>();
+export function subscribeAuthEvents(fn: Subscriber): () => void {
+  subscribers.add(fn); return () => subscribers.delete(fn);
+}
+
 export function logAuth(e: Omit<AuthEvent, "id" | "ts">): AuthEvent {
-  const ev: AuthEvent = { id: `ae_${randomUUID()}`, ts: Date.now(), ...e };
+  const ctx = contextProvider?.();
+  const ev: AuthEvent = { id: `ae_${randomUUID()}`, ts: Date.now(), trace_id: ctx?.trace_id, ...e };
+  // Preserve explicit trace_id passed by caller.
+  if (e.trace_id) ev.trace_id = e.trace_id;
   events.push(ev);
   if (events.length > MAX_EVENTS) events.splice(0, events.length - MAX_EVENTS);
+  for (const s of subscribers) { try { s(ev); } catch { /* noop */ } }
   return ev;
 }
 
-export function listEvents(ws: string, limit = 100): AuthEvent[] {
-  return events.filter((e) => e.workspace_id === ws).slice(-limit).reverse();
+export function listEvents(ws: string, filter: { limit?: number; action?: string; status?: string; since?: number } = {}): AuthEvent[] {
+  let out = events.filter((e) => e.workspace_id === ws);
+  if (filter.action) out = out.filter((e) => e.action === filter.action);
+  if (filter.status) out = out.filter((e) => e.status === filter.status);
+  if (filter.since)  out = out.filter((e) => e.ts > filter.since!);
+  return out.slice(-(filter.limit ?? 100)).reverse();
 }
 
 export function createSession(ws: string, user_email: string, role: "admin" | "member" = "member", ttl_ms = 60 * 60 * 1000, ip?: string): Session {
