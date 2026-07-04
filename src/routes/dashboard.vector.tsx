@@ -29,13 +29,29 @@ function VectorPage() {
   const [docText, setDocText] = useState("");
   const [query, setQuery] = useState("");
   const [matches, setMatches] = useState<VecMatch[]>([]);
+  const [topK, setTopK] = useState(5);
+  const [embField, setEmbField] = useState<string>(""); // "" = use column
+  const [fieldOptions, setFieldOptions] = useState<string[]>([]);
 
   async function refresh() {
     if (!isLive()) return;
     try { const r = await vector.collections(); setColls(r.collections); if (!active && r.collections[0]) setActive(r.collections[0].name); }
     catch (e) { toast.error((e as Error).message); }
   }
+  async function refreshFields(name: string) {
+    try {
+      const r = await vector.docs(name);
+      const keys = new Set<string>();
+      for (const d of r.docs.slice(0, 20)) {
+        for (const [k, v] of Object.entries(d.metadata ?? {})) {
+          if (Array.isArray(v) && v.every(x => typeof x === "number")) keys.add(k);
+        }
+      }
+      setFieldOptions(Array.from(keys));
+    } catch { /* ignore */ }
+  }
   useEffect(() => { refresh(); }, []);
+  useEffect(() => { if (active) refreshFields(active); }, [active]);
 
   async function createColl() {
     if (!newName.trim()) return;
@@ -45,13 +61,13 @@ function VectorPage() {
   async function ingest() {
     if (!active || !docText.trim()) return;
     const c = colls.find(c => c.name === active); const d = c?.dims ?? dims;
-    try { await vector.upsert(active, [{ content: docText, embedding: fakeEmbed(docText, d) }]); setDocText(""); toast.success("Doc upserted"); await refresh(); }
+    try { await vector.upsert(active, [{ content: docText, embedding: fakeEmbed(docText, d) }]); setDocText(""); toast.success("Doc upserted"); await refresh(); await refreshFields(active); }
     catch (e) { toast.error((e as Error).message); }
   }
   async function search() {
     if (!active || !query.trim()) return;
     const c = colls.find(c => c.name === active); const d = c?.dims ?? dims;
-    try { const r = await vector.query(active, fakeEmbed(query, d), 5); setMatches(r.matches); }
+    try { const r = await vector.query(active, fakeEmbed(query, d), topK, embField || undefined); setMatches(r.matches); }
     catch (e) { toast.error((e as Error).message); }
   }
 
