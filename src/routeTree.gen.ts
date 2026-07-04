@@ -42,6 +42,7 @@ import { Route as DashboardAuditLogRouteImport } from './routes/dashboard.audit-
 import { Route as DashboardAuditRouteImport } from './routes/dashboard.audit'
 import { Route as DashboardApiRouteImport } from './routes/dashboard.api'
 import { Route as DashboardAiRouteImport } from './routes/dashboard.ai'
+import { Route as AuthForgotRouteImport } from './routes/auth.forgot'
 
 const DashboardRoute = DashboardRouteImport.update({
   id: '/dashboard',
@@ -208,11 +209,17 @@ const DashboardAiRoute = DashboardAiRouteImport.update({
   path: '/ai',
   getParentRoute: () => DashboardRoute,
 } as any)
+const AuthForgotRoute = AuthForgotRouteImport.update({
+  id: '/forgot',
+  path: '/forgot',
+  getParentRoute: () => AuthRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
-  '/auth': typeof AuthRoute
+  '/auth': typeof AuthRouteWithChildren
   '/dashboard': typeof DashboardRouteWithChildren
+  '/auth/forgot': typeof AuthForgotRoute
   '/dashboard/ai': typeof DashboardAiRoute
   '/dashboard/api': typeof DashboardApiRoute
   '/dashboard/audit': typeof DashboardAuditRoute
@@ -246,7 +253,8 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
-  '/auth': typeof AuthRoute
+  '/auth': typeof AuthRouteWithChildren
+  '/auth/forgot': typeof AuthForgotRoute
   '/dashboard/ai': typeof DashboardAiRoute
   '/dashboard/api': typeof DashboardApiRoute
   '/dashboard/audit': typeof DashboardAuditRoute
@@ -281,8 +289,9 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
-  '/auth': typeof AuthRoute
+  '/auth': typeof AuthRouteWithChildren
   '/dashboard': typeof DashboardRouteWithChildren
+  '/auth/forgot': typeof AuthForgotRoute
   '/dashboard/ai': typeof DashboardAiRoute
   '/dashboard/api': typeof DashboardApiRoute
   '/dashboard/audit': typeof DashboardAuditRoute
@@ -320,6 +329,7 @@ export interface FileRouteTypes {
     | '/'
     | '/auth'
     | '/dashboard'
+    | '/auth/forgot'
     | '/dashboard/ai'
     | '/dashboard/api'
     | '/dashboard/audit'
@@ -354,6 +364,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/auth'
+    | '/auth/forgot'
     | '/dashboard/ai'
     | '/dashboard/api'
     | '/dashboard/audit'
@@ -389,6 +400,7 @@ export interface FileRouteTypes {
     | '/'
     | '/auth'
     | '/dashboard'
+    | '/auth/forgot'
     | '/dashboard/ai'
     | '/dashboard/api'
     | '/dashboard/audit'
@@ -423,7 +435,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
-  AuthRoute: typeof AuthRoute
+  AuthRoute: typeof AuthRouteWithChildren
   DashboardRoute: typeof DashboardRouteWithChildren
 }
 
@@ -660,8 +672,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardAiRouteImport
       parentRoute: typeof DashboardRoute
     }
+    '/auth/forgot': {
+      id: '/auth/forgot'
+      path: '/forgot'
+      fullPath: '/auth/forgot'
+      preLoaderRoute: typeof AuthForgotRouteImport
+      parentRoute: typeof AuthRoute
+    }
   }
 }
+
+interface AuthRouteChildren {
+  AuthForgotRoute: typeof AuthForgotRoute
+}
+
+const AuthRouteChildren: AuthRouteChildren = {
+  AuthForgotRoute: AuthForgotRoute,
+}
+
+const AuthRouteWithChildren = AuthRoute._addFileChildren(AuthRouteChildren)
 
 interface DashboardRouteChildren {
   DashboardAiRoute: typeof DashboardAiRoute
@@ -735,7 +764,7 @@ const DashboardRouteWithChildren = DashboardRoute._addFileChildren(
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
-  AuthRoute: AuthRoute,
+  AuthRoute: AuthRouteWithChildren,
   DashboardRoute: DashboardRouteWithChildren,
 }
 export const routeTree = rootRouteImport
