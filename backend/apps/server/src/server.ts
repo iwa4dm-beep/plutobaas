@@ -219,7 +219,7 @@ async function main() {
     app.log.warn("PLUTO_ENABLE_LEGACY=1 — 23 archived modules re-mounted");
   }
 
-  startLogRetentionSweeper(app.log);
+  startLogRetentionSweeper();
 
 
 
