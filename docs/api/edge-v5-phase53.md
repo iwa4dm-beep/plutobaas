@@ -1,41 +1,50 @@
-# Edge v5 — Phase 53
+# Edge v5 — Phase 53 (full capability scope)
 
-Adds a WebAssembly runtime tier for edge functions with warm-instance pooling,
-per-region deployments, and custom-domain attachment. Enable with
-`PLUTO_ENABLE_EDGE_V5=1`.
+Enable with `PLUTO_ENABLE_EDGE_V5=1`. All routes require an API key.
 
-## Endpoints
+## Runtime capability scope
 
-All routes require an API key. Mount prefix: `/fn/v5`.
+| Capability | Status | Details |
+| --- | --- | --- |
+| WASM runtime | ✅ | `wasm_base64` upload (≤20 MiB), content-addressed via SHA-256, versioned per module name |
+| Warm-instance pool | ✅ | `min_warm`/`max_warm` per `(module@version, region)`; cold-start reported per invocation |
+| Per-region deploy | ✅ | Region format `xx-region[-N]`; neighbor fallback (`eu-central → eu-west`, etc.) |
+| Custom domains v2 | ✅ | Attach hostname → module; returns TXT verification token; `cert_status` lifecycle |
+| Per-function KV | ✅ | Namespace `${workspace}/${module}`, TTL, prefix list, ≤64 KiB values |
+| Queue triggers | ✅ | Bind subscribers, enqueue, FIFO drain with re-queue on failure |
+| Streaming response | ✅ | `GET /fn/v5/stream?chunks=N` returns `text/event-stream` chunks |
+| Invocation telemetry | ✅ | `edge5_invocations` table (region, cold, duration_ms, status) |
+| HTTP fetch inside WASM | ⏳ Phase 55 | Requires host-imports interface |
+| Durable Objects | ⏳ Phase 56 | Planned alongside replicated KV |
+
+## Endpoint index (mount prefix `/fn/v5`)
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| POST | `/fn/v5/modules` | Register a WASM module (`wasm_base64`, ≤20 MiB) |
-| GET  | `/fn/v5/modules` | List registered modules |
-| POST | `/fn/v5/deployments` | Deploy a module to a region (`min_warm`, `max_warm`) |
-| POST | `/fn/v5/invoke` | Invoke by (module, version) + `client_region`; response reports `cold` |
-| POST | `/fn/v5/domains` | Attach a custom hostname; returns `verify_txt` |
-| GET  | `/fn/v5/domains` | List custom domains |
+| POST | `/modules` | Register a WASM module |
+| GET  | `/modules` | List registered modules |
+| POST | `/deployments` | Deploy `(module, version)` to a region with pool caps |
+| POST | `/invoke` | Invoke by `(module, version, client_region)`; reports `cold` + `region` |
+| POST | `/domains` | Attach a custom hostname; returns `verify_txt` |
+| GET  | `/domains` | List custom domains |
+| POST | `/kv/put` | Put a key with optional `ttl_ms` |
+| GET  | `/kv/get` | Get a value (404 when missing/expired) |
+| DELETE | `/kv` | Delete a key |
+| GET  | `/kv/list` | List keys by prefix |
+| POST | `/queues/bind` | Bind a `(module, version)` subscriber to a queue |
+| POST | `/queues/enqueue` | Enqueue a job body |
+| POST | `/queues/drain` | Drain up to `max` jobs; failing subs re-queue |
+| GET  | `/stream` | Streaming SSE response (`chunks` query param) |
 
 ## Cold-start reduction
 
-The warm pool pre-instantiates `min_warm` instances per
-`(module@version, region)` key. `acquire()` returns warm instances first;
-only when the pool is empty is a fresh instance created and reported as
-`cold: true`. Freed instances are returned to the pool up to `max_warm`.
+`min_warm` pre-instantiates warm instances at deploy time. `acquire()` pops
+warm first; only when empty does it create a fresh instance and mark
+`cold: true`. `release()` returns instances up to `max_warm`.
 
-## Region routing
+## Notes
 
-`pickDeployment(deps, clientRegion)` looks up neighbor lists (e.g.
-`eu-central → eu-west`) so an invocation without an exact-region deployment
-still lands close. Non-`active` deployments are skipped.
-
-## Data model
-
-Migration `0051_phase53_edge_v5.sql` adds:
-- `edge5_wasm_modules` — content-addressed WASM bytes
-- `edge5_deployments` — module × region assignments and pool caps
-- `edge5_domains` — custom hostnames with cert-issuance status
-- `edge5_invocations` — per-call telemetry for cold-start dashboards
-
-All tables are workspace-scoped with RLS via `public.current_workspace_id()`.
+- All state is process-local for now — multi-node deployments need a shared
+  KV/queue backend (roadmap: Phase 55/56).
+- The `/fn/v5/invoke` handler simulates execution (no real WebAssembly
+  instantiation yet); Phase 55 wires the compiled module cache.
