@@ -1145,22 +1145,28 @@ export const rt2 = {
       { method: "DELETE" }),
   /**
    * Presence subscription with heartbeat + auto-resubscribe on failure.
-   * - Sends join() every `heartbeatMs` (default 20s) so the member row stays fresh (< 5 min TTL).
+   * - Sends join() every `heartbeatMs` (default 20s) so the member row stays fresh.
    * - Polls presence roster every `pollMs` (default 3s).
-   * - On any failure, retries with exponential backoff (capped at 30s).
-   * - On page unload / cancel, sends leave() best-effort.
+   * - On any failure, retries with jittered exponential backoff (capped at `maxBackoffMs`, default 30s).
+   * - Gives up after `maxAttempts` consecutive failures (default 8) and emits `onStatus("failed")`.
+   * - `onStatus(state, attempt, lastError)` fires on every state change: connecting, live, retrying, failed.
    * Returns an unsubscribe function.
    */
   subscribePresence(name: string, member_key: string, opts: {
     metadata?: Record<string, unknown>;
     heartbeatMs?: number;
     pollMs?: number;
+    maxAttempts?: number;
+    maxBackoffMs?: number;
     onMembers?: (m: Rt2Member[]) => void;
     onReconnect?: (attempt: number) => void;
     onError?: (err: Error) => void;
+    onStatus?: (state: "connecting" | "live" | "retrying" | "failed", attempt: number, lastError?: Error) => void;
   } = {}) {
     const heartbeatMs = opts.heartbeatMs ?? 20_000;
     const pollMs = opts.pollMs ?? 3_000;
+    const maxAttempts = opts.maxAttempts ?? 8;
+    const maxBackoffMs = opts.maxBackoffMs ?? 30_000;
     let stopped = false; let attempt = 0;
     let hbTimer: ReturnType<typeof setInterval> | null = null;
     let pollTimer: ReturnType<typeof setInterval> | null = null;
@@ -1169,15 +1175,22 @@ export const rt2 = {
       if (hbTimer) { clearInterval(hbTimer); hbTimer = null; }
       if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
     };
+    // Jittered exponential backoff — full-jitter variant to spread reconnects.
+    const backoff = () => {
+      const base = Math.min(maxBackoffMs, 500 * 2 ** attempt);
+      return Math.floor(Math.random() * base);
+    };
 
-    const backoff = () => Math.min(30_000, 500 * 2 ** attempt);
+    opts.onStatus?.("connecting", 0);
 
     const start = async () => {
       while (!stopped) {
         try {
           await rt2.join(name, member_key, opts.metadata ?? {});
-          if (attempt > 0) opts.onReconnect?.(attempt);
+          const wasRetrying = attempt > 0;
+          if (wasRetrying) opts.onReconnect?.(attempt);
           attempt = 0;
+          opts.onStatus?.("live", 0);
           hbTimer = setInterval(() => {
             rt2.join(name, member_key, opts.metadata ?? {}).catch((e) => opts.onError?.(e as Error));
           }, heartbeatMs);
@@ -1185,15 +1198,17 @@ export const rt2 = {
             try { const r = await rt2.presence(name); opts.onMembers?.(r.members); }
             catch (e) { opts.onError?.(e as Error); }
           }, pollMs);
-          // Wait until a poll fails — we detect via a promise that never resolves; timers handle themselves.
           await new Promise<void>((resolve) => {
             const iv = setInterval(() => { if (stopped) { clearInterval(iv); resolve(); } }, 250);
           });
           return;
         } catch (e) {
           clearTimers();
-          opts.onError?.(e as Error);
+          const err = e as Error;
+          opts.onError?.(err);
           attempt++;
+          if (attempt >= maxAttempts) { opts.onStatus?.("failed", attempt, err); return; }
+          opts.onStatus?.("retrying", attempt, err);
           await new Promise(r => setTimeout(r, backoff()));
         }
       }
