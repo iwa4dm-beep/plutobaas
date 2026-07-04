@@ -153,6 +153,8 @@ async function main() {
   await app.register(compliancePlugin);     // Phase 40 — /compliance/v1/*
   const { authPhase41Plugin } = await import("./modules/auth_phase41/plugin.js");
   await app.register(authPhase41Plugin);    // Phase 41 — magic-link, anonymous, link-anon
+  const { storageV2Plugin } = await import("./modules/storage_v2/plugin.js");
+  await app.register(storageV2Plugin);      // Phase 42 — multipart, presigned POST, AV scan, CDN purge, imgproxy
   startLogRetentionSweeper(app.log);
 
 
