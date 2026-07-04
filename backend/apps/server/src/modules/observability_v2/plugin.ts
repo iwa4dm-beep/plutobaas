@@ -26,7 +26,8 @@ import {
   toOtlpPayload, exportOtlp, type OtelSpan,
 } from "../../lib/otel.js";
 import { recordRequest, toPrometheus, snapshot as redSnapshot } from "../../lib/red-metrics.js";
-import { BURN_WINDOWS, burnRate, evaluateErrorRatio, type SloRow } from "../../lib/slo.js";
+import { BURN_WINDOWS, burnRate, type SloRow } from "../../lib/slo.js";
+import { evaluateErrorRatio } from "../../lib/slo-eval.js";
 import { pushLog, recentLogs, matchesRule, type LogAlertRule } from "../../lib/log-buffer.js";
 
 const spanIngest = z.object({
