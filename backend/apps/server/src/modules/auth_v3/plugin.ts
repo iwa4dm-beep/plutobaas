@@ -27,7 +27,13 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { createHash, randomBytes } from "node:crypto";
-import { db } from "../../db/index.js";
+import { db as _kysely } from "../../db/index.js";
+import { pgPool } from "../../lib/pgraw.js";
+// Legacy shim: auth_v3 was written against a raw pg-style `.query()` API.
+// Keep the name `db` but back it with the shared pg pool so we don't rewrite
+// 30+ call sites during the Wave 1 boot restoration.
+const db = { query: (text: string, params?: unknown[]) => pgPool.query(text, params as never) };
+void _kysely;
 import { requireApiKey } from "../../lib/apikey.js";
 import { audit } from "../../lib/audit.js";
 import {
