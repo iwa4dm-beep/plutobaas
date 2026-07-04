@@ -1014,6 +1014,7 @@ export type UsageSummary = { period: string; environment: string | null; metrics
 export type Quota = {
   metric: UsageMetric; period: "day" | "month"; hard_limit: number; soft_limit: number | null;
   overage_behavior: OverageBehavior; billing_label: string | null; updated_at: string;
+  alert_pct?: number | null;
 };
 export type BranchSnapshot = { id: string; snapshot_schema: string; reason: string | null; created_at: string; restored_at: string | null; status: string };
 
