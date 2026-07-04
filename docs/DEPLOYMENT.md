@@ -257,5 +257,8 @@ frontend can reach the backend.
 | Rotate `SERVICE_ROLE_KEY` | `fly secrets set SERVICE_ROLE_KEY=...` → re-deploy |
 | Scale up | Fly: `fly scale`; Railway: replica slider; Render: dashboard |
 
-CI is wired in `.github/workflows/backend.yml` for auto-deploy on push
-to `main`.
+CI is wired in `.github/workflows/deploy-fly.yml` for auto-deploy to
+Fly on push to `main`. One-time setup: add `FLY_API_TOKEN` (from
+`fly auth token`) as a GitHub Actions secret. The workflow typechecks,
+deploys, and polls `/readyz` to verify the release. `.github/workflows/backend.yml`
+is retained for VPS deploys.
