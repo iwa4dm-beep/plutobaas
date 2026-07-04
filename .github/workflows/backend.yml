@@ -151,6 +151,84 @@ jobs:
           kill "$(cat /tmp/pluto-livegen.pid)" || true
           docker rm -f pg-livegen || true
 
+  pitr-drill:
+    name: cross-region PITR drill (dry-run) + report
+    runs-on: ubuntu-latest
+    needs: build-test
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: pluto
+          POSTGRES_PASSWORD: pluto
+          POSTGRES_DB: pluto_pitr
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U pluto -d pluto_pitr"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      DATABASE_URL: postgres://pluto:pluto@localhost:5432/pluto_pitr
+      JWT_SECRET: ci-jwt-secret-min-32-chars-xxxxxxxxxxxxxxxxxxx
+      ANON_KEY: pk_anon_ci
+      SERVICE_ROLE_KEY: sk_service_ci
+      STORAGE_DRIVER: local
+      STORAGE_LOCAL_DIR: /tmp/pluto-pitr
+      PLUTO_ENABLE_PITR: "1"
+      PORT: "8790"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: install
+        working-directory: backend/apps/server
+        run: npm install --no-audit --no-fund
+      - name: migrate
+        working-directory: backend/apps/server
+        run: npx tsx src/db/migrate.ts
+      - name: boot server
+        working-directory: backend/apps/server
+        run: |
+          npx tsx src/index.ts > /tmp/pluto-pitr.log 2>&1 &
+          echo $! > /tmp/pluto-pitr.pid
+          for i in $(seq 1 40); do
+            curl -fsS "http://localhost:$PORT/readyz" >/dev/null 2>&1 && break; sleep 0.5
+          done
+      - name: seed pitr control plane (enable archive + register snapshot)
+        env:
+          BASE_URL: http://localhost:8790
+        run: |
+          curl -fsS -X POST "$BASE_URL/pitr/v1/config" \
+            -H "authorization: Bearer $SERVICE_ROLE_KEY" \
+            -H "content-type: application/json" \
+            -d '{"enabled":true,"archive_url":"file:///tmp/pluto-pitr/wal","retention_days":7}'
+          curl -fsS -X POST "$BASE_URL/pitr/v1/snapshots" \
+            -H "authorization: Bearer $SERVICE_ROLE_KEY" \
+            -H "content-type: application/json" \
+            -d '{"storage_url":"file:///tmp/pluto-pitr/base-000","kind":"basebackup","bytes":1024,"lsn":"0/1000000"}'
+          curl -fsS -X POST "$BASE_URL/pitr/v1/replicas" \
+            -H "authorization: Bearer $SERVICE_ROLE_KEY" \
+            -H "content-type: application/json" \
+            -d '{"source_id":"00000000-0000-0000-0000-000000000000","source_kind":"pitr","region":"us-west-2","target_url":"s3://pluto-dr/us-west-2/base-000","status":"ok"}' || true
+      - name: run drill (dry-run, publishes RPO/RTO + correctness report)
+        env:
+          BASE_URL: http://localhost:8790
+          PITR_REPORT_FILE: ${{ github.workspace }}/pitr-drill-report.md
+        run: |
+          chmod +x backend/scripts/pitr-drill.sh
+          backend/scripts/pitr-drill.sh
+          cat "$PITR_REPORT_FILE" >> "$GITHUB_STEP_SUMMARY"
+      - name: shutdown server
+        if: always()
+        run: kill "$(cat /tmp/pluto-pitr.pid)" || true
+      - name: upload drill report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pitr-drill-report
+          path: pitr-drill-report.md
+          if-no-files-found: warn
+
   frontend:
     name: frontend build
     runs-on: ubuntu-latest
