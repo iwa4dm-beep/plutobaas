@@ -167,6 +167,8 @@ async function main() {
   await app.register(observabilityV2Plugin); // Phase 47 — OTel, RED metrics, SLO burn-rate, log alerts
   const { broadcastV2Plugin } = await import("./modules/broadcast_v2/plugin.js");
   await app.register(broadcastV2Plugin);    // Phase 48 — WS fan-out, presence sync, ephemeral broadcast
+  const { storageV3Plugin } = await import("./modules/storage_v3/plugin.js");
+  await app.register(storageV3Plugin);      // Phase 49 — signed uploads, multipart, transform cache, lifecycle
   startLogRetentionSweeper(app.log);
 
 
