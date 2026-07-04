@@ -11,7 +11,12 @@ process.env.ANON_KEY         ??= "anon-test-key";
 process.env.SERVICE_ROLE_KEY ??= "service-test-key";
 process.env.PLUTO_ENABLE_BILLING ??= "1";
 
-const calls: { sql: string; params: unknown[] }[] = [];
+vi.mock("../lib/apikey.js", () => ({
+  requireApiKey: async () => {},
+  requireServiceRole: async () => {},
+  requireWorkspaceAdmin: async () => {},
+}));
+
 vi.mock("../lib/pgraw.js", () => ({
   q: vi.fn(async (sql: string, params?: unknown[]) => {
     calls.push({ sql, params: params ?? [] });
