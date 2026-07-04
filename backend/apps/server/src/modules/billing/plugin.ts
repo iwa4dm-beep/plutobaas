@@ -72,6 +72,67 @@ async function stripeCall(path: string, method: "GET" | "POST", body?: Record<st
 
 // Signature verification lives in lib/stripe-sig.ts so tests can share it.
 
+// Apply a decoded Stripe event to our subscription tables.
+// Exported so unit tests can exercise upgrade/downgrade/failure branches
+// without going through HTTP + signature layers.
+export async function applyStripeEvent(evt: {
+  type: string; id?: string; data: { object: Record<string, unknown> };
+}): Promise<{ handled: boolean; reason?: string }> {
+  const obj = evt.data.object;
+  const meta = (obj.metadata ?? {}) as Record<string, string>;
+  const ws = meta.workspace_id || null;
+
+  switch (evt.type) {
+    case "checkout.session.completed": {
+      if (!ws) return { handled: false, reason: "missing_workspace_metadata" };
+      await q(
+        `insert into public.billing_subscriptions
+          (workspace_id, plan_code, stripe_customer_id, stripe_subscription_id, status)
+         values ($1::uuid, $2, $3, $4, 'active')
+         on conflict (workspace_id) do update set
+           plan_code=excluded.plan_code,
+           stripe_customer_id=excluded.stripe_customer_id,
+           stripe_subscription_id=excluded.stripe_subscription_id,
+           status='active', updated_at=now()`,
+        [ws, meta.plan_code || "pro", obj.customer, obj.subscription]);
+      bustPlanCache(ws);
+      return { handled: true };
+    }
+    case "customer.subscription.updated":
+    case "customer.subscription.deleted": {
+      const status = evt.type === "customer.subscription.deleted"
+        ? "canceled" : (obj.status as string);
+      // A plan change (upgrade/downgrade) surfaces as a new price on the
+      // first line item — capture it so getWorkspacePlan reflects reality.
+      const items = (obj.items as { data?: { price?: { lookup_key?: string; nickname?: string } }[] } | undefined)?.data;
+      const newPlan = meta.plan_code || items?.[0]?.price?.lookup_key || items?.[0]?.price?.nickname || null;
+      await q(
+        `update public.billing_subscriptions
+         set status=$1,
+             plan_code=coalesce($4, plan_code),
+             current_period_end=to_timestamp($2),
+             updated_at=now()
+         where stripe_subscription_id=$3`,
+        [status, obj.current_period_end, obj.id, newPlan]);
+      planCache.clear();
+      return { handled: true };
+    }
+    case "invoice.payment_failed": {
+      const subId = (obj.subscription as string | null) ?? null;
+      if (!subId) return { handled: false, reason: "no_subscription_on_invoice" };
+      await q(
+        `update public.billing_subscriptions
+         set status='past_due', updated_at=now()
+         where stripe_subscription_id=$1`, [subId]);
+      planCache.clear();
+      return { handled: true };
+    }
+    default:
+      return { handled: false, reason: "unhandled_event_type" };
+  }
+}
+
+
 // ---- Plugin ----------------------------------------------------------
 export const billingPlugin: FastifyPluginAsync = async (app) => {
   if (process.env.PLUTO_ENABLE_BILLING !== "1") {
