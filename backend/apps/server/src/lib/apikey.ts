@@ -16,6 +16,9 @@ export type RequestAuth = {
   workspaceSlug: string;
   keyId: string | null;     // null for env-provided root keys
   user: AccessClaims | null;
+  /** Convenience aliases used by newer plugins. */
+  userId?: string | null;
+  role?: string | null;
 };
 
 declare module "fastify" {
