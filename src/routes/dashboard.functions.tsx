@@ -181,6 +181,10 @@ function FunctionsPage() {
               <Input placeholder="* * * * *" value={cron} onChange={e => setCron(e.target.value)} />
               <Button size="sm" onClick={addSchedule}><Plus className="h-4 w-4" /> Add for {slug}</Button>
             </div>
+            <div className="text-[11px] text-muted-foreground">
+              Preview next runs: {previewCron(cron).map((s, i) => <span key={i} className="mr-2 font-mono">{s}</span>)}
+              {previewCron(cron).length === 0 && <span className="italic">invalid cron</span>}
+            </div>
             <div className="space-y-1">
               {schedules.map(s => (
                 <div key={s.id} className="flex items-center justify-between p-2 border border-border rounded-md text-sm">
