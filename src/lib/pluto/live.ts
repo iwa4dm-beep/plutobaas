@@ -1411,33 +1411,97 @@ export const logsV2 = {
   async setRetention(keep_days: number): Promise<{ ok: true; keep_days: number }> {
     return api(`/logs/v1/retention`, { method: "PUT", body: JSON.stringify({ keep_days }) });
   },
-  tail(p: { source?: string; level?: string; q?: string }, opts: { onRow: (r: LogRow) => void; onError?: (e: Error) => void }): () => void {
+  tail(
+    p: { source?: string; level?: string; q?: string; since?: string },
+    opts: {
+      onRow: (r: LogRow) => void;
+      onError?: (e: Error) => void;
+      onStatus?: (s: "connecting" | "live" | "retrying" | "failed", attempt?: number, err?: Error) => void;
+      maxAttempts?: number;
+      maxBackoffMs?: number;
+    },
+  ): () => void {
     const controller = new AbortController();
     const qs = new URLSearchParams();
     for (const [k, v] of Object.entries(p)) if (v != null && v !== "") qs.set(k, String(v));
-    (async () => {
-      try {
-        const cfg = liveConfig(); if (!cfg) throw new Error("Pluto backend not configured");
-        const res = await fetch(cfg.url.replace(/\/$/, "") + `/logs/v1/stream?${qs.toString()}`, {
-          signal: controller.signal, headers: { accept: "text/event-stream", ...bearer(false) },
-        });
-        if (!res.ok || !res.body) throw new Error(`SSE ${res.status}`);
-        const reader = res.body.getReader(); const dec = new TextDecoder(); let buf = "";
-        for (;;) {
-          const { value, done } = await reader.read(); if (done) break;
-          buf += dec.decode(value, { stream: true });
-          const parts = buf.split("\n\n"); buf = parts.pop() ?? "";
-          for (const p of parts) {
-            const line = p.split("\n").find(l => l.startsWith("data: "));
-            if (!line) continue;
-            try { opts.onRow(JSON.parse(line.slice(6)) as LogRow); } catch { /* ignore */ }
+    const maxAttempts = opts.maxAttempts ?? 8;
+    const maxBackoffMs = opts.maxBackoffMs ?? 30_000;
+    let lastEventId: string | undefined;
+    let attempt = 0;
+
+    const run = async (): Promise<void> => {
+      while (!controller.signal.aborted) {
+        opts.onStatus?.(attempt === 0 ? "connecting" : "retrying", attempt);
+        try {
+          const cfg = liveConfig(); if (!cfg) throw new Error("Pluto backend not configured");
+          const headers: Record<string, string> = { accept: "text/event-stream", ...bearer(false) };
+          if (lastEventId) headers["last-event-id"] = lastEventId;
+          const res = await fetch(cfg.url.replace(/\/$/, "") + `/logs/v1/stream?${qs.toString()}`, {
+            signal: controller.signal, headers,
+          });
+          if (!res.ok || !res.body) throw new Error(`SSE ${res.status}`);
+          attempt = 0;
+          opts.onStatus?.("live");
+          const reader = res.body.getReader(); const dec = new TextDecoder(); let buf = "";
+          for (;;) {
+            const { value, done } = await reader.read(); if (done) break;
+            buf += dec.decode(value, { stream: true });
+            const parts = buf.split("\n\n"); buf = parts.pop() ?? "";
+            for (const chunk of parts) {
+              const idLine   = chunk.split("\n").find((l) => l.startsWith("id: "));
+              const dataLine = chunk.split("\n").find((l) => l.startsWith("data: "));
+              if (idLine) lastEventId = idLine.slice(4).trim();
+              if (!dataLine) continue;
+              try { opts.onRow(JSON.parse(dataLine.slice(6)) as LogRow); } catch { /* ignore */ }
+            }
+          }
+          // Server closed the stream cleanly — loop to reconnect with resume cursor.
+        } catch (e) {
+          if ((e as Error).name === "AbortError") return;
+          attempt += 1;
+          if (attempt > maxAttempts) {
+            opts.onStatus?.("failed", attempt, e as Error);
+            opts.onError?.(e as Error);
+            return;
           }
         }
-      } catch (e) { if ((e as Error).name !== "AbortError") opts.onError?.(e as Error); }
-    })();
+        const base = Math.min(maxBackoffMs, 500 * 2 ** attempt);
+        await new Promise((r) => setTimeout(r, Math.floor(Math.random() * base)));
+      }
+    };
+    void run();
     return () => controller.abort();
   },
+
+  // ---- Export jobs -----------------------------------------------
+  async startExport(input: {
+    format: "csv" | "json"; source?: string; level?: string; q?: string;
+    since?: string; until?: string; max_rows?: number;
+  }): Promise<{
+    job_id: string; status: string; progress: number; format: "csv" | "json";
+    since: string; until: string; clamped_since: boolean; keep_days: number;
+  }> {
+    return api(`/logs/v1/export`, { method: "POST", body: JSON.stringify(input) });
+  },
+  async getExport(jobId: string): Promise<{
+    job_id: string; status: "queued" | "running" | "done" | "error";
+    progress: number; rows: number; format: "csv" | "json";
+    error: string | null; download_url: string | null;
+  }> {
+    return api(`/logs/v1/export/${encodeURIComponent(jobId)}`);
+  },
+  exportDownloadUrl(jobId: string): string {
+    const cfg = liveConfig(); if (!cfg) return "";
+    return cfg.url.replace(/\/$/, "") + `/logs/v1/export/${encodeURIComponent(jobId)}/download`;
+  },
+  async downloadExport(jobId: string): Promise<Blob> {
+    const cfg = liveConfig(); if (!cfg) throw new Error("Pluto backend not configured");
+    const res = await fetch(this.exportDownloadUrl(jobId), { headers: { ...bearer(false) } });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return await res.blob();
+  },
 };
+
 
 // ============================================================
 // Phase 28 — Workspace API tokens SDK
