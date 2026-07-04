@@ -171,6 +171,8 @@ async function main() {
   await app.register(storageV3Plugin);      // Phase 49 — signed uploads, multipart, transform cache, lifecycle
   const { authV3Plugin } = await import("./modules/auth_v3/plugin.js");
   await app.register(authV3Plugin);         // Phase 50 — WebAuthn/passkeys, TOTP v2, risk scoring, devices
+  const { realtimeV4Plugin } = await import("./modules/realtime_v4/plugin.js");
+  await app.register(realtimeV4Plugin);     // Phase 51 — presence CRDTs, offline queue, delta compression
   startLogRetentionSweeper(app.log);
 
 
