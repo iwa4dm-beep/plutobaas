@@ -9,6 +9,7 @@ import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import { q } from "../../lib/pgraw.js";
 import { requireApiKey, requireWorkspaceAdmin } from "../../lib/apikey.js";
+import { recordUsage } from "../../lib/metering.js";
 
 async function runExport(id: string, kind: string, target: string | null) {
   // MVP: emit an INFORMATION_SCHEMA snapshot as SQL-ish text. In prod, hand
