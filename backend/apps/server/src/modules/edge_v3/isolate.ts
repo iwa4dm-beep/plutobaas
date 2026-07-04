@@ -36,7 +36,7 @@ export type InvokeResult = {
 
 const WORKER_PATH = join(
   dirname(fileURLToPath(import.meta.url)),
-  "..", "edge", "isolate-worker.js",
+  "..", "edge", "isolate-worker.cjs",
 );
 
 export async function invokeIsolate(input: InvokeInput): Promise<InvokeResult> {

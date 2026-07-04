@@ -21,7 +21,7 @@ import { requireApiKey, requireServiceRole } from "../../lib/apikey.js";
 import { log } from "../../lib/logs.js";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const WORKER_PATH = path.join(HERE, "isolate-worker.js");
+const WORKER_PATH = path.join(HERE, "isolate-worker.cjs");
 
 // Global caps — an admin can only pick values inside these bounds.
 const MAX_TIMEOUT_MS = 15_000;
