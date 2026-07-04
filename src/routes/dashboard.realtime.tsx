@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Radio, Users2, Send, Plus, RefreshCw } from "lucide-react";
+import { Radio, Users2, Send, Plus, RefreshCw, Database, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { PresenceIndicator, type PresenceStatus } from "@/components/pluto/PresenceIndicator";
 import { PaginatedTable } from "@/components/pluto/PaginatedTable";
