@@ -1269,9 +1269,9 @@ export const backups = {
     const controller = new AbortController();
     (async () => {
       try {
-        const base = (typeof window !== "undefined" && (window as unknown as { __PLUTO_LIVE_BASE__?: string }).__PLUTO_LIVE_BASE__) || "";
-        const res = await fetch(`${base}/backups/v1/restores/${rid}/stream`, {
-          signal: controller.signal, headers: { accept: "text/event-stream" }, credentials: "include",
+        const cfg = liveConfig(); if (!cfg) throw new Error("Pluto backend not configured");
+        const res = await fetch(cfg.url.replace(/\/$/, "") + `/backups/v1/restores/${rid}/stream`, {
+          signal: controller.signal, headers: { accept: "text/event-stream", ...bearer(false) },
         });
         if (!res.ok || !res.body) throw new Error(`SSE ${res.status}`);
         const reader = res.body.getReader(); const dec = new TextDecoder(); let buf = "";
