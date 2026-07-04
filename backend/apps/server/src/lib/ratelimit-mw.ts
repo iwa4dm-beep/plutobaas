@@ -107,7 +107,5 @@ export function rateLimit(opts: { ip?: LimitConfig; token?: LimitConfig } = {}) 
 }
 
 // Preset for expensive routes (AI, edge invoke, backup, restore).
-export const strictLimit = rateLimit({
-  ip:    { capacity: 20, refillPerSec: 0.3 },  // ~1 req / 3s sustained
-  token: { capacity: 60, refillPerSec: 1 },
-});
+// Both defaults and env overrides are honored via STRICT_IP / STRICT_TOK.
+export const strictLimit = rateLimit({ ip: STRICT_IP, token: STRICT_TOK });
