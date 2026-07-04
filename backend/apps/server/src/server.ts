@@ -165,6 +165,8 @@ async function main() {
   await app.register(vectorV2Plugin);       // Phase 46 — HNSW indexes, embed pipeline, hybrid+RAG, model registry
   const { observabilityV2Plugin } = await import("./modules/observability_v2/plugin.js");
   await app.register(observabilityV2Plugin); // Phase 47 — OTel, RED metrics, SLO burn-rate, log alerts
+  const { broadcastV2Plugin } = await import("./modules/broadcast_v2/plugin.js");
+  await app.register(broadcastV2Plugin);    // Phase 48 — WS fan-out, presence sync, ephemeral broadcast
   startLogRetentionSweeper(app.log);
 
 
