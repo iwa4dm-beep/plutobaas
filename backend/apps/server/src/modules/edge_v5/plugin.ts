@@ -120,6 +120,86 @@ export async function edgeV5Plugin(app: FastifyInstance) {
     const ws = (req.auth?.workspaceId ?? "default");
     return { domains: domains.get(ws) ?? [] };
   });
+
+  // ---- KV: per-function key/value ----------------------------------------
+  app.post("/fn/v5/kv/put", async (req, reply) => {
+    const p = z.object({
+      module: z.string().regex(NAME),
+      key: z.string().min(1).max(512),
+      value: z.string().max(64 * 1024),
+      ttl_ms: z.number().int().positive().max(30 * 24 * 60 * 60_000).optional(),
+    }).safeParse(req.body);
+    if (!p.success) { reply.code(400); return { error: "bad_request", issues: p.error.issues }; }
+    const ws = (req.auth?.workspaceId ?? "default");
+    kvPut(ws, p.data.module, p.data.key, p.data.value, p.data.ttl_ms);
+    return { ok: true };
+  });
+
+  app.get("/fn/v5/kv/get", async (req, reply) => {
+    const p = z.object({ module: z.string().regex(NAME), key: z.string().min(1) }).safeParse(req.query);
+    if (!p.success) { reply.code(400); return { error: "bad_request", issues: p.error.issues }; }
+    const ws = (req.auth?.workspaceId ?? "default");
+    const v = kvGet(ws, p.data.module, p.data.key);
+    if (v === null) { reply.code(404); return { error: "not_found" }; }
+    return { key: p.data.key, value: v };
+  });
+
+  app.delete("/fn/v5/kv", async (req, reply) => {
+    const p = z.object({ module: z.string().regex(NAME), key: z.string().min(1) }).safeParse(req.query);
+    if (!p.success) { reply.code(400); return { error: "bad_request", issues: p.error.issues }; }
+    const ws = (req.auth?.workspaceId ?? "default");
+    return { ok: true, removed: kvDelete(ws, p.data.module, p.data.key) };
+  });
+
+  app.get("/fn/v5/kv/list", async (req, reply) => {
+    const p = z.object({ module: z.string().regex(NAME), prefix: z.string().max(256).optional() }).safeParse(req.query);
+    if (!p.success) { reply.code(400); return { error: "bad_request", issues: p.error.issues }; }
+    const ws = (req.auth?.workspaceId ?? "default");
+    return { keys: kvList(ws, p.data.module, p.data.prefix ?? "") };
+  });
+
+  // ---- Queue triggers ----------------------------------------------------
+  app.post("/fn/v5/queues/bind", async (req, reply) => {
+    const p = z.object({
+      queue: z.string().regex(NAME),
+      module: z.string().regex(NAME),
+      version: z.number().int().positive().default(1),
+    }).safeParse(req.body);
+    if (!p.success) { reply.code(400); return { error: "bad_request", issues: p.error.issues }; }
+    qbind(p.data.queue, { module: p.data.module, version: p.data.version });
+    return { ok: true, subscribers: qsubs(p.data.queue) };
+  });
+
+  app.post("/fn/v5/queues/enqueue", async (req, reply) => {
+    const p = z.object({ queue: z.string().regex(NAME), body: z.unknown() }).safeParse(req.body);
+    if (!p.success) { reply.code(400); return { error: "bad_request", issues: p.error.issues }; }
+    const job = qenqueue(p.data.queue, p.data.body);
+    return { ok: true, job, pending: qpending(p.data.queue) };
+  });
+
+  app.post("/fn/v5/queues/drain", async (req, reply) => {
+    const p = z.object({ queue: z.string().regex(NAME), max: z.number().int().min(1).max(1000).default(100) }).safeParse(req.body);
+    if (!p.success) { reply.code(400); return { error: "bad_request", issues: p.error.issues }; }
+    // Simulated dispatcher — always succeeds; real deployment invokes the WASM handler.
+    const result = await qdrain(p.data.queue, async () => ({ ok: true }), p.data.max);
+    return { ok: true, ...result, pending: qpending(p.data.queue) };
+  });
+
+  // ---- Streaming response (chunked SSE-style) ---------------------------
+  app.get("/fn/v5/stream", async (req, reply) => {
+    const chunks = Math.min(Number((req.query as { chunks?: string }).chunks ?? 5), 100);
+    reply.raw.writeHead(200, {
+      "content-type": "text/event-stream",
+      "cache-control": "no-cache",
+      "x-edge-streaming": "v5",
+    });
+    for (let i = 0; i < chunks; i++) {
+      reply.raw.write(`data: ${JSON.stringify({ i, ts: Date.now() })}\n\n`);
+      await new Promise((r) => setTimeout(r, 5));
+    }
+    reply.raw.end();
+  });
 }
 
 export default edgeV5Plugin;
+
