@@ -249,25 +249,38 @@ function FunctionsPage() {
         </Card>
       )}
 
-      {tab === "logs" && (
-        <Card>
-          <CardHeader><CardTitle className="text-sm flex items-center gap-2"><ScrollText className="h-4 w-4" /> Invocations</CardTitle></CardHeader>
-          <CardContent>
-            <div className="space-y-1 max-h-[500px] overflow-y-auto">
-              {invos.map(i => (
-                <div key={i.id} className="grid grid-cols-[80px,80px,80px,1fr,120px] gap-2 text-xs p-2 border border-border rounded-md">
-                  <Badge variant={i.status_code && i.status_code >= 400 ? "destructive" : "secondary"}>{i.status_code ?? "-"}</Badge>
-                  <span>{i.trigger}</span>
-                  <span>{i.duration_ms ?? "-"}ms</span>
-                  <span className="truncate text-muted-foreground">{i.error ?? i.function_slug}</span>
-                  <span className="text-muted-foreground text-right">{new Date(i.created_at).toLocaleTimeString()}</span>
-                </div>
-              ))}
-              {invos.length === 0 && <div className="text-xs text-muted-foreground">No invocations recorded.</div>}
-            </div>
-          </CardContent>
-        </Card>
-      )}
+      {tab === "logs" && <InvocationsTable rows={invos} />}
     </div>
+  );
+}
+
+function InvocationsTable({ rows }: { rows: FnInvocation[] }) {
+  const t = usePaginatedTable(rows, { pageSize: 25, defaultSort: { key: "created_at", dir: "desc" } });
+  return (
+    <Card>
+      <CardHeader><CardTitle className="text-sm flex items-center gap-2"><ScrollText className="h-4 w-4" /> Invocations</CardTitle></CardHeader>
+      <CardContent>
+        <PaginatedTable
+          rows={t.rows} sorted={t.sorted}
+          page={t.page} pageSize={t.pageSize} totalPages={t.totalPages}
+          sortKey={t.sortKey} sortDir={t.sortDir}
+          onPage={t.setPage} onSort={t.toggleSort}
+          csvFilename="edge-invocations.csv"
+          csvColumns={["created_at","function_slug","trigger","status_code","duration_ms","cold_start","error"]}
+          columns={[
+            { key: "status_code", label: "status", className: "w-16",
+              render: (r) => <Badge variant={r.status_code && r.status_code >= 400 ? "destructive" : "secondary"}>{r.status_code ?? "-"}</Badge> },
+            { key: "function_slug", label: "function" },
+            { key: "trigger", label: "trigger", className: "w-20" },
+            { key: "duration_ms", label: "ms", className: "w-16",
+              render: (r) => <span>{r.duration_ms ?? "-"}</span> },
+            { key: "error", label: "message" },
+            { key: "created_at", label: "time", className: "w-40",
+              render: (r) => <span className="text-muted-foreground text-right">{new Date(r.created_at).toLocaleString()}</span> },
+          ]}
+          empty="No invocations recorded."
+        />
+      </CardContent>
+    </Card>
   );
 }
