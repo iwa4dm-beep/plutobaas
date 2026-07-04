@@ -1,0 +1,21 @@
+# Mailpit — SMTP + HTTP inbox for local + CI e2e email tests.
+#
+# Ports:
+#   1025 → SMTP (point SMTP_HOST/SMTP_PORT at this)
+#   8025 → HTTP UI + JSON API (MAILPIT_HTTP)
+#
+# Bring up with:  docker compose -f docker-compose.mailpit.yml up -d
+# Wipe inbox:     curl -X DELETE http://localhost:8025/api/v1/messages
+
+services:
+  mailpit:
+    image: axllent/mailpit:v1.20
+    container_name: pluto-mailpit
+    restart: unless-stopped
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+    environment:
+      MP_MAX_MESSAGES: "5000"
+      MP_SMTP_AUTH_ACCEPT_ANY: "1"
+      MP_SMTP_AUTH_ALLOW_INSECURE: "1"

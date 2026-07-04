@@ -257,6 +257,109 @@ jobs:
           commit_message: "docs(pitr): refresh latest drill report [skip ci]"
           file_pattern: docs/pitr/latest.md
 
+  smtp-e2e:
+    name: SMTP e2e (Mailpit) — auth confirm + reset matrix
+    runs-on: ubuntu-latest
+    needs: build-test
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: pluto
+          POSTGRES_PASSWORD: pluto
+          POSTGRES_DB: pluto_smtp
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U pluto -d pluto_smtp"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+      mailpit:
+        image: axllent/mailpit:v1.20
+        ports: ["1025:1025", "8025:8025"]
+        env:
+          MP_SMTP_AUTH_ACCEPT_ANY: "1"
+          MP_SMTP_AUTH_ALLOW_INSECURE: "1"
+    env:
+      DATABASE_URL: postgres://pluto:pluto@localhost:5432/pluto_smtp
+      MAILPIT_HTTP: http://localhost:8025
+      SMTP_HOST: localhost
+      SMTP_PORT: "1025"
+      ANON_KEY: pk_anon_e2e
+      SERVICE_ROLE_KEY: sk_service_e2e
+      JWT_SECRET: e2e-jwt-secret-min-32-chars-xxxxxxxxxxxxxxxxxxx
+      PORT: "8791"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "20" }
+      - name: install backend deps
+        working-directory: backend/apps/server
+        run: npm install --no-audit --no-fund
+      - name: migrate
+        working-directory: backend/apps/server
+        run: npx tsx src/db/migrate.ts
+      - name: run SMTP e2e matrix
+        run: |
+          chmod +x backend/scripts/e2e-smtp.sh
+          backend/scripts/e2e-smtp.sh
+
+  openapi-snapshot:
+    name: OpenAPI snapshot drift check
+    runs-on: ubuntu-latest
+    needs: build-test
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: pluto
+          POSTGRES_PASSWORD: pluto
+          POSTGRES_DB: pluto_oapi
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U pluto -d pluto_oapi"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      DATABASE_URL: postgres://pluto:pluto@localhost:5432/pluto_oapi
+      JWT_SECRET: ci-jwt-secret-min-32-chars-xxxxxxxxxxxxxxxxxxx
+      ANON_KEY: pk_anon_ci
+      SERVICE_ROLE_KEY: sk_service_ci
+      STORAGE_DRIVER: local
+      STORAGE_LOCAL_DIR: /tmp/pluto-oapi
+      PORT: "8792"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "20" }
+      - name: install backend deps
+        working-directory: backend/apps/server
+        run: npm install --no-audit --no-fund
+      - name: migrate
+        working-directory: backend/apps/server
+        run: npx tsx src/db/migrate.ts
+      - name: boot server
+        working-directory: backend/apps/server
+        run: |
+          npx tsx src/index.ts > /tmp/pluto-oapi.log 2>&1 &
+          echo $! > /tmp/pluto-oapi.pid
+          for i in $(seq 1 40); do
+            curl -fsS "http://localhost:$PORT/readyz" >/dev/null 2>&1 && break; sleep 0.5
+          done
+      - name: regenerate snapshot from live routes
+        env:
+          PLUTO_URL: http://localhost:8792
+          PLUTO_ANON_KEY: pk_anon_ci
+        run: node scripts/gen-openapi-snapshot.mjs
+      - name: fail on drift (unaccounted-for schema/route change)
+        run: |
+          if ! git diff --exit-code docs/api/openapi.snapshot.json; then
+            echo "::error::OpenAPI snapshot is out of date. Run 'npm run openapi:snapshot' locally and commit the diff."
+            exit 1
+          fi
+      - name: shutdown server
+        if: always()
+        run: kill "$(cat /tmp/pluto-oapi.pid)" || true
+
+
+
   frontend:
     name: frontend build
     runs-on: ubuntu-latest
