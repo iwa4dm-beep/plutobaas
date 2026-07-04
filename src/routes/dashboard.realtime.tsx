@@ -89,7 +89,10 @@ function RealtimePage() {
           <h1 className="text-2xl font-semibold flex items-center gap-2"><Radio className="h-5 w-5" /> Realtime channels</h1>
           <p className="text-sm text-muted-foreground">Broadcast events and track presence per channel.</p>
         </div>
-        <Button variant="outline" size="sm" onClick={refresh}><RefreshCw className="h-4 w-4 mr-1" /> Refresh</Button>
+        <div className="flex items-center gap-2">
+          <PresenceIndicator status={presenceStatus} attempt={presenceAttempt} channel={active ?? undefined} lastError={presenceError} />
+          <Button variant="outline" size="sm" onClick={refresh}><RefreshCw className="h-4 w-4 mr-1" /> Refresh</Button>
+        </div>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-[300px,1fr]">
