@@ -135,6 +135,33 @@ function BackupsPage() {
             <div className="text-xs text-muted-foreground">
               Source: <span className="font-mono">{wizard.download_path}</span> · {fmtBytes(wizard.bytes)}
             </div>
+
+            <div className="space-y-2 p-3 rounded-md border border-border">
+              <div className="text-xs font-medium flex items-center gap-1"><GitBranch className="h-3 w-3" /> Restore target</div>
+              <div className="flex gap-3 text-xs">
+                {(["inplace","existing","new"] as const).map(m => (
+                  <label key={m} className="flex items-center gap-1">
+                    <input type="radio" checked={targetMode===m} onChange={() => setTargetMode(m)} />
+                    {m === "inplace" ? "In-place" : m === "existing" ? "Existing branch" : "New branch"}
+                  </label>
+                ))}
+              </div>
+              {targetMode === "existing" && (
+                <select value={targetBranchId} onChange={e => setTargetBranchId(e.target.value)}
+                        className="w-full h-8 text-xs px-2 rounded-md border border-border bg-background">
+                  <option value="">Pick branch…</option>
+                  {branches.map(b => <option key={b.id} value={b.id}>{b.name} ({b.schema_name})</option>)}
+                </select>
+              )}
+              {targetMode === "new" && (
+                <Input placeholder="new-branch-name" value={newBranchName} onChange={e => setNewBranchName(e.target.value)} />
+              )}
+              <label className="flex items-center gap-2 text-[11px] text-muted-foreground">
+                <input type="checkbox" checked={allowIncompat} onChange={e => setAllowIncompat(e.target.checked)} />
+                Allow restore over incompatible schema (skips safety check)
+              </label>
+            </div>
+
             <label className="flex items-center gap-2 text-sm">
               <input type="checkbox" checked={dryRun} onChange={e => setDryRun(e.target.checked)} />
               Dry-run preview (log statements without applying)
