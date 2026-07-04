@@ -1234,10 +1234,22 @@ export const edgeV2 = {
     api<{ invocations: FnInvocation[] }>(`/fn/v2/invocations?limit=${limit}${slug ? `&slug=${encodeURIComponent(slug)}` : ""}`),
   logInvocation: (body: { function_slug: string; trigger?: "http"|"cron"|"manual"; status_code?: number; duration_ms?: number; cold_start?: boolean; error?: string }) =>
     api<{ ok: boolean; id: number }>("/fn/v2/invocations", { method: "POST", body: JSON.stringify(body) }),
+  // Functions catalog (Phase 25).
+  functions:      () => api<{ functions: FnCatalog[] }>("/fn/v2/functions"),
+  upsertFunction: (body: { slug: string; display_name?: string; runtime?: "node20"|"deno1"|"bun1"; entry?: string; active?: boolean }) =>
+    api<{ function: FnCatalog }>("/fn/v2/functions", { method: "POST", body: JSON.stringify(body) }),
+  deleteFunction: (slug: string) => api<{ ok: boolean }>(`/fn/v2/functions/${encodeURIComponent(slug)}`, { method: "DELETE" }),
+  invoke:         (slug: string, payload: Record<string, unknown> = {}, simulate_error = false) =>
+    api<{ ok: boolean; status_code: number; duration_ms: number; echoed: Record<string, unknown> }>(
+      `/fn/v2/functions/${encodeURIComponent(slug)}/invoke`,
+      { method: "POST", body: JSON.stringify({ payload, simulate_error }) }),
 };
+
+export type FnCatalog = { id: string; slug: string; display_name: string|null; runtime: string; entry: string; active: boolean; created_at: string; updated_at: string; schedules: number; secrets: number; invocations_24h: number };
 
 // -------------------- Phase 24: Backups --------------------
 export type BackupExport = { id: string; kind: "full"|"schema"|"table"; target: string|null; status: "pending"|"running"|"done"|"failed"; bytes: number; download_path: string|null; error: string|null; created_at: string; finished_at: string|null };
+export type BackupRestore = { id: string; export_id?: string; dry_run: boolean; status: "pending"|"running"|"done"|"failed"|"canceled"; progress: number; applied_statements: number; total_statements: number; log?: string; error: string|null; created_at: string; finished_at: string|null };
 
 export const backups = {
   list:   ()                                                     => api<{ exports: BackupExport[] }>("/backups/v1"),
@@ -1245,4 +1257,36 @@ export const backups = {
     api<{ export: BackupExport }>("/backups/v1", { method: "POST", body: JSON.stringify({ kind, target }) }),
   get:    (id: string) => api<{ export: BackupExport }>(`/backups/v1/${id}`),
   cancel: (id: string) => api<{ ok: boolean }>(`/backups/v1/${id}/cancel`, { method: "POST" }),
+  // Restore workflow (Phase 25) — dry_run by default, requires confirm='RESTORE' for live.
+  restores: (exportId: string) => api<{ restores: BackupRestore[] }>(`/backups/v1/${exportId}/restores`),
+  startRestore: (exportId: string, opts: { dry_run?: boolean; confirm?: string } = {}) =>
+    api<{ restore: BackupRestore }>(`/backups/v1/${exportId}/restore`,
+      { method: "POST", body: JSON.stringify({ dry_run: opts.dry_run ?? true, confirm: opts.confirm }) }),
+  restoreStatus: (rid: string) => api<{ restore: BackupRestore }>(`/backups/v1/restores/${rid}`),
+  cancelRestore: (rid: string) => api<{ ok: boolean }>(`/backups/v1/restores/${rid}/cancel`, { method: "POST" }),
+  // SSE progress stream: yields BackupRestore rows until status is terminal.
+  streamRestore(rid: string, opts: { onEvent: (r: BackupRestore) => void; onError?: (e: Error) => void }): () => void {
+    const controller = new AbortController();
+    (async () => {
+      try {
+        const base = (typeof window !== "undefined" && (window as unknown as { __PLUTO_LIVE_BASE__?: string }).__PLUTO_LIVE_BASE__) || "";
+        const res = await fetch(`${base}/backups/v1/restores/${rid}/stream`, {
+          signal: controller.signal, headers: { accept: "text/event-stream" }, credentials: "include",
+        });
+        if (!res.ok || !res.body) throw new Error(`SSE ${res.status}`);
+        const reader = res.body.getReader(); const dec = new TextDecoder(); let buf = "";
+        for (;;) {
+          const { value, done } = await reader.read(); if (done) break;
+          buf += dec.decode(value, { stream: true });
+          const parts = buf.split("\n\n"); buf = parts.pop() ?? "";
+          for (const p of parts) {
+            const line = p.split("\n").find(l => l.startsWith("data: "));
+            if (!line) continue;
+            try { opts.onEvent(JSON.parse(line.slice(6)) as BackupRestore); } catch { /* ignore */ }
+          }
+        }
+      } catch (e) { if ((e as Error).name !== "AbortError") opts.onError?.(e as Error); }
+    })();
+    return () => controller.abort();
+  },
 };
