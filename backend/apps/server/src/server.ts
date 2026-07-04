@@ -163,6 +163,8 @@ async function main() {
   await app.register(edgeV4Plugin);         // Phase 45 — multi-file bundles, npm/http imports, secrets, cron, domains
   const { vectorV2Plugin } = await import("./modules/vector_v2/plugin.js");
   await app.register(vectorV2Plugin);       // Phase 46 — HNSW indexes, embed pipeline, hybrid+RAG, model registry
+  const { observabilityV2Plugin } = await import("./modules/observability_v2/plugin.js");
+  await app.register(observabilityV2Plugin); // Phase 47 — OTel, RED metrics, SLO burn-rate, log alerts
   startLogRetentionSweeper(app.log);
 
 
