@@ -253,14 +253,7 @@ function PlutoAdminPage() {
                       </Select>
                       <Button onClick={createKey}><Plus className="h-4 w-4 mr-1"/>Mint</Button>
                     </div>
-                    {minted && (
-                      <Alert>
-                        <AlertDescription className="flex items-center justify-between gap-2">
-                          <code className="text-xs break-all">{minted}</code>
-                          <Button size="sm" variant="outline" onClick={() => { navigator.clipboard.writeText(minted); }}><Copy className="h-4 w-4"/></Button>
-                        </AlertDescription>
-                      </Alert>
-                    )}
+                    <MintedKeyDialog value={minted} onClose={() => setMinted(null)} />
                     <ul className="divide-y">
                       {keys.map(k => (
                         <li key={k.id} className="py-2 flex items-center justify-between">
@@ -268,12 +261,20 @@ function PlutoAdminPage() {
                             <div className="font-medium">{k.name} <Badge variant="outline" className="ml-2">{k.role}</Badge></div>
                             <div className="text-xs text-muted-foreground font-mono">{k.key_prefix}… · {new Date(k.created_at).toLocaleString()}</div>
                           </div>
-                          {!k.revoked_at
-                            ? <Button size="sm" variant="ghost" onClick={() => revokeKey(k.id)}><Trash2 className="h-4 w-4 text-destructive"/></Button>
-                            : <Badge variant="destructive">revoked</Badge>}
+                          <div className="flex items-center gap-2">
+                            {k.revoked_at
+                              ? <Badge variant="destructive">revoked</Badge>
+                              : (
+                                <>
+                                  <Button size="sm" variant="outline" onClick={() => rotateKey(k.id)} title="Rotate"><RotateCw className="h-4 w-4 mr-1"/>Rotate</Button>
+                                  <Button size="sm" variant="ghost" onClick={() => revokeKey(k.id)} title="Revoke"><Trash2 className="h-4 w-4 text-destructive"/></Button>
+                                </>
+                              )}
+                          </div>
                         </li>
                       ))}
                     </ul>
+
                   </>
                 )}
               </CardContent>
