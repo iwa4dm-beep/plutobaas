@@ -299,3 +299,39 @@ function LoginRow({ onLogin, disabled }: { onLogin: (e: string, p: string) => vo
     </div>
   );
 }
+
+function MintedKeyDialog({ value, onClose }: { value: string | null; onClose: () => void }) {
+  const [copied, setCopied] = useState(false);
+  const [ack, setAck] = useState(false);
+  useEffect(() => { if (value) { setCopied(false); setAck(false); } }, [value]);
+  if (!value) return null;
+  async function doCopy() {
+    try { await navigator.clipboard.writeText(value!); setCopied(true); } catch { /* ignore */ }
+  }
+  return (
+    <Dialog open={!!value} onOpenChange={(o) => { if (!o && ack) onClose(); }}>
+      <DialogContent className="sm:max-w-lg" onInteractOutside={(e) => e.preventDefault()}>
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2"><KeyRound className="h-4 w-4"/> Copy your new API key</DialogTitle>
+          <DialogDescription>
+            This key is shown <b>once</b>. Store it in a secret manager now — you will not be able to view it again.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="rounded-md border bg-muted/40 p-3 font-mono text-xs break-all select-all">{value}</div>
+        <div className="flex items-center gap-2">
+          <Button size="sm" variant="outline" onClick={doCopy}>
+            {copied ? <Check className="h-4 w-4 mr-1"/> : <Copy className="h-4 w-4 mr-1"/>}
+            {copied ? "Copied" : "Copy to clipboard"}
+          </Button>
+        </div>
+        <label className="flex items-start gap-2 text-sm">
+          <Checkbox checked={ack} onCheckedChange={(v) => setAck(!!v)} />
+          <span>I have saved this key. I understand it cannot be recovered.</span>
+        </label>
+        <DialogFooter>
+          <Button disabled={!ack} onClick={onClose}>Done</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
