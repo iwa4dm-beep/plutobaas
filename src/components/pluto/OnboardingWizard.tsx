@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import {
   Check, ChevronRight, ChevronLeft, Copy, Cloud, Container,
-  Rocket, Server, Sparkles, X,
+  Rocket, Server, Sparkles, X, AlertTriangle, Download,
 } from "lucide-react";
 
 export type Plan = "self-hosted" | "starter" | "business";
