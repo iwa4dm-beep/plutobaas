@@ -26,4 +26,5 @@ COPY --from=build /app/migrations ./migrations
 COPY --from=build /app/package.json ./
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s CMD wget -qO- http://127.0.0.1:3000/livez || exit 1
-CMD ["node", "packages/api/dist/server.js"]
+RUN chmod +x /app/packages/api/scripts/entrypoint.sh
+ENTRYPOINT ["/app/packages/api/scripts/entrypoint.sh"]
