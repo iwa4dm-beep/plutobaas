@@ -1,6 +1,9 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { Database, Files, ScrollText, Users } from "lucide-react";
+import {
+  Activity, ArrowUpRight, Database, Files, KeyRound, Radio,
+  ScrollText, ShieldCheck, Sparkles, Terminal, Users, Waves,
+} from "lucide-react";
 import { PageHeader } from "@/components/pluto/PageHeader";
 import { pluto } from "@/lib/pluto/client";
 import { isLive, live } from "@/lib/pluto/live";
