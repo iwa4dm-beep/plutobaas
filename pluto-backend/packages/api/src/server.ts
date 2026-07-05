@@ -6,6 +6,7 @@ import jwt from '@fastify/jwt';
 import { loadConfig } from './config.js';
 import { healthRoutes } from './routes/health.js';
 import { authRoutes } from './routes/auth.js';
+import { restRoutes } from './routes/rest.js';
 
 async function main() {
   const cfg = loadConfig();
