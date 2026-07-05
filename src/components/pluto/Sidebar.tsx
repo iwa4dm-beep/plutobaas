@@ -1,5 +1,5 @@
 import { Link, useRouterState } from "@tanstack/react-router";
-import { Activity, Archive, Building2, Cloud, Database, Files, Gauge, GitBranch, Gauge as GaugeAlt, Globe, HeartPulse, KeyRound, LineChart, LogOut, Package, Radio, Rocket, ScrollText, Search, Server, Settings, Shield, ShieldAlert, ShieldCheck, Sparkles, Terminal, Users, Waves, Zap } from "lucide-react";
+import { Activity, Archive, Boxes, Building2, Cloud, Database, Files, Gauge, GitBranch, Gauge as GaugeAlt, Globe, HeartPulse, History, KeyRound, LineChart, LogOut, Package, Radio, Rocket, ScrollText, Search, Server, Settings, Shield, ShieldAlert, ShieldCheck, Sparkles, Terminal, Users, Waves, Zap } from "lucide-react";
 import { useAuth } from "@/lib/pluto/auth-context";
 import { WorkspaceSwitcher } from "@/components/pluto/WorkspaceSwitcher";
 
