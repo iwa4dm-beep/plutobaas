@@ -151,14 +151,19 @@ function Overview() {
 
   const quickActions: {
     label: string; desc: string; icon: typeof KeyRound;
-    to: "/dashboard/tokens" | "/dashboard/rbac" | "/dashboard/realtime" | "/dashboard/sql" | "/dashboard/verify";
+    to: "/dashboard/tokens" | "/dashboard/rbac" | "/dashboard/realtime" | "/dashboard/sql" | "/dashboard/verify" | "/dashboard/backend-status";
   }[] = [
-    { label: "Rotate keys",    desc: "Mint anon & service-role keys",     icon: KeyRound,    to: "/dashboard/tokens" },
-    { label: "RLS & roles",    desc: "Edit policies and role registry",   icon: ShieldCheck, to: "/dashboard/rbac" },
-    { label: "Realtime rooms", desc: "Inspect presence and broadcast",    icon: Radio,       to: "/dashboard/realtime" },
-    { label: "SQL runner",     desc: "Run queries against Postgres",      icon: Terminal,    to: "/dashboard/sql" },
-    { label: "Smoke tests",    desc: "One-click end-to-end verification", icon: Activity,    to: "/dashboard/verify" },
+    { label: "Backend status", desc: "Live health, DB, migrations",         icon: Heart,       to: "/dashboard/backend-status" },
+    { label: "Rotate keys",    desc: "Mint anon & service-role keys",       icon: KeyRound,    to: "/dashboard/tokens" },
+    { label: "RLS & roles",    desc: "Edit policies and role registry",     icon: ShieldCheck, to: "/dashboard/rbac" },
+    { label: "Realtime rooms", desc: "Inspect presence and broadcast",      icon: Radio,       to: "/dashboard/realtime" },
+    { label: "SQL runner",     desc: "Run queries against Postgres",        icon: Terminal,    to: "/dashboard/sql" },
+    { label: "Smoke tests",    desc: "One-click end-to-end verification",   icon: Activity,    to: "/dashboard/verify" },
   ];
+
+  const healthAllOk = health.live && health.ready && health.mig;
+  const healthAnyDown = health.live === false || health.ready === false || health.mig === false;
+  const healthLabel = healthAllOk ? "All systems operational" : healthAnyDown ? "One or more checks failing" : "Probing backend…";
 
   return (
     <div>
