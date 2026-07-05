@@ -520,7 +520,7 @@ function TerminalCard() {
         })),
       };
       setHistory((h) => {
-        const next = pruneHistory([...h, point], retention);
+        const next = pruneHistory([...h, point], retentionRef.current);
         saveHistory(next);
         return next;
       });
