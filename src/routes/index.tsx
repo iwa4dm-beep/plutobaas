@@ -802,6 +802,47 @@ function TerminalCard() {
           </button>
         </div>
       </div>
+      {showRetention && (
+        <div
+          id="terminal-retention-panel"
+          role="region"
+          aria-label="History retention settings"
+          className="flex flex-wrap items-end gap-3 border-b border-border bg-muted/20 px-4 py-3 text-xs"
+        >
+          <label className="flex flex-col gap-1">
+            <span className="text-muted-foreground">max points (5–500)</span>
+            <input
+              type="number" min={5} max={500} step={1} value={retention.max}
+              onChange={(e) => {
+                const n = Math.max(5, Math.min(500, Math.round(Number(e.target.value) || HISTORY_MAX_DEFAULT)));
+                setRetention((r) => ({ ...r, max: n }));
+              }}
+              className="w-24 rounded border border-border bg-background px-2 py-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            />
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-muted-foreground">max age (hours, 1–720)</span>
+            <input
+              type="number" min={1} max={720} step={1} value={retention.maxAgeHours}
+              onChange={(e) => {
+                const n = Math.max(1, Math.min(720, Number(e.target.value) || HISTORY_MAX_AGE_HOURS_DEFAULT));
+                setRetention((r) => ({ ...r, maxAgeHours: n }));
+              }}
+              className="w-24 rounded border border-border bg-background px-2 py-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            />
+          </label>
+          <button
+            type="button"
+            onClick={() => setRetention({ max: HISTORY_MAX_DEFAULT, maxAgeHours: HISTORY_MAX_AGE_HOURS_DEFAULT })}
+            className="rounded border border-border px-2 py-1 hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            reset defaults
+          </button>
+          <span className="text-muted-foreground">
+            currently keeping {history.length} / {retention.max} points · saved to localStorage
+          </span>
+        </div>
+      )}
       <pre aria-live="polite" aria-atomic="true" className="overflow-x-auto p-5 font-mono text-xs leading-relaxed sm:text-sm">
         <div><span className="text-emerald-500" aria-hidden="true">$</span> git clone pluto-baas && cd pluto-baas && docker compose up -d</div>
         <div className="mt-3 text-muted-foreground">
