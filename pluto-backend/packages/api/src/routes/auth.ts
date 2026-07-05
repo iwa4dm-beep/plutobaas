@@ -4,6 +4,9 @@ import { z } from 'zod';
 import { randomBytes, createHash } from 'node:crypto';
 import { getSql } from '../db/pool.js';
 import type { Config } from '../config.js';
+import { authOps } from '../observability/metrics.js';
+import { emailEnabled, newToken, sendMail, verificationEmail, recoveryEmail } from '../email/mailer.js';
+
 
 const emailSchema = z.string().trim().toLowerCase().email().max(255);
 const passwordSchema = z.string().min(8).max(72);
@@ -110,18 +113,31 @@ export async function authRoutes(app: FastifyInstance, cfg: Config) {
     config: { rateLimit: { max: 5, timeWindow: '1 minute' } },
   }, async (req, reply) => {
     const parsed = signupBody.safeParse(req.body);
-    if (!parsed.success) return reply.code(400).send({ error: 'validation', issues: parsed.error.issues });
+    if (!parsed.success) { authOps.inc({ op: 'signup', result: 'fail' }); return reply.code(400).send({ error: 'validation', issues: parsed.error.issues }); }
     const { email, password, data } = parsed.data;
 
     const existing = await sql`SELECT id FROM auth.users WHERE lower(email) = ${email} LIMIT 1`;
-    if (existing.length) return reply.code(409).send({ error: 'user_already_exists', message: 'Email already registered' });
+    if (existing.length) { authOps.inc({ op: 'signup', result: 'fail' }); return reply.code(409).send({ error: 'user_already_exists', message: 'Email already registered' }); }
 
     const encrypted_password = await argon2.hash(password, { type: argon2.argon2id });
+    const emailAutoConfirm = !emailEnabled(); // when SMTP off, auto-confirm (dev mode)
     const [user] = await sql`
       INSERT INTO auth.users (email, encrypted_password, raw_user_meta_data, email_confirmed_at)
-      VALUES (${email}, ${encrypted_password}, ${sql.json(data || {})}, now())
+      VALUES (${email}, ${encrypted_password}, ${sql.json(data || {})}, ${emailAutoConfirm ? sql`now()` : null})
       RETURNING *
     `;
+
+    // Send verification email if SMTP configured
+    if (emailEnabled()) {
+      const { token, hash } = newToken();
+      const expires_at = new Date(Date.now() + 24 * 3600 * 1000);
+      await sql`INSERT INTO auth.email_tokens (user_id, type, token_hash, expires_at)
+                VALUES (${user.id}, 'signup', ${hash}, ${expires_at})`;
+      const { subject, html } = verificationEmail(token, email);
+      await sendMail(cfg, email, subject, html, 'signup');
+    }
+
+    authOps.inc({ op: 'signup', result: 'ok' });
     const session = await issueSession(app, cfg, user);
     reply.code(201).send(session);
   });
@@ -210,16 +226,56 @@ export async function authRoutes(app: FastifyInstance, cfg: Config) {
   }, async (req, reply) => {
     const parsed = recoverBody.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: 'validation', issues: parsed.error.issues });
-    // Silent success — do not reveal user existence. Real email delivery lands with SMTP plugin.
-    app.log.info({ recover_for: parsed.data.email }, 'password recovery requested');
+    // Silent success — do not reveal user existence.
+    const [u] = await sql`SELECT id FROM auth.users WHERE lower(email) = ${parsed.data.email} LIMIT 1`;
+    if (u) {
+      const { token, hash } = newToken();
+      const expires_at = new Date(Date.now() + 3600 * 1000);
+      await sql`INSERT INTO auth.email_tokens (user_id, type, token_hash, expires_at)
+                VALUES (${u.id}, 'recovery', ${hash}, ${expires_at})`;
+      const { subject, html } = recoveryEmail(token);
+      await sendMail(cfg, parsed.data.email, subject, html, 'recovery');
+    }
+    authOps.inc({ op: 'recover', result: 'ok' });
     return reply.send({ ok: true });
   });
+
+  // --- GET /auth/v1/verify?token=&type=signup|recovery ---
+  app.get<{ Querystring: { token?: string; type?: string; new_password?: string } }>(
+    '/auth/v1/verify',
+    async (req, reply) => {
+      const { token, type } = req.query;
+      if (!token || !type) return reply.code(400).send({ error: 'missing token/type' });
+      const hash = createHash('sha256').update(token).digest('hex');
+      const [row] = await sql<any[]>`
+        SELECT et.*, u.email FROM auth.email_tokens et
+        JOIN auth.users u ON u.id = et.user_id
+        WHERE et.token_hash = ${hash} AND et.type = ${type} AND et.used_at IS NULL LIMIT 1`;
+      if (!row) return reply.code(400).send({ error: 'invalid_or_used_token' });
+      if (new Date(row.expires_at) < new Date()) return reply.code(400).send({ error: 'expired' });
+
+      await sql`UPDATE auth.email_tokens SET used_at = now() WHERE id = ${row.id}`;
+      if (type === 'signup') {
+        await sql`UPDATE auth.users SET email_confirmed_at = now() WHERE id = ${row.user_id}`;
+        return reply.send({ ok: true, message: 'Email confirmed' });
+      }
+      if (type === 'recovery') {
+        // Issue short-lived session so client can call PUT /auth/v1/user to set new password
+        const [user] = await sql`SELECT * FROM auth.users WHERE id = ${row.user_id}`;
+        const session = await issueSession(app, cfg, user);
+        return reply.send({ ok: true, session, message: 'Use session to update password via PUT /auth/v1/user' });
+      }
+      return reply.send({ ok: true });
+    },
+  );
+
 
   // --- GET /auth/v1/settings ---
   app.get('/auth/v1/settings', async () => ({
     external: { email: true, phone: false },
     disable_signup: false,
-    mailer_autoconfirm: true,
+    mailer_autoconfirm: !emailEnabled(),
+    email_delivery: emailEnabled() ? 'smtp' : 'disabled',
   }));
 
   // --- GET /auth/v1/jwks (symmetric HS256 — placeholder empty JWKS) ---
