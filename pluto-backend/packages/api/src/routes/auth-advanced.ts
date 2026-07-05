@@ -236,7 +236,8 @@ export async function authAdvancedRoutes(app: FastifyInstance, cfg: Config) {
       values (${actor.userId}, 'totp', ${b.friendly_name}, ${secret}, 'unverified')
       returning id, friendly_name, status, created_at`;
     const issuer = 'Pluto';
-    const label = encodeURIComponent(`${issuer}:${actor.email ?? actor.userId}`);
+    const [u] = await sql`select email from auth.users where id = ${actor.userId}`;
+    const label = encodeURIComponent(`${issuer}:${u?.email ?? actor.userId}`);
     const otpauth = `otpauth://totp/${label}?secret=${secret}&issuer=${issuer}&period=30&digits=6&algorithm=SHA1`;
     return { ...row, secret, otpauth_url: otpauth };
   });
@@ -279,7 +280,7 @@ export async function authAdvancedRoutes(app: FastifyInstance, cfg: Config) {
     if (!verifyTotp(f.secret, b.code)) return { error: 'invalid_code' };
     await sql`update auth.mfa_factors set last_used_at=now() where id=${f.id}`;
     const aal2 = (app as any).jwt.sign({
-      sub: actor.userId, email: actor.email, aal: 'aal2', amr: ['totp'],
+      sub: actor.userId, aal: 'aal2', amr: ['totp'],
     }, { expiresIn: '1h' });
     return { access_token: aal2, aal: 'aal2' };
   });
