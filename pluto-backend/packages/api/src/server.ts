@@ -17,6 +17,10 @@ import { schemaRoutes } from './routes/schema.js';
 import { grantsRoutes } from './routes/grants.js';
 import { migrationsRoutes } from './routes/migrations.js';
 import { sqlRoutes } from './routes/sql.js';
+import { backupsRoutes } from './routes/backups.js';
+import { webhooksRoutes } from './routes/webhooks.js';
+import { searchRoutes } from './routes/search.js';
+import { billingRoutes } from './routes/billing.js';
 import { metricsPlugin } from './observability/metrics.js';
 
 
@@ -83,6 +87,10 @@ async function main() {
   await grantsRoutes(app, cfg);
   await migrationsRoutes(app, cfg);
   await sqlRoutes(app, cfg);
+  await backupsRoutes(app, cfg);
+  await webhooksRoutes(app, cfg);
+  await searchRoutes(app, cfg);
+  await billingRoutes(app, cfg);
 
 
 

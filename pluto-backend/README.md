@@ -65,3 +65,11 @@ TerminalCard probes on `/dashboard` will turn green.
 - [x] Phase 8 — Prometheus metrics (`/metrics`), Edge Functions (`/functions/v1/*` — worker_threads sandbox), Email/SMTP (nodemailer) — signup verification + password recovery flows, `/dashboard/pluto-admin` UI
 
 See `.lovable/plan.md` for the full blueprint.
+- [x] Phase 9 — Governance: audit log, table grants, migrations, schema (indexes/constraints), safer SQL editor
+- [x] Phase 10 — Backups & Restore (`/admin/v1/backups`, pg_dump/pg_restore), Webhooks & Event Triggers (`/admin/v1/webhooks`, HMAC-signed, retry/dead-letter), Search & Vector (`/admin/v1/search/fts`, `/admin/v1/search/vector` with pgvector), Billing (usage counters, quotas, alert rules)
+
+### Phase 10 requirements
+
+- `pg_dump` / `pg_restore` binaries must be on `$PATH` for the API container.
+- `pgvector` extension optional; enable in your DB for vector search. Migration `0007_phase10.sql` auto-creates it if available.
+- `PLUTO_BACKUP_DIR` must point at a persistent, writable directory.
