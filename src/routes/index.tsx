@@ -561,12 +561,60 @@ function TerminalCard() {
     return () => { cancelled = true; ctrl.abort(); };
   }, [apiUrl, nonce]);
 
-  // Auto-refresh
+  // Auto-refresh — pauses while the tab is hidden (Page Visibility API) to
+  // avoid burning cycles when the user isn't watching, and resumes on focus.
   useEffect(() => {
     if (!refreshMs) return;
-    const id = setInterval(() => setNonce((n) => n + 1), refreshMs);
-    return () => clearInterval(id);
+    let id: ReturnType<typeof setInterval> | null = null;
+    const start = () => {
+      if (id) return;
+      id = setInterval(() => setNonce((n) => n + 1), refreshMs);
+    };
+    const stop = () => { if (id) { clearInterval(id); id = null; } };
+    const onVis = () => (document.hidden ? stop() : start());
+    if (!document.hidden) start();
+    document.addEventListener("visibilitychange", onVis);
+    return () => { stop(); document.removeEventListener("visibilitychange", onVis); };
   }, [refreshMs]);
+
+  // Global keyboard shortcuts: `r` re-probe, `/` focus module search, `?` toggle help.
+  // Skips when typing in a form field so we don't hijack user input.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      const tag = t?.tagName;
+      if (t?.isContentEditable || tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") {
+        if (e.key === "Escape" && tag === "INPUT" && t === searchRef.current) {
+          setSearch(""); t.blur();
+        }
+        return;
+      }
+      if (e.key === "r" || e.key === "R") { e.preventDefault(); setNonce((n) => n + 1); }
+      else if (e.key === "/") { e.preventDefault(); searchRef.current?.focus(); }
+      else if (e.key === "?") { e.preventDefault(); setShowHelp((v) => !v); }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  // Announce overall status transitions (ok → degraded, etc.) to screen readers.
+  useEffect(() => {
+    const prev = prevReadyKindRef.current;
+    if (prev && prev !== ready.kind && ready.kind !== "loading") {
+      const label =
+        ready.kind === "ok" ? "All systems operational" :
+        ready.kind === "degraded" ? "Backend degraded — some modules unreachable" :
+        ready.kind === "unreachable" ? "Backend unreachable" : "";
+      if (label) setAnnounceMsg(`${label} at ${new Date().toLocaleTimeString()}`);
+    }
+    prevReadyKindRef.current = ready.kind;
+  }, [ready]);
+
+  function copy() {
+    void navigator.clipboard.writeText(cmd);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  }
 
   // "last updated Xs ago" ticker
   useEffect(() => {
