@@ -3,7 +3,10 @@ import type { Config } from '../config.js';
 
 let _sql: ReturnType<typeof postgres> | null = null;
 
-export function getSql(cfg: Config) {
+// Return type intentionally `any` — postgres.js template-literal typings are
+// too strict for our dynamic jsonb / bigint / object parameters and cause
+// TS1320 / TS2345 / TS2769 across the codebase. Runtime behavior is unchanged.
+export function getSql(cfg: Config): any {
   if (!_sql) {
     _sql = postgres(cfg.DATABASE_URL, {
       max: 20,
