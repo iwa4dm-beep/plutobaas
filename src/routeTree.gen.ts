@@ -41,6 +41,7 @@ import { Route as DashboardFunctionsRouteImport } from './routes/dashboard.funct
 import { Route as DashboardEnterpriseRouteImport } from './routes/dashboard.enterprise'
 import { Route as DashboardDevexRouteImport } from './routes/dashboard.devex'
 import { Route as DashboardDatabaseRouteImport } from './routes/dashboard.database'
+import { Route as DashboardCorsRouteImport } from './routes/dashboard.cors'
 import { Route as DashboardBranchingRouteImport } from './routes/dashboard.branching'
 import { Route as DashboardBackupsRouteImport } from './routes/dashboard.backups'
 import { Route as DashboardAuditLogRouteImport } from './routes/dashboard.audit-log'
@@ -212,6 +213,11 @@ const DashboardDatabaseRoute = DashboardDatabaseRouteImport.update({
   path: '/database',
   getParentRoute: () => DashboardRoute,
 } as any)
+const DashboardCorsRoute = DashboardCorsRouteImport.update({
+  id: '/cors',
+  path: '/cors',
+  getParentRoute: () => DashboardRoute,
+} as any)
 const DashboardBranchingRoute = DashboardBranchingRouteImport.update({
   id: '/branching',
   path: '/branching',
@@ -278,6 +284,7 @@ export interface FileRoutesByFullPath {
   '/dashboard/audit-log': typeof DashboardAuditLogRoute
   '/dashboard/backups': typeof DashboardBackupsRoute
   '/dashboard/branching': typeof DashboardBranchingRoute
+  '/dashboard/cors': typeof DashboardCorsRoute
   '/dashboard/database': typeof DashboardDatabaseRoute
   '/dashboard/devex': typeof DashboardDevexRoute
   '/dashboard/enterprise': typeof DashboardEnterpriseRoute
@@ -321,6 +328,7 @@ export interface FileRoutesByTo {
   '/dashboard/audit-log': typeof DashboardAuditLogRoute
   '/dashboard/backups': typeof DashboardBackupsRoute
   '/dashboard/branching': typeof DashboardBranchingRoute
+  '/dashboard/cors': typeof DashboardCorsRoute
   '/dashboard/database': typeof DashboardDatabaseRoute
   '/dashboard/devex': typeof DashboardDevexRoute
   '/dashboard/enterprise': typeof DashboardEnterpriseRoute
@@ -366,6 +374,7 @@ export interface FileRoutesById {
   '/dashboard/audit-log': typeof DashboardAuditLogRoute
   '/dashboard/backups': typeof DashboardBackupsRoute
   '/dashboard/branching': typeof DashboardBranchingRoute
+  '/dashboard/cors': typeof DashboardCorsRoute
   '/dashboard/database': typeof DashboardDatabaseRoute
   '/dashboard/devex': typeof DashboardDevexRoute
   '/dashboard/enterprise': typeof DashboardEnterpriseRoute
@@ -412,6 +421,7 @@ export interface FileRouteTypes {
     | '/dashboard/audit-log'
     | '/dashboard/backups'
     | '/dashboard/branching'
+    | '/dashboard/cors'
     | '/dashboard/database'
     | '/dashboard/devex'
     | '/dashboard/enterprise'
@@ -455,6 +465,7 @@ export interface FileRouteTypes {
     | '/dashboard/audit-log'
     | '/dashboard/backups'
     | '/dashboard/branching'
+    | '/dashboard/cors'
     | '/dashboard/database'
     | '/dashboard/devex'
     | '/dashboard/enterprise'
@@ -499,6 +510,7 @@ export interface FileRouteTypes {
     | '/dashboard/audit-log'
     | '/dashboard/backups'
     | '/dashboard/branching'
+    | '/dashboard/cors'
     | '/dashboard/database'
     | '/dashboard/devex'
     | '/dashboard/enterprise'
@@ -763,6 +775,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardDatabaseRouteImport
       parentRoute: typeof DashboardRoute
     }
+    '/dashboard/cors': {
+      id: '/dashboard/cors'
+      path: '/cors'
+      fullPath: '/dashboard/cors'
+      preLoaderRoute: typeof DashboardCorsRouteImport
+      parentRoute: typeof DashboardRoute
+    }
     '/dashboard/branching': {
       id: '/dashboard/branching'
       path: '/branching'
@@ -859,6 +878,7 @@ interface DashboardRouteChildren {
   DashboardAuditLogRoute: typeof DashboardAuditLogRoute
   DashboardBackupsRoute: typeof DashboardBackupsRoute
   DashboardBranchingRoute: typeof DashboardBranchingRoute
+  DashboardCorsRoute: typeof DashboardCorsRoute
   DashboardDatabaseRoute: typeof DashboardDatabaseRoute
   DashboardDevexRoute: typeof DashboardDevexRoute
   DashboardEnterpriseRoute: typeof DashboardEnterpriseRoute
@@ -895,6 +915,7 @@ const DashboardRouteChildren: DashboardRouteChildren = {
   DashboardAuditLogRoute: DashboardAuditLogRoute,
   DashboardBackupsRoute: DashboardBackupsRoute,
   DashboardBranchingRoute: DashboardBranchingRoute,
+  DashboardCorsRoute: DashboardCorsRoute,
   DashboardDatabaseRoute: DashboardDatabaseRoute,
   DashboardDevexRoute: DashboardDevexRoute,
   DashboardEnterpriseRoute: DashboardEnterpriseRoute,

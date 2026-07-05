@@ -8,6 +8,7 @@ const items = [
   { to: "/dashboard/projects", label: "Projects & Keys", icon: KeyRound },
   { to: "/dashboard/workspaces", label: "Workspaces", icon: Building2 },
   { to: "/dashboard/api", label: "REST endpoints", icon: Radio },
+  { to: "/dashboard/cors", label: "CORS whitelist", icon: Globe },
   { to: "/dashboard/database", label: "Database", icon: Database },
   { to: "/dashboard/sql", label: "SQL runner", icon: Terminal },
   { to: "/dashboard/migrations", label: "Migrations", icon: GitBranch },

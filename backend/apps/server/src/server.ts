@@ -17,6 +17,8 @@ import { workspacesRoutes } from "./modules/admin/workspaces.js";
 import { sqlRunnerRoutes } from "./modules/admin/sql.js";
 import { schemaRoutes } from "./modules/admin/schema.js";
 import { env } from "./config.js";
+import { corsAdminPlugin } from "./modules/cors/plugin.js";
+import { isOriginAllowed, refreshAllowedOrigins } from "./modules/cors/registry.js";
 
 // Legacy modules archived under ./modules/_archive/. To re-enable during the
 // v4/v5 migration window, set PLUTO_ENABLE_LEGACY=1. Wave 2 consolidation:
@@ -67,7 +69,24 @@ async function main() {
   });
   app.addHook("onSend", async (req, reply) => { reply.header("x-request-id", req.id); });
 
-  await app.register(cors, { origin: true, credentials: true });
+  // Dynamic CORS — consults public.allowed_origins (per-workspace whitelist).
+  // Requests with no Origin header (server-to-server, curl) always pass.
+  // In dev (NODE_ENV !== production) we also allow localhost:* as a fallback
+  // so a fresh install with an empty allow-list is still usable.
+  await refreshAllowedOrigins();
+  const devFallback = process.env.NODE_ENV !== "production";
+  await app.register(cors, {
+    credentials: true,
+    origin: (origin, cb) => {
+      if (!origin) return cb(null, true);
+      if (devFallback && /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(origin)) {
+        return cb(null, true);
+      }
+      isOriginAllowed(origin)
+        .then((ok) => cb(null, ok))
+        .catch(() => cb(null, false));
+    },
+  });
   await app.register(rateLimit, { max: 200, timeWindow: "1 minute" });
   await app.register(multipart, { limits: { fileSize: 50 * 1024 * 1024 } });
   await app.register(websocket);
@@ -105,6 +124,7 @@ async function main() {
   await app.register(workspacesRoutes, { prefix: "/admin/v1/workspaces" });
   await app.register(sqlRunnerRoutes,  { prefix: "/admin/v1/sql" });
   await app.register(schemaRoutes,     { prefix: "/admin/v1/schema" });
+  await app.register(corsAdminPlugin);
   const { integrationsRoutes } = await import("./modules/admin/integrations.js");
   await app.register(integrationsRoutes, { prefix: "/admin/v1" });
   await app.register(commsPlugin);         // Phase 14 — /comms/v1/*, PLUTO_ENABLE_COMMS=1

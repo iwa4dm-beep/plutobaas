@@ -160,4 +160,69 @@ export async function authRoutes(app: FastifyInstance) {
     if (!row) return reply.code(404).send({ error: "not_found" });
     return { user: row };
   });
+
+  // ---- Magic link (passwordless email sign-in) ---------------------------
+  const magicSchema = z.object({
+    email: z.string().email().max(255),
+    redirect_to: z.string().url().max(500).optional(),
+  });
+  app.post("/magiclink/send", async (req, reply) => {
+    const gate = preCheck(req, "magiclink", (req.body as { email?: string })?.email ?? "");
+    if (!gate.ok) return limited(reply, gate.retryAfterSec, gate.reason);
+    const parsed = magicSchema.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: "invalid_body" });
+    const token = randomBytes(24).toString("base64url");
+    const token_hash = hashToken(token);
+    const expires_at = new Date(Date.now() + 15 * 60 * 1000); // 15 min
+    await db.insertInto("email_magic_links" as never).values({
+      id: crypto.randomUUID(),
+      email: parsed.data.email.toLowerCase(),
+      token_hash,
+      redirect_to: parsed.data.redirect_to ?? null,
+      expires_at,
+    } as never).execute();
+    await log("auth", "info", `magiclink sent ${parsed.data.email}`, null);
+    // Token surfaced only in non-production so the smoke tests / dashboard
+    // can exercise the flow without an SMTP round-trip. In production the
+    // link is delivered via the comms module.
+    const debug = process.env.NODE_ENV !== "production" ? { token } : {};
+    await recordSuccess(req, "magiclink", parsed.data.email);
+    return { ok: true, ttl_sec: 900, ...debug };
+  });
+
+  app.post("/magiclink/verify", async (req, reply) => {
+    const parsed = z.object({ token: z.string().min(8).max(200) }).safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: "invalid_body" });
+    const token_hash = hashToken(parsed.data.token);
+    const row = await db.selectFrom("email_magic_links" as never)
+      .select(["id", "email", "expires_at", "consumed_at"] as never)
+      .where("token_hash" as never, "=", token_hash)
+      .executeTakeFirst() as { id: string; email: string; expires_at: Date; consumed_at: Date | null } | undefined;
+    if (!row) return reply.code(400).send({ error: "invalid_token" });
+    if (row.consumed_at) return reply.code(400).send({ error: "token_used" });
+    if (new Date(row.expires_at).getTime() < Date.now())
+      return reply.code(400).send({ error: "token_expired" });
+
+    // Upsert the user (magic link doubles as sign-up).
+    let user = await db.selectFrom("users").selectAll()
+      .where("email", "=", row.email).executeTakeFirst();
+    if (!user) {
+      const id = crypto.randomUUID();
+      await db.insertInto("users").values({
+        id, email: row.email,
+        password_hash: "", role: "user",
+        email_verified: true, created_at: new Date(),
+      }).execute();
+      user = { id, email: row.email, password_hash: "", role: "user",
+               email_verified: true, created_at: new Date() } as never;
+    }
+    await db.updateTable("email_magic_links" as never)
+      .set({ consumed_at: new Date() } as never)
+      .where("id" as never, "=", row.id)
+      .execute();
+    const session = await issueSession({ id: user!.id, email: user!.email, role: user!.role as "admin" | "user" });
+    await log("auth", "info", `magiclink verified ${row.email}`, user!.id);
+    return { user: { id: user!.id, email: user!.email, role: user!.role, email_verified: true }, session };
+  });
 }
+
