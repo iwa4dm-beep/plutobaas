@@ -1,21 +1,39 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import {
-  Activity, ArrowRight, Boxes, Braces, Cloud, Code2, Copy, Database,
+  Activity, ArrowRight, Boxes, Check, Cloud, Code2, Copy, Database,
   Files, Github, KeyRound, Layers, LineChart, Lock, Radio, Search,
-  ShieldCheck, Sparkles, Terminal, Waves, Workflow, Zap,
+  ShieldCheck, Sparkles, Terminal, Waves, Workflow, Zap, HelpCircle,
+  ChevronDown,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
       { title: "Pluto BaaS — Self-hosted backend for React, Vue & mobile" },
-      { name: "description", content: "Auth, auto-generated REST + GraphQL, Realtime, Storage, Vector search, Jobs & Edge functions — one docker-compose away, or deploy to Fly/Railway/Render." },
+      { name: "description", content: "Open-source Backend-as-a-Service: auth, auto REST + GraphQL, realtime, storage, vector search, jobs and edge functions. Deploy with Docker, Fly, Railway or Render." },
+      { name: "keywords", content: "BaaS, backend, Firebase alternative, Supabase alternative, self-hosted, Postgres, RLS, realtime, edge functions" },
       { property: "og:title", content: "Pluto BaaS — Self-hosted Firebase/Supabase alternative" },
       { property: "og:description", content: "Production-grade Backend-as-a-Service. 8 canonical modules, typed SDK, admin dashboard, RLS, MFA — fully open." },
       { property: "og:type", content: "website" },
+      { property: "og:url", content: "https://backend-joy.lovable.app/" },
       { name: "twitter:card", content: "summary_large_image" },
+      { name: "twitter:title", content: "Pluto BaaS — Self-hosted backend platform" },
+      { name: "twitter:description", content: "Auth, REST, Realtime, Storage, Vector, Edge, Jobs — one docker compose away." },
     ],
+    links: [{ rel: "canonical", href: "https://backend-joy.lovable.app/" }],
+    scripts: [{
+      type: "application/ld+json",
+      children: JSON.stringify({
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        name: "Pluto BaaS",
+        applicationCategory: "DeveloperApplication",
+        operatingSystem: "Linux, macOS, Windows (Docker)",
+        offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
+        description: "Open-source self-hosted Backend-as-a-Service with authentication, auto-generated REST + GraphQL, realtime, storage, vector search and edge functions.",
+      }),
+    }],
   }),
   component: Landing,
 });
@@ -96,19 +114,104 @@ channel.send({ type: "cursor", x: 120, y: 80 });`,
 
 type Tab = keyof typeof codeSamples;
 
+const plans = [
+  {
+    name: "Self-Hosted",
+    price: "Free",
+    priceHint: "MIT licensed · forever",
+    tagline: "Run Pluto on your own hardware or VPS.",
+    cta: { label: "Read the docs", to: "/docs/api" as const },
+    highlight: false,
+    features: [
+      "All 8 canonical modules",
+      "Unlimited projects & users",
+      "Docker Compose stack (Postgres, MinIO, API, Dashboard)",
+      "Community support · GitHub issues",
+    ],
+    deploy: "Docker · Any VPS · Kubernetes",
+  },
+  {
+    name: "Cloud Starter",
+    price: "$19",
+    priceHint: "per project / month",
+    tagline: "Managed Pluto with predictable pricing for prototypes and side-projects.",
+    cta: { label: "Start free trial", to: "/auth" as const },
+    highlight: true,
+    features: [
+      "10k monthly active users",
+      "10 GB Postgres · 20 GB storage",
+      "500k Edge Function invocations / mo",
+      "Daily backups · 7-day PITR",
+      "Fly.io or Railway 1-click deploy",
+    ],
+    deploy: "Fly.io · Railway (managed)",
+  },
+  {
+    name: "Business",
+    price: "$99",
+    priceHint: "per project / month",
+    tagline: "Production workloads with team seats, higher quotas and priority support.",
+    cta: { label: "Contact sales", to: "/dashboard" as const },
+    highlight: false,
+    features: [
+      "100k monthly active users",
+      "100 GB Postgres · 500 GB storage",
+      "5M Edge Function invocations / mo",
+      "Read replicas · point-in-time restore",
+      "SAML SSO · audit log export",
+      "Render / Fly / dedicated regions",
+    ],
+    deploy: "Render · Fly · dedicated infra",
+  },
+];
+
+const faqs = [
+  {
+    q: "How does Pluto handle CORS?",
+    a: "Every project has a strict allow-list managed in Dashboard → CORS. No wildcards in production. Preflight is served by the API, and disallowed origins are rejected before they hit any module. Add your published frontend origin (e.g. https://backend-joy.lovable.app) before going live.",
+  },
+  {
+    q: "What is Row-Level Security (RLS) and how do I use it?",
+    a: "Pluto uses native Postgres RLS. Every request sets a Postgres session with the JWT claims (sub, role, workspace_id), so policies like posts.owner = auth.uid() run server-side. The Dashboard ships a policy editor and end-to-end regression tests so bad policies are caught before deploy.",
+  },
+  {
+    q: "How is realtime implemented?",
+    a: "Realtime v5 is a WebSocket gateway with sharded rooms, presence, ordered broadcast and backpressure. It piggybacks on Postgres logical replication for row-change events (subscribeTable) and adds application-level channels for chat, cursors and presence.",
+  },
+  {
+    q: "Is pricing per-project or per-workspace?",
+    a: "Cloud plans are billed per project. A workspace can hold many projects, each on its own plan. Self-hosted is free forever regardless of workspace or project count.",
+  },
+  {
+    q: "How do I deploy Pluto?",
+    a: "Four common paths: (1) docker compose up -d locally; (2) flyctl deploy using the shipped deploy/fly.toml; (3) Railway 1-click via railway.json; (4) Render blueprint via render.yaml. All four boot the same image and pass /readyz before serving traffic.",
+  },
+  {
+    q: "Can I migrate from Firebase or Supabase?",
+    a: "Yes. The Data API mirrors PostgREST semantics, so Supabase-JS query patterns port directly. For Firebase, use the Pluto CLI import command to move Auth users and Firestore collections into Postgres tables.",
+  },
+];
+
 // ---------- page ------------------------------------------------------------
 
 function Landing() {
   return (
-    <div className="min-h-screen bg-background text-foreground">
+    <div className="min-h-dvh bg-background text-foreground">
+      <a href="#main" className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 focus:rounded focus:bg-primary focus:px-3 focus:py-2 focus:text-primary-foreground">
+        Skip to content
+      </a>
       <Header />
-      <Hero />
-      <StatsBar />
-      <ModulesSection />
-      <CodeShowcase />
-      <DashboardSection />
-      <DeploySection />
-      <CTASection />
+      <main id="main">
+        <Hero />
+        <StatsBar />
+        <ModulesSection />
+        <CodeShowcase />
+        <DashboardSection />
+        <PricingSection />
+        <DeploySection />
+        <FAQSection />
+        <CTASection />
+      </main>
       <Footer />
     </div>
   );
@@ -121,7 +224,7 @@ function Header() {
     <header className="sticky top-0 z-40 border-b border-border/60 bg-background/80 backdrop-blur">
       <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-3">
         <div className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary text-primary-foreground">
+          <div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary text-primary-foreground" aria-hidden="true">
             <Zap className="h-4 w-4" />
           </div>
           <span className="font-semibold tracking-tight">Pluto BaaS</span>
@@ -129,25 +232,26 @@ function Header() {
             v0.3 · phase 62
           </span>
         </div>
-        <nav className="hidden items-center gap-6 text-sm text-muted-foreground md:flex">
-          <a href="#modules" className="hover:text-foreground">Modules</a>
-          <a href="#code" className="hover:text-foreground">SDK</a>
-          <a href="#dashboard" className="hover:text-foreground">Dashboard</a>
-          <a href="#deploy" className="hover:text-foreground">Deploy</a>
-          <Link to="/docs/api" className="hover:text-foreground">Docs</Link>
+        <nav aria-label="Primary" className="hidden items-center gap-6 text-sm text-muted-foreground md:flex">
+          <a href="#modules" className="rounded hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">Modules</a>
+          <a href="#code" className="rounded hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">SDK</a>
+          <a href="#dashboard" className="rounded hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">Dashboard</a>
+          <a href="#pricing" className="rounded hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">Pricing</a>
+          <a href="#faq" className="rounded hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">FAQ</a>
+          <Link to="/docs/api" className="rounded hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">Docs</Link>
         </nav>
         <div className="flex items-center gap-2">
           <Link
             to="/auth"
-            className="hidden rounded-md px-3 py-2 text-sm text-muted-foreground hover:text-foreground sm:inline"
+            className="hidden rounded-md px-3 py-2 text-sm text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:inline"
           >
             Sign in
           </Link>
           <Link
             to="/dashboard"
-            className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3.5 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+            className="inline-flex min-h-9 items-center gap-1.5 rounded-md bg-primary px-3.5 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
-            Dashboard <ArrowRight className="h-3.5 w-3.5" />
+            Dashboard <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
           </Link>
         </div>
       </div>
@@ -157,15 +261,15 @@ function Header() {
 
 function Hero() {
   return (
-    <section className="relative overflow-hidden border-b border-border">
+    <section aria-labelledby="hero-heading" className="relative overflow-hidden border-b border-border">
       <div className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(circle_at_30%_-10%,color-mix(in_oklab,var(--primary)_18%,transparent),transparent_60%),radial-gradient(circle_at_80%_10%,color-mix(in_oklab,var(--chart-2)_15%,transparent),transparent_55%)]" />
       <div className="mx-auto max-w-6xl px-6 py-20 sm:py-28">
         <div className="mx-auto max-w-3xl text-center">
           <div className="inline-flex items-center gap-2 rounded-full border border-border bg-card/60 px-3 py-1 text-xs text-muted-foreground shadow-sm">
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 shadow-[0_0_8px_theme(colors.emerald.500)]" />
+            <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-emerald-500 shadow-[0_0_8px_theme(colors.emerald.500)]" />
             Production-ready · Auth · REST · Realtime · Storage · Vector · Edge · Jobs · Obs
           </div>
-          <h1 className="mt-6 text-4xl font-semibold tracking-tight sm:text-6xl">
+          <h1 id="hero-heading" className="mt-6 text-4xl font-semibold tracking-tight sm:text-6xl">
             The open-source backend<br />
             <span className="bg-gradient-to-r from-primary to-[color-mix(in_oklab,var(--primary)_40%,var(--chart-2))] bg-clip-text text-transparent">
               your frontend was waiting for.
@@ -178,14 +282,14 @@ function Hero() {
             or one-click deploy to Fly, Railway or Render.
           </p>
           <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
-            <Link to="/dashboard" className="inline-flex items-center gap-1.5 rounded-md bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground shadow-lg shadow-primary/20 hover:bg-primary/90">
-              Launch Admin Console <ArrowRight className="h-4 w-4" />
+            <Link to="/dashboard" className="inline-flex min-h-11 items-center gap-1.5 rounded-md bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground shadow-lg shadow-primary/20 hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+              Launch Admin Console <ArrowRight className="h-4 w-4" aria-hidden="true" />
             </Link>
-            <a href="#code" className="inline-flex items-center gap-1.5 rounded-md border border-input bg-background/60 px-5 py-2.5 text-sm font-medium hover:bg-accent">
-              <Code2 className="h-4 w-4" /> View SDK
+            <a href="#code" className="inline-flex min-h-11 items-center gap-1.5 rounded-md border border-input bg-background/60 px-5 py-2.5 text-sm font-medium hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+              <Code2 className="h-4 w-4" aria-hidden="true" /> View SDK
             </a>
-            <a href="https://github.com" target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 rounded-md border border-input bg-background/60 px-5 py-2.5 text-sm font-medium hover:bg-accent">
-              <Github className="h-4 w-4" /> Source
+            <a href="https://github.com" target="_blank" rel="noreferrer" aria-label="View source on GitHub (opens in a new tab)" className="inline-flex min-h-11 items-center gap-1.5 rounded-md border border-input bg-background/60 px-5 py-2.5 text-sm font-medium hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+              <Github className="h-4 w-4" aria-hidden="true" /> Source
             </a>
           </div>
         </div>
@@ -196,44 +300,109 @@ function Hero() {
   );
 }
 
+type ReadyResult =
+  | { state: "loading" }
+  | { state: "ok"; uptime_s: number; checks: Record<string, { ok: boolean; latency_ms?: number; error?: string }> }
+  | { state: "degraded"; uptime_s?: number; checks: Record<string, { ok: boolean; latency_ms?: number; error?: string }> }
+  | { state: "unreachable"; url: string; error: string };
+
 function TerminalCard() {
   const [copied, setCopied] = useState(false);
+  const [ready, setReady] = useState<ReadyResult>({ state: "loading" });
   const cmd = "git clone pluto-baas && cd pluto-baas && docker compose up -d";
+
+  const apiUrl = (import.meta.env.VITE_PLUTO_URL as string | undefined) ?? "http://localhost:3000";
+
+  useEffect(() => {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 4000);
+    fetch(`${apiUrl.replace(/\/$/, "")}/readyz`, { signal: ctrl.signal, headers: { accept: "application/json" } })
+      .then(async (r) => {
+        clearTimeout(t);
+        const body = await r.json().catch(() => ({}));
+        if (r.ok && body.ok) {
+          setReady({ state: "ok", uptime_s: body.uptime_s ?? 0, checks: body.checks ?? {} });
+        } else {
+          setReady({ state: "degraded", uptime_s: body.uptime_s, checks: body.checks ?? {} });
+        }
+      })
+      .catch((e) => {
+        clearTimeout(t);
+        setReady({ state: "unreachable", url: apiUrl, error: (e as Error).message || "network error" });
+      });
+    return () => { clearTimeout(t); ctrl.abort(); };
+  }, [apiUrl]);
+
   function copy() {
     void navigator.clipboard.writeText(cmd);
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
   }
+
   return (
     <div className="mx-auto mt-14 max-w-3xl overflow-hidden rounded-xl border border-border bg-card/70 shadow-2xl shadow-primary/5 backdrop-blur">
       <div className="flex items-center justify-between border-b border-border bg-muted/40 px-4 py-2">
         <div className="flex items-center gap-1.5">
-          <span className="h-2.5 w-2.5 rounded-full bg-destructive/60" />
-          <span className="h-2.5 w-2.5 rounded-full bg-amber-500/60" />
-          <span className="h-2.5 w-2.5 rounded-full bg-emerald-500/60" />
+          <span aria-hidden="true" className="h-2.5 w-2.5 rounded-full bg-destructive/60" />
+          <span aria-hidden="true" className="h-2.5 w-2.5 rounded-full bg-amber-500/60" />
+          <span aria-hidden="true" className="h-2.5 w-2.5 rounded-full bg-emerald-500/60" />
           <span className="ml-3 text-xs text-muted-foreground">~ / pluto-quickstart</span>
         </div>
-        <button onClick={copy} className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground">
-          <Copy className="h-3 w-3" /> {copied ? "copied" : "copy"}
+        <button
+          type="button"
+          onClick={copy}
+          aria-label={copied ? "Command copied" : "Copy quickstart command"}
+          className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <Copy className="h-3 w-3" aria-hidden="true" /> {copied ? "copied" : "copy"}
         </button>
       </div>
-      <pre className="overflow-x-auto p-5 font-mono text-xs leading-relaxed sm:text-sm">
-        <div><span className="text-emerald-500">$</span> git clone pluto-baas && cd pluto-baas</div>
-        <div><span className="text-emerald-500">$</span> docker compose up -d</div>
-        <div className="mt-3 text-muted-foreground">✓ postgres  → :5433</div>
-        <div className="text-muted-foreground">✓ minio     → :9000</div>
-        <div className="text-muted-foreground">✓ pluto-api → :3000  (readyz OK)</div>
-        <div className="text-muted-foreground">✓ dashboard → :8080</div>
-        <div className="mt-3"><span className="text-emerald-500">$</span> curl localhost:3000/readyz</div>
-        <div className="text-primary">{"{"} "ok": true, "checks": {"{"} "db": true, "storage": true {"}"} {"}"}</div>
+      <pre aria-live="polite" className="overflow-x-auto p-5 font-mono text-xs leading-relaxed sm:text-sm">
+        <div><span className="text-emerald-500" aria-hidden="true">$</span> git clone pluto-baas && cd pluto-baas</div>
+        <div><span className="text-emerald-500" aria-hidden="true">$</span> docker compose up -d</div>
+        <div className="mt-3 text-muted-foreground">
+          <span className="text-emerald-500" aria-hidden="true">$</span> curl {apiUrl}/readyz
+        </div>
+        <ReadyzOutput ready={ready} />
       </pre>
     </div>
   );
 }
 
+function ReadyzOutput({ ready }: { ready: ReadyResult }) {
+  if (ready.state === "loading") {
+    return <div className="mt-1 text-muted-foreground">→ checking {`{ ... }`}</div>;
+  }
+  if (ready.state === "unreachable") {
+    return (
+      <>
+        <div className="mt-1 text-amber-500">⚠ backend unreachable at {ready.url}</div>
+        <div className="text-muted-foreground">  set VITE_PLUTO_URL, or run `docker compose up -d`</div>
+      </>
+    );
+  }
+  const color = ready.state === "ok" ? "text-primary" : "text-amber-500";
+  const badge = ready.state === "ok" ? "ok" : "degraded";
+  return (
+    <>
+      <div className={`mt-1 ${color}`}>
+        → {`{ "ok": ${ready.state === "ok"}, "status": "${badge}"${ready.state === "ok" ? `, "uptime_s": ${ready.uptime_s}` : ""} }`}
+      </div>
+      <div className="mt-1 text-muted-foreground">checks:</div>
+      {Object.entries(ready.checks).map(([name, c]) => (
+        <div key={name} className="text-muted-foreground">
+          {c.ok ? "  ✓" : "  ✗"} {name.padEnd(10)}
+          {c.ok ? " ok" : ` ${c.error ?? "failed"}`}
+          {typeof c.latency_ms === "number" ? `  (${c.latency_ms}ms)` : ""}
+        </div>
+      ))}
+    </>
+  );
+}
+
 function StatsBar() {
   return (
-    <section className="border-b border-border bg-muted/20">
+    <section aria-label="Platform stats" className="border-b border-border bg-muted/20">
       <div className="mx-auto grid max-w-6xl grid-cols-2 gap-4 px-6 py-10 sm:grid-cols-4">
         {stats.map((s) => (
           <div key={s.label} className="text-center">
@@ -248,25 +417,26 @@ function StatsBar() {
 
 function ModulesSection() {
   return (
-    <section id="modules" className="border-b border-border">
+    <section id="modules" aria-labelledby="modules-heading" className="border-b border-border">
       <div className="mx-auto max-w-6xl px-6 py-20">
         <SectionHeading
           eyebrow="Core modules"
+          id="modules-heading"
           title="Everything your app needs, already wired."
           subtitle="Eight canonical services, all namespaced, all versioned, all covered by integration tests."
         />
         <div className="mt-12 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {modules.map(({ icon: Icon, tag, title, desc }) => (
-            <div key={tag} className="group relative overflow-hidden rounded-lg border border-border bg-card p-5 transition hover:border-primary/40 hover:shadow-lg hover:shadow-primary/5">
+            <article key={tag} className="group relative overflow-hidden rounded-lg border border-border bg-card p-5 transition hover:border-primary/40 hover:shadow-lg hover:shadow-primary/5">
               <div className="flex items-center justify-between">
-                <div className="flex h-9 w-9 items-center justify-center rounded-md bg-primary/10 text-primary">
+                <div aria-hidden="true" className="flex h-9 w-9 items-center justify-center rounded-md bg-primary/10 text-primary">
                   <Icon className="h-4 w-4" />
                 </div>
                 <span className="rounded border border-border px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">/{tag}</span>
               </div>
               <h3 className="mt-4 font-medium">{title}</h3>
               <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">{desc}</p>
-            </div>
+            </article>
           ))}
         </div>
       </div>
@@ -276,36 +446,48 @@ function ModulesSection() {
 
 function CodeShowcase() {
   const [tab, setTab] = useState<Tab>("auth");
-  const tabs: { id: Tab; label: string; icon: typeof Braces }[] = [
+  const tabs: { id: Tab; label: string; icon: typeof ShieldCheck }[] = [
     { id: "auth",     label: "Authentication", icon: ShieldCheck },
     { id: "data",     label: "Query data",     icon: Database },
     { id: "realtime", label: "Realtime",       icon: Radio },
   ];
   return (
-    <section id="code" className="border-b border-border bg-muted/10">
+    <section id="code" aria-labelledby="code-heading" className="border-b border-border bg-muted/10">
       <div className="mx-auto max-w-6xl px-6 py-20">
         <SectionHeading
           eyebrow="Typed SDK"
+          id="code-heading"
           title={<>Two lines of setup. <span className="text-muted-foreground">Then you're shipping.</span></>}
           subtitle="One @pluto/client works from React, Vue, React Native and Node — plus first-party Python and Go SDKs."
         />
         <div className="mt-12 grid gap-6 lg:grid-cols-[220px_1fr]">
-          <div className="flex flex-row gap-2 lg:flex-col">
+          <div role="tablist" aria-label="SDK examples" className="flex flex-row gap-2 lg:flex-col">
             {tabs.map(({ id, label, icon: Icon }) => (
               <button
                 key={id}
+                role="tab"
+                type="button"
+                id={`tab-${id}`}
+                aria-selected={tab === id}
+                aria-controls={`panel-${id}`}
+                tabIndex={tab === id ? 0 : -1}
                 onClick={() => setTab(id)}
-                className={`flex items-center gap-2 rounded-md border px-3 py-2 text-left text-sm transition ${
+                className={`flex min-h-11 items-center gap-2 rounded-md border px-3 py-2 text-left text-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
                   tab === id
                     ? "border-primary/40 bg-primary/10 text-foreground"
                     : "border-border bg-card text-muted-foreground hover:border-border hover:text-foreground"
                 }`}
               >
-                <Icon className="h-4 w-4" /> {label}
+                <Icon className="h-4 w-4" aria-hidden="true" /> {label}
               </button>
             ))}
           </div>
-          <div className="overflow-hidden rounded-xl border border-border bg-card">
+          <div
+            role="tabpanel"
+            id={`panel-${tab}`}
+            aria-labelledby={`tab-${tab}`}
+            className="overflow-hidden rounded-xl border border-border bg-card"
+          >
             <div className="flex items-center justify-between border-b border-border bg-muted/40 px-4 py-2 text-xs text-muted-foreground">
               <span className="font-mono">app.ts</span>
               <span>@pluto/client</span>
@@ -322,27 +504,28 @@ function CodeShowcase() {
 
 function DashboardSection() {
   return (
-    <section id="dashboard" className="border-b border-border">
+    <section id="dashboard" aria-labelledby="dashboard-heading" className="border-b border-border">
       <div className="mx-auto max-w-6xl px-6 py-20">
         <SectionHeading
           eyebrow="Admin dashboard"
+          id="dashboard-heading"
           title="A control panel, not just a placeholder."
           subtitle="Every module has a real UI. Manage keys, whitelist origins, edit schemas, revoke sessions — without touching SQL."
         />
         <div className="mt-12 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {dashboardFeatures.map(({ icon: Icon, title, desc }) => (
-            <div key={title} className="rounded-lg border border-border bg-card p-5">
-              <div className="flex h-9 w-9 items-center justify-center rounded-md bg-accent text-accent-foreground">
+            <article key={title} className="rounded-lg border border-border bg-card p-5">
+              <div aria-hidden="true" className="flex h-9 w-9 items-center justify-center rounded-md bg-accent text-accent-foreground">
                 <Icon className="h-4 w-4" />
               </div>
               <h3 className="mt-4 font-medium">{title}</h3>
               <p className="mt-1.5 text-sm text-muted-foreground">{desc}</p>
-            </div>
+            </article>
           ))}
         </div>
         <div className="mt-8 flex justify-center">
-          <Link to="/dashboard" className="inline-flex items-center gap-1.5 rounded-md border border-input px-4 py-2 text-sm hover:bg-accent">
-            Explore the dashboard <ArrowRight className="h-3.5 w-3.5" />
+          <Link to="/dashboard" className="inline-flex min-h-11 items-center gap-1.5 rounded-md border border-input px-4 py-2 text-sm hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+            Explore the dashboard <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
           </Link>
         </div>
       </div>
@@ -350,24 +533,122 @@ function DashboardSection() {
   );
 }
 
+function PricingSection() {
+  return (
+    <section id="pricing" aria-labelledby="pricing-heading" className="border-b border-border bg-muted/10">
+      <div className="mx-auto max-w-6xl px-6 py-20">
+        <SectionHeading
+          eyebrow="Pricing"
+          id="pricing-heading"
+          title="Free to self-host. Fair when you scale."
+          subtitle="Pluto is MIT-licensed and free forever on your own hardware. Managed cloud plans are per-project — no per-seat surprises."
+        />
+        <div className="mt-12 grid gap-5 lg:grid-cols-3">
+          {plans.map((p) => (
+            <article
+              key={p.name}
+              aria-labelledby={`plan-${p.name.replace(/\s/g, "-")}`}
+              className={`relative flex flex-col rounded-xl border p-6 ${
+                p.highlight
+                  ? "border-primary/60 bg-card shadow-xl shadow-primary/10"
+                  : "border-border bg-card"
+              }`}
+            >
+              {p.highlight && (
+                <span className="absolute -top-3 left-6 rounded-full bg-primary px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-primary-foreground">
+                  Most popular
+                </span>
+              )}
+              <h3 id={`plan-${p.name.replace(/\s/g, "-")}`} className="text-lg font-semibold">{p.name}</h3>
+              <p className="mt-1 text-sm text-muted-foreground">{p.tagline}</p>
+              <div className="mt-5 flex items-baseline gap-1.5">
+                <span className="text-4xl font-semibold tracking-tight">{p.price}</span>
+                <span className="text-xs text-muted-foreground">{p.priceHint}</span>
+              </div>
+              <ul className="mt-6 space-y-2.5 text-sm">
+                {p.features.map((f) => (
+                  <li key={f} className="flex items-start gap-2">
+                    <Check className="mt-0.5 h-4 w-4 flex-none text-primary" aria-hidden="true" />
+                    <span>{f}</span>
+                  </li>
+                ))}
+              </ul>
+              <div className="mt-6 border-t border-border pt-4 text-xs text-muted-foreground">
+                <span className="font-medium text-foreground">Deploy:</span> {p.deploy}
+              </div>
+              <Link
+                to={p.cta.to}
+                className={`mt-6 inline-flex min-h-11 items-center justify-center gap-1.5 rounded-md px-4 py-2.5 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                  p.highlight
+                    ? "bg-primary text-primary-foreground hover:bg-primary/90"
+                    : "border border-input hover:bg-accent"
+                }`}
+              >
+                {p.cta.label} <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+              </Link>
+            </article>
+          ))}
+        </div>
+        <p className="mt-6 text-center text-xs text-muted-foreground">
+          All cloud plans include TLS, daily backups, and access to the admin dashboard. Need on-premise or enterprise SLA? <Link to="/dashboard" className="underline hover:text-foreground">Talk to us</Link>.
+        </p>
+      </div>
+    </section>
+  );
+}
+
 function DeploySection() {
   return (
-    <section id="deploy" className="border-b border-border bg-muted/10">
+    <section id="deploy" aria-labelledby="deploy-heading" className="border-b border-border">
       <div className="mx-auto max-w-6xl px-6 py-20">
         <SectionHeading
           eyebrow="Deploy anywhere"
+          id="deploy-heading"
           title="Your infrastructure. Your data."
           subtitle="Config files ship with the repo — pick a target and go live in minutes."
         />
         <div className="mt-12 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
           {deployTargets.map((d) => (
-            <div key={d.name} className="rounded-lg border border-border bg-card p-4">
+            <article key={d.name} className="rounded-lg border border-border bg-card p-4">
               <div className="flex items-center justify-between">
                 <span className="font-medium">{d.name}</span>
                 <span className="rounded-full border border-border px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-muted-foreground">{d.tag}</span>
               </div>
               <div className="mt-3 font-mono text-xs text-muted-foreground">{d.hint}</div>
-            </div>
+            </article>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function FAQSection() {
+  return (
+    <section id="faq" aria-labelledby="faq-heading" className="border-b border-border bg-muted/10">
+      <div className="mx-auto max-w-3xl px-6 py-20">
+        <SectionHeading
+          eyebrow="FAQ"
+          id="faq-heading"
+          title="Answers before you ask."
+          subtitle="Common questions from teams evaluating Pluto against Firebase and Supabase."
+        />
+        <div className="mt-10 space-y-3">
+          {faqs.map((f, i) => (
+            <details
+              key={f.q}
+              className="group rounded-lg border border-border bg-card p-4 open:shadow-sm"
+              {...(i === 0 ? { open: true } : {})}
+            >
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-3 rounded text-left text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                <span className="flex items-center gap-2">
+                  <HelpCircle className="h-4 w-4 text-primary" aria-hidden="true" />
+                  {f.q}
+                </span>
+                <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180" aria-hidden="true" />
+              </summary>
+              <p className="mt-3 text-sm leading-relaxed text-muted-foreground">{f.a}</p>
+            </details>
           ))}
         </div>
       </div>
@@ -377,23 +658,23 @@ function DeploySection() {
 
 function CTASection() {
   return (
-    <section className="border-b border-border">
+    <section aria-labelledby="cta-heading" className="border-b border-border">
       <div className="mx-auto max-w-4xl px-6 py-24 text-center">
         <div className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1 text-xs text-muted-foreground">
-          <Sparkles className="h-3 w-3 text-primary" /> Ready when you are
+          <Sparkles className="h-3 w-3 text-primary" aria-hidden="true" /> Ready when you are
         </div>
-        <h2 className="mt-5 text-3xl font-semibold tracking-tight sm:text-4xl">
+        <h2 id="cta-heading" className="mt-5 text-3xl font-semibold tracking-tight sm:text-4xl">
           Stop stitching backends together.
         </h2>
         <p className="mx-auto mt-4 max-w-xl text-muted-foreground">
           Spin up Pluto, point your React app at it, and get back to building features your users care about.
         </p>
         <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
-          <Link to="/dashboard" className="inline-flex items-center gap-1.5 rounded-md bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90">
-            Open Dashboard <ArrowRight className="h-4 w-4" />
+          <Link to="/dashboard" className="inline-flex min-h-11 items-center gap-1.5 rounded-md bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+            Open Dashboard <ArrowRight className="h-4 w-4" aria-hidden="true" />
           </Link>
-          <Link to="/dashboard/sdk-demo" className="inline-flex items-center gap-1.5 rounded-md border border-input px-5 py-2.5 text-sm hover:bg-accent">
-            <Terminal className="h-4 w-4" /> Try the SDK demo
+          <Link to="/dashboard/sdk-demo" className="inline-flex min-h-11 items-center gap-1.5 rounded-md border border-input px-5 py-2.5 text-sm hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+            <Terminal className="h-4 w-4" aria-hidden="true" /> Try the SDK demo
           </Link>
         </div>
       </div>
@@ -407,7 +688,7 @@ function Footer() {
       <div className="mx-auto grid max-w-6xl gap-8 px-6 py-12 sm:grid-cols-2 lg:grid-cols-4">
         <div>
           <div className="flex items-center gap-2">
-            <div className="flex h-7 w-7 items-center justify-center rounded-md bg-primary text-primary-foreground">
+            <div aria-hidden="true" className="flex h-7 w-7 items-center justify-center rounded-md bg-primary text-primary-foreground">
               <Zap className="h-3.5 w-3.5" />
             </div>
             <span className="font-semibold">Pluto BaaS</span>
@@ -421,6 +702,7 @@ function Footer() {
           ["Modules",   "#modules"],
           ["SDK",       "#code"],
           ["Dashboard", "/dashboard"],
+          ["Pricing",   "#pricing"],
           ["Deploy",    "#deploy"],
         ]} />
 
@@ -429,6 +711,7 @@ function Footer() {
           ["Status",         "/status"],
           ["SDK demo",       "/dashboard/sdk-demo"],
           ["Live checklist", "/dashboard/verify"],
+          ["FAQ",            "#faq"],
         ]} />
 
         <FooterCol title="Platform" links={[
@@ -442,8 +725,8 @@ function Footer() {
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-6 py-5 text-xs text-muted-foreground">
           <span>© {new Date().getFullYear()} Pluto BaaS · MIT licensed</span>
           <span className="flex items-center gap-3">
-            <Layers className="h-3.5 w-3.5" /> Wave 3 canonical stack · Phase 62
-            <Waves className="ml-2 h-3.5 w-3.5" />
+            <Layers className="h-3.5 w-3.5" aria-hidden="true" /> Wave 3 canonical stack · Phase 62
+            <Waves className="ml-2 h-3.5 w-3.5" aria-hidden="true" />
           </span>
         </div>
       </div>
@@ -453,30 +736,30 @@ function Footer() {
 
 function FooterCol({ title, links }: { title: string; links: [string, string][] }) {
   return (
-    <div>
+    <nav aria-label={title}>
       <div className="text-xs font-semibold uppercase tracking-wider text-foreground">{title}</div>
       <ul className="mt-3 space-y-2 text-sm text-muted-foreground">
         {links.map(([label, href]) => (
           <li key={label}>
             {href.startsWith("/") ? (
-              <Link to={href} className="hover:text-foreground">{label}</Link>
+              <Link to={href} className="rounded hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">{label}</Link>
             ) : (
-              <a href={href} className="hover:text-foreground">{label}</a>
+              <a href={href} className="rounded hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">{label}</a>
             )}
           </li>
         ))}
       </ul>
-    </div>
+    </nav>
   );
 }
 
 function SectionHeading({
-  eyebrow, title, subtitle,
-}: { eyebrow: string; title: React.ReactNode; subtitle: string }) {
+  eyebrow, title, subtitle, id,
+}: { eyebrow: string; title: React.ReactNode; subtitle: string; id?: string }) {
   return (
     <div className="mx-auto max-w-2xl text-center">
       <div className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">{eyebrow}</div>
-      <h2 className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">{title}</h2>
+      <h2 id={id} className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">{title}</h2>
       <p className="mt-3 text-sm text-muted-foreground sm:text-base">{subtitle}</p>
     </div>
   );
