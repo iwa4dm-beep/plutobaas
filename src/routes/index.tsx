@@ -537,18 +537,35 @@ function TerminalCard() {
   }
 
   function exportCsv() {
-    const esc = (v: string | number | null | undefined) => {
-      if (v === null || v === undefined) return "";
-      const s = String(v);
-      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    // Always quote every field; Excel/Sheets parse this most reliably.
+    const esc = (v: unknown) => {
+      const s = v === null || v === undefined ? "" : String(v);
+      return `"${s.replace(/"/g, '""')}"`;
     };
-    const header = ["generated_at", "api_url", "overall_status", "module", "path", "status", "http_code", "latency_ms", "attempts", "error"];
+    // Stable, documented column order. Do not change without bumping consumers.
+    const columns: { key: string; get: (p: ModuleProbe) => unknown }[] = [
+      { key: "generated_at",   get: () => generated },
+      { key: "api_url",        get: () => apiUrl },
+      { key: "overall_status", get: () => ready.kind },
+      { key: "module",         get: (p) => p.name },
+      { key: "path",           get: (p) => p.path },
+      { key: "status",         get: (p) => p.status },
+      { key: "http_code",      get: (p) => p.code ?? "" },
+      { key: "latency_ms",     get: (p) => p.latency_ms ?? "" },
+      { key: "attempts",       get: (p) => p.attempts ?? "" },
+      { key: "max_attempts",   get: () => MAX_ATTEMPTS },
+      { key: "error",          get: (p) => p.error ?? "" },
+    ];
     const generated = new Date().toISOString();
-    const rows = probes.map((p) => [
-      generated, apiUrl, ready.kind, p.name, p.path, p.status,
-      p.code ?? "", p.latency_ms ?? "", p.attempts ?? "", p.error ?? "",
-    ].map(esc).join(","));
-    const csv = [header.join(","), ...rows].join("\n");
+    // Sort probes in canonical MODULE_PROBES order so the sheet is deterministic.
+    const byName = new Map(probes.map((p) => [p.name, p]));
+    const ordered: ModuleProbe[] = MODULE_PROBES.map((m) =>
+      byName.get(m.name) ?? { ...m, status: "pending" as const }
+    );
+    const headerRow = columns.map((c) => esc(c.key)).join(",");
+    const rows = ordered.map((p) => columns.map((c) => esc(c.get(p))).join(","));
+    // BOM ensures Excel opens as UTF-8; CRLF is the CSV RFC-recommended line ending.
+    const csv = "\uFEFF" + [headerRow, ...rows].join("\r\n") + "\r\n";
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -558,6 +575,11 @@ function TerminalCard() {
     a.click();
     a.remove();
     URL.revokeObjectURL(url);
+  }
+
+  function clearHistory() {
+    setHistory([]);
+    try { localStorage.removeItem(HISTORY_STORAGE_KEY); } catch { /* ignore */ }
   }
 
   const headerColor =
