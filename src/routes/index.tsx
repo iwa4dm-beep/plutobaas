@@ -622,6 +622,10 @@ function TerminalCard() {
           <div className="mt-1 text-muted-foreground">  set VITE_PLUTO_URL, or run `docker compose up -d`</div>
         )}
 
+        {history.length >= 2 && <TrendChart history={history} />}
+
+
+
         <div className="mt-3 text-muted-foreground">module              status   latency   http   try</div>
         <div className="text-muted-foreground">──────              ──────   ───────   ────   ───</div>
         {probes.map((p) => {
