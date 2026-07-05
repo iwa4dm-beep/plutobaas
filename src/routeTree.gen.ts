@@ -69,6 +69,7 @@ import { Route as DashboardDatabaseRouteImport } from './routes/dashboard.databa
 import { Route as DashboardCorsRouteImport } from './routes/dashboard.cors'
 import { Route as DashboardBranchingRouteImport } from './routes/dashboard.branching'
 import { Route as DashboardBackupsRouteImport } from './routes/dashboard.backups'
+import { Route as DashboardBackendStatusRouteImport } from './routes/dashboard.backend-status'
 import { Route as DashboardAuditLogRouteImport } from './routes/dashboard.audit-log'
 import { Route as DashboardAuditRouteImport } from './routes/dashboard.audit'
 import { Route as DashboardApiRouteImport } from './routes/dashboard.api'
@@ -387,6 +388,11 @@ const DashboardBackupsRoute = DashboardBackupsRouteImport.update({
   path: '/backups',
   getParentRoute: () => DashboardRoute,
 } as any)
+const DashboardBackendStatusRoute = DashboardBackendStatusRouteImport.update({
+  id: '/backend-status',
+  path: '/backend-status',
+  getParentRoute: () => DashboardRoute,
+} as any)
 const DashboardAuditLogRoute = DashboardAuditLogRouteImport.update({
   id: '/audit-log',
   path: '/audit-log',
@@ -457,6 +463,7 @@ export interface FileRoutesByFullPath {
   '/dashboard/api': typeof DashboardApiRoute
   '/dashboard/audit': typeof DashboardAuditRoute
   '/dashboard/audit-log': typeof DashboardAuditLogRoute
+  '/dashboard/backend-status': typeof DashboardBackendStatusRoute
   '/dashboard/backups': typeof DashboardBackupsRoute
   '/dashboard/branching': typeof DashboardBranchingRoute
   '/dashboard/cors': typeof DashboardCorsRoute
@@ -529,6 +536,7 @@ export interface FileRoutesByTo {
   '/dashboard/api': typeof DashboardApiRoute
   '/dashboard/audit': typeof DashboardAuditRoute
   '/dashboard/audit-log': typeof DashboardAuditLogRoute
+  '/dashboard/backend-status': typeof DashboardBackendStatusRoute
   '/dashboard/backups': typeof DashboardBackupsRoute
   '/dashboard/branching': typeof DashboardBranchingRoute
   '/dashboard/cors': typeof DashboardCorsRoute
@@ -603,6 +611,7 @@ export interface FileRoutesById {
   '/dashboard/api': typeof DashboardApiRoute
   '/dashboard/audit': typeof DashboardAuditRoute
   '/dashboard/audit-log': typeof DashboardAuditLogRoute
+  '/dashboard/backend-status': typeof DashboardBackendStatusRoute
   '/dashboard/backups': typeof DashboardBackupsRoute
   '/dashboard/branching': typeof DashboardBranchingRoute
   '/dashboard/cors': typeof DashboardCorsRoute
@@ -678,6 +687,7 @@ export interface FileRouteTypes {
     | '/dashboard/api'
     | '/dashboard/audit'
     | '/dashboard/audit-log'
+    | '/dashboard/backend-status'
     | '/dashboard/backups'
     | '/dashboard/branching'
     | '/dashboard/cors'
@@ -750,6 +760,7 @@ export interface FileRouteTypes {
     | '/dashboard/api'
     | '/dashboard/audit'
     | '/dashboard/audit-log'
+    | '/dashboard/backend-status'
     | '/dashboard/backups'
     | '/dashboard/branching'
     | '/dashboard/cors'
@@ -823,6 +834,7 @@ export interface FileRouteTypes {
     | '/dashboard/api'
     | '/dashboard/audit'
     | '/dashboard/audit-log'
+    | '/dashboard/backend-status'
     | '/dashboard/backups'
     | '/dashboard/branching'
     | '/dashboard/cors'
@@ -1317,6 +1329,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardBackupsRouteImport
       parentRoute: typeof DashboardRoute
     }
+    '/dashboard/backend-status': {
+      id: '/dashboard/backend-status'
+      path: '/backend-status'
+      fullPath: '/dashboard/backend-status'
+      preLoaderRoute: typeof DashboardBackendStatusRouteImport
+      parentRoute: typeof DashboardRoute
+    }
     '/dashboard/audit-log': {
       id: '/dashboard/audit-log'
       path: '/audit-log'
@@ -1418,6 +1437,7 @@ interface DashboardRouteChildren {
   DashboardApiRoute: typeof DashboardApiRoute
   DashboardAuditRoute: typeof DashboardAuditRoute
   DashboardAuditLogRoute: typeof DashboardAuditLogRoute
+  DashboardBackendStatusRoute: typeof DashboardBackendStatusRoute
   DashboardBackupsRoute: typeof DashboardBackupsRoute
   DashboardBranchingRoute: typeof DashboardBranchingRoute
   DashboardCorsRoute: typeof DashboardCorsRoute
@@ -1479,6 +1499,7 @@ const DashboardRouteChildren: DashboardRouteChildren = {
   DashboardApiRoute: DashboardApiRoute,
   DashboardAuditRoute: DashboardAuditRoute,
   DashboardAuditLogRoute: DashboardAuditLogRoute,
+  DashboardBackendStatusRoute: DashboardBackendStatusRoute,
   DashboardBackupsRoute: DashboardBackupsRoute,
   DashboardBranchingRoute: DashboardBranchingRoute,
   DashboardCorsRoute: DashboardCorsRoute,
