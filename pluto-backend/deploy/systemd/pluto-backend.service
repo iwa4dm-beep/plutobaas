@@ -1,0 +1,17 @@
+[Unit]
+Description=Pluto Backend (docker compose stack)
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/root/backend-joy/pluto-backend
+ExecStart=/usr/bin/docker compose --env-file .env -f docker/docker-compose.yml up -d
+ExecStop=/usr/bin/docker compose --env-file .env -f docker/docker-compose.yml down
+ExecReload=/usr/bin/docker compose --env-file .env -f docker/docker-compose.yml up -d --build
+TimeoutStartSec=300
+
+[Install]
+WantedBy=multi-user.target
