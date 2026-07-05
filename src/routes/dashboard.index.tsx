@@ -48,7 +48,8 @@ export const Route = createFileRoute("/dashboard/")({
 });
 
 function Overview() {
-  const { plan } = Route.useSearch();
+  const search = Route.useSearch() as { plan?: Plan };
+  const plan = search.plan;
   const navigate = Route.useNavigate();
   const [stats, setStats] = useState({ users: 0, tables: 0, buckets: 0, logs: 0 });
   const [err, setErr] = useState<string | null>(null);
