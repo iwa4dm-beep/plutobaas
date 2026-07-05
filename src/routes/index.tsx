@@ -322,6 +322,7 @@ type ModuleProbe = {
   code?: number;
   latency_ms?: number;
   error?: string;
+  attempts?: number;
 };
 
 type ReadyState =
@@ -341,34 +342,70 @@ const MODULE_PROBES: { name: string; path: string }[] = [
   { name: "admin",    path: "/admin/v1/stats" },
 ];
 
-async function probe(url: string, path: string, signal: AbortSignal): Promise<ModuleProbe> {
+const REFRESH_OPTIONS: { label: string; value: number }[] = [
+  { label: "off", value: 0 },
+  { label: "15s", value: 15_000 },
+  { label: "30s", value: 30_000 },
+  { label: "60s", value: 60_000 },
+];
+
+// Per-request timeout in ms; retries add up to 2 extra attempts with backoff.
+const PROBE_TIMEOUT_MS = 3_500;
+const MAX_ATTEMPTS = 3;
+
+function sleep(ms: number, signal: AbortSignal) {
+  return new Promise<void>((resolve, reject) => {
+    const t = setTimeout(resolve, ms);
+    signal.addEventListener("abort", () => { clearTimeout(t); reject(new DOMException("aborted", "AbortError")); }, { once: true });
+  });
+}
+
+async function probeOnce(url: string, path: string, signal: AbortSignal): Promise<{ ok: boolean; code?: number; latency_ms: number; error?: string }> {
   const t0 = performance.now();
+  const inner = new AbortController();
+  const onAbort = () => inner.abort();
+  signal.addEventListener("abort", onAbort);
+  const timeout = setTimeout(() => inner.abort(), PROBE_TIMEOUT_MS);
   try {
     const r = await fetch(`${url.replace(/\/$/, "")}${path}`, {
-      signal, method: "GET", headers: { accept: "application/json" },
+      signal: inner.signal, method: "GET", headers: { accept: "application/json" },
     });
-    const latency_ms = Math.round(performance.now() - t0);
-    // Any HTTP response < 500 counts as "reachable" — 401/403/404 still
-    // mean the module is running and answering.
-    const up = r.status < 500;
-    return { name: "", path, status: up ? "up" : "down", code: r.status, latency_ms };
+    return { ok: r.status < 500, code: r.status, latency_ms: Math.round(performance.now() - t0) };
   } catch (e) {
-    return { name: "", path, status: "down", latency_ms: Math.round(performance.now() - t0), error: (e as Error).message || "network error" };
+    return { ok: false, latency_ms: Math.round(performance.now() - t0), error: (e as Error).message || "network error" };
+  } finally {
+    clearTimeout(timeout);
+    signal.removeEventListener("abort", onAbort);
   }
+}
+
+async function probeWithRetry(url: string, path: string, signal: AbortSignal): Promise<ModuleProbe> {
+  let last: Awaited<ReturnType<typeof probeOnce>> = { ok: false, latency_ms: 0, error: "no attempt" };
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    last = await probeOnce(url, path, signal);
+    if (last.ok) return { name: "", path, status: "up", code: last.code, latency_ms: last.latency_ms, attempts: attempt };
+    if (attempt < MAX_ATTEMPTS) {
+      // Exponential backoff: 300ms, 900ms
+      try { await sleep(300 * Math.pow(3, attempt - 1), signal); } catch { break; }
+    }
+  }
+  return { name: "", path, status: "down", code: last.code, latency_ms: last.latency_ms, error: last.error, attempts: MAX_ATTEMPTS };
 }
 
 function TerminalCard() {
   const [copied, setCopied] = useState(false);
   const [ready, setReady] = useState<ReadyState>({ kind: "loading" });
   const [probes, setProbes] = useState<ModuleProbe[]>(MODULE_PROBES.map((m) => ({ ...m, status: "pending" as const })));
-  const [ts, setTs] = useState<string | null>(null);
+  const [ts, setTs] = useState<Date | null>(null);
+  const [tick, setTick] = useState(0);
   const [nonce, setNonce] = useState(0);
+  const [refreshMs, setRefreshMs] = useState<number>(0);
   const cmd = "git clone pluto-baas && cd pluto-baas && docker compose up -d";
   const apiUrl = (import.meta.env.VITE_PLUTO_URL as string | undefined) ?? "http://localhost:3000";
 
+  // Probe run
   useEffect(() => {
     const ctrl = new AbortController();
-    const timeout = setTimeout(() => ctrl.abort(), 5000);
     let cancelled = false;
     setReady({ kind: "loading" });
     setProbes(MODULE_PROBES.map((m) => ({ ...m, status: "pending" as const })));
@@ -376,7 +413,7 @@ function TerminalCard() {
     (async () => {
       const results = await Promise.all(
         MODULE_PROBES.map(async (m) => {
-          const p = await probe(apiUrl, m.path, ctrl.signal);
+          const p = await probeWithRetry(apiUrl, m.path, ctrl.signal);
           return { ...p, name: m.name };
         })
       );
@@ -387,7 +424,6 @@ function TerminalCard() {
       if (!core || core.status === "down") {
         setReady({ kind: "unreachable", error: core?.error ?? `HTTP ${core?.code}` });
       } else {
-        // Fetch readyz body for uptime + version
         try {
           const r = await fetch(`${apiUrl.replace(/\/$/, "")}/readyz`, { signal: ctrl.signal });
           const body = await r.json().catch(() => ({}));
@@ -401,16 +437,57 @@ function TerminalCard() {
           setReady({ kind: "degraded" });
         }
       }
-      setTs(new Date().toLocaleTimeString());
+      setTs(new Date());
     })();
 
-    return () => { cancelled = true; clearTimeout(timeout); ctrl.abort(); };
+    return () => { cancelled = true; ctrl.abort(); };
   }, [apiUrl, nonce]);
+
+  // Auto-refresh
+  useEffect(() => {
+    if (!refreshMs) return;
+    const id = setInterval(() => setNonce((n) => n + 1), refreshMs);
+    return () => clearInterval(id);
+  }, [refreshMs]);
+
+  // "last updated Xs ago" ticker
+  useEffect(() => {
+    const id = setInterval(() => setTick((t) => t + 1), 1000);
+    return () => clearInterval(id);
+  }, []);
 
   function copy() {
     void navigator.clipboard.writeText(cmd);
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
+  }
+
+  function exportSnapshot() {
+    const snapshot = {
+      generated_at: new Date().toISOString(),
+      api_url: apiUrl,
+      status: ready.kind,
+      ...(ready.kind === "ok" || ready.kind === "degraded" ? { uptime_s: ready.kind === "ok" ? ready.uptime_s : ready.uptime_s } : {}),
+      ...(ready.kind === "unreachable" ? { error: ready.error } : {}),
+      modules: probes.map((p) => ({
+        name: p.name,
+        path: p.path,
+        status: p.status,
+        http_code: p.code ?? null,
+        latency_ms: p.latency_ms ?? null,
+        attempts: p.attempts ?? null,
+        error: p.error ?? null,
+      })),
+    };
+    const blob = new Blob([JSON.stringify(snapshot, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `pluto-status-${new Date().toISOString().replace(/[:.]/g, "-")}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
   }
 
   const headerColor =
@@ -425,29 +502,60 @@ function TerminalCard() {
     ready.kind === "unreachable" ? "✗ backend unreachable" :
     "→ probing modules...";
 
+  const relTime = (() => {
+    if (!ts) return "";
+    void tick; // subscribe to 1s ticker
+    const s = Math.max(0, Math.floor((Date.now() - ts.getTime()) / 1000));
+    if (s < 5) return "just now";
+    if (s < 60) return `${s}s ago`;
+    const m = Math.floor(s / 60);
+    return `${m}m ${s % 60}s ago`;
+  })();
+
   return (
     <div className="mx-auto mt-14 max-w-3xl overflow-hidden rounded-xl border border-border bg-card/70 shadow-2xl shadow-primary/5 backdrop-blur">
-      <div className="flex items-center justify-between border-b border-border bg-muted/40 px-4 py-2">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-muted/40 px-4 py-2">
         <div className="flex items-center gap-1.5">
           <span aria-hidden="true" className="h-2.5 w-2.5 rounded-full bg-destructive/60" />
           <span aria-hidden="true" className="h-2.5 w-2.5 rounded-full bg-amber-500/60" />
           <span aria-hidden="true" className="h-2.5 w-2.5 rounded-full bg-emerald-500/60" />
           <span className="ml-3 text-xs text-muted-foreground">~ / pluto-quickstart</span>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <label className="flex items-center gap-1">
+            <span className="hidden sm:inline">auto</span>
+            <select
+              value={refreshMs}
+              onChange={(e) => setRefreshMs(Number(e.target.value))}
+              aria-label="Auto-refresh interval"
+              className="rounded border border-border bg-background px-1.5 py-0.5 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              {REFRESH_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
+            </select>
+          </label>
           <button
             type="button"
             onClick={() => setNonce((n) => n + 1)}
             aria-label="Re-run module probes"
-            className="rounded px-1.5 py-0.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="rounded px-1.5 py-0.5 hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             refresh
           </button>
           <button
             type="button"
+            onClick={exportSnapshot}
+            aria-label="Download status snapshot as JSON"
+            className="rounded px-1.5 py-0.5 hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            export
+          </button>
+          <button
+            type="button"
             onClick={copy}
             aria-label={copied ? "Command copied" : "Copy quickstart command"}
-            className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             <Copy className="h-3 w-3" aria-hidden="true" /> {copied ? "copied" : "copy"}
           </button>
@@ -458,14 +566,17 @@ function TerminalCard() {
         <div className="mt-3 text-muted-foreground">
           <span className="text-emerald-500" aria-hidden="true">$</span> pluto status --url {apiUrl}
         </div>
-        <div className={`mt-1 ${headerColor}`}>{headerLabel}{ts ? `  [${ts}]` : ""}</div>
+        <div className={`mt-1 ${headerColor}`}>
+          {headerLabel}
+          {ts ? <span className="text-muted-foreground">  · updated {relTime}</span> : null}
+        </div>
 
         {ready.kind === "unreachable" && (
           <div className="mt-1 text-muted-foreground">  set VITE_PLUTO_URL, or run `docker compose up -d`</div>
         )}
 
-        <div className="mt-3 text-muted-foreground">module              status   latency   http</div>
-        <div className="text-muted-foreground">──────              ──────   ───────   ────</div>
+        <div className="mt-3 text-muted-foreground">module              status   latency   http   try</div>
+        <div className="text-muted-foreground">──────              ──────   ───────   ────   ───</div>
         {probes.map((p) => {
           const color =
             p.status === "up"   ? "text-emerald-500" :
@@ -478,7 +589,8 @@ function TerminalCard() {
               <span>{p.status.padEnd(8)}</span>
               <span className="text-muted-foreground">
                 {typeof p.latency_ms === "number" ? `${p.latency_ms}ms`.padEnd(9) : "—        "}
-                {p.code ? p.code : p.error ? "err" : ""}
+                {(p.code ? String(p.code) : p.error ? "err" : "—").padEnd(6)}
+                {p.attempts ? `${p.attempts}/${MAX_ATTEMPTS}` : ""}
               </span>
             </div>
           );
@@ -487,6 +599,7 @@ function TerminalCard() {
     </div>
   );
 }
+
 
 
 function StatsBar() {
