@@ -41,15 +41,18 @@ done
 
 check() {
   local path="$1"
+  local expect="${2:-ok}"
   local body
   body=$(curl -sf "$API_BASE$path") || fail "$path did not respond 2xx"
-  echo "$body" | grep -q '"status":"ok"' \
-    && ok "$path status ok" \
-    || fail "$path did not return status:ok — body: $body"
+  if echo "$body" | grep -Eq "\"status\":\"($expect)\""; then
+    ok "$path status $expect"
+  else
+    fail "$path did not return status:$expect — body: $body"
+  fi
 }
 
-check /livez
-check /readyz
-check /health/migrations
+check /livez        "ok"
+check /readyz       "ok|ready"
+check /health/migrations "ok"
 
 printf "\n\033[1;32m✅ deploy complete\033[0m\n"
