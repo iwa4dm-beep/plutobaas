@@ -475,7 +475,11 @@ function TerminalCard() {
   const importInputRef = useRef<HTMLInputElement | null>(null);
   const prevReadyKindRef = useRef<ReadyState["kind"] | null>(null);
   const cmd = "git clone pluto-baas && cd pluto-baas && docker compose up -d";
-  const apiUrl = (import.meta.env.VITE_PLUTO_URL as string | undefined) ?? "http://localhost:3000";
+  // Default to the same-origin proxy (`/api/pluto`) so probes always hit a
+  // reachable endpoint — the proxy either forwards to PLUTO_UPSTREAM_URL or
+  // returns a graceful 503 JSON stub. Set VITE_PLUTO_URL only when the
+  // frontend should bypass the proxy and call the backend directly.
+  const apiUrl = (import.meta.env.VITE_PLUTO_URL as string | undefined) ?? "/api/pluto";
 
   // Hydrate persisted state once
   useEffect(() => {
