@@ -22,18 +22,32 @@ export const Route = createFileRoute("/")({
       { name: "twitter:description", content: "Auth, REST, Realtime, Storage, Vector, Edge, Jobs — one docker compose away." },
     ],
     links: [{ rel: "canonical", href: "https://backend-joy.lovable.app/" }],
-    scripts: [{
-      type: "application/ld+json",
-      children: JSON.stringify({
-        "@context": "https://schema.org",
-        "@type": "SoftwareApplication",
-        name: "Pluto BaaS",
-        applicationCategory: "DeveloperApplication",
-        operatingSystem: "Linux, macOS, Windows (Docker)",
-        offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
-        description: "Open-source self-hosted Backend-as-a-Service with authentication, auto-generated REST + GraphQL, realtime, storage, vector search and edge functions.",
-      }),
-    }],
+    scripts: [
+      {
+        type: "application/ld+json",
+        children: JSON.stringify({
+          "@context": "https://schema.org",
+          "@type": "SoftwareApplication",
+          name: "Pluto BaaS",
+          applicationCategory: "DeveloperApplication",
+          operatingSystem: "Linux, macOS, Windows (Docker)",
+          offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
+          description: "Open-source self-hosted Backend-as-a-Service with authentication, auto-generated REST + GraphQL, realtime, storage, vector search and edge functions.",
+        }),
+      },
+      {
+        type: "application/ld+json",
+        children: JSON.stringify({
+          "@context": "https://schema.org",
+          "@type": "FAQPage",
+          mainEntity: faqs.map((f) => ({
+            "@type": "Question",
+            name: f.q,
+            acceptedAnswer: { "@type": "Answer", text: f.a },
+          })),
+        }),
+      },
+    ],
   }),
   component: Landing,
 });
