@@ -48,7 +48,7 @@ export async function searchRoutes(app: FastifyInstance, cfg: Config) {
   app.get('/admin/v1/search/fts', async (req) => {
     const actor = await requireAuth(req, cfg);
     const q = z.object({ project_id: z.string().uuid() }).parse(req.query);
-    await requireProjectRole(actor, q.project_id, ['owner', 'admin', 'member'], cfg);
+    await requireProjectRole(cfg, q.project_id, actor, ['owner', 'admin', 'member']);
     return getSql(cfg)`
       select * from admin.search_configs where project_id = ${q.project_id} order by created_at desc`;
   });
@@ -56,7 +56,7 @@ export async function searchRoutes(app: FastifyInstance, cfg: Config) {
   app.post('/admin/v1/search/fts/enable', async (req) => {
     const actor = await requireAuth(req, cfg);
     const b = ftsEnableBody.parse(req.body);
-    await requireProjectRole(actor, b.project_id, ['owner', 'admin'], cfg);
+    await requireProjectRole(cfg, b.project_id, actor, ['owner', 'admin']);
     const sql = getSql(cfg);
     const S = asIdent(b.schema), T = asIdent(b.table), C = asIdent(b.column), TSV = asIdent(b.tsv_column);
     const lang = b.language.replace(/[^a-z_]/gi, '');
@@ -85,7 +85,7 @@ export async function searchRoutes(app: FastifyInstance, cfg: Config) {
   app.post('/admin/v1/search/fts/query', async (req) => {
     const actor = await requireAuth(req, cfg);
     const b = ftsQueryBody.parse(req.body);
-    await requireProjectRole(actor, b.project_id, ['owner', 'admin', 'member'], cfg);
+    await requireProjectRole(cfg, b.project_id, actor, ['owner', 'admin', 'member']);
     const sql = getSql(cfg);
     const [conf] = await sql`
       select * from admin.search_configs
@@ -108,7 +108,7 @@ export async function searchRoutes(app: FastifyInstance, cfg: Config) {
   app.get('/admin/v1/search/vector', async (req) => {
     const actor = await requireAuth(req, cfg);
     const q = z.object({ project_id: z.string().uuid() }).parse(req.query);
-    await requireProjectRole(actor, q.project_id, ['owner', 'admin', 'member'], cfg);
+    await requireProjectRole(cfg, q.project_id, actor, ['owner', 'admin', 'member']);
     return getSql(cfg)`
       select * from admin.vector_configs where project_id = ${q.project_id} order by created_at desc`;
   });
@@ -116,7 +116,7 @@ export async function searchRoutes(app: FastifyInstance, cfg: Config) {
   app.post('/admin/v1/search/vector/enable', async (req) => {
     const actor = await requireAuth(req, cfg);
     const b = vecEnableBody.parse(req.body);
-    await requireProjectRole(actor, b.project_id, ['owner', 'admin'], cfg);
+    await requireProjectRole(cfg, b.project_id, actor, ['owner', 'admin']);
     const sql = getSql(cfg);
 
     const has = await sql`select 1 from pg_extension where extname = 'vector'`;
@@ -157,7 +157,7 @@ export async function searchRoutes(app: FastifyInstance, cfg: Config) {
   app.post('/admin/v1/search/vector/query', async (req) => {
     const actor = await requireAuth(req, cfg);
     const b = vecQueryBody.parse(req.body);
-    await requireProjectRole(actor, b.project_id, ['owner', 'admin', 'member'], cfg);
+    await requireProjectRole(cfg, b.project_id, actor, ['owner', 'admin', 'member']);
     const sql = getSql(cfg);
     const S = asIdent(b.schema), T = asIdent(b.table), C = asIdent(b.column);
     const op = b.metric === 'cosine' ? '<=>' : b.metric === 'l2' ? '<->' : '<#>';

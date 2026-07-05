@@ -21,6 +21,10 @@ import { backupsRoutes } from './routes/backups.js';
 import { webhooksRoutes } from './routes/webhooks.js';
 import { searchRoutes } from './routes/search.js';
 import { billingRoutes } from './routes/billing.js';
+import { branchesRoutes } from './routes/branches.js';
+import { graphqlRoutes } from './routes/graphql.js';
+import { sdkRoutes } from './routes/sdk.js';
+import { authAdvancedRoutes } from './routes/auth-advanced.js';
 import { metricsPlugin } from './observability/metrics.js';
 
 
@@ -91,6 +95,10 @@ async function main() {
   await webhooksRoutes(app, cfg);
   await searchRoutes(app, cfg);
   await billingRoutes(app, cfg);
+  await branchesRoutes(app, cfg);
+  await graphqlRoutes(app, cfg);
+  await sdkRoutes(app, cfg);
+  await authAdvancedRoutes(app, cfg);
 
 
 

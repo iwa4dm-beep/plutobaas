@@ -40,7 +40,7 @@ export async function billingRoutes(app: FastifyInstance, cfg: Config) {
       project_id: z.string().uuid(),
       period: z.string().regex(/^\d{4}-\d{2}(-\d{2})?$/).optional(),
     }).parse(req.query);
-    await requireProjectRole(actor, q.project_id, ['owner', 'admin', 'member'], cfg);
+    await requireProjectRole(cfg, q.project_id, actor, ['owner', 'admin', 'member']);
     const sql = getSql(cfg);
     const period = q.period ?? new Date().toISOString().slice(0, 7);
     const usage = await sql`
@@ -60,7 +60,7 @@ export async function billingRoutes(app: FastifyInstance, cfg: Config) {
   app.get('/admin/v1/quotas', async (req) => {
     const actor = await requireAuth(req, cfg);
     const q = z.object({ project_id: z.string().uuid() }).parse(req.query);
-    await requireProjectRole(actor, q.project_id, ['owner', 'admin', 'member'], cfg);
+    await requireProjectRole(cfg, q.project_id, actor, ['owner', 'admin', 'member']);
     return getSql(cfg)`
       select * from admin.quotas where project_id = ${q.project_id} order by metric`;
   });
@@ -68,7 +68,7 @@ export async function billingRoutes(app: FastifyInstance, cfg: Config) {
   app.post('/admin/v1/quotas', async (req) => {
     const actor = await requireAuth(req, cfg);
     const b = quotaBody.parse(req.body);
-    await requireProjectRole(actor, b.project_id, ['owner', 'admin'], cfg);
+    await requireProjectRole(cfg, b.project_id, actor, ['owner', 'admin']);
     const sql = getSql(cfg);
     const [row] = await sql`
       insert into admin.quotas (project_id, metric, soft_limit, hard_limit, window, enabled)
@@ -91,7 +91,7 @@ export async function billingRoutes(app: FastifyInstance, cfg: Config) {
     const sql = getSql(cfg);
     const [row] = await sql`select project_id from admin.quotas where id=${id}`;
     if (!row) return { ok: true };
-    await requireProjectRole(actor, row.project_id, ['owner', 'admin'], cfg);
+    await requireProjectRole(cfg, row.project_id, actor, ['owner', 'admin']);
     await sql`delete from admin.quotas where id=${id}`;
     return { ok: true };
   });
@@ -102,7 +102,7 @@ export async function billingRoutes(app: FastifyInstance, cfg: Config) {
     const q = z.object({ project_id: z.string().uuid().optional() }).parse(req.query);
     const sql = getSql(cfg);
     if (q.project_id) {
-      await requireProjectRole(actor, q.project_id, ['owner', 'admin', 'member'], cfg);
+      await requireProjectRole(cfg, q.project_id, actor, ['owner', 'admin', 'member']);
       return sql`select * from admin.alert_rules where project_id = ${q.project_id} order by created_at desc`;
     }
     if (!actor.isSuperadmin) return [];
@@ -113,7 +113,7 @@ export async function billingRoutes(app: FastifyInstance, cfg: Config) {
     const actor = await requireAuth(req, cfg);
     const b = alertBody.parse(req.body);
     if (b.project_id) {
-      await requireProjectRole(actor, b.project_id, ['owner', 'admin'], cfg);
+      await requireProjectRole(cfg, b.project_id, actor, ['owner', 'admin']);
     } else if (!actor.isSuperadmin) {
       throw Object.assign(new Error('forbidden'), { statusCode: 403 });
     }
@@ -138,7 +138,7 @@ export async function billingRoutes(app: FastifyInstance, cfg: Config) {
     const sql = getSql(cfg);
     const [existing] = await sql`select project_id from admin.alert_rules where id=${id}`;
     if (!existing) return { error: 'not_found' };
-    if (existing.project_id) await requireProjectRole(actor, existing.project_id, ['owner', 'admin'], cfg);
+    if (existing.project_id) await requireProjectRole(cfg, existing.project_id, actor, ['owner', 'admin']);
     else if (!actor.isSuperadmin) throw Object.assign(new Error('forbidden'), { statusCode: 403 });
     const [row] = await sql`
       update admin.alert_rules set
@@ -160,7 +160,7 @@ export async function billingRoutes(app: FastifyInstance, cfg: Config) {
     const sql = getSql(cfg);
     const [row] = await sql`select project_id from admin.alert_rules where id=${id}`;
     if (!row) return { ok: true };
-    if (row.project_id) await requireProjectRole(actor, row.project_id, ['owner', 'admin'], cfg);
+    if (row.project_id) await requireProjectRole(cfg, row.project_id, actor, ['owner', 'admin']);
     else if (!actor.isSuperadmin) throw Object.assign(new Error('forbidden'), { statusCode: 403 });
     await sql`delete from admin.alert_rules where id=${id}`;
     return { ok: true };

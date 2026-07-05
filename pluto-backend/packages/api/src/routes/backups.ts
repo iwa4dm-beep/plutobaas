@@ -65,7 +65,7 @@ export async function backupsRoutes(app: FastifyInstance, cfg: Config) {
   app.get('/admin/v1/backups', async (req) => {
     const actor = await requireAuth(req, cfg);
     const q = z.object({ project_id: z.string().uuid() }).parse(req.query);
-    await requireProjectRole(actor, q.project_id, ['owner', 'admin', 'member'], cfg);
+    await requireProjectRole(cfg, q.project_id, actor, ['owner', 'admin', 'member']);
     const sql = getSql(cfg);
     return sql`
       select id, kind, status, size_bytes, error_message, created_at, completed_at
@@ -79,7 +79,7 @@ export async function backupsRoutes(app: FastifyInstance, cfg: Config) {
   app.post('/admin/v1/backups', async (req, reply) => {
     const actor = await requireAuth(req, cfg);
     const body = createBody.parse(req.body);
-    await requireProjectRole(actor, body.project_id, ['owner', 'admin'], cfg);
+    await requireProjectRole(cfg, body.project_id, actor, ['owner', 'admin']);
     const sql = getSql(cfg);
 
     const [job] = await sql`
@@ -122,7 +122,7 @@ export async function backupsRoutes(app: FastifyInstance, cfg: Config) {
     const sql = getSql(cfg);
     const [job] = await sql`select * from admin.backup_jobs where id = ${id}`;
     if (!job) { reply.code(404); return { error: 'not_found' }; }
-    await requireProjectRole(actor, job.project_id, ['owner', 'admin'], cfg);
+    await requireProjectRole(cfg, job.project_id, actor, ['owner', 'admin']);
     if (job.status !== 'succeeded' || !job.storage_path) {
       reply.code(409); return { error: 'not_ready', status: job.status };
     }
@@ -138,7 +138,7 @@ export async function backupsRoutes(app: FastifyInstance, cfg: Config) {
     const sql = getSql(cfg);
     const [job] = await sql`select * from admin.backup_jobs where id = ${id}`;
     if (!job) { reply.code(404); return { error: 'not_found' }; }
-    await requireProjectRole(actor, job.project_id, ['owner'], cfg);
+    await requireProjectRole(cfg, job.project_id, actor, ['owner']);
     if (!job.storage_path) { reply.code(409); return { error: 'no_artifact' }; }
 
     const confirm = (req.headers['x-pluto-confirm'] || '').toString();
@@ -164,7 +164,7 @@ export async function backupsRoutes(app: FastifyInstance, cfg: Config) {
   app.get('/admin/v1/backup-schedules', async (req) => {
     const actor = await requireAuth(req, cfg);
     const q = z.object({ project_id: z.string().uuid() }).parse(req.query);
-    await requireProjectRole(actor, q.project_id, ['owner', 'admin', 'member'], cfg);
+    await requireProjectRole(cfg, q.project_id, actor, ['owner', 'admin', 'member']);
     return getSql(cfg)`
       select * from admin.backup_schedules where project_id = ${q.project_id} order by created_at desc`;
   });
@@ -172,7 +172,7 @@ export async function backupsRoutes(app: FastifyInstance, cfg: Config) {
   app.post('/admin/v1/backup-schedules', async (req) => {
     const actor = await requireAuth(req, cfg);
     const body = scheduleBody.parse(req.body);
-    await requireProjectRole(actor, body.project_id, ['owner', 'admin'], cfg);
+    await requireProjectRole(cfg, body.project_id, actor, ['owner', 'admin']);
     const sql = getSql(cfg);
     const [row] = await sql`
       insert into admin.backup_schedules (project_id, cron_expr, kind, retention_days, enabled)
@@ -191,7 +191,7 @@ export async function backupsRoutes(app: FastifyInstance, cfg: Config) {
     const sql = getSql(cfg);
     const [row] = await sql`select project_id from admin.backup_schedules where id = ${id}`;
     if (!row) return { ok: true };
-    await requireProjectRole(actor, row.project_id, ['owner', 'admin'], cfg);
+    await requireProjectRole(cfg, row.project_id, actor, ['owner', 'admin']);
     await sql`delete from admin.backup_schedules where id = ${id}`;
     await logAudit(cfg, {
       actor_id: actor.userId, project_id: row.project_id,

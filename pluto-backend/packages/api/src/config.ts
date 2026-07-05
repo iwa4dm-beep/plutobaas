@@ -20,6 +20,7 @@ const schema = z.object({
   BODY_LIMIT_MB: z.coerce.number().default(100),
   RATE_LIMIT_GLOBAL: z.coerce.number().default(300),
   RATE_LIMIT_AUTH: z.coerce.number().default(10),
+  PUBLIC_API_URL: z.string().url().optional(),
 });
 
 export type Config = z.infer<typeof schema>;

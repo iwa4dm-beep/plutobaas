@@ -73,3 +73,12 @@ See `.lovable/plan.md` for the full blueprint.
 - `pg_dump` / `pg_restore` binaries must be on `$PATH` for the API container.
 - `pgvector` extension optional; enable in your DB for vector search. Migration `0007_phase10.sql` auto-creates it if available.
 - `PLUTO_BACKUP_DIR` must point at a persistent, writable directory.
+- [x] Phase 11 — Database Branching (`/admin/v1/branches`, CREATE DATABASE ... TEMPLATE clones + promote + diff), GraphQL (`/graphql/v1/:project_id`, introspection-generated SDL + minimal executor), CLI (`@pluto/cli`) + typed TS SDK generator (`/admin/v1/sdk/generate`), Advanced Auth (OAuth authorize/callback for Google/GitHub/Apple/Azure/Discord/Facebook, TOTP MFA enroll/verify/challenge, SAML SP metadata + ACS)
+
+### Phase 11 requirements
+
+- Postgres role used by the API must have `CREATEDB` for database branching.
+- `PUBLIC_API_URL` must be set for SDK generation and SAML metadata to include correct absolute URLs.
+- Install the CLI globally: `npm install -g ./packages/cli` (or run `node packages/cli/bin/pluto.mjs`).
+- OAuth `redirect_uri` must exactly match the value registered with each provider (e.g. `https://api.example.com/auth/v1/oauth/google/callback`).
+- SAML support is minimal — production deployments should verify assertions with `samlify` or `@node-saml/node-saml` and enforce signed assertions.

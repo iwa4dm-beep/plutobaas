@@ -109,7 +109,7 @@ export async function webhooksRoutes(app: FastifyInstance, cfg: Config) {
   app.get('/admin/v1/webhooks', async (req) => {
     const actor = await requireAuth(req, cfg);
     const q = z.object({ project_id: z.string().uuid() }).parse(req.query);
-    await requireProjectRole(actor, q.project_id, ['owner', 'admin', 'member'], cfg);
+    await requireProjectRole(cfg, q.project_id, actor, ['owner', 'admin', 'member']);
     return getSql(cfg)`
       select id, name, target_url, events, filter_schema, filter_table,
              enabled, max_retries, timeout_ms, created_at
@@ -121,7 +121,7 @@ export async function webhooksRoutes(app: FastifyInstance, cfg: Config) {
   app.post('/admin/v1/webhooks', async (req) => {
     const actor = await requireAuth(req, cfg);
     const body = subBody.parse(req.body);
-    await requireProjectRole(actor, body.project_id, ['owner', 'admin'], cfg);
+    await requireProjectRole(cfg, body.project_id, actor, ['owner', 'admin']);
     const sql = getSql(cfg);
     const secret = randomBytes(24).toString('base64url');
     const [row] = await sql`
@@ -147,7 +147,7 @@ export async function webhooksRoutes(app: FastifyInstance, cfg: Config) {
     const sql = getSql(cfg);
     const [existing] = await sql`select project_id from admin.webhook_subscriptions where id=${id}`;
     if (!existing) return { error: 'not_found' };
-    await requireProjectRole(actor, existing.project_id, ['owner', 'admin'], cfg);
+    await requireProjectRole(cfg, existing.project_id, actor, ['owner', 'admin']);
     const [row] = await sql`
       update admin.webhook_subscriptions set
         name         = coalesce(${patch.name ?? null}, name),
@@ -168,7 +168,7 @@ export async function webhooksRoutes(app: FastifyInstance, cfg: Config) {
     const sql = getSql(cfg);
     const [row] = await sql`select project_id from admin.webhook_subscriptions where id=${id}`;
     if (!row) return { ok: true };
-    await requireProjectRole(actor, row.project_id, ['owner', 'admin'], cfg);
+    await requireProjectRole(cfg, row.project_id, actor, ['owner', 'admin']);
     await sql`delete from admin.webhook_subscriptions where id=${id}`;
     await logAudit(cfg, {
       actor_id: actor.userId, project_id: row.project_id,
@@ -184,7 +184,7 @@ export async function webhooksRoutes(app: FastifyInstance, cfg: Config) {
     const sql = getSql(cfg);
     const [row] = await sql`select project_id from admin.webhook_subscriptions where id=${id}`;
     if (!row) return { error: 'not_found' };
-    await requireProjectRole(actor, row.project_id, ['owner', 'admin'], cfg);
+    await requireProjectRole(cfg, row.project_id, actor, ['owner', 'admin']);
     const secret = randomBytes(24).toString('base64url');
     await sql`update admin.webhook_subscriptions set secret=${secret} where id=${id}`;
     return { secret, shown_once: true };
@@ -197,7 +197,7 @@ export async function webhooksRoutes(app: FastifyInstance, cfg: Config) {
     const sql = getSql(cfg);
     const [sub] = await sql`select * from admin.webhook_subscriptions where id=${id}`;
     if (!sub) return { error: 'not_found' };
-    await requireProjectRole(actor, sub.project_id, ['owner', 'admin'], cfg);
+    await requireProjectRole(cfg, sub.project_id, actor, ['owner', 'admin']);
     const [d] = await sql`
       insert into admin.webhook_deliveries (subscription_id, event_type, payload, status, next_retry_at)
       values (${sub.id}, 'test.ping', ${sql.json({ hello: 'world', ts: Date.now() })}, 'pending', now())
@@ -214,7 +214,7 @@ export async function webhooksRoutes(app: FastifyInstance, cfg: Config) {
     const sql = getSql(cfg);
     const [sub] = await sql`select project_id from admin.webhook_subscriptions where id=${id}`;
     if (!sub) return [];
-    await requireProjectRole(actor, sub.project_id, ['owner', 'admin', 'member'], cfg);
+    await requireProjectRole(cfg, sub.project_id, actor, ['owner', 'admin', 'member']);
     return sql`
       select id, event_type, attempt, status, response_status, duration_ms, next_retry_at, created_at, updated_at
         from admin.webhook_deliveries
@@ -231,7 +231,7 @@ export async function webhooksRoutes(app: FastifyInstance, cfg: Config) {
     const [deliv] = await sql`select * from admin.webhook_deliveries where id=${id}`;
     if (!deliv) return { error: 'not_found' };
     const [sub] = await sql`select * from admin.webhook_subscriptions where id=${deliv.subscription_id}`;
-    await requireProjectRole(actor, sub.project_id, ['owner', 'admin'], cfg);
+    await requireProjectRole(cfg, sub.project_id, actor, ['owner', 'admin']);
     await processDelivery(cfg, sub, deliv);
     const [after] = await sql`select * from admin.webhook_deliveries where id=${id}`;
     return after;

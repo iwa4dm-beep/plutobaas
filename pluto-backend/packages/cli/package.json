@@ -1,0 +1,11 @@
+{
+  "name": "@pluto/cli",
+  "version": "0.1.0",
+  "description": "Pluto BaaS command-line tool",
+  "type": "module",
+  "bin": {
+    "pluto": "./bin/pluto.mjs"
+  },
+  "files": ["bin", "src"],
+  "engines": { "node": ">=18" }
+}
