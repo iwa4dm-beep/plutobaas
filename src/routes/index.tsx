@@ -505,6 +505,30 @@ function TerminalCard() {
     URL.revokeObjectURL(url);
   }
 
+  function exportCsv() {
+    const esc = (v: string | number | null | undefined) => {
+      if (v === null || v === undefined) return "";
+      const s = String(v);
+      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const header = ["generated_at", "api_url", "overall_status", "module", "path", "status", "http_code", "latency_ms", "attempts", "error"];
+    const generated = new Date().toISOString();
+    const rows = probes.map((p) => [
+      generated, apiUrl, ready.kind, p.name, p.path, p.status,
+      p.code ?? "", p.latency_ms ?? "", p.attempts ?? "", p.error ?? "",
+    ].map(esc).join(","));
+    const csv = [header.join(","), ...rows].join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `pluto-status-${generated.replace(/[:.]/g, "-")}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
   const headerColor =
     ready.kind === "ok" ? "text-primary" :
     ready.kind === "degraded" ? "text-amber-500" :
