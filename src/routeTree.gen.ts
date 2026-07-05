@@ -15,6 +15,7 @@ import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as DashboardIndexRouteImport } from './routes/dashboard.index'
+import { Route as DocsSdkRouteImport } from './routes/docs.sdk'
 import { Route as DocsApiRouteImport } from './routes/docs.api'
 import { Route as DashboardWorkspacesRouteImport } from './routes/dashboard.workspaces'
 import { Route as DashboardVerifyRouteImport } from './routes/dashboard.verify'
@@ -111,6 +112,11 @@ const DashboardIndexRoute = DashboardIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => DashboardRoute,
+} as any)
+const DocsSdkRoute = DocsSdkRouteImport.update({
+  id: '/docs/sdk',
+  path: '/docs/sdk',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const DocsApiRoute = DocsApiRouteImport.update({
   id: '/docs/api',
@@ -518,6 +524,7 @@ export interface FileRoutesByFullPath {
   '/dashboard/verify': typeof DashboardVerifyRoute
   '/dashboard/workspaces': typeof DashboardWorkspacesRoute
   '/docs/api': typeof DocsApiRoute
+  '/docs/sdk': typeof DocsSdkRoute
   '/dashboard/': typeof DashboardIndexRoute
   '/api/pluto/$': typeof ApiPlutoSplatRoute
   '/api/pluto/monitor': typeof ApiPlutoMonitorRoute
@@ -591,6 +598,7 @@ export interface FileRoutesByTo {
   '/dashboard/verify': typeof DashboardVerifyRoute
   '/dashboard/workspaces': typeof DashboardWorkspacesRoute
   '/docs/api': typeof DocsApiRoute
+  '/docs/sdk': typeof DocsSdkRoute
   '/dashboard': typeof DashboardIndexRoute
   '/api/pluto/$': typeof ApiPlutoSplatRoute
   '/api/pluto/monitor': typeof ApiPlutoMonitorRoute
@@ -666,6 +674,7 @@ export interface FileRoutesById {
   '/dashboard/verify': typeof DashboardVerifyRoute
   '/dashboard/workspaces': typeof DashboardWorkspacesRoute
   '/docs/api': typeof DocsApiRoute
+  '/docs/sdk': typeof DocsSdkRoute
   '/dashboard/': typeof DashboardIndexRoute
   '/api/pluto/$': typeof ApiPlutoSplatRoute
   '/api/pluto/monitor': typeof ApiPlutoMonitorRoute
@@ -742,6 +751,7 @@ export interface FileRouteTypes {
     | '/dashboard/verify'
     | '/dashboard/workspaces'
     | '/docs/api'
+    | '/docs/sdk'
     | '/dashboard/'
     | '/api/pluto/$'
     | '/api/pluto/monitor'
@@ -815,6 +825,7 @@ export interface FileRouteTypes {
     | '/dashboard/verify'
     | '/dashboard/workspaces'
     | '/docs/api'
+    | '/docs/sdk'
     | '/dashboard'
     | '/api/pluto/$'
     | '/api/pluto/monitor'
@@ -889,6 +900,7 @@ export interface FileRouteTypes {
     | '/dashboard/verify'
     | '/dashboard/workspaces'
     | '/docs/api'
+    | '/docs/sdk'
     | '/dashboard/'
     | '/api/pluto/$'
     | '/api/pluto/monitor'
@@ -902,6 +914,7 @@ export interface RootRouteChildren {
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
   StatusRoute: typeof StatusRoute
   DocsApiRoute: typeof DocsApiRoute
+  DocsSdkRoute: typeof DocsSdkRoute
   ApiPlutoSplatRoute: typeof ApiPlutoSplatRoute
   ApiPlutoMonitorRoute: typeof ApiPlutoMonitorRoute
   ApiPlutoStatusRoute: typeof ApiPlutoStatusRoute
@@ -950,6 +963,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/dashboard/'
       preLoaderRoute: typeof DashboardIndexRouteImport
       parentRoute: typeof DashboardRoute
+    }
+    '/docs/sdk': {
+      id: '/docs/sdk'
+      path: '/docs/sdk'
+      fullPath: '/docs/sdk'
+      preLoaderRoute: typeof DocsSdkRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/docs/api': {
       id: '/docs/api'
@@ -1567,6 +1587,7 @@ const rootRouteChildren: RootRouteChildren = {
   SitemapDotxmlRoute: SitemapDotxmlRoute,
   StatusRoute: StatusRoute,
   DocsApiRoute: DocsApiRoute,
+  DocsSdkRoute: DocsSdkRoute,
   ApiPlutoSplatRoute: ApiPlutoSplatRoute,
   ApiPlutoMonitorRoute: ApiPlutoMonitorRoute,
   ApiPlutoStatusRoute: ApiPlutoStatusRoute,
