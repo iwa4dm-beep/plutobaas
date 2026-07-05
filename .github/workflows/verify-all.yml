@@ -1,0 +1,84 @@
+name: Verify Backend (verify-all.sh)
+
+on:
+  pull_request:
+    paths:
+      - "backend/**"
+      - ".github/workflows/verify-all.yml"
+  push:
+    branches: [main]
+    paths:
+      - "backend/**"
+      - ".github/workflows/verify-all.yml"
+  workflow_dispatch:
+
+jobs:
+  verify-all:
+    name: migrate + boot + smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Verify Docker + Compose
+        run: |
+          docker --version
+          docker compose version
+
+      - name: Free host ports (3000/5433/9000)
+        run: |
+          for p in 3000 5433 9000; do
+            sudo fuser -k ${p}/tcp 2>/dev/null || true
+          done
+
+      - name: Make verify-all.sh executable
+        run: chmod +x scripts/verify-all.sh
+
+      - name: Run verify-all.sh
+        run: ./scripts/verify-all.sh 2>&1 | tee /tmp/verify.log
+        env:
+          CI: "1"
+
+      - name: Dump server log on failure
+        if: failure()
+        run: |
+          echo "===== /tmp/verify.log (tail 120) ====="
+          tail -n 120 /tmp/verify.log || true
+          echo "===== /tmp/pluto-verify.log (tail 120) ====="
+          tail -n 120 /tmp/pluto-verify.log || true
+          echo "===== /tmp/pluto-migrate.log (tail 60) ====="
+          tail -n 60 /tmp/pluto-migrate.log || true
+          echo "===== docker compose ps ====="
+          docker compose ps || true
+          echo "===== docker compose logs db (tail 60) ====="
+          docker compose logs --tail=60 db || true
+          echo "===== docker compose logs minio (tail 60) ====="
+          docker compose logs --tail=60 minio || true
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: verify-all-logs
+          path: |
+            /tmp/verify.log
+            /tmp/pluto-verify.log
+            /tmp/pluto-migrate.log
+            /tmp/pluto-readyz.json
+            /tmp/readyz.json
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Tear down
+        if: always()
+        run: docker compose down -v || true
