@@ -1,0 +1,18 @@
+{
+  "name": "pluto-backend",
+  "private": true,
+  "version": "0.1.0",
+  "packageManager": "pnpm@9.0.0",
+  "workspaces": ["packages/*"],
+  "scripts": {
+    "dev": "pnpm --filter @pluto/api dev",
+    "build": "pnpm -r build",
+    "start": "pnpm --filter @pluto/api start",
+    "migrate": "pnpm --filter @pluto/api migrate",
+    "doctor": "node packages/api/scripts/doctor.mjs",
+    "docker:up": "docker compose -f docker/docker-compose.yml up -d",
+    "docker:down": "docker compose -f docker/docker-compose.yml down",
+    "docker:logs": "docker compose -f docker/docker-compose.yml logs -f api"
+  },
+  "engines": { "node": ">=20" }
+}
