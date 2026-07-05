@@ -90,6 +90,54 @@ function generateEnv(o: { plan: Plan; target: Target; projectName: string; regio
   ].join("\n");
 }
 
+const REQUIRED_ENV_KEYS = [
+  "PLUTO_URL",
+  "PLUTO_REGION",
+  "PLUTO_ANON_KEY",
+  "PLUTO_SERVICE_ROLE_KEY",
+  "PLUTO_JWT_SECRET",
+  "VITE_PLUTO_URL",
+  "VITE_PLUTO_ANON_KEY",
+];
+
+type EnvIssue = { key: string; reason: string };
+
+function validateEnv(envText: string): EnvIssue[] {
+  const issues: EnvIssue[] = [];
+  const map = new Map<string, string>();
+  for (const line of envText.split("\n")) {
+    const t = line.trim();
+    if (!t || t.startsWith("#")) continue;
+    const eq = t.indexOf("=");
+    if (eq === -1) continue;
+    const k = t.slice(0, eq).trim();
+    // Strip trailing inline comment
+    const v = t.slice(eq + 1).replace(/\s+#.*$/, "").trim();
+    map.set(k, v);
+  }
+  for (const k of REQUIRED_ENV_KEYS) {
+    const v = map.get(k);
+    if (v === undefined) { issues.push({ key: k, reason: "missing" }); continue; }
+    if (!v) { issues.push({ key: k, reason: "empty" }); continue; }
+    if (/YOUR[-_ ]|CHANGE[-_ ]?ME|<.*>/i.test(v)) issues.push({ key: k, reason: "placeholder value" });
+    if ((k.endsWith("_KEY") || k.endsWith("_SECRET")) && v.length < 16) issues.push({ key: k, reason: "too short (<16 chars)" });
+    if (k.endsWith("URL") && !/^https?:\/\//.test(v)) issues.push({ key: k, reason: "must start with http(s)://" });
+  }
+  return issues;
+}
+
+function downloadFile(name: string, content: string, mime: string) {
+  const blob = new Blob([content], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 export function OnboardingWizard({ initialPlan, onDismiss }: { initialPlan: Plan; onDismiss: () => void }) {
   const persisted = useMemo(loadPersisted, []);
   const startsFromPersisted = persisted.plan === initialPlan;
