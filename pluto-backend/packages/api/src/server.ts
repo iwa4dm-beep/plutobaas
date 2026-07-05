@@ -5,6 +5,7 @@ import rateLimit from '@fastify/rate-limit';
 import jwt from '@fastify/jwt';
 import { loadConfig } from './config.js';
 import { healthRoutes } from './routes/health.js';
+import { authRoutes } from './routes/auth.js';
 
 async function main() {
   const cfg = loadConfig();
@@ -47,6 +48,7 @@ async function main() {
 
   // Routes
   await healthRoutes(app, cfg);
+  await authRoutes(app, cfg);
 
   // Root
   app.get('/', async () => ({
