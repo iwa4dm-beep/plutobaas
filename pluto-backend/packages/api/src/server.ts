@@ -134,11 +134,12 @@ async function main() {
 
   // Global error handler — always JSON
   app.setErrorHandler((err, _req, reply) => {
+    const error = err as { statusCode?: number; name?: string; message?: string };
     app.log.error(err);
-    const status = err.statusCode || 500;
+    const status = error.statusCode || 500;
     reply.code(status).send({
-      error: err.name || 'Error',
-      message: err.message,
+      error: error.name || 'Error',
+      message: error.message || 'Internal Server Error',
       statusCode: status,
     });
   });
