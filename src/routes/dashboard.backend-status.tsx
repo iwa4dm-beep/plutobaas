@@ -1,12 +1,14 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { CheckCircle2, XCircle, RefreshCw, Activity, Database, ShieldCheck, GitCommit } from "lucide-react";
+import { CheckCircle2, XCircle, RefreshCw, Activity, Database, ShieldCheck, GitCommit, Lock } from "lucide-react";
+import { useAuth } from "@/lib/pluto/auth-context";
 
 export const Route = createFileRoute("/dashboard/backend-status")({
   head: () => ({
     meta: [
       { title: "Backend Status — Pluto Dashboard" },
       { name: "description", content: "Live health, readiness, and migration status for the Pluto backend." },
+      { name: "robots", content: "noindex,nofollow" },
     ],
   }),
   component: BackendStatusPage,
