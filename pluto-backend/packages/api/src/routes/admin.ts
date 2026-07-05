@@ -229,6 +229,32 @@ export async function adminRoutes(app: FastifyInstance, cfg: Config) {
     },
   );
 
+  // Rotate: revoke old + mint replacement with same name/role. Plaintext returned once.
+  app.post<{ Params: { id: string; keyId: string } }>(
+    '/admin/v1/projects/:id/keys/:keyId/rotate',
+    async (req, reply) => {
+      uuidSchema.parse(req.params.id);
+      uuidSchema.parse(req.params.keyId);
+      const actor = await requireAuth(req, cfg);
+      await requireProjectRole(cfg, req.params.id, actor, ['owner', 'admin']);
+      const sql = getSql(cfg);
+      const [existing] = await sql<any[]>`
+        select name, role from admin.api_keys
+        where id = ${req.params.keyId} and project_id = ${req.params.id}`;
+      if (!existing) return reply.code(404).send({ error: 'not found' });
+      await sql`update admin.api_keys set revoked_at = now()
+        where id = ${req.params.keyId} and project_id = ${req.params.id} and revoked_at is null`;
+      const minted = mintApiKey(existing.role);
+      const rotatedName = `${existing.name}-rot-${Date.now().toString(36)}`;
+      const [row] = await sql<any[]>`
+        insert into admin.api_keys (project_id, name, key_hash, key_prefix, role)
+        values (${req.params.id}, ${rotatedName}, ${minted.hash}, ${minted.prefix}, ${existing.role})
+        returning id, name, key_prefix, role, created_at`;
+      return reply.code(201).send({ ...row, api_key: minted.key, rotated_from: req.params.keyId });
+    },
+  );
+
+
   // --- Superadmin: users list ---
   app.get('/admin/v1/users', async (req, reply) => {
     const actor = await requireAuth(req, cfg);
