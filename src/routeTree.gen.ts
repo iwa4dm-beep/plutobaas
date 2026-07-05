@@ -30,6 +30,7 @@ import { Route as DashboardScalingRouteImport } from './routes/dashboard.scaling
 import { Route as DashboardRealtimeRouteImport } from './routes/dashboard.realtime'
 import { Route as DashboardRbacRouteImport } from './routes/dashboard.rbac'
 import { Route as DashboardProjectsRouteImport } from './routes/dashboard.projects'
+import { Route as DashboardPlutoAdminRouteImport } from './routes/dashboard.pluto-admin'
 import { Route as DashboardObservabilityRouteImport } from './routes/dashboard.observability'
 import { Route as DashboardMigrationsRouteImport } from './routes/dashboard.migrations'
 import { Route as DashboardMfaRouteImport } from './routes/dashboard.mfa'
@@ -160,6 +161,11 @@ const DashboardRbacRoute = DashboardRbacRouteImport.update({
 const DashboardProjectsRoute = DashboardProjectsRouteImport.update({
   id: '/projects',
   path: '/projects',
+  getParentRoute: () => DashboardRoute,
+} as any)
+const DashboardPlutoAdminRoute = DashboardPlutoAdminRouteImport.update({
+  id: '/pluto-admin',
+  path: '/pluto-admin',
   getParentRoute: () => DashboardRoute,
 } as any)
 const DashboardObservabilityRoute = DashboardObservabilityRouteImport.update({
@@ -322,6 +328,7 @@ export interface FileRoutesByFullPath {
   '/dashboard/mfa': typeof DashboardMfaRoute
   '/dashboard/migrations': typeof DashboardMigrationsRoute
   '/dashboard/observability': typeof DashboardObservabilityRoute
+  '/dashboard/pluto-admin': typeof DashboardPlutoAdminRoute
   '/dashboard/projects': typeof DashboardProjectsRoute
   '/dashboard/rbac': typeof DashboardRbacRoute
   '/dashboard/realtime': typeof DashboardRealtimeRoute
@@ -370,6 +377,7 @@ export interface FileRoutesByTo {
   '/dashboard/mfa': typeof DashboardMfaRoute
   '/dashboard/migrations': typeof DashboardMigrationsRoute
   '/dashboard/observability': typeof DashboardObservabilityRoute
+  '/dashboard/pluto-admin': typeof DashboardPlutoAdminRoute
   '/dashboard/projects': typeof DashboardProjectsRoute
   '/dashboard/rbac': typeof DashboardRbacRoute
   '/dashboard/realtime': typeof DashboardRealtimeRoute
@@ -420,6 +428,7 @@ export interface FileRoutesById {
   '/dashboard/mfa': typeof DashboardMfaRoute
   '/dashboard/migrations': typeof DashboardMigrationsRoute
   '/dashboard/observability': typeof DashboardObservabilityRoute
+  '/dashboard/pluto-admin': typeof DashboardPlutoAdminRoute
   '/dashboard/projects': typeof DashboardProjectsRoute
   '/dashboard/rbac': typeof DashboardRbacRoute
   '/dashboard/realtime': typeof DashboardRealtimeRoute
@@ -471,6 +480,7 @@ export interface FileRouteTypes {
     | '/dashboard/mfa'
     | '/dashboard/migrations'
     | '/dashboard/observability'
+    | '/dashboard/pluto-admin'
     | '/dashboard/projects'
     | '/dashboard/rbac'
     | '/dashboard/realtime'
@@ -519,6 +529,7 @@ export interface FileRouteTypes {
     | '/dashboard/mfa'
     | '/dashboard/migrations'
     | '/dashboard/observability'
+    | '/dashboard/pluto-admin'
     | '/dashboard/projects'
     | '/dashboard/rbac'
     | '/dashboard/realtime'
@@ -568,6 +579,7 @@ export interface FileRouteTypes {
     | '/dashboard/mfa'
     | '/dashboard/migrations'
     | '/dashboard/observability'
+    | '/dashboard/pluto-admin'
     | '/dashboard/projects'
     | '/dashboard/rbac'
     | '/dashboard/realtime'
@@ -748,6 +760,13 @@ declare module '@tanstack/react-router' {
       path: '/projects'
       fullPath: '/dashboard/projects'
       preLoaderRoute: typeof DashboardProjectsRouteImport
+      parentRoute: typeof DashboardRoute
+    }
+    '/dashboard/pluto-admin': {
+      id: '/dashboard/pluto-admin'
+      path: '/pluto-admin'
+      fullPath: '/dashboard/pluto-admin'
+      preLoaderRoute: typeof DashboardPlutoAdminRouteImport
       parentRoute: typeof DashboardRoute
     }
     '/dashboard/observability': {
@@ -971,6 +990,7 @@ interface DashboardRouteChildren {
   DashboardMfaRoute: typeof DashboardMfaRoute
   DashboardMigrationsRoute: typeof DashboardMigrationsRoute
   DashboardObservabilityRoute: typeof DashboardObservabilityRoute
+  DashboardPlutoAdminRoute: typeof DashboardPlutoAdminRoute
   DashboardProjectsRoute: typeof DashboardProjectsRoute
   DashboardRbacRoute: typeof DashboardRbacRoute
   DashboardRealtimeRoute: typeof DashboardRealtimeRoute
@@ -1008,6 +1028,7 @@ const DashboardRouteChildren: DashboardRouteChildren = {
   DashboardMfaRoute: DashboardMfaRoute,
   DashboardMigrationsRoute: DashboardMigrationsRoute,
   DashboardObservabilityRoute: DashboardObservabilityRoute,
+  DashboardPlutoAdminRoute: DashboardPlutoAdminRoute,
   DashboardProjectsRoute: DashboardProjectsRoute,
   DashboardRbacRoute: DashboardRbacRoute,
   DashboardRealtimeRoute: DashboardRealtimeRoute,
