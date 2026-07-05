@@ -1,13 +1,15 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import {
-  Activity, ArrowUpRight, Database, Files, KeyRound, Radio,
-  ScrollText, ShieldCheck, Sparkles, Terminal, Users, Waves,
+  Activity, ArrowUpRight, CheckCircle2, Database, Files, Heart, KeyRound, Radio,
+  ScrollText, ShieldCheck, Sparkles, Terminal, Users, Waves, XCircle,
 } from "lucide-react";
 
 import { pluto } from "@/lib/pluto/client";
 import { isLive, live } from "@/lib/pluto/live";
 import { OnboardingWizard, type Plan } from "@/components/pluto/OnboardingWizard";
+
+const API_BASE = (import.meta.env.VITE_PLUTO_API_URL as string) || "https://api.timescard.cloud";
 
 const STORAGE_KEY = "pluto.onboarding.v1";
 
@@ -80,6 +82,10 @@ function Overview() {
   const [err, setErr] = useState<string | null>(null);
   const [source, setSource] = useState<"mock" | "live">(isLive() ? "live" : "mock");
 
+  // Live health probe against the real backend (api.timescard.cloud)
+  type HealthState = { live: boolean | null; ready: boolean | null; mig: boolean | null; ms: number | null };
+  const [health, setHealth] = useState<HealthState>({ live: null, ready: null, mig: null, ms: null });
+
   const [dismissed, setDismissed] = useState(false);
   const [persistedPlan, setPersistedPlan] = useState<Plan | undefined>(undefined);
   useEffect(() => { setPersistedPlan(readPersistedPlan()); }, []);
@@ -108,6 +114,28 @@ function Overview() {
     })();
   }, []);
 
+  // Poll the real backend's public health endpoints every 30s
+  useEffect(() => {
+    let cancelled = false;
+    const probe = async () => {
+      const t0 = performance.now();
+      const check = async (path: string) => {
+        try {
+          const r = await fetch(`${API_BASE}${path}`, { cache: "no-store" });
+          if (!r.ok) return false;
+          const j = await r.json().catch(() => ({} as any));
+          const s = (j as any).status;
+          return s === "ok" || s === "ready";
+        } catch { return false; }
+      };
+      const [l, r, m] = await Promise.all([check("/livez"), check("/readyz"), check("/health/migrations")]);
+      if (!cancelled) setHealth({ live: l, ready: r, mig: m, ms: Math.round(performance.now() - t0) });
+    };
+    probe();
+    const id = setInterval(probe, 30_000);
+    return () => { cancelled = true; clearInterval(id); };
+  }, []);
+
   // Accent hues drawn from theme's chart tokens for a consistent, meaningful palette:
   // users = identity (chart-1), tables = data (chart-2), buckets = files (chart-4), logs = activity (chart-5).
   const cards: {
@@ -123,14 +151,19 @@ function Overview() {
 
   const quickActions: {
     label: string; desc: string; icon: typeof KeyRound;
-    to: "/dashboard/tokens" | "/dashboard/rbac" | "/dashboard/realtime" | "/dashboard/sql" | "/dashboard/verify";
+    to: "/dashboard/tokens" | "/dashboard/rbac" | "/dashboard/realtime" | "/dashboard/sql" | "/dashboard/verify" | "/dashboard/backend-status";
   }[] = [
-    { label: "Rotate keys",    desc: "Mint anon & service-role keys",     icon: KeyRound,    to: "/dashboard/tokens" },
-    { label: "RLS & roles",    desc: "Edit policies and role registry",   icon: ShieldCheck, to: "/dashboard/rbac" },
-    { label: "Realtime rooms", desc: "Inspect presence and broadcast",    icon: Radio,       to: "/dashboard/realtime" },
-    { label: "SQL runner",     desc: "Run queries against Postgres",      icon: Terminal,    to: "/dashboard/sql" },
-    { label: "Smoke tests",    desc: "One-click end-to-end verification", icon: Activity,    to: "/dashboard/verify" },
+    { label: "Backend status", desc: "Live health, DB, migrations",         icon: Heart,       to: "/dashboard/backend-status" },
+    { label: "Rotate keys",    desc: "Mint anon & service-role keys",       icon: KeyRound,    to: "/dashboard/tokens" },
+    { label: "RLS & roles",    desc: "Edit policies and role registry",     icon: ShieldCheck, to: "/dashboard/rbac" },
+    { label: "Realtime rooms", desc: "Inspect presence and broadcast",      icon: Radio,       to: "/dashboard/realtime" },
+    { label: "SQL runner",     desc: "Run queries against Postgres",        icon: Terminal,    to: "/dashboard/sql" },
+    { label: "Smoke tests",    desc: "One-click end-to-end verification",   icon: Activity,    to: "/dashboard/verify" },
   ];
+
+  const healthAllOk = health.live && health.ready && health.mig;
+  const healthAnyDown = health.live === false || health.ready === false || health.mig === false;
+  const healthLabel = healthAllOk ? "All systems operational" : healthAnyDown ? "One or more checks failing" : "Probing backend…";
 
   return (
     <div>
@@ -149,12 +182,22 @@ function Overview() {
         />
         <div className="relative flex flex-col gap-4 p-6 sm:flex-row sm:items-center sm:justify-between">
           <div className="min-w-0">
-            <div className="inline-flex items-center gap-1.5 rounded-full border border-border bg-background/70 px-2.5 py-0.5 text-[11px] font-medium text-muted-foreground backdrop-blur">
-              <span
-                aria-hidden="true"
-                className={`h-1.5 w-1.5 rounded-full ${source === "live" ? "bg-emerald-500 shadow-[0_0_8px_theme(colors.emerald.500)]" : "bg-muted-foreground/60"}`}
-              />
-              {source === "live" ? "Live data" : "Mock data"} · Pluto instance
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="inline-flex items-center gap-1.5 rounded-full border border-border bg-background/70 px-2.5 py-0.5 text-[11px] font-medium text-muted-foreground backdrop-blur">
+                <span
+                  aria-hidden="true"
+                  className={`h-1.5 w-1.5 rounded-full ${source === "live" ? "bg-emerald-500 shadow-[0_0_8px_theme(colors.emerald.500)]" : "bg-muted-foreground/60"}`}
+                />
+                {source === "live" ? "Live data" : "Mock data"} · Pluto instance
+              </div>
+              <a
+                href={API_BASE}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1.5 rounded-full border border-border bg-background/70 px-2.5 py-0.5 font-mono text-[11px] text-muted-foreground backdrop-blur hover:text-foreground"
+              >
+                API · {API_BASE.replace(/^https?:\/\//, "")}
+              </a>
             </div>
             <h1 className="mt-3 text-2xl font-semibold tracking-tight sm:text-3xl">
               স্বাগতম <span className="text-muted-foreground">— এক নজরে আপনার backend</span>
@@ -179,6 +222,53 @@ function Overview() {
           </div>
         </div>
       </section>
+
+      {/* Live backend health strip — probes api.timescard.cloud every 30s */}
+      <Link
+        to="/dashboard/backend-status"
+        aria-label="Open backend status page"
+        className={`mb-6 flex flex-wrap items-center justify-between gap-3 rounded-xl border p-4 transition hover:shadow-sm ${
+          healthAllOk
+            ? "border-emerald-500/30 bg-emerald-500/5 hover:border-emerald-500/50"
+            : healthAnyDown
+            ? "border-rose-500/30 bg-rose-500/5 hover:border-rose-500/50"
+            : "border-border bg-card"
+        }`}
+      >
+        <div className="flex items-center gap-2">
+          {healthAllOk ? (
+            <CheckCircle2 className="h-5 w-5 text-emerald-500" aria-hidden="true" />
+          ) : healthAnyDown ? (
+            <XCircle className="h-5 w-5 text-rose-500" aria-hidden="true" />
+          ) : (
+            <Activity className="h-5 w-5 animate-pulse text-muted-foreground" aria-hidden="true" />
+          )}
+          <span className="text-sm font-medium text-foreground">{healthLabel}</span>
+          {health.ms != null && <span className="text-xs text-muted-foreground">· {health.ms} ms</span>}
+        </div>
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          {[
+            { name: "/livez", ok: health.live },
+            { name: "/readyz", ok: health.ready },
+            { name: "/health/migrations", ok: health.mig },
+          ].map((h) => (
+            <span
+              key={h.name}
+              className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-mono ${
+                h.ok === true
+                  ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                  : h.ok === false
+                  ? "bg-rose-500/10 text-rose-600 dark:text-rose-400"
+                  : "bg-muted text-muted-foreground"
+              }`}
+            >
+              {h.ok === true ? "✓" : h.ok === false ? "✕" : "…"} {h.name}
+            </span>
+          ))}
+          <span className="text-muted-foreground">→ details</span>
+        </div>
+      </Link>
+
 
       {activePlan && !dismissed && (
         <OnboardingWizard
@@ -264,32 +354,39 @@ function Overview() {
             <Sparkles className="h-4 w-4 text-primary" aria-hidden="true" />
             <h2 id="connect-heading" className="text-sm font-semibold">Connect your frontend</h2>
           </div>
-          <span className="font-mono text-[11px] text-muted-foreground">@pluto/client</span>
+          <span className="font-mono text-[11px] text-muted-foreground">@pluto/js</span>
         </div>
         <div className="p-5">
           <p className="text-sm text-muted-foreground">
-            নিচের snippet দিয়ে যেকোনো app থেকে এই backend-এ connect করুন।
+            নিচের snippet দিয়ে যেকোনো frontend (React / Vue / Svelte / vanilla JS) থেকে এই backend-এ connect করুন। Supabase-compatible surface — migration trivial।
           </p>
           <pre className="mt-4 overflow-x-auto rounded-md border border-border bg-muted/30 p-4 font-mono text-xs leading-relaxed">
-            <code>{`import { createPlutoClient } from "@pluto/client";
+            <code>{`// npm i @pluto/js
+import { createClient } from "@pluto/js";
 
-const pluto = createPlutoClient({
-  url: "http://localhost:3000",
-  anonKey: "YOUR_PROJECT_ANON_KEY",
-});
+const pluto = createClient(
+  "${API_BASE}",
+  "YOUR_PUBLISHABLE_KEY"  // Dashboard → Tokens
+);
 
 // Auth
-await pluto.auth.signIn({ email, password });
+const { data, error } = await pluto.auth.signInWithPassword({ email, password });
 
-// Auto REST
-const { data } = await pluto
+// Data API (PostgREST-compatible)
+const { data: posts } = await pluto
   .from("posts")
-  .select("id, title")
+  .select("id, title, created_at")
   .order("created_at", { ascending: false });
 
 // Storage
-await pluto.storage.from("avatars").upload("me.png", file);`}</code>
+await pluto.storage.from("avatars").upload("me.png", file);
+
+// Realtime
+pluto.channel("room-1").on("broadcast", { event: "msg" }, console.log).subscribe();`}</code>
           </pre>
+          <p className="mt-3 text-[11px] text-muted-foreground">
+            Base URL config: <code className="rounded bg-muted px-1 py-0.5 font-mono">VITE_PLUTO_API_URL</code> env var (defaults to <code className="font-mono">https://api.timescard.cloud</code>).
+          </p>
         </div>
       </section>
     </div>
