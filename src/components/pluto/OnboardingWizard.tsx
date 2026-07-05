@@ -323,8 +323,7 @@ export function OnboardingWizard({ initialPlan, onDismiss }: { initialPlan: Plan
       ``,
     ].join("\n");
   }
-
-
+  async function downloadPackage() {
     const stamp = new Date().toISOString();
     const safeName = slug(projectName || "my-app");
     const zip = new JSZip();
