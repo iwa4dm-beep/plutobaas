@@ -58,7 +58,7 @@ TerminalCard probes on `/dashboard` will turn green.
 - [x] Phase 1 — Scaffold + health/liveness/readiness
 - [x] Phase 2 — Auth service (`/auth/v1/*`) — signup, token, refresh (rotation + reuse detection), logout, user CRUD, recover, settings
 - [x] Phase 3 — Data API (`/rest/v1/:table`, `/rest/v1/rpc/:fn`) — CRUD, filters, upsert, RLS via SET LOCAL role + request.jwt.claims
-- [ ] Phase 4 — `@pluto/js` SDK
+- [x] Phase 4 — `@pluto/js` SDK (auth + query builder + storage + realtime stub, Supabase-compatible)
 - [ ] Phase 5 — Storage (`/storage/v1/*`)
 - [ ] Phase 6 — Realtime WebSocket
 - [ ] Phase 7 — Multi-tenant + admin
