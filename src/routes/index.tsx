@@ -1162,6 +1162,8 @@ function TerminalCard() {
                       probe={p}
                       history={moduleHistory}
                       apiUrl={apiUrl}
+                      reprobing={reprobing.has(p.name)}
+                      onReprobe={() => reprobeModule(p.name)}
                       panelRef={(el) => { panelRefs.current[p.name] = el; }}
                       onClose={() => {
                         setExpanded(null);
