@@ -30,9 +30,13 @@ import { Route as DashboardScalingRouteImport } from './routes/dashboard.scaling
 import { Route as DashboardRealtimeRouteImport } from './routes/dashboard.realtime'
 import { Route as DashboardRbacRouteImport } from './routes/dashboard.rbac'
 import { Route as DashboardProjectsRouteImport } from './routes/dashboard.projects'
+import { Route as DashboardPlutoWebhooksRouteImport } from './routes/dashboard.pluto-webhooks'
+import { Route as DashboardPlutoSearchRouteImport } from './routes/dashboard.pluto-search'
 import { Route as DashboardPlutoSchemaRouteImport } from './routes/dashboard.pluto-schema'
 import { Route as DashboardPlutoMigrationsRouteImport } from './routes/dashboard.pluto-migrations'
 import { Route as DashboardPlutoFunctionsRouteImport } from './routes/dashboard.pluto-functions'
+import { Route as DashboardPlutoBillingRouteImport } from './routes/dashboard.pluto-billing'
+import { Route as DashboardPlutoBackupsRouteImport } from './routes/dashboard.pluto-backups'
 import { Route as DashboardPlutoAuditRouteImport } from './routes/dashboard.pluto-audit'
 import { Route as DashboardPlutoAdminRouteImport } from './routes/dashboard.pluto-admin'
 import { Route as DashboardObservabilityRouteImport } from './routes/dashboard.observability'
@@ -167,6 +171,16 @@ const DashboardProjectsRoute = DashboardProjectsRouteImport.update({
   path: '/projects',
   getParentRoute: () => DashboardRoute,
 } as any)
+const DashboardPlutoWebhooksRoute = DashboardPlutoWebhooksRouteImport.update({
+  id: '/pluto-webhooks',
+  path: '/pluto-webhooks',
+  getParentRoute: () => DashboardRoute,
+} as any)
+const DashboardPlutoSearchRoute = DashboardPlutoSearchRouteImport.update({
+  id: '/pluto-search',
+  path: '/pluto-search',
+  getParentRoute: () => DashboardRoute,
+} as any)
 const DashboardPlutoSchemaRoute = DashboardPlutoSchemaRouteImport.update({
   id: '/pluto-schema',
   path: '/pluto-schema',
@@ -181,6 +195,16 @@ const DashboardPlutoMigrationsRoute =
 const DashboardPlutoFunctionsRoute = DashboardPlutoFunctionsRouteImport.update({
   id: '/pluto-functions',
   path: '/pluto-functions',
+  getParentRoute: () => DashboardRoute,
+} as any)
+const DashboardPlutoBillingRoute = DashboardPlutoBillingRouteImport.update({
+  id: '/pluto-billing',
+  path: '/pluto-billing',
+  getParentRoute: () => DashboardRoute,
+} as any)
+const DashboardPlutoBackupsRoute = DashboardPlutoBackupsRouteImport.update({
+  id: '/pluto-backups',
+  path: '/pluto-backups',
   getParentRoute: () => DashboardRoute,
 } as any)
 const DashboardPlutoAuditRoute = DashboardPlutoAuditRouteImport.update({
@@ -355,9 +379,13 @@ export interface FileRoutesByFullPath {
   '/dashboard/observability': typeof DashboardObservabilityRoute
   '/dashboard/pluto-admin': typeof DashboardPlutoAdminRoute
   '/dashboard/pluto-audit': typeof DashboardPlutoAuditRoute
+  '/dashboard/pluto-backups': typeof DashboardPlutoBackupsRoute
+  '/dashboard/pluto-billing': typeof DashboardPlutoBillingRoute
   '/dashboard/pluto-functions': typeof DashboardPlutoFunctionsRoute
   '/dashboard/pluto-migrations': typeof DashboardPlutoMigrationsRoute
   '/dashboard/pluto-schema': typeof DashboardPlutoSchemaRoute
+  '/dashboard/pluto-search': typeof DashboardPlutoSearchRoute
+  '/dashboard/pluto-webhooks': typeof DashboardPlutoWebhooksRoute
   '/dashboard/projects': typeof DashboardProjectsRoute
   '/dashboard/rbac': typeof DashboardRbacRoute
   '/dashboard/realtime': typeof DashboardRealtimeRoute
@@ -408,9 +436,13 @@ export interface FileRoutesByTo {
   '/dashboard/observability': typeof DashboardObservabilityRoute
   '/dashboard/pluto-admin': typeof DashboardPlutoAdminRoute
   '/dashboard/pluto-audit': typeof DashboardPlutoAuditRoute
+  '/dashboard/pluto-backups': typeof DashboardPlutoBackupsRoute
+  '/dashboard/pluto-billing': typeof DashboardPlutoBillingRoute
   '/dashboard/pluto-functions': typeof DashboardPlutoFunctionsRoute
   '/dashboard/pluto-migrations': typeof DashboardPlutoMigrationsRoute
   '/dashboard/pluto-schema': typeof DashboardPlutoSchemaRoute
+  '/dashboard/pluto-search': typeof DashboardPlutoSearchRoute
+  '/dashboard/pluto-webhooks': typeof DashboardPlutoWebhooksRoute
   '/dashboard/projects': typeof DashboardProjectsRoute
   '/dashboard/rbac': typeof DashboardRbacRoute
   '/dashboard/realtime': typeof DashboardRealtimeRoute
@@ -463,9 +495,13 @@ export interface FileRoutesById {
   '/dashboard/observability': typeof DashboardObservabilityRoute
   '/dashboard/pluto-admin': typeof DashboardPlutoAdminRoute
   '/dashboard/pluto-audit': typeof DashboardPlutoAuditRoute
+  '/dashboard/pluto-backups': typeof DashboardPlutoBackupsRoute
+  '/dashboard/pluto-billing': typeof DashboardPlutoBillingRoute
   '/dashboard/pluto-functions': typeof DashboardPlutoFunctionsRoute
   '/dashboard/pluto-migrations': typeof DashboardPlutoMigrationsRoute
   '/dashboard/pluto-schema': typeof DashboardPlutoSchemaRoute
+  '/dashboard/pluto-search': typeof DashboardPlutoSearchRoute
+  '/dashboard/pluto-webhooks': typeof DashboardPlutoWebhooksRoute
   '/dashboard/projects': typeof DashboardProjectsRoute
   '/dashboard/rbac': typeof DashboardRbacRoute
   '/dashboard/realtime': typeof DashboardRealtimeRoute
@@ -519,9 +555,13 @@ export interface FileRouteTypes {
     | '/dashboard/observability'
     | '/dashboard/pluto-admin'
     | '/dashboard/pluto-audit'
+    | '/dashboard/pluto-backups'
+    | '/dashboard/pluto-billing'
     | '/dashboard/pluto-functions'
     | '/dashboard/pluto-migrations'
     | '/dashboard/pluto-schema'
+    | '/dashboard/pluto-search'
+    | '/dashboard/pluto-webhooks'
     | '/dashboard/projects'
     | '/dashboard/rbac'
     | '/dashboard/realtime'
@@ -572,9 +612,13 @@ export interface FileRouteTypes {
     | '/dashboard/observability'
     | '/dashboard/pluto-admin'
     | '/dashboard/pluto-audit'
+    | '/dashboard/pluto-backups'
+    | '/dashboard/pluto-billing'
     | '/dashboard/pluto-functions'
     | '/dashboard/pluto-migrations'
     | '/dashboard/pluto-schema'
+    | '/dashboard/pluto-search'
+    | '/dashboard/pluto-webhooks'
     | '/dashboard/projects'
     | '/dashboard/rbac'
     | '/dashboard/realtime'
@@ -626,9 +670,13 @@ export interface FileRouteTypes {
     | '/dashboard/observability'
     | '/dashboard/pluto-admin'
     | '/dashboard/pluto-audit'
+    | '/dashboard/pluto-backups'
+    | '/dashboard/pluto-billing'
     | '/dashboard/pluto-functions'
     | '/dashboard/pluto-migrations'
     | '/dashboard/pluto-schema'
+    | '/dashboard/pluto-search'
+    | '/dashboard/pluto-webhooks'
     | '/dashboard/projects'
     | '/dashboard/rbac'
     | '/dashboard/realtime'
@@ -811,6 +859,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardProjectsRouteImport
       parentRoute: typeof DashboardRoute
     }
+    '/dashboard/pluto-webhooks': {
+      id: '/dashboard/pluto-webhooks'
+      path: '/pluto-webhooks'
+      fullPath: '/dashboard/pluto-webhooks'
+      preLoaderRoute: typeof DashboardPlutoWebhooksRouteImport
+      parentRoute: typeof DashboardRoute
+    }
+    '/dashboard/pluto-search': {
+      id: '/dashboard/pluto-search'
+      path: '/pluto-search'
+      fullPath: '/dashboard/pluto-search'
+      preLoaderRoute: typeof DashboardPlutoSearchRouteImport
+      parentRoute: typeof DashboardRoute
+    }
     '/dashboard/pluto-schema': {
       id: '/dashboard/pluto-schema'
       path: '/pluto-schema'
@@ -830,6 +892,20 @@ declare module '@tanstack/react-router' {
       path: '/pluto-functions'
       fullPath: '/dashboard/pluto-functions'
       preLoaderRoute: typeof DashboardPlutoFunctionsRouteImport
+      parentRoute: typeof DashboardRoute
+    }
+    '/dashboard/pluto-billing': {
+      id: '/dashboard/pluto-billing'
+      path: '/pluto-billing'
+      fullPath: '/dashboard/pluto-billing'
+      preLoaderRoute: typeof DashboardPlutoBillingRouteImport
+      parentRoute: typeof DashboardRoute
+    }
+    '/dashboard/pluto-backups': {
+      id: '/dashboard/pluto-backups'
+      path: '/pluto-backups'
+      fullPath: '/dashboard/pluto-backups'
+      preLoaderRoute: typeof DashboardPlutoBackupsRouteImport
       parentRoute: typeof DashboardRoute
     }
     '/dashboard/pluto-audit': {
@@ -1069,9 +1145,13 @@ interface DashboardRouteChildren {
   DashboardObservabilityRoute: typeof DashboardObservabilityRoute
   DashboardPlutoAdminRoute: typeof DashboardPlutoAdminRoute
   DashboardPlutoAuditRoute: typeof DashboardPlutoAuditRoute
+  DashboardPlutoBackupsRoute: typeof DashboardPlutoBackupsRoute
+  DashboardPlutoBillingRoute: typeof DashboardPlutoBillingRoute
   DashboardPlutoFunctionsRoute: typeof DashboardPlutoFunctionsRoute
   DashboardPlutoMigrationsRoute: typeof DashboardPlutoMigrationsRoute
   DashboardPlutoSchemaRoute: typeof DashboardPlutoSchemaRoute
+  DashboardPlutoSearchRoute: typeof DashboardPlutoSearchRoute
+  DashboardPlutoWebhooksRoute: typeof DashboardPlutoWebhooksRoute
   DashboardProjectsRoute: typeof DashboardProjectsRoute
   DashboardRbacRoute: typeof DashboardRbacRoute
   DashboardRealtimeRoute: typeof DashboardRealtimeRoute
@@ -1111,9 +1191,13 @@ const DashboardRouteChildren: DashboardRouteChildren = {
   DashboardObservabilityRoute: DashboardObservabilityRoute,
   DashboardPlutoAdminRoute: DashboardPlutoAdminRoute,
   DashboardPlutoAuditRoute: DashboardPlutoAuditRoute,
+  DashboardPlutoBackupsRoute: DashboardPlutoBackupsRoute,
+  DashboardPlutoBillingRoute: DashboardPlutoBillingRoute,
   DashboardPlutoFunctionsRoute: DashboardPlutoFunctionsRoute,
   DashboardPlutoMigrationsRoute: DashboardPlutoMigrationsRoute,
   DashboardPlutoSchemaRoute: DashboardPlutoSchemaRoute,
+  DashboardPlutoSearchRoute: DashboardPlutoSearchRoute,
+  DashboardPlutoWebhooksRoute: DashboardPlutoWebhooksRoute,
   DashboardProjectsRoute: DashboardProjectsRoute,
   DashboardRbacRoute: DashboardRbacRoute,
   DashboardRealtimeRoute: DashboardRealtimeRoute,
