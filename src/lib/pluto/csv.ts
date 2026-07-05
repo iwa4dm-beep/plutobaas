@@ -26,4 +26,39 @@ export function downloadCsv(filename: string, csv: string) {
   a.href = url; a.download = filename;
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+
+/**
+ * Minimal RFC 4180 CSV parser. Handles quoted fields, escaped quotes, and
+ * CRLF/LF. Returns { columns, rows } where rows are keyed by header.
+ */
+export function parseCsv(text: string): { columns: string[]; rows: Record<string, string>[] } {
+  const out: string[][] = [];
+  let row: string[] = [];
+  let cell = "";
+  let inQuotes = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (inQuotes) {
+      if (ch === '"') {
+        if (text[i + 1] === '"') { cell += '"'; i++; } else { inQuotes = false; }
+      } else { cell += ch; }
+    } else {
+      if (ch === '"') inQuotes = true;
+      else if (ch === ",") { row.push(cell); cell = ""; }
+      else if (ch === "\n" || ch === "\r") {
+        if (ch === "\r" && text[i + 1] === "\n") i++;
+        row.push(cell); cell = "";
+        if (row.length > 1 || row[0] !== "") out.push(row);
+        row = [];
+      } else { cell += ch; }
+    }
+  }
+  if (cell !== "" || row.length) { row.push(cell); out.push(row); }
+  if (!out.length) return { columns: [], rows: [] };
+  const [header, ...body] = out;
+  return {
+    columns: header,
+    rows: body.map((r) => Object.fromEntries(header.map((h, i) => [h, r[i] ?? ""]))),
+  };
 }
+
