@@ -28,10 +28,11 @@ async function handle({ request, params }: { request: Request; params: { _splat?
         reason: "PLUTO_UPSTREAM_URL not set — configure the Fastify backend URL in project secrets to enable live probes.",
       }),
       {
-        status: 503,
+        status: 200,
         headers: {
           "content-type": "application/json",
           "cache-control": "no-store",
+          "x-pluto-offline": "1",
         },
       },
     );
@@ -67,7 +68,7 @@ async function handle({ request, params }: { request: Request; params: { _splat?
         error: err instanceof Error ? err.message : String(err),
         target,
       }),
-      { status: 502, headers: { "content-type": "application/json" } },
+      { status: 200, headers: { "content-type": "application/json", "x-pluto-offline": "1" } },
     );
   }
 }
