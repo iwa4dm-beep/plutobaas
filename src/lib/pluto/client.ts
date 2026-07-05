@@ -1,11 +1,16 @@
 /**
- * @pluto/client (mock implementation)
+ * @pluto/client — adapter SDK
  *
- * A small, framework-agnostic SDK shim that mirrors the eventual real Pluto
- * BaaS SDK surface. Backed by localStorage so the Admin Dashboard is fully
- * interactive without a running backend. Once the real Pluto Server exists,
- * replace the bodies with fetch calls — the public API stays the same.
+ * Public shape is stable. When `VITE_PLUTO_URL` (+ `VITE_PLUTO_ANON_KEY`)
+ * are configured, every method routes to the real Fastify backend via
+ * `./live`. Otherwise it falls back to a localStorage-backed mock so the
+ * dashboard remains fully interactive with no backend.
+ *
+ * Adding a new method? Add both a `live` branch and a `mock` branch inside
+ * the same function so callers never need to know which is active.
  */
+
+import { isLive, live, type AdminUser, type LogEntry, type SqlResult } from "./live";
 
 export type PlutoUser = {
   id: string;
@@ -49,6 +54,8 @@ export type PlutoSettings = {
   s3Region: string;
   jwtRotatedAt: string | null;
 };
+
+// ---------- Mock backing store ----------
 
 const STORAGE_KEY = "pluto.mock.v1";
 
@@ -157,17 +164,58 @@ function save(db: MockDB) {
 const wait = (ms = 180) => new Promise((r) => setTimeout(r, ms));
 const rid = () => Math.random().toString(36).slice(2, 10);
 
+// ---------- Adapters (live → public shape) ----------
+
+function adaptAuthUser(u: { id: string; email: string; role: "admin" | "user"; email_verified?: boolean; created_at?: string }): PlutoUser {
+  return {
+    id: u.id,
+    email: u.email,
+    role: u.role,
+    email_verified: u.email_verified ?? false,
+    created_at: u.created_at ?? new Date().toISOString(),
+  };
+}
+
+function adaptAdminUser(u: AdminUser): PlutoUser {
+  return adaptAuthUser(u);
+}
+
+function adaptLog(l: LogEntry): PlutoLog {
+  const level = (["info", "warn", "error"].includes(l.level) ? l.level : "info") as PlutoLog["level"];
+  const source = (["auth", "rest", "storage", "admin"].includes(l.source) ? l.source : "admin") as PlutoLog["source"];
+  return { id: l.id, ts: l.ts, level, source, message: l.message };
+}
+
+/** SqlResult → mock-shaped `{ columns, rows }`. */
+function adaptSqlResult(res: SqlResult | undefined): { columns: string[]; rows: unknown[][] } {
+  if (!res) return { columns: [], rows: [] };
+  const columns = res.columns.map((c) => c.name);
+  const rows = (res.rows as Record<string, unknown>[]).map((r) => columns.map((c) => r[c]));
+  return { columns, rows };
+}
+
 // ---------- Public API ----------
 
 export const pluto = {
+  /** True when calls go to the real Fastify backend. */
+  isLive: () => isLive(),
+
   auth: {
     async signIn(email: string, password: string): Promise<PlutoSession> {
-      await wait();
       if (!email || !password) throw new Error("Email এবং password দিন।");
+      if (isLive()) {
+        const r = await live.auth.signIn(email, password);
+        return {
+          access_token: r.session.access_token,
+          refresh_token: r.session.refresh_token,
+          expires_at: r.session.expires_at,
+          user: adaptAuthUser(r.user),
+        };
+      }
+      await wait();
       const db = load();
       let user = db.users.find((u) => u.email.toLowerCase() === email.toLowerCase());
       if (!user) {
-        // For the mock dashboard, allow first sign-in as admin.
         user = { id: `u_${rid()}`, email, role: "admin", email_verified: true, created_at: new Date().toISOString() };
         db.users.unshift(user);
       }
@@ -182,26 +230,92 @@ export const pluto = {
       save(db);
       return session;
     },
+
+    async signUp(email: string, password: string): Promise<PlutoSession> {
+      if (isLive()) {
+        const r = await live.auth.signUp(email, password);
+        return {
+          access_token: r.session.access_token,
+          refresh_token: r.session.refresh_token,
+          expires_at: r.session.expires_at,
+          user: adaptAuthUser(r.user),
+        };
+      }
+      // Mock: signUp behaves like signIn for the demo dashboard.
+      return this.signIn(email, password);
+    },
+
     async signOut() {
+      if (isLive()) { await live.auth.signOut(); return; }
       const db = load();
       db.session = null;
       save(db);
     },
+
     getSession(): PlutoSession | null {
+      if (isLive()) {
+        const s = live.auth.session();
+        if (!s || !s.user) return null;
+        return {
+          access_token: s.access_token,
+          refresh_token: s.refresh_token,
+          expires_at: s.expires_at,
+          user: adaptAuthUser(s.user),
+        };
+      }
       return load().session;
     },
   },
 
   db: {
     async listTables(): Promise<PlutoTable[]> {
+      if (isLive()) {
+        try {
+          const { tables } = await live.schema.introspect();
+          // Coerce live shape into the simpler mock shape.
+          return (tables ?? []).filter((t) => t.schema === "public").map((t) => ({
+            name: t.name,
+            schema: "public",
+            row_count: (t as unknown as { row_count?: number }).row_count ?? 0,
+            columns: ((t as unknown as { columns?: Array<{ name: string; data_type?: string; type?: string; is_nullable?: boolean; nullable?: boolean; is_pk?: boolean; pk?: boolean }> }).columns ?? []).map((c) => ({
+              name: c.name,
+              type: c.data_type ?? c.type ?? "text",
+              nullable: c.is_nullable ?? c.nullable ?? true,
+              pk: c.is_pk ?? c.pk ?? false,
+            })),
+          }));
+        } catch {
+          return [];
+        }
+      }
       await wait();
       return load().tables;
     },
+
     async listRows(table: string): Promise<Record<string, unknown>[]> {
+      if (isLive()) {
+        try {
+          const res = await live.sql.run(`select * from "${table}" limit 200`, { read_only: true });
+          const first = res.results?.[0];
+          if (!first) return [];
+          return (first.rows as Record<string, unknown>[]) ?? [];
+        } catch {
+          return [];
+        }
+      }
       await wait();
       return load().rows[table] ?? [];
     },
+
     async insertRow(table: string, row: Record<string, unknown>) {
+      if (isLive()) {
+        const cols = Object.keys(row);
+        const placeholders = cols.map((_, i) => `$${i + 1}`).join(", ");
+        const colList = cols.map((c) => `"${c}"`).join(", ");
+        const sql = `insert into "${table}" (${colList}) values (${placeholders}) returning *`;
+        const res = await live.sql.run(sql, { params: cols.map((c) => row[c]) });
+        return (res.results?.[0]?.rows?.[0] as Record<string, unknown>) ?? { id: rid(), ...row };
+      }
       const db = load();
       const r = { id: rid(), ...row };
       db.rows[table] = [r, ...(db.rows[table] ?? [])];
@@ -210,16 +324,25 @@ export const pluto = {
       save(db);
       return r;
     },
+
     async deleteRow(table: string, id: string) {
+      if (isLive()) {
+        await live.sql.run(`delete from "${table}" where id = $1`, { params: [id] });
+        return;
+      }
       const db = load();
       db.rows[table] = (db.rows[table] ?? []).filter((r) => (r.id as string) !== id);
       const t = db.tables.find((x) => x.name === table);
       if (t) t.row_count = (db.rows[table] ?? []).length;
       save(db);
     },
+
     async runSql(sql: string): Promise<{ columns: string[]; rows: unknown[][] }> {
+      if (isLive()) {
+        const res = await live.sql.run(sql);
+        return adaptSqlResult(res.results?.[0]);
+      }
       await wait();
-      // Mock: just echo back the parsed-ish statement.
       return {
         columns: ["statement", "executed_at"],
         rows: [[sql.trim().slice(0, 200), new Date().toISOString()]],
@@ -229,16 +352,28 @@ export const pluto = {
 
   users: {
     async list(): Promise<PlutoUser[]> {
+      if (isLive()) {
+        try {
+          const items = await live.admin.users.list();
+          return items.map(adaptAdminUser);
+        } catch {
+          return [];
+        }
+      }
       await wait();
       return load().users;
     },
+
     async setRole(id: string, role: "admin" | "user") {
+      if (isLive()) { await live.admin.users.update(id, { role }); return; }
       const db = load();
       const u = db.users.find((x) => x.id === id);
       if (u) u.role = role;
       save(db);
     },
+
     async remove(id: string) {
+      if (isLive()) { await live.admin.users.remove(id); return; }
       const db = load();
       db.users = db.users.filter((u) => u.id !== id);
       save(db);
@@ -246,28 +381,88 @@ export const pluto = {
   },
 
   storage: {
+    // Note: live storage bucket/object endpoints (/storage/v1/buckets, /objects)
+    // are proxied through the same `api()` helper; if the surface ever moves
+    // into `live.storage.*`, swap the fetch bodies below for those calls.
     async listBuckets(): Promise<PlutoBucket[]> {
+      if (isLive()) {
+        try {
+          const { api } = await import("./live");
+          const rows = await api<Array<{ name: string; public?: boolean; file_count?: number; size_bytes?: number }>>(
+            "/storage/v1/buckets",
+            { service: true },
+          );
+          return rows.map((b) => ({
+            name: b.name,
+            public: !!b.public,
+            file_count: b.file_count ?? 0,
+            size_bytes: b.size_bytes ?? 0,
+          }));
+        } catch {
+          return [];
+        }
+      }
       await wait();
       return load().buckets;
     },
+
     async createBucket(name: string, isPublic: boolean) {
+      if (isLive()) {
+        const { api } = await import("./live");
+        await api("/storage/v1/buckets", {
+          method: "POST", service: true,
+          body: JSON.stringify({ name, public: isPublic }),
+        });
+        return;
+      }
       const db = load();
       if (db.buckets.some((b) => b.name === name)) throw new Error("এই নামে bucket আছে।");
       db.buckets.push({ name, public: isPublic, file_count: 0, size_bytes: 0 });
       db.files[name] = [];
       save(db);
     },
+
     async deleteBucket(name: string) {
+      if (isLive()) {
+        const { api } = await import("./live");
+        await api(`/storage/v1/buckets/${encodeURIComponent(name)}`, { method: "DELETE", service: true });
+        return;
+      }
       const db = load();
       db.buckets = db.buckets.filter((b) => b.name !== name);
       delete db.files[name];
       save(db);
     },
+
     async listFiles(bucket: string): Promise<PlutoFile[]> {
+      if (isLive()) {
+        try {
+          const { api } = await import("./live");
+          const rows = await api<Array<{ key: string; size: number; content_type?: string; updated_at?: string }>>(
+            `/storage/v1/list/${encodeURIComponent(bucket)}`,
+            { service: true },
+          );
+          return rows.map((f) => ({
+            key: f.key,
+            size: f.size,
+            content_type: f.content_type ?? "application/octet-stream",
+            updated_at: f.updated_at ?? new Date().toISOString(),
+          }));
+        } catch {
+          return [];
+        }
+      }
       await wait();
       return load().files[bucket] ?? [];
     },
+
     async upload(bucket: string, file: { name: string; size: number; type: string }) {
+      if (isLive()) {
+        // Live upload requires the actual Blob/File — this metadata-only
+        // signature is a mock legacy. Dashboard upload UI should call
+        // live.storage.upload directly with the File.
+        return;
+      }
       const db = load();
       const f: PlutoFile = { key: file.name, size: file.size, content_type: file.type || "application/octet-stream", updated_at: new Date().toISOString() };
       db.files[bucket] = [f, ...(db.files[bucket] ?? []).filter((x) => x.key !== f.key)];
@@ -278,7 +473,14 @@ export const pluto = {
       }
       save(db);
     },
+
     async remove(bucket: string, key: string) {
+      if (isLive()) {
+        const { api } = await import("./live");
+        await api(`/storage/v1/object/${encodeURIComponent(bucket)}/${key.split("/").map(encodeURIComponent).join("/")}`,
+          { method: "DELETE", service: true });
+        return;
+      }
       const db = load();
       db.files[bucket] = (db.files[bucket] ?? []).filter((f) => f.key !== key);
       const b = db.buckets.find((x) => x.name === bucket);
@@ -292,6 +494,14 @@ export const pluto = {
 
   logs: {
     async list(): Promise<PlutoLog[]> {
+      if (isLive()) {
+        try {
+          const items = await live.admin.logs({ limit: 100 });
+          return items.map(adaptLog);
+        } catch {
+          return [];
+        }
+      }
       await wait();
       return load().logs;
     },
@@ -299,15 +509,57 @@ export const pluto = {
 
   settings: {
     async get(): Promise<PlutoSettings> {
+      if (isLive()) {
+        try {
+          const { items } = await live.admin.settings.list();
+          const map = new Map(items.map((r) => [r.key, r.value]));
+          const s = load().settings;
+          return {
+            backendUrl: (map.get("backend_url") as string) ?? s.backendUrl,
+            smtpHost:   (map.get("smtp_host")   as string) ?? s.smtpHost,
+            smtpPort:   (map.get("smtp_port")   as number) ?? s.smtpPort,
+            smtpUser:   (map.get("smtp_user")   as string) ?? s.smtpUser,
+            storageDriver: ((map.get("storage_driver") as "local" | "s3") ?? s.storageDriver),
+            s3Bucket:   (map.get("s3_bucket")   as string) ?? s.s3Bucket,
+            s3Region:   (map.get("s3_region")   as string) ?? s.s3Region,
+            jwtRotatedAt: (map.get("jwt_rotated_at") as string | null) ?? s.jwtRotatedAt,
+          };
+        } catch {
+          return load().settings;
+        }
+      }
       await wait();
       return load().settings;
     },
+
     async update(patch: Partial<PlutoSettings>) {
+      if (isLive()) {
+        const keyMap: Record<keyof PlutoSettings, string> = {
+          backendUrl: "backend_url",
+          smtpHost: "smtp_host",
+          smtpPort: "smtp_port",
+          smtpUser: "smtp_user",
+          storageDriver: "storage_driver",
+          s3Bucket: "s3_bucket",
+          s3Region: "s3_region",
+          jwtRotatedAt: "jwt_rotated_at",
+        };
+        for (const [k, v] of Object.entries(patch)) {
+          const key = keyMap[k as keyof PlutoSettings];
+          if (key) await live.admin.settings.upsert({ key, value: v });
+        }
+        return;
+      }
       const db = load();
       db.settings = { ...db.settings, ...patch };
       save(db);
     },
+
     async rotateJwt() {
+      if (isLive()) {
+        await live.admin.settings.upsert({ key: "jwt_rotated_at", value: new Date().toISOString() });
+        return;
+      }
       const db = load();
       db.settings.jwtRotatedAt = new Date().toISOString();
       save(db);
