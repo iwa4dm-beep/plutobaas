@@ -852,6 +852,17 @@ function ModuleDetails({
       onKeyDown={(e) => { if (e.key === "Escape") { e.stopPropagation(); onClose(); } }}
       className="mx-1 my-1 rounded-md border border-border bg-muted/30 p-3 text-[11px] leading-relaxed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
     >
+      <div className="mb-2 flex items-center justify-between">
+        <span className="text-muted-foreground">module details · press Esc to close</span>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label={`Close ${probe.name} details`}
+          className="rounded px-1.5 py-0.5 text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          close
+        </button>
+      </div>
       <div className="grid gap-x-3 gap-y-1 sm:grid-cols-[auto_1fr]">
         <span className="text-muted-foreground">endpoint</span>
         <code className="whitespace-pre-wrap break-all">{apiUrl.replace(/\/$/, "")}{probe.path}</code>
