@@ -348,7 +348,95 @@ export const pluto = {
         rows: [[sql.trim().slice(0, 200), new Date().toISOString()]],
       };
     },
+
+    async updateRow(table: string, id: string, patch: Record<string, unknown>) {
+      const cols = Object.keys(patch);
+      if (isLive()) {
+        if (!cols.length) return;
+        const sets = cols.map((c, i) => `"${c}" = $${i + 1}`).join(", ");
+        const sql = `update "${table}" set ${sets} where id = $${cols.length + 1}`;
+        await live.sql.run(sql, { params: [...cols.map((c) => patch[c]), id] });
+        return;
+      }
+      const db = load();
+      db.rows[table] = (db.rows[table] ?? []).map((r) =>
+        (r.id as string) === id ? { ...r, ...patch } : r,
+      );
+      save(db);
+    },
+
+    async createTable(name: string, columns: Array<{ name: string; type: string; nullable?: boolean; pk?: boolean }>) {
+      const defs = columns.map((c) => {
+        const parts = [`"${c.name}"`, c.type];
+        if (c.pk) parts.push("primary key");
+        if (!c.nullable && !c.pk) parts.push("not null");
+        return parts.join(" ");
+      }).join(", ");
+      const sql = `create table "${name}" (${defs})`;
+      if (isLive()) { await live.sql.run(sql); return; }
+      const db = load();
+      db.tables.push({ name, schema: "public", row_count: 0, columns: columns.map((c) => ({ ...c, nullable: c.nullable ?? true, pk: c.pk ?? false })) });
+      db.rows[name] = [];
+      save(db);
+    },
+
+    async dropTable(name: string) {
+      if (isLive()) { await live.sql.run(`drop table if exists "${name}" cascade`); return; }
+      const db = load();
+      db.tables = db.tables.filter((t) => t.name !== name);
+      delete db.rows[name];
+      save(db);
+    },
+
+    async addColumn(table: string, col: { name: string; type: string; nullable?: boolean }) {
+      const sql = `alter table "${table}" add column "${col.name}" ${col.type}${col.nullable === false ? " not null" : ""}`;
+      if (isLive()) { await live.sql.run(sql); return; }
+      const db = load();
+      const t = db.tables.find((x) => x.name === table);
+      if (t) t.columns.push({ name: col.name, type: col.type, nullable: col.nullable ?? true, pk: false });
+      save(db);
+    },
+
+    async dropColumn(table: string, column: string) {
+      if (isLive()) { await live.sql.run(`alter table "${table}" drop column "${column}"`); return; }
+      const db = load();
+      const t = db.tables.find((x) => x.name === table);
+      if (t) t.columns = t.columns.filter((c) => c.name !== column);
+      db.rows[table] = (db.rows[table] ?? []).map((r) => {
+        const { [column]: _, ...rest } = r; return rest;
+      });
+      save(db);
+    },
+
+    async importRows(table: string, rows: Record<string, unknown>[]) {
+      if (!rows.length) return { inserted: 0 };
+      if (isLive()) {
+        // Batch in chunks of 100 to keep SQL small.
+        let inserted = 0;
+        for (let i = 0; i < rows.length; i += 100) {
+          const chunk = rows.slice(i, i + 100);
+          const cols = Object.keys(chunk[0]);
+          const colList = cols.map((c) => `"${c}"`).join(", ");
+          const params: unknown[] = [];
+          const valuesSql = chunk.map((row) => {
+            const placeholders = cols.map((c) => { params.push(row[c]); return `$${params.length}`; }).join(", ");
+            return `(${placeholders})`;
+          }).join(", ");
+          await live.sql.run(`insert into "${table}" (${colList}) values ${valuesSql}`, { params });
+          inserted += chunk.length;
+        }
+        return { inserted };
+      }
+      const db = load();
+      const withIds = rows.map((r) => ({ id: (r.id as string) ?? rid(), ...r }));
+      db.rows[table] = [...withIds, ...(db.rows[table] ?? [])];
+      const t = db.tables.find((x) => x.name === table);
+      if (t) t.row_count = (db.rows[table] ?? []).length;
+      save(db);
+      return { inserted: rows.length };
+    },
   },
+
 
   users: {
     async list(): Promise<PlutoUser[]> {
