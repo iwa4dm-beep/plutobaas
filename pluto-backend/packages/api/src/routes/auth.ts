@@ -274,7 +274,8 @@ export async function authRoutes(app: FastifyInstance, cfg: Config) {
   app.get('/auth/v1/settings', async () => ({
     external: { email: true, phone: false },
     disable_signup: false,
-    mailer_autoconfirm: true,
+    mailer_autoconfirm: !emailEnabled(),
+    email_delivery: emailEnabled() ? 'smtp' : 'disabled',
   }));
 
   // --- GET /auth/v1/jwks (symmetric HS256 — placeholder empty JWKS) ---
