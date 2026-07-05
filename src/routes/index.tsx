@@ -822,8 +822,16 @@ function TerminalCard() {
 }
 
 function ModuleDetails({
-  id, probe, history, apiUrl,
-}: { id: string; probe: ModuleProbe; history: { ts: number; m: HistoryModule }[]; apiUrl: string }) {
+  id, labelledBy, probe, history, apiUrl, onClose, panelRef,
+}: {
+  id: string;
+  labelledBy: string;
+  probe: ModuleProbe;
+  history: { ts: number; m: HistoryModule }[];
+  apiUrl: string;
+  onClose: () => void;
+  panelRef?: (el: HTMLDivElement | null) => void;
+}) {
   const codeCounts = history.reduce<Record<string, number>>((acc, { m }) => {
     const key = m.code ? String(m.code) : m.error ? "err" : "—";
     acc[key] = (acc[key] ?? 0) + 1;
@@ -831,12 +839,18 @@ function ModuleDetails({
   }, {});
   const codes = Object.entries(codeCounts).sort((a, b) => b[1] - a[1]);
   const recent = history.slice(-8).reverse();
+  const innerRef = useRef<HTMLDivElement | null>(null);
+  // Move focus into the panel on open so screen readers announce it and Esc works.
+  useEffect(() => { innerRef.current?.focus(); }, []);
   return (
     <div
       id={id}
+      ref={(el) => { innerRef.current = el; panelRef?.(el); }}
       role="region"
-      aria-label={`Details for ${probe.name}`}
-      className="mx-1 my-1 rounded-md border border-border bg-muted/30 p-3 text-[11px] leading-relaxed"
+      aria-labelledby={labelledBy}
+      tabIndex={-1}
+      onKeyDown={(e) => { if (e.key === "Escape") { e.stopPropagation(); onClose(); } }}
+      className="mx-1 my-1 rounded-md border border-border bg-muted/30 p-3 text-[11px] leading-relaxed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
     >
       <div className="grid gap-x-3 gap-y-1 sm:grid-cols-[auto_1fr]">
         <span className="text-muted-foreground">endpoint</span>
