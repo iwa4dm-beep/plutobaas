@@ -26,6 +26,7 @@ export function downloadCsv(filename: string, csv: string) {
   a.href = url; a.download = filename;
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
 
 /**
  * Minimal RFC 4180 CSV parser. Handles quoted fields, escaped quotes, and
