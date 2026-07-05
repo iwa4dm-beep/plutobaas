@@ -5,7 +5,7 @@ import {
   ShieldCheck, Sparkles, Terminal, Waves, Workflow, Zap, HelpCircle,
   ChevronDown,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 
 export const Route = createFileRoute("/")({
