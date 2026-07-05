@@ -31,11 +31,15 @@ import { Route as DashboardRealtimeRouteImport } from './routes/dashboard.realti
 import { Route as DashboardRbacRouteImport } from './routes/dashboard.rbac'
 import { Route as DashboardProjectsRouteImport } from './routes/dashboard.projects'
 import { Route as DashboardPlutoWebhooksRouteImport } from './routes/dashboard.pluto-webhooks'
+import { Route as DashboardPlutoStoragePlusRouteImport } from './routes/dashboard.pluto-storage-plus'
 import { Route as DashboardPlutoSearchRouteImport } from './routes/dashboard.pluto-search'
 import { Route as DashboardPlutoSdkRouteImport } from './routes/dashboard.pluto-sdk'
 import { Route as DashboardPlutoSchemaRouteImport } from './routes/dashboard.pluto-schema'
+import { Route as DashboardPlutoRealtimeRouteImport } from './routes/dashboard.pluto-realtime'
+import { Route as DashboardPlutoOrgsRouteImport } from './routes/dashboard.pluto-orgs'
 import { Route as DashboardPlutoMigrationsRouteImport } from './routes/dashboard.pluto-migrations'
 import { Route as DashboardPlutoGraphqlRouteImport } from './routes/dashboard.pluto-graphql'
+import { Route as DashboardPlutoFunctionsPlusRouteImport } from './routes/dashboard.pluto-functions-plus'
 import { Route as DashboardPlutoFunctionsRouteImport } from './routes/dashboard.pluto-functions'
 import { Route as DashboardPlutoBranchesRouteImport } from './routes/dashboard.pluto-branches'
 import { Route as DashboardPlutoBillingRouteImport } from './routes/dashboard.pluto-billing'
@@ -180,6 +184,12 @@ const DashboardPlutoWebhooksRoute = DashboardPlutoWebhooksRouteImport.update({
   path: '/pluto-webhooks',
   getParentRoute: () => DashboardRoute,
 } as any)
+const DashboardPlutoStoragePlusRoute =
+  DashboardPlutoStoragePlusRouteImport.update({
+    id: '/pluto-storage-plus',
+    path: '/pluto-storage-plus',
+    getParentRoute: () => DashboardRoute,
+  } as any)
 const DashboardPlutoSearchRoute = DashboardPlutoSearchRouteImport.update({
   id: '/pluto-search',
   path: '/pluto-search',
@@ -195,6 +205,16 @@ const DashboardPlutoSchemaRoute = DashboardPlutoSchemaRouteImport.update({
   path: '/pluto-schema',
   getParentRoute: () => DashboardRoute,
 } as any)
+const DashboardPlutoRealtimeRoute = DashboardPlutoRealtimeRouteImport.update({
+  id: '/pluto-realtime',
+  path: '/pluto-realtime',
+  getParentRoute: () => DashboardRoute,
+} as any)
+const DashboardPlutoOrgsRoute = DashboardPlutoOrgsRouteImport.update({
+  id: '/pluto-orgs',
+  path: '/pluto-orgs',
+  getParentRoute: () => DashboardRoute,
+} as any)
 const DashboardPlutoMigrationsRoute =
   DashboardPlutoMigrationsRouteImport.update({
     id: '/pluto-migrations',
@@ -206,6 +226,12 @@ const DashboardPlutoGraphqlRoute = DashboardPlutoGraphqlRouteImport.update({
   path: '/pluto-graphql',
   getParentRoute: () => DashboardRoute,
 } as any)
+const DashboardPlutoFunctionsPlusRoute =
+  DashboardPlutoFunctionsPlusRouteImport.update({
+    id: '/pluto-functions-plus',
+    path: '/pluto-functions-plus',
+    getParentRoute: () => DashboardRoute,
+  } as any)
 const DashboardPlutoFunctionsRoute = DashboardPlutoFunctionsRouteImport.update({
   id: '/pluto-functions',
   path: '/pluto-functions',
@@ -409,11 +435,15 @@ export interface FileRoutesByFullPath {
   '/dashboard/pluto-billing': typeof DashboardPlutoBillingRoute
   '/dashboard/pluto-branches': typeof DashboardPlutoBranchesRoute
   '/dashboard/pluto-functions': typeof DashboardPlutoFunctionsRoute
+  '/dashboard/pluto-functions-plus': typeof DashboardPlutoFunctionsPlusRoute
   '/dashboard/pluto-graphql': typeof DashboardPlutoGraphqlRoute
   '/dashboard/pluto-migrations': typeof DashboardPlutoMigrationsRoute
+  '/dashboard/pluto-orgs': typeof DashboardPlutoOrgsRoute
+  '/dashboard/pluto-realtime': typeof DashboardPlutoRealtimeRoute
   '/dashboard/pluto-schema': typeof DashboardPlutoSchemaRoute
   '/dashboard/pluto-sdk': typeof DashboardPlutoSdkRoute
   '/dashboard/pluto-search': typeof DashboardPlutoSearchRoute
+  '/dashboard/pluto-storage-plus': typeof DashboardPlutoStoragePlusRoute
   '/dashboard/pluto-webhooks': typeof DashboardPlutoWebhooksRoute
   '/dashboard/projects': typeof DashboardProjectsRoute
   '/dashboard/rbac': typeof DashboardRbacRoute
@@ -470,11 +500,15 @@ export interface FileRoutesByTo {
   '/dashboard/pluto-billing': typeof DashboardPlutoBillingRoute
   '/dashboard/pluto-branches': typeof DashboardPlutoBranchesRoute
   '/dashboard/pluto-functions': typeof DashboardPlutoFunctionsRoute
+  '/dashboard/pluto-functions-plus': typeof DashboardPlutoFunctionsPlusRoute
   '/dashboard/pluto-graphql': typeof DashboardPlutoGraphqlRoute
   '/dashboard/pluto-migrations': typeof DashboardPlutoMigrationsRoute
+  '/dashboard/pluto-orgs': typeof DashboardPlutoOrgsRoute
+  '/dashboard/pluto-realtime': typeof DashboardPlutoRealtimeRoute
   '/dashboard/pluto-schema': typeof DashboardPlutoSchemaRoute
   '/dashboard/pluto-sdk': typeof DashboardPlutoSdkRoute
   '/dashboard/pluto-search': typeof DashboardPlutoSearchRoute
+  '/dashboard/pluto-storage-plus': typeof DashboardPlutoStoragePlusRoute
   '/dashboard/pluto-webhooks': typeof DashboardPlutoWebhooksRoute
   '/dashboard/projects': typeof DashboardProjectsRoute
   '/dashboard/rbac': typeof DashboardRbacRoute
@@ -533,11 +567,15 @@ export interface FileRoutesById {
   '/dashboard/pluto-billing': typeof DashboardPlutoBillingRoute
   '/dashboard/pluto-branches': typeof DashboardPlutoBranchesRoute
   '/dashboard/pluto-functions': typeof DashboardPlutoFunctionsRoute
+  '/dashboard/pluto-functions-plus': typeof DashboardPlutoFunctionsPlusRoute
   '/dashboard/pluto-graphql': typeof DashboardPlutoGraphqlRoute
   '/dashboard/pluto-migrations': typeof DashboardPlutoMigrationsRoute
+  '/dashboard/pluto-orgs': typeof DashboardPlutoOrgsRoute
+  '/dashboard/pluto-realtime': typeof DashboardPlutoRealtimeRoute
   '/dashboard/pluto-schema': typeof DashboardPlutoSchemaRoute
   '/dashboard/pluto-sdk': typeof DashboardPlutoSdkRoute
   '/dashboard/pluto-search': typeof DashboardPlutoSearchRoute
+  '/dashboard/pluto-storage-plus': typeof DashboardPlutoStoragePlusRoute
   '/dashboard/pluto-webhooks': typeof DashboardPlutoWebhooksRoute
   '/dashboard/projects': typeof DashboardProjectsRoute
   '/dashboard/rbac': typeof DashboardRbacRoute
@@ -597,11 +635,15 @@ export interface FileRouteTypes {
     | '/dashboard/pluto-billing'
     | '/dashboard/pluto-branches'
     | '/dashboard/pluto-functions'
+    | '/dashboard/pluto-functions-plus'
     | '/dashboard/pluto-graphql'
     | '/dashboard/pluto-migrations'
+    | '/dashboard/pluto-orgs'
+    | '/dashboard/pluto-realtime'
     | '/dashboard/pluto-schema'
     | '/dashboard/pluto-sdk'
     | '/dashboard/pluto-search'
+    | '/dashboard/pluto-storage-plus'
     | '/dashboard/pluto-webhooks'
     | '/dashboard/projects'
     | '/dashboard/rbac'
@@ -658,11 +700,15 @@ export interface FileRouteTypes {
     | '/dashboard/pluto-billing'
     | '/dashboard/pluto-branches'
     | '/dashboard/pluto-functions'
+    | '/dashboard/pluto-functions-plus'
     | '/dashboard/pluto-graphql'
     | '/dashboard/pluto-migrations'
+    | '/dashboard/pluto-orgs'
+    | '/dashboard/pluto-realtime'
     | '/dashboard/pluto-schema'
     | '/dashboard/pluto-sdk'
     | '/dashboard/pluto-search'
+    | '/dashboard/pluto-storage-plus'
     | '/dashboard/pluto-webhooks'
     | '/dashboard/projects'
     | '/dashboard/rbac'
@@ -720,11 +766,15 @@ export interface FileRouteTypes {
     | '/dashboard/pluto-billing'
     | '/dashboard/pluto-branches'
     | '/dashboard/pluto-functions'
+    | '/dashboard/pluto-functions-plus'
     | '/dashboard/pluto-graphql'
     | '/dashboard/pluto-migrations'
+    | '/dashboard/pluto-orgs'
+    | '/dashboard/pluto-realtime'
     | '/dashboard/pluto-schema'
     | '/dashboard/pluto-sdk'
     | '/dashboard/pluto-search'
+    | '/dashboard/pluto-storage-plus'
     | '/dashboard/pluto-webhooks'
     | '/dashboard/projects'
     | '/dashboard/rbac'
@@ -915,6 +965,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardPlutoWebhooksRouteImport
       parentRoute: typeof DashboardRoute
     }
+    '/dashboard/pluto-storage-plus': {
+      id: '/dashboard/pluto-storage-plus'
+      path: '/pluto-storage-plus'
+      fullPath: '/dashboard/pluto-storage-plus'
+      preLoaderRoute: typeof DashboardPlutoStoragePlusRouteImport
+      parentRoute: typeof DashboardRoute
+    }
     '/dashboard/pluto-search': {
       id: '/dashboard/pluto-search'
       path: '/pluto-search'
@@ -936,6 +993,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardPlutoSchemaRouteImport
       parentRoute: typeof DashboardRoute
     }
+    '/dashboard/pluto-realtime': {
+      id: '/dashboard/pluto-realtime'
+      path: '/pluto-realtime'
+      fullPath: '/dashboard/pluto-realtime'
+      preLoaderRoute: typeof DashboardPlutoRealtimeRouteImport
+      parentRoute: typeof DashboardRoute
+    }
+    '/dashboard/pluto-orgs': {
+      id: '/dashboard/pluto-orgs'
+      path: '/pluto-orgs'
+      fullPath: '/dashboard/pluto-orgs'
+      preLoaderRoute: typeof DashboardPlutoOrgsRouteImport
+      parentRoute: typeof DashboardRoute
+    }
     '/dashboard/pluto-migrations': {
       id: '/dashboard/pluto-migrations'
       path: '/pluto-migrations'
@@ -948,6 +1019,13 @@ declare module '@tanstack/react-router' {
       path: '/pluto-graphql'
       fullPath: '/dashboard/pluto-graphql'
       preLoaderRoute: typeof DashboardPlutoGraphqlRouteImport
+      parentRoute: typeof DashboardRoute
+    }
+    '/dashboard/pluto-functions-plus': {
+      id: '/dashboard/pluto-functions-plus'
+      path: '/pluto-functions-plus'
+      fullPath: '/dashboard/pluto-functions-plus'
+      preLoaderRoute: typeof DashboardPlutoFunctionsPlusRouteImport
       parentRoute: typeof DashboardRoute
     }
     '/dashboard/pluto-functions': {
@@ -1227,11 +1305,15 @@ interface DashboardRouteChildren {
   DashboardPlutoBillingRoute: typeof DashboardPlutoBillingRoute
   DashboardPlutoBranchesRoute: typeof DashboardPlutoBranchesRoute
   DashboardPlutoFunctionsRoute: typeof DashboardPlutoFunctionsRoute
+  DashboardPlutoFunctionsPlusRoute: typeof DashboardPlutoFunctionsPlusRoute
   DashboardPlutoGraphqlRoute: typeof DashboardPlutoGraphqlRoute
   DashboardPlutoMigrationsRoute: typeof DashboardPlutoMigrationsRoute
+  DashboardPlutoOrgsRoute: typeof DashboardPlutoOrgsRoute
+  DashboardPlutoRealtimeRoute: typeof DashboardPlutoRealtimeRoute
   DashboardPlutoSchemaRoute: typeof DashboardPlutoSchemaRoute
   DashboardPlutoSdkRoute: typeof DashboardPlutoSdkRoute
   DashboardPlutoSearchRoute: typeof DashboardPlutoSearchRoute
+  DashboardPlutoStoragePlusRoute: typeof DashboardPlutoStoragePlusRoute
   DashboardPlutoWebhooksRoute: typeof DashboardPlutoWebhooksRoute
   DashboardProjectsRoute: typeof DashboardProjectsRoute
   DashboardRbacRoute: typeof DashboardRbacRoute
@@ -1277,11 +1359,15 @@ const DashboardRouteChildren: DashboardRouteChildren = {
   DashboardPlutoBillingRoute: DashboardPlutoBillingRoute,
   DashboardPlutoBranchesRoute: DashboardPlutoBranchesRoute,
   DashboardPlutoFunctionsRoute: DashboardPlutoFunctionsRoute,
+  DashboardPlutoFunctionsPlusRoute: DashboardPlutoFunctionsPlusRoute,
   DashboardPlutoGraphqlRoute: DashboardPlutoGraphqlRoute,
   DashboardPlutoMigrationsRoute: DashboardPlutoMigrationsRoute,
+  DashboardPlutoOrgsRoute: DashboardPlutoOrgsRoute,
+  DashboardPlutoRealtimeRoute: DashboardPlutoRealtimeRoute,
   DashboardPlutoSchemaRoute: DashboardPlutoSchemaRoute,
   DashboardPlutoSdkRoute: DashboardPlutoSdkRoute,
   DashboardPlutoSearchRoute: DashboardPlutoSearchRoute,
+  DashboardPlutoStoragePlusRoute: DashboardPlutoStoragePlusRoute,
   DashboardPlutoWebhooksRoute: DashboardPlutoWebhooksRoute,
   DashboardProjectsRoute: DashboardProjectsRoute,
   DashboardRbacRoute: DashboardRbacRoute,
