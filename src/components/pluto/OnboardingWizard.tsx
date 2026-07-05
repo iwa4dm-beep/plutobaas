@@ -453,6 +453,14 @@ export function OnboardingWizard({ initialPlan, onDismiss }: { initialPlan: Plan
               >
                 <Download className="h-3.5 w-3.5" aria-hidden="true" /> Download report
               </button>
+              <button
+                type="button"
+                onClick={() => { void downloadPackage(); }}
+                aria-label="Download onboarding package (zip with report, env and deploy script)"
+                className="inline-flex items-center gap-1.5 rounded-md bg-secondary px-3.5 py-2 text-sm font-medium text-secondary-foreground hover:bg-secondary/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <Package className="h-3.5 w-3.5" aria-hidden="true" /> Download package (.zip)
+              </button>
             </div>
             {envIssues.length > 0 && (
               <div role="alert" className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/5 p-2.5 text-xs text-amber-700 dark:text-amber-400">
