@@ -12,6 +12,11 @@ import { storageRoutes } from './routes/storage.js';
 import { realtimeRoutes } from './routes/realtime.js';
 import { adminRoutes } from './routes/admin.js';
 import { functionsRoutes } from './routes/functions.js';
+import { auditRoutes } from './routes/audit.js';
+import { schemaRoutes } from './routes/schema.js';
+import { grantsRoutes } from './routes/grants.js';
+import { migrationsRoutes } from './routes/migrations.js';
+import { sqlRoutes } from './routes/sql.js';
 import { metricsPlugin } from './observability/metrics.js';
 
 
@@ -73,6 +78,11 @@ async function main() {
   await realtimeRoutes(app, cfg);
   await adminRoutes(app, cfg);
   await functionsRoutes(app, cfg);
+  await auditRoutes(app, cfg);
+  await schemaRoutes(app, cfg);
+  await grantsRoutes(app, cfg);
+  await migrationsRoutes(app, cfg);
+  await sqlRoutes(app, cfg);
 
 
 

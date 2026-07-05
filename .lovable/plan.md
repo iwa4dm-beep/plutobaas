@@ -1,172 +1,140 @@
+# Phase 9 — Governance, Safety, and Schema Evolution
 
-# Pluto BaaS — Full Production Blueprint
-
-লক্ষ্য: এমন একটি self-hosted BaaS তৈরি করা যা VPS-এ deploy করলে **যেকোনো external website/app** (React, Next, mobile, vanilla JS) সহজেই connect করে auth, database, storage, realtime, functions সব ব্যবহার করতে পারবে — অনেকটা self-hosted Supabase-এর মতো।
-
----
-
-## Architecture Overview
-
-```text
-┌──────────────────────────────────────────────────────────────┐
-│  External Apps (any website / mobile / SPA)                  │
-│      import { createClient } from '@pluto/js'                │
-└───────────────┬──────────────────────────────────────────────┘
-                │ HTTPS + JWT (publishable key)
-                ▼
-┌──────────────────────────────────────────────────────────────┐
-│  Nginx (TLS, rate limit, CORS, upload cap)                   │
-└───────────────┬──────────────────────────────────────────────┘
-                ▼
-┌──────────────────────────────────────────────────────────────┐
-│  Fastify API  (PM2 cluster, 2+ workers)                      │
-│  ├── /auth/v1/*      signup, login, refresh, oauth, user     │
-│  ├── /rest/v1/:table PostgREST-style CRUD (RLS enforced)     │
-│  ├── /rpc/:fn        Postgres function calls                 │
-│  ├── /storage/v1/*   file upload/download (S3 or disk)       │
-│  ├── /realtime/v1    WebSocket (LISTEN/NOTIFY bridge)        │
-│  ├── /functions/v1   user Edge Functions (isolated-vm)       │
-│  ├── /admin/*        project & API key management            │
-│  ├── /healthz /livez /readyz                                 │
-│  └── /api/pluto/*    monitor, status                         │
-└───────┬──────────────┬──────────────┬────────────────────────┘
-        ▼              ▼              ▼
-   PostgreSQL      MinIO/S3       Redis (rate-limit, cache)
-   (per-project    (files)        (pub/sub for realtime)
-    schema)
-                ▼
-┌──────────────────────────────────────────────────────────────┐
-│  Lovable Dashboard (this app) — admin control panel          │
-│  DB manager, users, storage, secrets, monitor                │
-└──────────────────────────────────────────────────────────────┘
-```
+Five focused additions to Pluto BaaS. All backend endpoints go under existing `/admin/v1/*`; all UI is new tabs/pages in the Pluto Admin console.
 
 ---
 
-## Deliverables (7 phases, incremental)
+## 1. Audit log for CRUD / import / export / SQL
 
-### Phase 1 — Backend Monorepo Scaffold  `pluto-backend/`
-- `pnpm` workspaces: `packages/api`, `packages/sdk-js`, `packages/cli`, `packages/shared`
-- Fastify 5, TypeScript strict, Drizzle ORM, Zod, Pino logger
-- Dockerfile + docker-compose (Postgres 16 + MinIO + Redis + API)
-- Migrations runner (`drizzle-kit`)
-- Ships with: `/healthz` `/livez` `/readyz` (already-drafted code lifted from this project)
+**Backend (`0006_governance.sql`):**
+- `admin.audit_log(id, actor_id, project_id, action, resource_type, resource_id, params jsonb, result text, duration_ms int, created_at)`
+- Trigger helper `admin.log_event(action, resource_type, resource_id, params, result, ms)`
+- Wrap existing SQL runner, REST insert/update/delete, storage upload/delete, CSV import/export, migration apply — each writes one row.
 
-### Phase 2 — Auth Service  `/auth/v1/*`
-- Endpoints: `signup`, `verify`, `token` (password + refresh grant), `logout`, `user`, `recover`, `otp`, `oauth/:provider`, `jwks`
-- JWT: RS256, JWKS endpoint, refresh-token rotation with reuse-detection
-- Providers: email/password, magic link, Google, GitHub (pluggable)
-- Password hashing: argon2id
-- Rate-limits: `10/min` on `token`, `3/min` on `signup`
-- Postgres schema: `auth.users`, `auth.sessions`, `auth.identities`, `auth.refresh_tokens`
-- Emails via SMTP (Resend/SES/Mailgun adapter)
+**API:**
+- `GET /admin/v1/audit?project_id=&limit=&action=&since=` — paged list (superadmin sees all; project members see own).
+- `GET /admin/v1/audit/:id` — full record with params blob.
 
-### Phase 3 — Data API  `/rest/v1/:table` (PostgREST-like)
-- CRUD: `GET/POST/PATCH/DELETE`
-- Filters: `?col=eq.value`, `gt`, `lt`, `like`, `in`, `is`, `not`
-- `select=col1,col2`, `order`, `limit`, `offset`, `range` header
-- Embedded resources: `select=*,posts(*)`
-- Bulk insert, upsert (`Prefer: resolution=merge-duplicates`)
-- **RLS enforced** — request runs as `authenticated` role with `request.jwt.claims` set from bearer token
-- `/rpc/:fn` for calling Postgres functions
-
-### Phase 4 — Public SDK  `@pluto/js` (published to npm)
-Supabase-compatible surface so migration is trivial:
-```ts
-import { createClient } from '@pluto/js'
-const pluto = createClient('https://api.mysite.com', PUBLISHABLE_KEY)
-
-await pluto.auth.signUp({ email, password })
-await pluto.auth.signInWithPassword({ email, password })
-pluto.auth.onAuthStateChange((event, session) => {})
-
-const { data, error } = await pluto
-  .from('posts').select('*, author(*)').eq('published', true)
-
-await pluto.storage.from('avatars').upload('me.png', file)
-pluto.channel('room-1').on('postgres_changes', {...}, cb).subscribe()
-```
-- Auto token refresh, localStorage session persistence
-- SSR-safe (cookies adapter)
-- Also ships UMD bundle for `<script>` CDN use
-- TypeScript types generated from DB schema (`pluto gen types`)
-
-### Phase 5 — Storage Service  `/storage/v1/*`
-- Buckets (public/private) with RLS-style policies
-- Multipart upload for large files
-- Image transforms (resize/format) via `sharp` sidecar service
-- S3-compatible backend (MinIO on same VPS, or external S3)
-- Signed URLs with expiry
-
-### Phase 6 — Realtime  `/realtime/v1` (WebSocket)
-- Postgres logical replication → broadcast row changes
-- `postgres_changes` events (INSERT/UPDATE/DELETE) filtered by RLS
-- `broadcast` (client-to-client messaging)
-- `presence` (who is online in a channel)
-- Redis pub/sub for multi-worker fan-out
-
-### Phase 7 — Multi-Tenant + Admin
-- One VPS can host multiple "projects" (like Supabase projects)
-- Each project = separate Postgres schema + isolated API keys + JWT secret
-- `pluto` CLI: `pluto init`, `pluto db push`, `pluto secrets set`, `pluto deploy`
-- Admin API (`/admin/*`) consumed by the Lovable dashboard (this app) — service-role token required
-- Publishable key (client-safe) + service-role key (server-only) per project
+**UI (`dashboard.pluto-audit.tsx`):**
+- Timestamp, actor, action badge, resource, duration, expandable JSON params.
+- Filters (project, action, date-range), tail/refresh, CSV export.
+- Client-side "UI history" ring buffer (last 100 admin actions this session) shown in a right-side drawer for immediate feedback before server round-trip.
 
 ---
 
-## Dashboard Integration (this Lovable app)
+## 2. Indexes and constraints UI + backend
 
-Once backend is live, this app becomes the **control plane**:
-- Set `PLUTO_UPSTREAM_URL=https://api.your-vps.com` in secrets
-- Set `PLUTO_SERVICE_ROLE_KEY` (server-only, for admin ops)
-- All existing pages (`/dashboard/database`, `/auth`, `/storage`, `/functions`) become live
-- New pages: **API Keys**, **Projects**, **Realtime inspector**, **Logs viewer**
+**Backend `/admin/v1/schema/*`:**
+- `GET /admin/v1/schema/tables/:schema/:table/indexes` — list from `pg_indexes`.
+- `POST /admin/v1/schema/indexes` — `{ schema, table, name, columns[], method: btree|gin|gist|hash, unique?, where? }` → `CREATE INDEX [UNIQUE] ... USING method ...`.
+- `DELETE /admin/v1/schema/indexes/:name` — `DROP INDEX`.
+- `GET /admin/v1/schema/tables/:schema/:table/constraints` — from `pg_constraint`.
+- `POST /admin/v1/schema/constraints` — types: `unique`, `check`, `not_null`, `foreign_key`. Each generates the correct `ALTER TABLE … ADD CONSTRAINT` / `ALTER COLUMN … SET NOT NULL`.
+- `DELETE /admin/v1/schema/constraints/:table/:name` — `DROP CONSTRAINT` (or `DROP NOT NULL`).
+- Owner/admin role required. Every action logs to `admin.audit_log` and emits an auto-migration file (see §5).
 
----
-
-## Security Baseline
-- All endpoints: Zod input validation, rate limit, request size cap
-- JWT: RS256, 1h access token, 30d refresh with rotation + reuse detection
-- Argon2id password hashing
-- RLS mandatory on every user-facing table
-- Service-role key never leaves server, stored via Lovable secrets
-- Audit log table (`admin.audit`) — every admin action logged
-- CORS: allowlist per project (configured via admin API)
+**UI (`dashboard.pluto-schema.tsx`):**
+- Pick project → schema → table. Two panels: Indexes, Constraints.
+- Add-Index form: columns picker, method dropdown (btree/gin/gist/hash), unique toggle, optional partial-index WHERE.
+- Add-Constraint form: type selector, columns, expression (check), FK target.
+- Each row has "Drop" with confirm.
 
 ---
 
-## Deployment (VPS)
-- Single `docker-compose up -d` brings up Postgres + Redis + MinIO + API + Nginx
-- Certbot auto-TLS
-- PM2 optional if not using Docker
-- Daily `pg_dump` + MinIO snapshot to remote S3 (backup script included)
-- `pluto doctor` CLI = extended version of `validate-env.mjs` — checks every service
+## 3. Safer SQL editor
+
+**Backend (extend existing SQL runner):**
+- `POST /admin/v1/sql/exec` body: `{ sql, params?: any[], read_only?: bool, confirm_destructive?: bool }`.
+- Parse first statement (using `pg-query-emscripten`-free regex tokenizer — no new native dep). Classify:
+  - `select`, `explain`, `show`, `values` → safe.
+  - `insert`, `update`, `delete`, `merge` → destructive-write.
+  - `drop`, `truncate`, `alter`, `grant`, `revoke`, `create` → destructive-schema.
+- If `read_only=true`: run inside `BEGIN READ ONLY; … ROLLBACK;` and reject anything not classified as safe with `409 read_only_violation`.
+- If destructive and `confirm_destructive!==true`: return `409 destructive_requires_confirmation` + classification, no execution.
+- Parameters: use `pg` positional `$1..$N` — reject inline `${...}` interpolation attempts (client passes `params`).
+- Every exec logs to audit.
+
+**UI (`dashboard.sql.tsx` upgrade):**
+- Toggle "Read-only mode" (default ON).
+- "Params (JSON array)" textarea.
+- On destructive detection, backend returns 409 → UI shows red confirm modal listing the classification and affected keywords; user must type the verb (`DROP`, `DELETE`, …) to proceed. Second call sent with `confirm_destructive:true`.
+- Rows-affected / duration / classification badge in results header.
 
 ---
 
-## Implementation Order (what I will build, per turn)
+## 4. Table-level role permissions
 
-Each phase is one turn's worth of work — I will build them sequentially, verifying each before moving on:
+**Backend `0006_governance.sql` (part 2):**
+- Enum `admin.table_perm as enum('read','write','admin')`.
+- `admin.table_grants(id, project_id, schema, table, role admin.table_perm, principal_type enum('user','api_key_role'), principal_id text)`
+- Security-definer `admin.check_table_perm(project_id, schema, table, action, actor_id, api_role) returns bool`.
+- Middleware on `/rest/v1/*` calls `check_table_perm` before every request (existing project/API-key checks stay; this narrows further). Deny → 403.
 
-1. **Turn 1** — Scaffold `pluto-backend/` monorepo: Fastify app, Docker compose, migrations, `/healthz`, `/livez`, `/readyz` (Phase 1)
-2. **Turn 2** — Auth service full implementation (Phase 2)
-3. **Turn 3** — Data API + RLS bridge (Phase 3)
-4. **Turn 4** — `@pluto/js` SDK package (Phase 4)
-5. **Turn 5** — Storage service (Phase 5)
-6. **Turn 6** — Realtime WebSocket gateway (Phase 6)
-7. **Turn 7** — Multi-tenant + Admin API + Dashboard wiring (Phase 7)
-8. **Turn 8** — Deployment scripts, backup, doctor CLI, docs
+**API:**
+- `GET /admin/v1/projects/:id/grants?schema=&table=`
+- `POST /admin/v1/projects/:id/grants` — upsert grant.
+- `DELETE /admin/v1/projects/:id/grants/:grantId` — revoke.
+- Owner/admin only. Audited.
 
----
-
-## Location of Backend Code
-
-**Important**: Backend code (Fastify server) will live in a **new folder `pluto-backend/`** at project root. It is **NOT** part of the Lovable frontend build — it's a standalone Node.js app you deploy to your VPS. The Lovable frontend stays as the admin dashboard that talks to it over HTTPS.
+**UI (extend `dashboard.pluto-admin.tsx` with a "Grants" tab):**
+- Select project → table → matrix of principals × (read/write/admin) checkboxes. Save writes upserts.
 
 ---
 
-## Approval Requested
+## 5. Migration versioning: up / down / rollback
 
-Approve করলে আমি **Phase 1 (Backend Monorepo Scaffold)** থেকে শুরু করবো এই turn-এই। প্রতি phase শেষে verify করে next phase-এ যাবো।
+**Backend `0006_governance.sql` (part 3):**
+- `admin.migrations(id, project_id null, version bigint, name text, up_sql text, down_sql text, checksum text, applied_at timestamptz null, applied_by uuid null, rolled_back_at timestamptz null)` with unique `(project_id, version)`.
+- All schema-mutating admin endpoints (§2) also insert a pending migration row with generated `up_sql` + `down_sql` (e.g. add-index up = `CREATE INDEX`, down = `DROP INDEX`).
 
-চাইলে phase order পরিবর্তন করতে পারেন (যেমন: Storage আগে চান, Realtime পরে) — জানালে সেভাবে সাজাবো।
+**API `/admin/v1/migrations`:**
+- `GET /admin/v1/migrations?project_id=` — list with status (`pending|applied|rolled_back`).
+- `POST /admin/v1/migrations` — `{ project_id, name, up_sql, down_sql }` create pending.
+- `POST /admin/v1/migrations/:id/apply` — run `up_sql` in a transaction, stamp `applied_at`, log audit.
+- `POST /admin/v1/migrations/:id/rollback` — run `down_sql` in a transaction, stamp `rolled_back_at`, log audit. Refuses if newer applied migrations depend (later version already applied → 409 with list).
+- `GET /admin/v1/migrations/:id/diff` — returns up/down SQL for review.
+
+**UI (`dashboard.pluto-migrations.tsx`):**
+- Timeline: version, name, status badge, applied-at.
+- Row actions: View SQL (up/down side-by-side), Apply, Rollback (with confirm), Delete pending.
+- "New migration" form: name + up + down SQL.
+
+---
+
+## File map
+
+**New backend:**
+- `pluto-backend/migrations/0006_governance.sql`
+- `pluto-backend/packages/api/src/routes/audit.ts`
+- `pluto-backend/packages/api/src/routes/schema.ts` (indexes + constraints)
+- `pluto-backend/packages/api/src/routes/grants.ts`
+- `pluto-backend/packages/api/src/routes/migrations.ts`
+- `pluto-backend/packages/api/src/sql/classifier.ts`
+- `pluto-backend/packages/api/src/audit/logger.ts` (helper used across routes)
+
+**Modified backend:**
+- `packages/api/src/routes/sql.ts` — read-only + params + destructive gate + audit calls.
+- `packages/api/src/routes/rest.ts` — call `check_table_perm` + audit writes.
+- `packages/api/src/routes/storage.ts` — audit upload/delete.
+- `packages/api/src/server.ts` — register new route modules.
+
+**New UI:**
+- `src/routes/dashboard.pluto-audit.tsx`
+- `src/routes/dashboard.pluto-schema.tsx`
+- `src/routes/dashboard.pluto-migrations.tsx`
+
+**Modified UI:**
+- `src/routes/dashboard.pluto-admin.tsx` — add "Grants" tab.
+- `src/routes/dashboard.sql.tsx` — read-only toggle, params, destructive confirm.
+- `src/components/pluto/Sidebar.tsx` — add Audit / Schema / Migrations links.
+
+---
+
+## Notes / trade-offs
+
+- **No new native deps.** SQL classification uses a small regex tokenizer, not a full parser. Good enough to gate destructive verbs; combined with `READ ONLY` transactions the DB is the ultimate authority.
+- **Auto-migrations from §2** keep schema UI actions reproducible without asking the user to hand-write SQL.
+- **Grants live above RLS.** Existing RLS policies still apply; table-perm middleware is an additional pre-check, not a replacement.
+- **UI history** is intentionally client-side and separate from the server audit log to give instant feedback and to survive short server outages.
+
+Say **"go"** to build all five in this order (backend migration → routes → UI). If you want to slice it (e.g., audit + migrations first, others next turn), tell me which subset.

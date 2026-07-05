@@ -30,7 +30,10 @@ import { Route as DashboardScalingRouteImport } from './routes/dashboard.scaling
 import { Route as DashboardRealtimeRouteImport } from './routes/dashboard.realtime'
 import { Route as DashboardRbacRouteImport } from './routes/dashboard.rbac'
 import { Route as DashboardProjectsRouteImport } from './routes/dashboard.projects'
+import { Route as DashboardPlutoSchemaRouteImport } from './routes/dashboard.pluto-schema'
+import { Route as DashboardPlutoMigrationsRouteImport } from './routes/dashboard.pluto-migrations'
 import { Route as DashboardPlutoFunctionsRouteImport } from './routes/dashboard.pluto-functions'
+import { Route as DashboardPlutoAuditRouteImport } from './routes/dashboard.pluto-audit'
 import { Route as DashboardPlutoAdminRouteImport } from './routes/dashboard.pluto-admin'
 import { Route as DashboardObservabilityRouteImport } from './routes/dashboard.observability'
 import { Route as DashboardMigrationsRouteImport } from './routes/dashboard.migrations'
@@ -164,9 +167,25 @@ const DashboardProjectsRoute = DashboardProjectsRouteImport.update({
   path: '/projects',
   getParentRoute: () => DashboardRoute,
 } as any)
+const DashboardPlutoSchemaRoute = DashboardPlutoSchemaRouteImport.update({
+  id: '/pluto-schema',
+  path: '/pluto-schema',
+  getParentRoute: () => DashboardRoute,
+} as any)
+const DashboardPlutoMigrationsRoute =
+  DashboardPlutoMigrationsRouteImport.update({
+    id: '/pluto-migrations',
+    path: '/pluto-migrations',
+    getParentRoute: () => DashboardRoute,
+  } as any)
 const DashboardPlutoFunctionsRoute = DashboardPlutoFunctionsRouteImport.update({
   id: '/pluto-functions',
   path: '/pluto-functions',
+  getParentRoute: () => DashboardRoute,
+} as any)
+const DashboardPlutoAuditRoute = DashboardPlutoAuditRouteImport.update({
+  id: '/pluto-audit',
+  path: '/pluto-audit',
   getParentRoute: () => DashboardRoute,
 } as any)
 const DashboardPlutoAdminRoute = DashboardPlutoAdminRouteImport.update({
@@ -335,7 +354,10 @@ export interface FileRoutesByFullPath {
   '/dashboard/migrations': typeof DashboardMigrationsRoute
   '/dashboard/observability': typeof DashboardObservabilityRoute
   '/dashboard/pluto-admin': typeof DashboardPlutoAdminRoute
+  '/dashboard/pluto-audit': typeof DashboardPlutoAuditRoute
   '/dashboard/pluto-functions': typeof DashboardPlutoFunctionsRoute
+  '/dashboard/pluto-migrations': typeof DashboardPlutoMigrationsRoute
+  '/dashboard/pluto-schema': typeof DashboardPlutoSchemaRoute
   '/dashboard/projects': typeof DashboardProjectsRoute
   '/dashboard/rbac': typeof DashboardRbacRoute
   '/dashboard/realtime': typeof DashboardRealtimeRoute
@@ -385,7 +407,10 @@ export interface FileRoutesByTo {
   '/dashboard/migrations': typeof DashboardMigrationsRoute
   '/dashboard/observability': typeof DashboardObservabilityRoute
   '/dashboard/pluto-admin': typeof DashboardPlutoAdminRoute
+  '/dashboard/pluto-audit': typeof DashboardPlutoAuditRoute
   '/dashboard/pluto-functions': typeof DashboardPlutoFunctionsRoute
+  '/dashboard/pluto-migrations': typeof DashboardPlutoMigrationsRoute
+  '/dashboard/pluto-schema': typeof DashboardPlutoSchemaRoute
   '/dashboard/projects': typeof DashboardProjectsRoute
   '/dashboard/rbac': typeof DashboardRbacRoute
   '/dashboard/realtime': typeof DashboardRealtimeRoute
@@ -437,7 +462,10 @@ export interface FileRoutesById {
   '/dashboard/migrations': typeof DashboardMigrationsRoute
   '/dashboard/observability': typeof DashboardObservabilityRoute
   '/dashboard/pluto-admin': typeof DashboardPlutoAdminRoute
+  '/dashboard/pluto-audit': typeof DashboardPlutoAuditRoute
   '/dashboard/pluto-functions': typeof DashboardPlutoFunctionsRoute
+  '/dashboard/pluto-migrations': typeof DashboardPlutoMigrationsRoute
+  '/dashboard/pluto-schema': typeof DashboardPlutoSchemaRoute
   '/dashboard/projects': typeof DashboardProjectsRoute
   '/dashboard/rbac': typeof DashboardRbacRoute
   '/dashboard/realtime': typeof DashboardRealtimeRoute
@@ -490,7 +518,10 @@ export interface FileRouteTypes {
     | '/dashboard/migrations'
     | '/dashboard/observability'
     | '/dashboard/pluto-admin'
+    | '/dashboard/pluto-audit'
     | '/dashboard/pluto-functions'
+    | '/dashboard/pluto-migrations'
+    | '/dashboard/pluto-schema'
     | '/dashboard/projects'
     | '/dashboard/rbac'
     | '/dashboard/realtime'
@@ -540,7 +571,10 @@ export interface FileRouteTypes {
     | '/dashboard/migrations'
     | '/dashboard/observability'
     | '/dashboard/pluto-admin'
+    | '/dashboard/pluto-audit'
     | '/dashboard/pluto-functions'
+    | '/dashboard/pluto-migrations'
+    | '/dashboard/pluto-schema'
     | '/dashboard/projects'
     | '/dashboard/rbac'
     | '/dashboard/realtime'
@@ -591,7 +625,10 @@ export interface FileRouteTypes {
     | '/dashboard/migrations'
     | '/dashboard/observability'
     | '/dashboard/pluto-admin'
+    | '/dashboard/pluto-audit'
     | '/dashboard/pluto-functions'
+    | '/dashboard/pluto-migrations'
+    | '/dashboard/pluto-schema'
     | '/dashboard/projects'
     | '/dashboard/rbac'
     | '/dashboard/realtime'
@@ -774,11 +811,32 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardProjectsRouteImport
       parentRoute: typeof DashboardRoute
     }
+    '/dashboard/pluto-schema': {
+      id: '/dashboard/pluto-schema'
+      path: '/pluto-schema'
+      fullPath: '/dashboard/pluto-schema'
+      preLoaderRoute: typeof DashboardPlutoSchemaRouteImport
+      parentRoute: typeof DashboardRoute
+    }
+    '/dashboard/pluto-migrations': {
+      id: '/dashboard/pluto-migrations'
+      path: '/pluto-migrations'
+      fullPath: '/dashboard/pluto-migrations'
+      preLoaderRoute: typeof DashboardPlutoMigrationsRouteImport
+      parentRoute: typeof DashboardRoute
+    }
     '/dashboard/pluto-functions': {
       id: '/dashboard/pluto-functions'
       path: '/pluto-functions'
       fullPath: '/dashboard/pluto-functions'
       preLoaderRoute: typeof DashboardPlutoFunctionsRouteImport
+      parentRoute: typeof DashboardRoute
+    }
+    '/dashboard/pluto-audit': {
+      id: '/dashboard/pluto-audit'
+      path: '/pluto-audit'
+      fullPath: '/dashboard/pluto-audit'
+      preLoaderRoute: typeof DashboardPlutoAuditRouteImport
       parentRoute: typeof DashboardRoute
     }
     '/dashboard/pluto-admin': {
@@ -1010,7 +1068,10 @@ interface DashboardRouteChildren {
   DashboardMigrationsRoute: typeof DashboardMigrationsRoute
   DashboardObservabilityRoute: typeof DashboardObservabilityRoute
   DashboardPlutoAdminRoute: typeof DashboardPlutoAdminRoute
+  DashboardPlutoAuditRoute: typeof DashboardPlutoAuditRoute
   DashboardPlutoFunctionsRoute: typeof DashboardPlutoFunctionsRoute
+  DashboardPlutoMigrationsRoute: typeof DashboardPlutoMigrationsRoute
+  DashboardPlutoSchemaRoute: typeof DashboardPlutoSchemaRoute
   DashboardProjectsRoute: typeof DashboardProjectsRoute
   DashboardRbacRoute: typeof DashboardRbacRoute
   DashboardRealtimeRoute: typeof DashboardRealtimeRoute
@@ -1049,7 +1110,10 @@ const DashboardRouteChildren: DashboardRouteChildren = {
   DashboardMigrationsRoute: DashboardMigrationsRoute,
   DashboardObservabilityRoute: DashboardObservabilityRoute,
   DashboardPlutoAdminRoute: DashboardPlutoAdminRoute,
+  DashboardPlutoAuditRoute: DashboardPlutoAuditRoute,
   DashboardPlutoFunctionsRoute: DashboardPlutoFunctionsRoute,
+  DashboardPlutoMigrationsRoute: DashboardPlutoMigrationsRoute,
+  DashboardPlutoSchemaRoute: DashboardPlutoSchemaRoute,
   DashboardProjectsRoute: DashboardProjectsRoute,
   DashboardRbacRoute: DashboardRbacRoute,
   DashboardRealtimeRoute: DashboardRealtimeRoute,
