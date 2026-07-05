@@ -268,15 +268,9 @@ export async function adminRoutes(app: FastifyInstance, cfg: Config) {
     return reply.send(rows);
   });
 
-  // --- Superadmin: audit log tail ---
-  app.get('/admin/v1/audit', async (req, reply) => {
-    const actor = await requireAuth(req, cfg);
-    if (!actor.isSuperadmin) return reply.code(403).send({ error: 'Forbidden' });
-    const sql = getSql(cfg);
-    const rows = await sql`
-      select * from admin.audit_log order by id desc limit 200`;
-    return reply.send(rows);
-  });
+  // audit log endpoint is registered in auditRoutes (routes/audit.ts)
+
+
 
   // --- Public: config for the frontend dashboard ---
   app.get('/admin/v1/settings', async () => ({
