@@ -4,7 +4,7 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: pluto
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set; run docker compose with --env-file .env from the repo root}
       POSTGRES_DB: pluto
     volumes:
       - pluto_pg:/var/lib/postgresql/data
@@ -27,8 +27,8 @@ services:
     restart: unless-stopped
     command: server /data --console-address ":9001"
     environment:
-      MINIO_ROOT_USER: ${S3_ACCESS_KEY:-plutoadmin}
-      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:-changeme_strong}
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY:?S3_ACCESS_KEY must be set; run docker compose with --env-file .env from the repo root}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:?S3_SECRET_KEY must be set; run docker compose with --env-file .env from the repo root}
     ports:
       - "127.0.0.1:9000:9000"
       - "127.0.0.1:9001:9001"
