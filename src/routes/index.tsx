@@ -5,7 +5,8 @@ import {
   ShieldCheck, Sparkles, Terminal, Waves, Workflow, Zap, HelpCircle,
   ChevronDown,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -393,9 +394,17 @@ async function probeWithRetry(url: string, path: string, signal: AbortSignal): P
 }
 
 const HISTORY_MAX = 20;
+// Retention policy: drop points older than 24h even if under the count cap,
+// so a laptop opened after a long break doesn't render stale probes as "trend".
+const HISTORY_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const HISTORY_STORAGE_KEY = "pluto.terminal.history.v1";
 type HistoryModule = { name: string; status: ModuleProbe["status"]; code?: number; latency_ms?: number; error?: string; attempts?: number };
 type HistoryPoint = { ts: number; up: number; down: number; total: number; avg_latency_ms: number; modules: HistoryModule[] };
+
+function pruneHistory(h: HistoryPoint[]): HistoryPoint[] {
+  const cutoff = Date.now() - HISTORY_MAX_AGE_MS;
+  return h.filter((p) => p.ts >= cutoff).slice(-HISTORY_MAX);
+}
 
 function loadHistory(): HistoryPoint[] {
   if (typeof window === "undefined") return [];
@@ -404,15 +413,22 @@ function loadHistory(): HistoryPoint[] {
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
-    return parsed.filter((h): h is HistoryPoint =>
+    const valid = parsed.filter((h): h is HistoryPoint =>
       h && typeof h.ts === "number" && Array.isArray(h.modules)
-    ).slice(-HISTORY_MAX);
+    );
+    const pruned = pruneHistory(valid);
+    // Rewrite storage if we dropped anything so growth stays bounded across reloads.
+    if (pruned.length !== valid.length) {
+      try { localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(pruned)); } catch { /* quota */ }
+    }
+    return pruned;
   } catch { return []; }
 }
 
 function saveHistory(h: HistoryPoint[]) {
   try { localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(h)); } catch { /* quota */ }
 }
+
 
 function TerminalCard() {
   const [copied, setCopied] = useState(false);
@@ -424,6 +440,10 @@ function TerminalCard() {
   const [refreshMs, setRefreshMs] = useState<number>(0);
   const [history, setHistory] = useState<HistoryPoint[]>([]);
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [statusFilter, setStatusFilter] = useState<"all" | "up" | "down" | "pending" | "errors">("all");
+  const [sortBy, setSortBy] = useState<"default" | "status" | "latency" | "name">("default");
+  const buttonRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+  const panelRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const cmd = "git clone pluto-baas && cd pluto-baas && docker compose up -d";
   const apiUrl = (import.meta.env.VITE_PLUTO_URL as string | undefined) ?? "http://localhost:3000";
 
@@ -461,7 +481,7 @@ function TerminalCard() {
         })),
       };
       setHistory((h) => {
-        const next = [...h, point].slice(-HISTORY_MAX);
+        const next = pruneHistory([...h, point]);
         saveHistory(next);
         return next;
       });
@@ -687,47 +707,114 @@ function TerminalCard() {
 
         {history.length >= 2 && <TrendChart history={history} />}
 
-
+        <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+          <label className="flex items-center gap-1">
+            <span>filter</span>
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value as typeof statusFilter)}
+              aria-label="Filter modules by status"
+              className="rounded border border-border bg-background px-1.5 py-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <option value="all">all ({probes.length})</option>
+              <option value="up">ready ({probes.filter((p) => p.status === "up").length})</option>
+              <option value="down">down ({probes.filter((p) => p.status === "down").length})</option>
+              <option value="pending">pending ({probes.filter((p) => p.status === "pending").length})</option>
+              <option value="errors">with error ({probes.filter((p) => p.error).length})</option>
+            </select>
+          </label>
+          <label className="flex items-center gap-1">
+            <span>sort</span>
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
+              aria-label="Sort module list"
+              className="rounded border border-border bg-background px-1.5 py-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <option value="default">canonical</option>
+              <option value="status">status (down first)</option>
+              <option value="latency">latency (slowest first)</option>
+              <option value="name">name (a→z)</option>
+            </select>
+          </label>
+        </div>
 
         <div className="mt-3 text-muted-foreground" aria-hidden="true">module              status   latency   http   try</div>
         <div className="text-muted-foreground" aria-hidden="true">──────              ──────   ───────   ────   ───</div>
         <ul aria-label="Module status list" className="list-none">
-          {probes.map((p) => {
-            const color =
-              p.status === "up"   ? "text-emerald-500" :
-              p.status === "down" ? "text-destructive" :
-              "text-muted-foreground";
-            const glyph = p.status === "up" ? "✓" : p.status === "down" ? "✗" : "…";
-            const isOpen = expanded === p.name;
-            const moduleHistory = history
-              .map((h) => ({ ts: h.ts, m: h.modules.find((m) => m.name === p.name) }))
-              .filter((x): x is { ts: number; m: HistoryModule } => !!x.m);
-            const panelId = `mod-${p.name}-panel`;
-            return (
-              <li key={p.name}>
-                <button
-                  type="button"
-                  onClick={() => setExpanded(isOpen ? null : p.name)}
-                  aria-expanded={isOpen}
-                  aria-controls={panelId}
-                  className={`flex w-full items-center gap-2 rounded px-1 text-left hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${color}`}
-                >
-                  <ChevronDown className={`h-3 w-3 shrink-0 text-muted-foreground transition-transform ${isOpen ? "" : "-rotate-90"}`} aria-hidden="true" />
-                  <span aria-hidden="true">{glyph}</span>
-                  <span className="whitespace-pre">{p.name.padEnd(18)}</span>
-                  <span className="whitespace-pre">{p.status.padEnd(8)}</span>
-                  <span className="whitespace-pre text-muted-foreground">
-                    {typeof p.latency_ms === "number" ? `${p.latency_ms}ms`.padEnd(9) : "—        "}
-                    {(p.code ? String(p.code) : p.error ? "err" : "—").padEnd(6)}
-                    {p.attempts ? `${p.attempts}/${MAX_ATTEMPTS}` : ""}
-                  </span>
-                </button>
-                {isOpen && (
-                  <ModuleDetails id={panelId} probe={p} history={moduleHistory} apiUrl={apiUrl} />
-                )}
-              </li>
-            );
-          })}
+          {(() => {
+            const filtered = probes.filter((p) => {
+              if (statusFilter === "all") return true;
+              if (statusFilter === "errors") return !!p.error;
+              return p.status === statusFilter;
+            });
+            const statusRank: Record<ModuleProbe["status"], number> = { down: 0, pending: 1, up: 2 };
+            const sorted = [...filtered].sort((a, b) => {
+              if (sortBy === "status") return statusRank[a.status] - statusRank[b.status];
+              if (sortBy === "latency") return (b.latency_ms ?? 0) - (a.latency_ms ?? 0);
+              if (sortBy === "name") return a.name.localeCompare(b.name);
+              return 0;
+            });
+            if (sorted.length === 0) {
+              return <li className="mt-1 text-muted-foreground">  no modules match this filter</li>;
+            }
+            return sorted.map((p) => {
+              const color =
+                p.status === "up"   ? "text-emerald-500" :
+                p.status === "down" ? "text-destructive" :
+                "text-muted-foreground";
+              const glyph = p.status === "up" ? "✓" : p.status === "down" ? "✗" : "…";
+              const isOpen = expanded === p.name;
+              const moduleHistory = history
+                .map((h) => ({ ts: h.ts, m: h.modules.find((m) => m.name === p.name) }))
+                .filter((x): x is { ts: number; m: HistoryModule } => !!x.m);
+              const panelId = `mod-${p.name}-panel`;
+              const buttonId = `mod-${p.name}-button`;
+              return (
+                <li key={p.name}>
+                  <button
+                    type="button"
+                    id={buttonId}
+                    ref={(el) => { buttonRefs.current[p.name] = el; }}
+                    onClick={() => setExpanded(isOpen ? null : p.name)}
+                    onKeyDown={(e) => {
+                      if (e.key === "ArrowRight" && !isOpen) { e.preventDefault(); setExpanded(p.name); }
+                      else if (e.key === "ArrowLeft" && isOpen) { e.preventDefault(); setExpanded(null); }
+                    }}
+                    aria-expanded={isOpen}
+                    aria-controls={panelId}
+                    aria-label={`${p.name} module — status ${p.status}${typeof p.latency_ms === "number" ? `, ${p.latency_ms} milliseconds` : ""}${p.error ? `, error: ${p.error}` : ""}. ${isOpen ? "Collapse" : "Expand"} details.`}
+                    className={`flex w-full items-center gap-2 rounded px-1 text-left hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${color}`}
+                  >
+                    <ChevronDown className={`h-3 w-3 shrink-0 text-muted-foreground transition-transform ${isOpen ? "" : "-rotate-90"}`} aria-hidden="true" />
+                    <span aria-hidden="true">{glyph}</span>
+                    <span className="whitespace-pre">{p.name.padEnd(18)}</span>
+                    <span className="whitespace-pre">{p.status.padEnd(8)}</span>
+                    <span className="whitespace-pre text-muted-foreground">
+                      {typeof p.latency_ms === "number" ? `${p.latency_ms}ms`.padEnd(9) : "—        "}
+                      {(p.code ? String(p.code) : p.error ? "err" : "—").padEnd(6)}
+                      {p.attempts ? `${p.attempts}/${MAX_ATTEMPTS}` : ""}
+                    </span>
+                  </button>
+                  {isOpen && (
+                    <ModuleDetails
+                      id={panelId}
+                      labelledBy={buttonId}
+                      probe={p}
+                      history={moduleHistory}
+                      apiUrl={apiUrl}
+                      panelRef={(el) => { panelRefs.current[p.name] = el; }}
+                      onClose={() => {
+                        setExpanded(null);
+                        // Return focus to the trigger — required for accessible disclosure.
+                        requestAnimationFrame(() => buttonRefs.current[p.name]?.focus());
+                      }}
+                    />
+                  )}
+                </li>
+              );
+            });
+          })()}
         </ul>
       </pre>
     </div>
@@ -735,8 +822,16 @@ function TerminalCard() {
 }
 
 function ModuleDetails({
-  id, probe, history, apiUrl,
-}: { id: string; probe: ModuleProbe; history: { ts: number; m: HistoryModule }[]; apiUrl: string }) {
+  id, labelledBy, probe, history, apiUrl, onClose, panelRef,
+}: {
+  id: string;
+  labelledBy: string;
+  probe: ModuleProbe;
+  history: { ts: number; m: HistoryModule }[];
+  apiUrl: string;
+  onClose: () => void;
+  panelRef?: (el: HTMLDivElement | null) => void;
+}) {
   const codeCounts = history.reduce<Record<string, number>>((acc, { m }) => {
     const key = m.code ? String(m.code) : m.error ? "err" : "—";
     acc[key] = (acc[key] ?? 0) + 1;
@@ -744,13 +839,30 @@ function ModuleDetails({
   }, {});
   const codes = Object.entries(codeCounts).sort((a, b) => b[1] - a[1]);
   const recent = history.slice(-8).reverse();
+  const innerRef = useRef<HTMLDivElement | null>(null);
+  // Move focus into the panel on open so screen readers announce it and Esc works.
+  useEffect(() => { innerRef.current?.focus(); }, []);
   return (
     <div
       id={id}
+      ref={(el) => { innerRef.current = el; panelRef?.(el); }}
       role="region"
-      aria-label={`Details for ${probe.name}`}
-      className="mx-1 my-1 rounded-md border border-border bg-muted/30 p-3 text-[11px] leading-relaxed"
+      aria-labelledby={labelledBy}
+      tabIndex={-1}
+      onKeyDown={(e) => { if (e.key === "Escape") { e.stopPropagation(); onClose(); } }}
+      className="mx-1 my-1 rounded-md border border-border bg-muted/30 p-3 text-[11px] leading-relaxed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
     >
+      <div className="mb-2 flex items-center justify-between">
+        <span className="text-muted-foreground">module details · press Esc to close</span>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label={`Close ${probe.name} details`}
+          className="rounded px-1.5 py-0.5 text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          close
+        </button>
+      </div>
       <div className="grid gap-x-3 gap-y-1 sm:grid-cols-[auto_1fr]">
         <span className="text-muted-foreground">endpoint</span>
         <code className="whitespace-pre-wrap break-all">{apiUrl.replace(/\/$/, "")}{probe.path}</code>

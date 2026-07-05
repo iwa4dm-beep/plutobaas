@@ -267,6 +267,62 @@ export function OnboardingWizard({ initialPlan, onDismiss }: { initialPlan: Plan
     ].join("\n");
   }
 
+  function buildReadmeMarkdown() {
+    const t = TARGET_META[target];
+    const p = PLAN_META[plan];
+    return [
+      `# ${projectName || "Pluto app"} — onboarding package`,
+      ``,
+      `Generated ${new Date().toISOString()} for **${p.title}** on **${t.title}** (region \`${region}\`).`,
+      ``,
+      `## Files`,
+      ``,
+      `- \`report.json\` / \`report.md\` — machine + human summary of the choices you made.`,
+      `- \`.env.local\` — generated environment. **Rotate the keys before production.**`,
+      `- \`deploy.sh\` — the exact deploy commands for ${t.title}.`,
+      ``,
+      `## Run locally (any target)`,
+      ``,
+      "```bash",
+      `# 1. Clone the Pluto BaaS repo`,
+      `git clone https://github.com/pluto-baas/pluto pluto && cd pluto`,
+      ``,
+      `# 2. Drop in the generated env`,
+      `cp /path/to/this/package/.env.local backend/.env`,
+      ``,
+      `# 3. Boot the full stack`,
+      `docker compose up -d`,
+      `# API on http://localhost:3000  ·  Dashboard on http://localhost:8080`,
+      "```",
+      ``,
+      `## Deploy to ${t.title} (self-hosted)`,
+      ``,
+      "```bash",
+      `bash deploy.sh`,
+      "```",
+      ``,
+      `Full commands:`,
+      ``,
+      "```bash",
+      deployCommands,
+      "```",
+      ``,
+      `## Verify the instance`,
+      ``,
+      "```bash",
+      `curl -fsS $PLUTO_URL/readyz | jq`,
+      `curl -fsS $PLUTO_URL/auth/v1/health`,
+      "```",
+      ``,
+      `## Next steps`,
+      ``,
+      `1. Open the dashboard and finish the "${p.title}" onboarding wizard.`,
+      `2. Rotate the anon + service-role keys from **Dashboard → Tokens**.`,
+      `3. Add your app origin to **Dashboard → CORS**.`,
+      `4. Run **Dashboard → Verify** for a one-click smoke test.`,
+      ``,
+    ].join("\n");
+  }
   async function downloadPackage() {
     const stamp = new Date().toISOString();
     const safeName = slug(projectName || "my-app");
@@ -277,17 +333,8 @@ export function OnboardingWizard({ initialPlan, onDismiss }: { initialPlan: Plan
     root.file(".env.local", envText);
     root.file("deploy.sh", `#!/usr/bin/env bash\nset -euo pipefail\n\n${deployCommands}\n`);
     root.file(
-      "README.txt",
-      [
-        `Pluto BaaS onboarding package`,
-        `Generated: ${stamp}`,
-        ``,
-        `Files:`,
-        `- report.json  — machine-readable summary`,
-        `- report.md    — human-readable summary`,
-        `- .env.local   — generated environment (rotate keys before production)`,
-        `- deploy.sh    — deploy commands for ${TARGET_META[target].title}`,
-      ].join("\n")
+      "README.md",
+      buildReadmeMarkdown(),
     );
     const blob = await zip.generateAsync({ type: "blob" });
     const url = URL.createObjectURL(blob);
