@@ -54,6 +54,7 @@ import { Route as AuthPhoneRouteImport } from './routes/auth.phone'
 import { Route as AuthForgotRouteImport } from './routes/auth.forgot'
 import { Route as AuthConfirmEmailRouteImport } from './routes/auth.confirm-email'
 import { Route as ApiPlutoStatusRouteImport } from './routes/api/pluto.status'
+import { Route as ApiPlutoMonitorRouteImport } from './routes/api/pluto.monitor'
 import { Route as ApiPlutoSplatRouteImport } from './routes/api/pluto.$'
 
 const StatusRoute = StatusRouteImport.update({
@@ -281,6 +282,11 @@ const ApiPlutoStatusRoute = ApiPlutoStatusRouteImport.update({
   path: '/api/pluto/status',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPlutoMonitorRoute = ApiPlutoMonitorRouteImport.update({
+  id: '/api/pluto/monitor',
+  path: '/api/pluto/monitor',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiPlutoSplatRoute = ApiPlutoSplatRouteImport.update({
   id: '/api/pluto/$',
   path: '/api/pluto/$',
@@ -333,6 +339,7 @@ export interface FileRoutesByFullPath {
   '/docs/api': typeof DocsApiRoute
   '/dashboard/': typeof DashboardIndexRoute
   '/api/pluto/$': typeof ApiPlutoSplatRoute
+  '/api/pluto/monitor': typeof ApiPlutoMonitorRoute
   '/api/pluto/status': typeof ApiPlutoStatusRoute
 }
 export interface FileRoutesByTo {
@@ -380,6 +387,7 @@ export interface FileRoutesByTo {
   '/docs/api': typeof DocsApiRoute
   '/dashboard': typeof DashboardIndexRoute
   '/api/pluto/$': typeof ApiPlutoSplatRoute
+  '/api/pluto/monitor': typeof ApiPlutoMonitorRoute
   '/api/pluto/status': typeof ApiPlutoStatusRoute
 }
 export interface FileRoutesById {
@@ -429,6 +437,7 @@ export interface FileRoutesById {
   '/docs/api': typeof DocsApiRoute
   '/dashboard/': typeof DashboardIndexRoute
   '/api/pluto/$': typeof ApiPlutoSplatRoute
+  '/api/pluto/monitor': typeof ApiPlutoMonitorRoute
   '/api/pluto/status': typeof ApiPlutoStatusRoute
 }
 export interface FileRouteTypes {
@@ -479,6 +488,7 @@ export interface FileRouteTypes {
     | '/docs/api'
     | '/dashboard/'
     | '/api/pluto/$'
+    | '/api/pluto/monitor'
     | '/api/pluto/status'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -526,6 +536,7 @@ export interface FileRouteTypes {
     | '/docs/api'
     | '/dashboard'
     | '/api/pluto/$'
+    | '/api/pluto/monitor'
     | '/api/pluto/status'
   id:
     | '__root__'
@@ -574,6 +585,7 @@ export interface FileRouteTypes {
     | '/docs/api'
     | '/dashboard/'
     | '/api/pluto/$'
+    | '/api/pluto/monitor'
     | '/api/pluto/status'
   fileRoutesById: FileRoutesById
 }
@@ -585,6 +597,7 @@ export interface RootRouteChildren {
   StatusRoute: typeof StatusRoute
   DocsApiRoute: typeof DocsApiRoute
   ApiPlutoSplatRoute: typeof ApiPlutoSplatRoute
+  ApiPlutoMonitorRoute: typeof ApiPlutoMonitorRoute
   ApiPlutoStatusRoute: typeof ApiPlutoStatusRoute
 }
 
@@ -905,6 +918,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPlutoStatusRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/pluto/monitor': {
+      id: '/api/pluto/monitor'
+      path: '/api/pluto/monitor'
+      fullPath: '/api/pluto/monitor'
+      preLoaderRoute: typeof ApiPlutoMonitorRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/pluto/$': {
       id: '/api/pluto/$'
       path: '/api/pluto/$'
@@ -1017,18 +1037,9 @@ const rootRouteChildren: RootRouteChildren = {
   StatusRoute: StatusRoute,
   DocsApiRoute: DocsApiRoute,
   ApiPlutoSplatRoute: ApiPlutoSplatRoute,
+  ApiPlutoMonitorRoute: ApiPlutoMonitorRoute,
   ApiPlutoStatusRoute: ApiPlutoStatusRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { startInstance } from './start.ts'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-    config: Awaited<ReturnType<typeof startInstance.getOptions>>
-  }
-}
