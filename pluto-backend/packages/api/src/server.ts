@@ -48,6 +48,7 @@ async function main() {
 
   // Routes
   await healthRoutes(app, cfg);
+  await authRoutes(app, cfg);
 
   // Root
   app.get('/', async () => ({
