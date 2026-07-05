@@ -50,7 +50,7 @@ export async function billingRoutes(app: FastifyInstance, cfg: Config) {
          and period like ${period + '%'}
        order by metric`;
     const quotas = await sql`
-      select metric, soft_limit, hard_limit, window, enabled
+      select metric, soft_limit, hard_limit, "window", enabled
         from admin.quotas
        where project_id = ${q.project_id}`;
     return { period, usage, quotas };
@@ -71,9 +71,9 @@ export async function billingRoutes(app: FastifyInstance, cfg: Config) {
     await requireProjectRole(cfg, b.project_id, actor, ['owner', 'admin']);
     const sql = getSql(cfg);
     const [row] = await sql`
-      insert into admin.quotas (project_id, metric, soft_limit, hard_limit, window, enabled)
+      insert into admin.quotas (project_id, metric, soft_limit, hard_limit, "window", enabled)
       values (${b.project_id}, ${b.metric}, ${b.soft_limit ?? null}, ${b.hard_limit ?? null}, ${b.window}, ${b.enabled})
-      on conflict (project_id, metric, window)
+      on conflict (project_id, metric, "window")
       do update set soft_limit = excluded.soft_limit,
                     hard_limit = excluded.hard_limit,
                     enabled    = excluded.enabled
