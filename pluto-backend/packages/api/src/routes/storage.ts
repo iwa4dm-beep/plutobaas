@@ -231,6 +231,7 @@ export async function storageRoutes(app: FastifyInstance, cfg: Config) {
   // ---- Download (streaming) ----
   app.get<{ Params: { bucketId: string; '*': string } }>(
     '/storage/v1/object/:bucketId/*',
+    { exposeHeadRoute: false },
     async (req, reply) => {
       const bucketId = req.params.bucketId;
       const name = (req.params as any)['*'];
