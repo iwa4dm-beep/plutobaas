@@ -147,7 +147,7 @@ function BackendStatusPage() {
         <h1 className="text-xl font-semibold text-foreground">Forbidden</h1>
         <p className="mt-2 text-sm text-muted-foreground">
           This page is restricted to admin accounts. Signed in as{" "}
-          <code className="rounded bg-muted px-1.5 py-0.5 text-xs">{session?.email}</code>.
+          <code className="rounded bg-muted px-1.5 py-0.5 text-xs">{(session as any)?.email}</code>.
         </p>
       </main>
     );
