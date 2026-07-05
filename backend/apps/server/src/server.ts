@@ -124,6 +124,7 @@ async function main() {
   await app.register(workspacesRoutes, { prefix: "/admin/v1/workspaces" });
   await app.register(sqlRunnerRoutes,  { prefix: "/admin/v1/sql" });
   await app.register(schemaRoutes,     { prefix: "/admin/v1/schema" });
+  await app.register(corsAdminPlugin);
   const { integrationsRoutes } = await import("./modules/admin/integrations.js");
   await app.register(integrationsRoutes, { prefix: "/admin/v1" });
   await app.register(commsPlugin);         // Phase 14 — /comms/v1/*, PLUTO_ENABLE_COMMS=1
