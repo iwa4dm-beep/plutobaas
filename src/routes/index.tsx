@@ -393,7 +393,26 @@ async function probeWithRetry(url: string, path: string, signal: AbortSignal): P
 }
 
 const HISTORY_MAX = 20;
-type HistoryPoint = { ts: number; up: number; down: number; total: number; avg_latency_ms: number };
+const HISTORY_STORAGE_KEY = "pluto.terminal.history.v1";
+type HistoryModule = { name: string; status: ModuleProbe["status"]; code?: number; latency_ms?: number; error?: string; attempts?: number };
+type HistoryPoint = { ts: number; up: number; down: number; total: number; avg_latency_ms: number; modules: HistoryModule[] };
+
+function loadHistory(): HistoryPoint[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = localStorage.getItem(HISTORY_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((h): h is HistoryPoint =>
+      h && typeof h.ts === "number" && Array.isArray(h.modules)
+    ).slice(-HISTORY_MAX);
+  } catch { return []; }
+}
+
+function saveHistory(h: HistoryPoint[]) {
+  try { localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(h)); } catch { /* quota */ }
+}
 
 function TerminalCard() {
   const [copied, setCopied] = useState(false);
@@ -404,8 +423,12 @@ function TerminalCard() {
   const [nonce, setNonce] = useState(0);
   const [refreshMs, setRefreshMs] = useState<number>(0);
   const [history, setHistory] = useState<HistoryPoint[]>([]);
+  const [expanded, setExpanded] = useState<string | null>(null);
   const cmd = "git clone pluto-baas && cd pluto-baas && docker compose up -d";
   const apiUrl = (import.meta.env.VITE_PLUTO_URL as string | undefined) ?? "http://localhost:3000";
+
+  // Hydrate persisted history once
+  useEffect(() => { setHistory(loadHistory()); }, []);
 
   // Probe run
   useEffect(() => {
