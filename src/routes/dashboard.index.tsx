@@ -182,12 +182,22 @@ function Overview() {
         />
         <div className="relative flex flex-col gap-4 p-6 sm:flex-row sm:items-center sm:justify-between">
           <div className="min-w-0">
-            <div className="inline-flex items-center gap-1.5 rounded-full border border-border bg-background/70 px-2.5 py-0.5 text-[11px] font-medium text-muted-foreground backdrop-blur">
-              <span
-                aria-hidden="true"
-                className={`h-1.5 w-1.5 rounded-full ${source === "live" ? "bg-emerald-500 shadow-[0_0_8px_theme(colors.emerald.500)]" : "bg-muted-foreground/60"}`}
-              />
-              {source === "live" ? "Live data" : "Mock data"} · Pluto instance
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="inline-flex items-center gap-1.5 rounded-full border border-border bg-background/70 px-2.5 py-0.5 text-[11px] font-medium text-muted-foreground backdrop-blur">
+                <span
+                  aria-hidden="true"
+                  className={`h-1.5 w-1.5 rounded-full ${source === "live" ? "bg-emerald-500 shadow-[0_0_8px_theme(colors.emerald.500)]" : "bg-muted-foreground/60"}`}
+                />
+                {source === "live" ? "Live data" : "Mock data"} · Pluto instance
+              </div>
+              <a
+                href={API_BASE}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1.5 rounded-full border border-border bg-background/70 px-2.5 py-0.5 font-mono text-[11px] text-muted-foreground backdrop-blur hover:text-foreground"
+              >
+                API · {API_BASE.replace(/^https?:\/\//, "")}
+              </a>
             </div>
             <h1 className="mt-3 text-2xl font-semibold tracking-tight sm:text-3xl">
               স্বাগতম <span className="text-muted-foreground">— এক নজরে আপনার backend</span>
