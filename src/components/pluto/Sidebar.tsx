@@ -5,6 +5,8 @@ import { WorkspaceSwitcher } from "@/components/pluto/WorkspaceSwitcher";
 
 const items = [
   { to: "/dashboard", label: "Overview", icon: Gauge },
+  { to: "/dashboard/pluto-admin", label: "Pluto Admin", icon: Server },
+  { to: "/dashboard/pluto-functions", label: "Pluto Functions", icon: Rocket },
   { to: "/dashboard/projects", label: "Projects & Keys", icon: KeyRound },
   { to: "/dashboard/workspaces", label: "Workspaces", icon: Building2 },
   { to: "/dashboard/api", label: "REST endpoints", icon: Radio },
