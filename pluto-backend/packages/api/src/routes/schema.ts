@@ -56,7 +56,7 @@ const constraintBody = z.discriminatedUnion('type', [
 async function recordMigration(cfg: Config, projectId: string, actorId: string, name: string, upSql: string, downSql: string) {
   const sql = getSql(cfg);
   const version = BigInt(Date.now());
-  const checksum = require('node:crypto').createHash('sha256').update(upSql).digest('hex').slice(0, 32);
+  const checksum = createHash('sha256').update(upSql).digest('hex').slice(0, 32);
   const [row] = await sql<any[]>`
     insert into admin.migrations (project_id, version, name, up_sql, down_sql, checksum, applied_at, applied_by, created_by)
     values (${projectId}, ${version}, ${name}, ${upSql}, ${downSql}, ${checksum}, now(), ${actorId}, ${actorId})
