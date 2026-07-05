@@ -983,6 +983,27 @@ function ModuleDetails({
   const innerRef = useRef<HTMLDivElement | null>(null);
   // Move focus into the panel on open so screen readers announce it and Esc works.
   useEffect(() => { innerRef.current?.focus(); }, []);
+
+  // Keyboard-only walkthrough: Tab / Shift+Tab cycle within the panel (focus trap),
+  // Escape closes and returns focus to the trigger (handled by onClose).
+  function onKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
+    if (e.key === "Escape") { e.stopPropagation(); onClose(); return; }
+    if (e.key !== "Tab") return;
+    const root = innerRef.current;
+    if (!root) return;
+    const focusables = Array.from(
+      root.querySelectorAll<HTMLElement>(
+        'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      )
+    ).filter((el) => !el.hasAttribute("aria-hidden"));
+    if (focusables.length === 0) { e.preventDefault(); root.focus(); return; }
+    const first = focusables[0];
+    const last = focusables[focusables.length - 1];
+    const active = document.activeElement as HTMLElement | null;
+    if (e.shiftKey && (active === first || active === root)) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && active === last) { e.preventDefault(); first.focus(); }
+  }
+
   return (
     <div
       id={id}
@@ -990,7 +1011,8 @@ function ModuleDetails({
       role="region"
       aria-labelledby={labelledBy}
       tabIndex={-1}
-      onKeyDown={(e) => { if (e.key === "Escape") { e.stopPropagation(); onClose(); } }}
+      onKeyDown={onKeyDown}
+      data-testid="module-details-panel"
       className="mx-1 my-1 rounded-md border border-border bg-muted/30 p-3 text-[11px] leading-relaxed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
     >
       <div className="mb-2 flex items-center justify-between">
