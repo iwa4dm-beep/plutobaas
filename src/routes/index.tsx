@@ -393,7 +393,26 @@ async function probeWithRetry(url: string, path: string, signal: AbortSignal): P
 }
 
 const HISTORY_MAX = 20;
-type HistoryPoint = { ts: number; up: number; down: number; total: number; avg_latency_ms: number };
+const HISTORY_STORAGE_KEY = "pluto.terminal.history.v1";
+type HistoryModule = { name: string; status: ModuleProbe["status"]; code?: number; latency_ms?: number; error?: string; attempts?: number };
+type HistoryPoint = { ts: number; up: number; down: number; total: number; avg_latency_ms: number; modules: HistoryModule[] };
+
+function loadHistory(): HistoryPoint[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = localStorage.getItem(HISTORY_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((h): h is HistoryPoint =>
+      h && typeof h.ts === "number" && Array.isArray(h.modules)
+    ).slice(-HISTORY_MAX);
+  } catch { return []; }
+}
+
+function saveHistory(h: HistoryPoint[]) {
+  try { localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(h)); } catch { /* quota */ }
+}
 
 function TerminalCard() {
   const [copied, setCopied] = useState(false);
@@ -404,8 +423,12 @@ function TerminalCard() {
   const [nonce, setNonce] = useState(0);
   const [refreshMs, setRefreshMs] = useState<number>(0);
   const [history, setHistory] = useState<HistoryPoint[]>([]);
+  const [expanded, setExpanded] = useState<string | null>(null);
   const cmd = "git clone pluto-baas && cd pluto-baas && docker compose up -d";
   const apiUrl = (import.meta.env.VITE_PLUTO_URL as string | undefined) ?? "http://localhost:3000";
+
+  // Hydrate persisted history once
+  useEffect(() => { setHistory(loadHistory()); }, []);
 
   // Probe run
   useEffect(() => {
@@ -432,8 +455,16 @@ function TerminalCard() {
         avg_latency_ms: upList.length
           ? Math.round(upList.reduce((a, r) => a + (r.latency_ms ?? 0), 0) / upList.length)
           : 0,
+        modules: results.map((r) => ({
+          name: r.name, status: r.status,
+          code: r.code, latency_ms: r.latency_ms, error: r.error, attempts: r.attempts,
+        })),
       };
-      setHistory((h) => [...h, point].slice(-HISTORY_MAX));
+      setHistory((h) => {
+        const next = [...h, point].slice(-HISTORY_MAX);
+        saveHistory(next);
+        return next;
+      });
 
       const core = results[0];
       if (!core || core.status === "down") {
@@ -506,18 +537,35 @@ function TerminalCard() {
   }
 
   function exportCsv() {
-    const esc = (v: string | number | null | undefined) => {
-      if (v === null || v === undefined) return "";
-      const s = String(v);
-      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    // Always quote every field; Excel/Sheets parse this most reliably.
+    const esc = (v: unknown) => {
+      const s = v === null || v === undefined ? "" : String(v);
+      return `"${s.replace(/"/g, '""')}"`;
     };
-    const header = ["generated_at", "api_url", "overall_status", "module", "path", "status", "http_code", "latency_ms", "attempts", "error"];
+    // Stable, documented column order. Do not change without bumping consumers.
+    const columns: { key: string; get: (p: ModuleProbe) => unknown }[] = [
+      { key: "generated_at",   get: () => generated },
+      { key: "api_url",        get: () => apiUrl },
+      { key: "overall_status", get: () => ready.kind },
+      { key: "module",         get: (p) => p.name },
+      { key: "path",           get: (p) => p.path },
+      { key: "status",         get: (p) => p.status },
+      { key: "http_code",      get: (p) => p.code ?? "" },
+      { key: "latency_ms",     get: (p) => p.latency_ms ?? "" },
+      { key: "attempts",       get: (p) => p.attempts ?? "" },
+      { key: "max_attempts",   get: () => MAX_ATTEMPTS },
+      { key: "error",          get: (p) => p.error ?? "" },
+    ];
     const generated = new Date().toISOString();
-    const rows = probes.map((p) => [
-      generated, apiUrl, ready.kind, p.name, p.path, p.status,
-      p.code ?? "", p.latency_ms ?? "", p.attempts ?? "", p.error ?? "",
-    ].map(esc).join(","));
-    const csv = [header.join(","), ...rows].join("\n");
+    // Sort probes in canonical MODULE_PROBES order so the sheet is deterministic.
+    const byName = new Map(probes.map((p) => [p.name, p]));
+    const ordered: ModuleProbe[] = MODULE_PROBES.map((m) =>
+      byName.get(m.name) ?? { ...m, status: "pending" as const }
+    );
+    const headerRow = columns.map((c) => esc(c.key)).join(",");
+    const rows = ordered.map((p) => columns.map((c) => esc(c.get(p))).join(","));
+    // BOM ensures Excel opens as UTF-8; CRLF is the CSV RFC-recommended line ending.
+    const csv = "\uFEFF" + [headerRow, ...rows].join("\r\n") + "\r\n";
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -527,6 +575,11 @@ function TerminalCard() {
     a.click();
     a.remove();
     URL.revokeObjectURL(url);
+  }
+
+  function clearHistory() {
+    setHistory([]);
+    try { localStorage.removeItem(HISTORY_STORAGE_KEY); } catch { /* ignore */ }
   }
 
   const headerColor =
@@ -598,6 +651,16 @@ function TerminalCard() {
           >
             csv
           </button>
+          {history.length > 0 && (
+            <button
+              type="button"
+              onClick={clearHistory}
+              aria-label="Clear persisted probe history"
+              className="rounded px-1.5 py-0.5 hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              clear history
+            </button>
+          )}
           <button
             type="button"
             onClick={copy}
@@ -626,27 +689,109 @@ function TerminalCard() {
 
 
 
-        <div className="mt-3 text-muted-foreground">module              status   latency   http   try</div>
-        <div className="text-muted-foreground">──────              ──────   ───────   ────   ───</div>
-        {probes.map((p) => {
-          const color =
-            p.status === "up"   ? "text-emerald-500" :
-            p.status === "down" ? "text-destructive" :
-            "text-muted-foreground";
-          const glyph = p.status === "up" ? "✓" : p.status === "down" ? "✗" : "…";
-          return (
-            <div key={p.name} className={color}>
-              {"  "}{glyph} {p.name.padEnd(18)}{" "}
-              <span>{p.status.padEnd(8)}</span>
-              <span className="text-muted-foreground">
-                {typeof p.latency_ms === "number" ? `${p.latency_ms}ms`.padEnd(9) : "—        "}
-                {(p.code ? String(p.code) : p.error ? "err" : "—").padEnd(6)}
-                {p.attempts ? `${p.attempts}/${MAX_ATTEMPTS}` : ""}
-              </span>
-            </div>
-          );
-        })}
+        <div className="mt-3 text-muted-foreground" aria-hidden="true">module              status   latency   http   try</div>
+        <div className="text-muted-foreground" aria-hidden="true">──────              ──────   ───────   ────   ───</div>
+        <ul aria-label="Module status list" className="list-none">
+          {probes.map((p) => {
+            const color =
+              p.status === "up"   ? "text-emerald-500" :
+              p.status === "down" ? "text-destructive" :
+              "text-muted-foreground";
+            const glyph = p.status === "up" ? "✓" : p.status === "down" ? "✗" : "…";
+            const isOpen = expanded === p.name;
+            const moduleHistory = history
+              .map((h) => ({ ts: h.ts, m: h.modules.find((m) => m.name === p.name) }))
+              .filter((x): x is { ts: number; m: HistoryModule } => !!x.m);
+            const panelId = `mod-${p.name}-panel`;
+            return (
+              <li key={p.name}>
+                <button
+                  type="button"
+                  onClick={() => setExpanded(isOpen ? null : p.name)}
+                  aria-expanded={isOpen}
+                  aria-controls={panelId}
+                  className={`flex w-full items-center gap-2 rounded px-1 text-left hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${color}`}
+                >
+                  <ChevronDown className={`h-3 w-3 shrink-0 text-muted-foreground transition-transform ${isOpen ? "" : "-rotate-90"}`} aria-hidden="true" />
+                  <span aria-hidden="true">{glyph}</span>
+                  <span className="whitespace-pre">{p.name.padEnd(18)}</span>
+                  <span className="whitespace-pre">{p.status.padEnd(8)}</span>
+                  <span className="whitespace-pre text-muted-foreground">
+                    {typeof p.latency_ms === "number" ? `${p.latency_ms}ms`.padEnd(9) : "—        "}
+                    {(p.code ? String(p.code) : p.error ? "err" : "—").padEnd(6)}
+                    {p.attempts ? `${p.attempts}/${MAX_ATTEMPTS}` : ""}
+                  </span>
+                </button>
+                {isOpen && (
+                  <ModuleDetails id={panelId} probe={p} history={moduleHistory} apiUrl={apiUrl} />
+                )}
+              </li>
+            );
+          })}
+        </ul>
       </pre>
+    </div>
+  );
+}
+
+function ModuleDetails({
+  id, probe, history, apiUrl,
+}: { id: string; probe: ModuleProbe; history: { ts: number; m: HistoryModule }[]; apiUrl: string }) {
+  const codeCounts = history.reduce<Record<string, number>>((acc, { m }) => {
+    const key = m.code ? String(m.code) : m.error ? "err" : "—";
+    acc[key] = (acc[key] ?? 0) + 1;
+    return acc;
+  }, {});
+  const codes = Object.entries(codeCounts).sort((a, b) => b[1] - a[1]);
+  const recent = history.slice(-8).reverse();
+  return (
+    <div
+      id={id}
+      role="region"
+      aria-label={`Details for ${probe.name}`}
+      className="mx-1 my-1 rounded-md border border-border bg-muted/30 p-3 text-[11px] leading-relaxed"
+    >
+      <div className="grid gap-x-3 gap-y-1 sm:grid-cols-[auto_1fr]">
+        <span className="text-muted-foreground">endpoint</span>
+        <code className="whitespace-pre-wrap break-all">{apiUrl.replace(/\/$/, "")}{probe.path}</code>
+        <span className="text-muted-foreground">latest attempts</span>
+        <span>{probe.attempts ?? 0} / {MAX_ATTEMPTS}</span>
+        <span className="text-muted-foreground">latest error</span>
+        <span className={probe.error ? "text-destructive" : "text-muted-foreground"}>
+          {probe.error ?? "none"}
+        </span>
+      </div>
+      {codes.length > 0 && (
+        <div className="mt-2">
+          <div className="text-muted-foreground">http code distribution</div>
+          <div className="mt-1 flex flex-wrap gap-1">
+            {codes.map(([c, n]) => (
+              <span key={c} className={`rounded border border-border px-1.5 py-0.5 ${c === "err" ? "text-destructive" : c.startsWith("2") ? "text-emerald-500" : "text-amber-500"}`}>
+                {c} × {n}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+      {recent.length > 0 && (
+        <div className="mt-2">
+          <div className="text-muted-foreground">recent probes (newest first)</div>
+          <ul className="mt-1 space-y-0.5">
+            {recent.map(({ ts, m }) => (
+              <li key={ts} className="grid grid-cols-[auto_auto_auto_1fr] gap-x-2">
+                <span className="text-muted-foreground">{new Date(ts).toLocaleTimeString()}</span>
+                <span className={m.status === "up" ? "text-emerald-500" : m.status === "down" ? "text-destructive" : "text-muted-foreground"}>
+                  {m.status}
+                </span>
+                <span>{typeof m.latency_ms === "number" ? `${m.latency_ms}ms` : "—"}</span>
+                <span className="text-muted-foreground truncate">
+                  {m.code ? `HTTP ${m.code}` : m.error ? m.error : ""}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   );
 }

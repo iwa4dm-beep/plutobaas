@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
+import JSZip from "jszip";
 import { Link } from "@tanstack/react-router";
 import {
   Check, ChevronRight, ChevronLeft, Copy, Cloud, Container,
-  Rocket, Server, Sparkles, X, AlertTriangle, Download,
+  Rocket, Server, Sparkles, X, AlertTriangle, Download, Package,
 } from "lucide-react";
 
 export type Plan = "self-hosted" | "starter" | "business";
@@ -222,6 +223,83 @@ export function OnboardingWizard({ initialPlan, onDismiss }: { initialPlan: Plan
     downloadFile(`pluto-onboarding-${safeName}-${stamp.replace(/[:.]/g, "-")}.txt`, lines.join("\n"), "text/plain");
   }
 
+  function buildReportJson() {
+    return {
+      generated_at: new Date().toISOString(),
+      plan: { id: plan, title: PLAN_META[plan].title },
+      target: { id: target, title: TARGET_META[target].title },
+      project: { name: projectName || null, slug: slug(projectName || "my-app"), region },
+      validation: {
+        required_keys: REQUIRED_ENV_KEYS,
+        issues: envIssues,
+        ok: envIssues.length === 0,
+      },
+      env_preview: envText,
+      deploy_commands: deployCommands,
+    };
+  }
+
+  function buildReportMarkdown() {
+    return [
+      `# Pluto BaaS — Onboarding Report`,
+      ``,
+      `- **Generated:** ${new Date().toISOString()}`,
+      `- **Plan:** ${PLAN_META[plan].title} (\`${plan}\`)`,
+      `- **Target:** ${TARGET_META[target].title} (\`${target}\`)`,
+      `- **Project:** ${projectName || "_(unset)_"} · slug \`${slug(projectName || "my-app")}\``,
+      `- **Region:** ${region}`,
+      ``,
+      `## Validation`,
+      envIssues.length === 0
+        ? `✅ All ${REQUIRED_ENV_KEYS.length} required env keys present.`
+        : envIssues.map((i) => `- ⚠️ \`${i.key}\` — ${i.reason}`).join("\n"),
+      ``,
+      `## Generated .env`,
+      "```dotenv",
+      envText,
+      "```",
+      ``,
+      `## Deploy commands`,
+      "```bash",
+      deployCommands,
+      "```",
+      ``,
+    ].join("\n");
+  }
+
+  async function downloadPackage() {
+    const stamp = new Date().toISOString();
+    const safeName = slug(projectName || "my-app");
+    const zip = new JSZip();
+    const root = zip.folder(`pluto-onboarding-${safeName}`)!;
+    root.file("report.json", JSON.stringify(buildReportJson(), null, 2));
+    root.file("report.md", buildReportMarkdown());
+    root.file(".env.local", envText);
+    root.file("deploy.sh", `#!/usr/bin/env bash\nset -euo pipefail\n\n${deployCommands}\n`);
+    root.file(
+      "README.txt",
+      [
+        `Pluto BaaS onboarding package`,
+        `Generated: ${stamp}`,
+        ``,
+        `Files:`,
+        `- report.json  — machine-readable summary`,
+        `- report.md    — human-readable summary`,
+        `- .env.local   — generated environment (rotate keys before production)`,
+        `- deploy.sh    — deploy commands for ${TARGET_META[target].title}`,
+      ].join("\n")
+    );
+    const blob = await zip.generateAsync({ type: "blob" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `pluto-onboarding-${safeName}-${stamp.replace(/[:.]/g, "-")}.zip`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
   const steps: { title: string; render: () => React.ReactNode }[] = [
     {
       title: "Pick a deployment target",
@@ -374,6 +452,14 @@ export function OnboardingWizard({ initialPlan, onDismiss }: { initialPlan: Plan
                 className="inline-flex items-center gap-1.5 rounded-md border border-input px-3.5 py-2 text-sm hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 <Download className="h-3.5 w-3.5" aria-hidden="true" /> Download report
+              </button>
+              <button
+                type="button"
+                onClick={() => { void downloadPackage(); }}
+                aria-label="Download onboarding package (zip with report, env and deploy script)"
+                className="inline-flex items-center gap-1.5 rounded-md bg-secondary px-3.5 py-2 text-sm font-medium text-secondary-foreground hover:bg-secondary/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <Package className="h-3.5 w-3.5" aria-hidden="true" /> Download package (.zip)
               </button>
             </div>
             {envIssues.length > 0 && (
