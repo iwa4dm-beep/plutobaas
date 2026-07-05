@@ -423,6 +423,17 @@ function TerminalCard() {
       );
       if (cancelled) return;
       setProbes(results);
+      const upList = results.filter((r) => r.status === "up");
+      const point: HistoryPoint = {
+        ts: Date.now(),
+        up: upList.length,
+        down: results.filter((r) => r.status === "down").length,
+        total: results.length,
+        avg_latency_ms: upList.length
+          ? Math.round(upList.reduce((a, r) => a + (r.latency_ms ?? 0), 0) / upList.length)
+          : 0,
+      };
+      setHistory((h) => [...h, point].slice(-HISTORY_MAX));
 
       const core = results[0];
       if (!core || core.status === "down") {
