@@ -120,7 +120,7 @@ const plans = [
     price: "Free",
     priceHint: "MIT licensed · forever",
     tagline: "Run Pluto on your own hardware or VPS.",
-    cta: { label: "Read the docs", to: "/docs/api" as const },
+    cta: { label: "Start Self-Hosted setup", plan: "self-hosted" as const },
     highlight: false,
     features: [
       "All 8 canonical modules",
@@ -135,7 +135,7 @@ const plans = [
     price: "$19",
     priceHint: "per project / month",
     tagline: "Managed Pluto with predictable pricing for prototypes and side-projects.",
-    cta: { label: "Start free trial", to: "/auth" as const },
+    cta: { label: "Start free trial", plan: "starter" as const },
     highlight: true,
     features: [
       "10k monthly active users",
@@ -151,7 +151,7 @@ const plans = [
     price: "$99",
     priceHint: "per project / month",
     tagline: "Production workloads with team seats, higher quotas and priority support.",
-    cta: { label: "Contact sales", to: "/dashboard" as const },
+    cta: { label: "Set up Business plan", plan: "business" as const },
     highlight: false,
     features: [
       "100k monthly active users",
@@ -164,6 +164,7 @@ const plans = [
     deploy: "Render · Fly · dedicated infra",
   },
 ];
+
 
 const faqs = [
   {
