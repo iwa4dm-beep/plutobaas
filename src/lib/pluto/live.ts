@@ -402,6 +402,21 @@ export const live = {
       persistSession(r.session, r.session.user);
       return r;
     },
+
+    /** Send a passwordless email magic link. Server returns `{ ok, ttl_sec }`; in dev also `{ token }`. */
+    signInWithMagicLink: (email: string, redirect_to?: string) =>
+      api<{ ok: true; ttl_sec: number; token?: string }>("/auth/v1/magiclink/send", {
+        method: "POST", body: JSON.stringify({ email, ...(redirect_to ? { redirect_to } : {}) }),
+      }),
+
+    /** Consume a magic-link token; persists the resulting session. */
+    verifyMagicLink: async (token: string) => {
+      const r = await api<{ user: AuthUser; session: AuthSession }>("/auth/v1/magiclink/verify", {
+        method: "POST", body: JSON.stringify({ token }),
+      });
+      persistSession(r.session, r.user);
+      return r;
+    },
   },
 
   /** Realtime — subscribe to broadcast channels or Postgres row changes. */
@@ -450,7 +465,22 @@ export const live = {
         api(`/admin/v1/settings/${encodeURIComponent(key)}${wsId ? `?workspace_id=${wsId}` : ""}`,
             { method: "DELETE", service: true }),
     },
+    cors: {
+      list: () => api<{ items: AllowedOrigin[] }>("/admin/v1/cors/origins", { service: true }),
+      add: (origin: string, opts?: { workspace_id?: string | null; note?: string }) =>
+        api<{ item: AllowedOrigin }>("/admin/v1/cors/origins", {
+          method: "POST", service: true,
+          body: JSON.stringify({ origin, ...(opts ?? {}) }),
+        }),
+      remove: (id: string) =>
+        api<{ ok: true }>(`/admin/v1/cors/origins/${id}`, { method: "DELETE", service: true }),
+    },
   },
+};
+
+export type AllowedOrigin = {
+  id: string; workspace_id: string | null;
+  origin: string; note: string | null; created_at: string;
 };
 
 // ---- Session persistence helpers (used by live.auth.*) ----
