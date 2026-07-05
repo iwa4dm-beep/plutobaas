@@ -707,47 +707,114 @@ function TerminalCard() {
 
         {history.length >= 2 && <TrendChart history={history} />}
 
-
+        <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+          <label className="flex items-center gap-1">
+            <span>filter</span>
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value as typeof statusFilter)}
+              aria-label="Filter modules by status"
+              className="rounded border border-border bg-background px-1.5 py-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <option value="all">all ({probes.length})</option>
+              <option value="up">ready ({probes.filter((p) => p.status === "up").length})</option>
+              <option value="down">down ({probes.filter((p) => p.status === "down").length})</option>
+              <option value="pending">pending ({probes.filter((p) => p.status === "pending").length})</option>
+              <option value="errors">with error ({probes.filter((p) => p.error).length})</option>
+            </select>
+          </label>
+          <label className="flex items-center gap-1">
+            <span>sort</span>
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
+              aria-label="Sort module list"
+              className="rounded border border-border bg-background px-1.5 py-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <option value="default">canonical</option>
+              <option value="status">status (down first)</option>
+              <option value="latency">latency (slowest first)</option>
+              <option value="name">name (a→z)</option>
+            </select>
+          </label>
+        </div>
 
         <div className="mt-3 text-muted-foreground" aria-hidden="true">module              status   latency   http   try</div>
         <div className="text-muted-foreground" aria-hidden="true">──────              ──────   ───────   ────   ───</div>
         <ul aria-label="Module status list" className="list-none">
-          {probes.map((p) => {
-            const color =
-              p.status === "up"   ? "text-emerald-500" :
-              p.status === "down" ? "text-destructive" :
-              "text-muted-foreground";
-            const glyph = p.status === "up" ? "✓" : p.status === "down" ? "✗" : "…";
-            const isOpen = expanded === p.name;
-            const moduleHistory = history
-              .map((h) => ({ ts: h.ts, m: h.modules.find((m) => m.name === p.name) }))
-              .filter((x): x is { ts: number; m: HistoryModule } => !!x.m);
-            const panelId = `mod-${p.name}-panel`;
-            return (
-              <li key={p.name}>
-                <button
-                  type="button"
-                  onClick={() => setExpanded(isOpen ? null : p.name)}
-                  aria-expanded={isOpen}
-                  aria-controls={panelId}
-                  className={`flex w-full items-center gap-2 rounded px-1 text-left hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${color}`}
-                >
-                  <ChevronDown className={`h-3 w-3 shrink-0 text-muted-foreground transition-transform ${isOpen ? "" : "-rotate-90"}`} aria-hidden="true" />
-                  <span aria-hidden="true">{glyph}</span>
-                  <span className="whitespace-pre">{p.name.padEnd(18)}</span>
-                  <span className="whitespace-pre">{p.status.padEnd(8)}</span>
-                  <span className="whitespace-pre text-muted-foreground">
-                    {typeof p.latency_ms === "number" ? `${p.latency_ms}ms`.padEnd(9) : "—        "}
-                    {(p.code ? String(p.code) : p.error ? "err" : "—").padEnd(6)}
-                    {p.attempts ? `${p.attempts}/${MAX_ATTEMPTS}` : ""}
-                  </span>
-                </button>
-                {isOpen && (
-                  <ModuleDetails id={panelId} probe={p} history={moduleHistory} apiUrl={apiUrl} />
-                )}
-              </li>
-            );
-          })}
+          {(() => {
+            const filtered = probes.filter((p) => {
+              if (statusFilter === "all") return true;
+              if (statusFilter === "errors") return !!p.error;
+              return p.status === statusFilter;
+            });
+            const statusRank: Record<ModuleProbe["status"], number> = { down: 0, pending: 1, up: 2 };
+            const sorted = [...filtered].sort((a, b) => {
+              if (sortBy === "status") return statusRank[a.status] - statusRank[b.status];
+              if (sortBy === "latency") return (b.latency_ms ?? 0) - (a.latency_ms ?? 0);
+              if (sortBy === "name") return a.name.localeCompare(b.name);
+              return 0;
+            });
+            if (sorted.length === 0) {
+              return <li className="mt-1 text-muted-foreground">  no modules match this filter</li>;
+            }
+            return sorted.map((p) => {
+              const color =
+                p.status === "up"   ? "text-emerald-500" :
+                p.status === "down" ? "text-destructive" :
+                "text-muted-foreground";
+              const glyph = p.status === "up" ? "✓" : p.status === "down" ? "✗" : "…";
+              const isOpen = expanded === p.name;
+              const moduleHistory = history
+                .map((h) => ({ ts: h.ts, m: h.modules.find((m) => m.name === p.name) }))
+                .filter((x): x is { ts: number; m: HistoryModule } => !!x.m);
+              const panelId = `mod-${p.name}-panel`;
+              const buttonId = `mod-${p.name}-button`;
+              return (
+                <li key={p.name}>
+                  <button
+                    type="button"
+                    id={buttonId}
+                    ref={(el) => { buttonRefs.current[p.name] = el; }}
+                    onClick={() => setExpanded(isOpen ? null : p.name)}
+                    onKeyDown={(e) => {
+                      if (e.key === "ArrowRight" && !isOpen) { e.preventDefault(); setExpanded(p.name); }
+                      else if (e.key === "ArrowLeft" && isOpen) { e.preventDefault(); setExpanded(null); }
+                    }}
+                    aria-expanded={isOpen}
+                    aria-controls={panelId}
+                    aria-label={`${p.name} module — status ${p.status}${typeof p.latency_ms === "number" ? `, ${p.latency_ms} milliseconds` : ""}${p.error ? `, error: ${p.error}` : ""}. ${isOpen ? "Collapse" : "Expand"} details.`}
+                    className={`flex w-full items-center gap-2 rounded px-1 text-left hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${color}`}
+                  >
+                    <ChevronDown className={`h-3 w-3 shrink-0 text-muted-foreground transition-transform ${isOpen ? "" : "-rotate-90"}`} aria-hidden="true" />
+                    <span aria-hidden="true">{glyph}</span>
+                    <span className="whitespace-pre">{p.name.padEnd(18)}</span>
+                    <span className="whitespace-pre">{p.status.padEnd(8)}</span>
+                    <span className="whitespace-pre text-muted-foreground">
+                      {typeof p.latency_ms === "number" ? `${p.latency_ms}ms`.padEnd(9) : "—        "}
+                      {(p.code ? String(p.code) : p.error ? "err" : "—").padEnd(6)}
+                      {p.attempts ? `${p.attempts}/${MAX_ATTEMPTS}` : ""}
+                    </span>
+                  </button>
+                  {isOpen && (
+                    <ModuleDetails
+                      id={panelId}
+                      labelledBy={buttonId}
+                      probe={p}
+                      history={moduleHistory}
+                      apiUrl={apiUrl}
+                      panelRef={(el) => { panelRefs.current[p.name] = el; }}
+                      onClose={() => {
+                        setExpanded(null);
+                        // Return focus to the trigger — required for accessible disclosure.
+                        requestAnimationFrame(() => buttonRefs.current[p.name]?.focus());
+                      }}
+                    />
+                  )}
+                </li>
+              );
+            });
+          })()}
         </ul>
       </pre>
     </div>
