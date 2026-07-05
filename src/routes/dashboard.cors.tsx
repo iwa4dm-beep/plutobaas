@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { Globe, Plus, Trash2 } from "lucide-react";
+import { Plus, Trash2 } from "lucide-react";
 import { PageHeader } from "@/components/pluto/PageHeader";
 import { isLive, live, type AllowedOrigin } from "@/lib/pluto/live";
 
@@ -56,9 +56,9 @@ function CorsPage() {
     <div className="space-y-6">
       <PageHeader
         title="CORS whitelist"
-        subtitle="Only these origins can call the API from a browser. localhost is auto-allowed in dev."
-        icon={Globe}
+        description="Only these origins can call the API from a browser. localhost is auto-allowed in dev."
       />
+
 
       {!isLive() && (
         <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
