@@ -1,19 +1,26 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { Copy, Check, Rocket, KeyRound, Database, Radio, ShieldCheck, Terminal, BookOpen } from "lucide-react";
+import { AdminGate } from "@/components/AdminGate";
 
 export const Route = createFileRoute("/docs/sdk")({
   head: () => ({
     meta: [
       { title: "SDK Integration Guide — Pluto BaaS" },
       { name: "description", content: "Step-by-step guide to connect any frontend (React, Vue, Svelte, Next.js, mobile) to the Pluto backend via @pluto/js." },
-      { property: "og:title", content: "SDK Integration Guide — Pluto BaaS" },
-      { property: "og:description", content: "Connect any frontend to Pluto backend in under 5 minutes with the @pluto/js SDK." },
-      { property: "og:type", content: "article" },
+      { name: "robots", content: "noindex,nofollow" },
     ],
   }),
-  component: SdkGuide,
+  component: ProtectedSdkGuide,
 });
+
+function ProtectedSdkGuide() {
+  return (
+    <AdminGate>
+      <SdkGuide />
+    </AdminGate>
+  );
+}
 
 const API = (import.meta.env.VITE_PLUTO_API_URL as string) || "https://api.timescard.cloud";
 
