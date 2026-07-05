@@ -84,8 +84,6 @@ async function main() {
     limits: { fileSize: cfg.BODY_LIMIT_MB * 1024 * 1024, files: 1 },
   });
 
-  // Routes
-  await healthRoutes(app, cfg);
   // Metrics — register BEFORE routes so hooks capture everything
   await metricsPlugin(app);
 
