@@ -440,6 +440,10 @@ function TerminalCard() {
   const [refreshMs, setRefreshMs] = useState<number>(0);
   const [history, setHistory] = useState<HistoryPoint[]>([]);
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [statusFilter, setStatusFilter] = useState<"all" | "up" | "down" | "pending" | "errors">("all");
+  const [sortBy, setSortBy] = useState<"default" | "status" | "latency" | "name">("default");
+  const buttonRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+  const panelRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const cmd = "git clone pluto-baas && cd pluto-baas && docker compose up -d";
   const apiUrl = (import.meta.env.VITE_PLUTO_URL as string | undefined) ?? "http://localhost:3000";
 
