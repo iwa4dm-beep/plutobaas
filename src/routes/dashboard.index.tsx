@@ -82,6 +82,10 @@ function Overview() {
   const [err, setErr] = useState<string | null>(null);
   const [source, setSource] = useState<"mock" | "live">(isLive() ? "live" : "mock");
 
+  // Live health probe against the real backend (api.timescard.cloud)
+  type HealthState = { live: boolean | null; ready: boolean | null; mig: boolean | null; ms: number | null };
+  const [health, setHealth] = useState<HealthState>({ live: null, ready: null, mig: null, ms: null });
+
   const [dismissed, setDismissed] = useState(false);
   const [persistedPlan, setPersistedPlan] = useState<Plan | undefined>(undefined);
   useEffect(() => { setPersistedPlan(readPersistedPlan()); }, []);
