@@ -33,6 +33,9 @@ import { queuesRoutes } from './routes/queues.js';
 import { aiRoutes } from './routes/ai.js';
 import { replicasRoutes } from './routes/replicas.js';
 import { complianceRoutes } from './routes/compliance.js';
+import { vaultRoutes } from './routes/vault.js';
+import { studioRoutes } from './routes/studio.js';
+import { marketplaceRoutes } from './routes/marketplace.js';
 import { metricsPlugin } from './observability/metrics.js';
 
 
@@ -115,6 +118,9 @@ async function main() {
   await aiRoutes(app, cfg);
   await replicasRoutes(app, cfg);
   await complianceRoutes(app, cfg);
+  await vaultRoutes(app, cfg);
+  await studioRoutes(app, cfg);
+  await marketplaceRoutes(app, cfg);
 
 
 

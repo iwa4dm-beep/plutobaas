@@ -1,5 +1,5 @@
 import { Link, useRouterState } from "@tanstack/react-router";
-import { Activity, Archive, Boxes, Building2, Cloud, Database, Files, Gauge, GitBranch, Gauge as GaugeAlt, Globe, HeartPulse, History, KeyRound, LineChart, LogOut, Package, Radio, Rocket, ScrollText, Search, Server, Settings, Shield, ShieldAlert, ShieldCheck, Sparkles, Terminal, Users, Waves, Zap } from "lucide-react";
+import { Activity, Archive, Boxes, Building2, Cloud, Database, Files, Gauge, GitBranch, Gauge as GaugeAlt, Globe, HeartPulse, History, KeyRound, LineChart, LockKeyhole, LogOut, Package, Radio, Rocket, ScrollText, Search, Server, Settings, Shield, ShieldAlert, ShieldCheck, ShoppingBag, Sparkles, Table2, Terminal, Users, Waves, Zap } from "lucide-react";
 import { useAuth } from "@/lib/pluto/auth-context";
 import { WorkspaceSwitcher } from "@/components/pluto/WorkspaceSwitcher";
 
@@ -26,6 +26,9 @@ const items = [
   { to: "/dashboard/pluto-ai", label: "Pluto AI Gateway", icon: Sparkles },
   { to: "/dashboard/pluto-replicas", label: "Pluto Read Replicas", icon: Globe },
   { to: "/dashboard/pluto-compliance", label: "Pluto Compliance (GDPR)", icon: ShieldCheck },
+  { to: "/dashboard/pluto-vault", label: "Pluto Vault & Secrets", icon: LockKeyhole },
+  { to: "/dashboard/pluto-studio", label: "Pluto Data Studio", icon: Table2 },
+  { to: "/dashboard/pluto-marketplace", label: "Pluto Marketplace", icon: ShoppingBag },
   { to: "/dashboard/projects", label: "Projects & Keys", icon: KeyRound },
   { to: "/dashboard/workspaces", label: "Workspaces", icon: Building2 },
   { to: "/dashboard/api", label: "REST endpoints", icon: Radio },
