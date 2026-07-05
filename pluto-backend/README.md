@@ -55,8 +55,8 @@ TerminalCard probes on `/dashboard` will turn green.
 
 ## Roadmap
 
-- [x] Phase 1 — Scaffold + health/liveness/readiness (this turn)
-- [ ] Phase 2 — Auth service (`/auth/v1/*`)
+- [x] Phase 1 — Scaffold + health/liveness/readiness
+- [x] Phase 2 — Auth service (`/auth/v1/*`) — signup, token, refresh (rotation + reuse detection), logout, user CRUD, recover, settings
 - [ ] Phase 3 — Data API (`/rest/v1/:table`)
 - [ ] Phase 4 — `@pluto/js` SDK
 - [ ] Phase 5 — Storage (`/storage/v1/*`)
