@@ -78,6 +78,11 @@ async function main() {
   await realtimeRoutes(app, cfg);
   await adminRoutes(app, cfg);
   await functionsRoutes(app, cfg);
+  await auditRoutes(app, cfg);
+  await schemaRoutes(app, cfg);
+  await grantsRoutes(app, cfg);
+  await migrationsRoutes(app, cfg);
+  await sqlRoutes(app, cfg);
 
 
 
