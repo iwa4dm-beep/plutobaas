@@ -392,6 +392,9 @@ async function probeWithRetry(url: string, path: string, signal: AbortSignal): P
   return { name: "", path, status: "down", code: last.code, latency_ms: last.latency_ms, error: last.error, attempts: MAX_ATTEMPTS };
 }
 
+const HISTORY_MAX = 20;
+type HistoryPoint = { ts: number; up: number; down: number; total: number; avg_latency_ms: number };
+
 function TerminalCard() {
   const [copied, setCopied] = useState(false);
   const [ready, setReady] = useState<ReadyState>({ kind: "loading" });
@@ -400,6 +403,7 @@ function TerminalCard() {
   const [tick, setTick] = useState(0);
   const [nonce, setNonce] = useState(0);
   const [refreshMs, setRefreshMs] = useState<number>(0);
+  const [history, setHistory] = useState<HistoryPoint[]>([]);
   const cmd = "git clone pluto-baas && cd pluto-baas && docker compose up -d";
   const apiUrl = (import.meta.env.VITE_PLUTO_URL as string | undefined) ?? "http://localhost:3000";
 
