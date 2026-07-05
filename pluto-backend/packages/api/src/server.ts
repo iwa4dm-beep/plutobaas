@@ -3,10 +3,13 @@ import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
 import rateLimit from '@fastify/rate-limit';
 import jwt from '@fastify/jwt';
+import multipart from '@fastify/multipart';
 import { loadConfig } from './config.js';
 import { healthRoutes } from './routes/health.js';
 import { authRoutes } from './routes/auth.js';
 import { restRoutes } from './routes/rest.js';
+import { storageRoutes } from './routes/storage.js';
+
 
 async function main() {
   const cfg = loadConfig();
@@ -47,10 +50,17 @@ async function main() {
     verify: { allowedIss: cfg.JWT_ISSUER },
   });
 
+  // Multipart (for storage uploads)
+  await app.register(multipart, {
+    limits: { fileSize: cfg.BODY_LIMIT_MB * 1024 * 1024, files: 1 },
+  });
+
   // Routes
   await healthRoutes(app, cfg);
   await authRoutes(app, cfg);
   await restRoutes(app, cfg);
+  await storageRoutes(app, cfg);
+
 
   // Root
   app.get('/', async () => ({
