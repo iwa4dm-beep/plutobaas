@@ -60,7 +60,7 @@ TerminalCard probes on `/dashboard` will turn green.
 - [x] Phase 3 — Data API (`/rest/v1/:table`, `/rest/v1/rpc/:fn`) — CRUD, filters, upsert, RLS via SET LOCAL role + request.jwt.claims
 - [x] Phase 4 — `@pluto/js` SDK (auth + query builder + storage + realtime stub, Supabase-compatible)
 - [x] Phase 5 — Storage (`/storage/v1/*`) — buckets, uploads (multipart + raw), streaming download, HEAD, delete, signed upload/download URLs, public URLs, MIME + size limits, S3/MinIO backend
-- [ ] Phase 6 — Realtime WebSocket
+- [x] Phase 6 — Realtime WebSocket (`/realtime/v1/websocket`) — postgres_changes (LISTEN/NOTIFY triggers), broadcast, presence; HTTP `/realtime/v1/broadcast` for server-side triggers
 - [ ] Phase 7 — Multi-tenant + admin
 
 See `.lovable/plan.md` for the full blueprint.
