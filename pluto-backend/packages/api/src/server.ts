@@ -11,6 +11,8 @@ import { restRoutes } from './routes/rest.js';
 import { storageRoutes } from './routes/storage.js';
 import { realtimeRoutes } from './routes/realtime.js';
 import { adminRoutes } from './routes/admin.js';
+import { functionsRoutes } from './routes/functions.js';
+import { metricsPlugin } from './observability/metrics.js';
 
 
 
@@ -60,11 +62,18 @@ async function main() {
 
   // Routes
   await healthRoutes(app, cfg);
+  // Metrics — register BEFORE routes so hooks capture everything
+  await metricsPlugin(app);
+
+  // Routes
+  await healthRoutes(app, cfg);
   await authRoutes(app, cfg);
   await restRoutes(app, cfg);
   await storageRoutes(app, cfg);
   await realtimeRoutes(app, cfg);
   await adminRoutes(app, cfg);
+  await functionsRoutes(app, cfg);
+
 
 
   // Root
@@ -72,7 +81,7 @@ async function main() {
     service: 'pluto-api',
     version: '0.1.0',
     docs: 'https://github.com/your-org/pluto-backend',
-    endpoints: ['/livez', '/readyz', '/healthz', '/auth/v1/health'],
+    endpoints: ['/livez', '/readyz', '/healthz', '/metrics', '/auth/v1/*', '/rest/v1/*', '/storage/v1/*', '/realtime/v1/*', '/admin/v1/*', '/functions/v1/*'],
   }));
 
   // Global error handler — always JSON
