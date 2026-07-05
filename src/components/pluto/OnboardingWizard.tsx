@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
+import JSZip from "jszip";
 import { Link } from "@tanstack/react-router";
 import {
   Check, ChevronRight, ChevronLeft, Copy, Cloud, Container,
-  Rocket, Server, Sparkles, X, AlertTriangle, Download,
+  Rocket, Server, Sparkles, X, AlertTriangle, Download, Package,
 } from "lucide-react";
 
 export type Plan = "self-hosted" | "starter" | "business";
