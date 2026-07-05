@@ -651,6 +651,16 @@ function TerminalCard() {
           >
             csv
           </button>
+          {history.length > 0 && (
+            <button
+              type="button"
+              onClick={clearHistory}
+              aria-label="Clear persisted probe history"
+              className="rounded px-1.5 py-0.5 hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              clear history
+            </button>
+          )}
           <button
             type="button"
             onClick={copy}
