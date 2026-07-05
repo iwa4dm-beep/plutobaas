@@ -185,6 +185,43 @@ export function OnboardingWizard({ initialPlan, onDismiss }: { initialPlan: Plan
     jwt: keys.jwt,
   });
 
+  const envIssues = useMemo(() => validateEnv(envText), [envText]);
+  const projectNameMissing = !projectName.trim();
+
+  const deployCommands = (() => {
+    const meta = TARGET_META[target];
+    const deployUrl = meta.deployUrl.replace("YOUR-APP", slug(projectName || "my-app"));
+    return `# 1. deploy\n${meta.command}\n\n# 2. wait for readiness\ncurl ${deployUrl}/readyz\n\n# 3. finish setup in Dashboard`;
+  })();
+
+  function downloadReport() {
+    const stamp = new Date().toISOString();
+    const lines = [
+      `Pluto BaaS — Onboarding Report`,
+      `generated: ${stamp}`,
+      ``,
+      `Plan:         ${PLAN_META[plan].title} (${plan})`,
+      `Target:       ${TARGET_META[target].title} (${target})`,
+      `Project name: ${projectName || "(unset)"}`,
+      `Slug:         ${slug(projectName || "my-app")}`,
+      `Region:       ${region}`,
+      ``,
+      `── Validation ──`,
+      envIssues.length === 0
+        ? `OK — all ${REQUIRED_ENV_KEYS.length} required env keys present.`
+        : envIssues.map((i) => `WARN ${i.key}: ${i.reason}`).join("\n"),
+      ``,
+      `── .env ──`,
+      envText,
+      ``,
+      `── Deploy commands ──`,
+      deployCommands,
+      ``,
+    ];
+    const safeName = slug(projectName || "my-app");
+    downloadFile(`pluto-onboarding-${safeName}-${stamp.replace(/[:.]/g, "-")}.txt`, lines.join("\n"), "text/plain");
+  }
+
   const steps: { title: string; render: () => React.ReactNode }[] = [
     {
       title: "Pick a deployment target",
