@@ -29,6 +29,10 @@ import { orgsRoutes } from './routes/orgs.js';
 import { realtimePlusRoutes } from './routes/realtime-plus.js';
 import { storagePlusRoutes } from './routes/storage-plus.js';
 import { functionsPlusRoutes } from './routes/functions-plus.js';
+import { queuesRoutes } from './routes/queues.js';
+import { aiRoutes } from './routes/ai.js';
+import { replicasRoutes } from './routes/replicas.js';
+import { complianceRoutes } from './routes/compliance.js';
 import { metricsPlugin } from './observability/metrics.js';
 
 
@@ -107,6 +111,10 @@ async function main() {
   await realtimePlusRoutes(app, cfg);
   await storagePlusRoutes(app, cfg);
   await functionsPlusRoutes(app, cfg);
+  await queuesRoutes(app, cfg);
+  await aiRoutes(app, cfg);
+  await replicasRoutes(app, cfg);
+  await complianceRoutes(app, cfg);
 
 
 

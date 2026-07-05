@@ -35,17 +35,21 @@ import { Route as DashboardPlutoStoragePlusRouteImport } from './routes/dashboar
 import { Route as DashboardPlutoSearchRouteImport } from './routes/dashboard.pluto-search'
 import { Route as DashboardPlutoSdkRouteImport } from './routes/dashboard.pluto-sdk'
 import { Route as DashboardPlutoSchemaRouteImport } from './routes/dashboard.pluto-schema'
+import { Route as DashboardPlutoReplicasRouteImport } from './routes/dashboard.pluto-replicas'
 import { Route as DashboardPlutoRealtimeRouteImport } from './routes/dashboard.pluto-realtime'
+import { Route as DashboardPlutoQueuesRouteImport } from './routes/dashboard.pluto-queues'
 import { Route as DashboardPlutoOrgsRouteImport } from './routes/dashboard.pluto-orgs'
 import { Route as DashboardPlutoMigrationsRouteImport } from './routes/dashboard.pluto-migrations'
 import { Route as DashboardPlutoGraphqlRouteImport } from './routes/dashboard.pluto-graphql'
 import { Route as DashboardPlutoFunctionsPlusRouteImport } from './routes/dashboard.pluto-functions-plus'
 import { Route as DashboardPlutoFunctionsRouteImport } from './routes/dashboard.pluto-functions'
+import { Route as DashboardPlutoComplianceRouteImport } from './routes/dashboard.pluto-compliance'
 import { Route as DashboardPlutoBranchesRouteImport } from './routes/dashboard.pluto-branches'
 import { Route as DashboardPlutoBillingRouteImport } from './routes/dashboard.pluto-billing'
 import { Route as DashboardPlutoBackupsRouteImport } from './routes/dashboard.pluto-backups'
 import { Route as DashboardPlutoAuthAdvancedRouteImport } from './routes/dashboard.pluto-auth-advanced'
 import { Route as DashboardPlutoAuditRouteImport } from './routes/dashboard.pluto-audit'
+import { Route as DashboardPlutoAiRouteImport } from './routes/dashboard.pluto-ai'
 import { Route as DashboardPlutoAdminRouteImport } from './routes/dashboard.pluto-admin'
 import { Route as DashboardObservabilityRouteImport } from './routes/dashboard.observability'
 import { Route as DashboardMigrationsRouteImport } from './routes/dashboard.migrations'
@@ -205,9 +209,19 @@ const DashboardPlutoSchemaRoute = DashboardPlutoSchemaRouteImport.update({
   path: '/pluto-schema',
   getParentRoute: () => DashboardRoute,
 } as any)
+const DashboardPlutoReplicasRoute = DashboardPlutoReplicasRouteImport.update({
+  id: '/pluto-replicas',
+  path: '/pluto-replicas',
+  getParentRoute: () => DashboardRoute,
+} as any)
 const DashboardPlutoRealtimeRoute = DashboardPlutoRealtimeRouteImport.update({
   id: '/pluto-realtime',
   path: '/pluto-realtime',
+  getParentRoute: () => DashboardRoute,
+} as any)
+const DashboardPlutoQueuesRoute = DashboardPlutoQueuesRouteImport.update({
+  id: '/pluto-queues',
+  path: '/pluto-queues',
   getParentRoute: () => DashboardRoute,
 } as any)
 const DashboardPlutoOrgsRoute = DashboardPlutoOrgsRouteImport.update({
@@ -237,6 +251,12 @@ const DashboardPlutoFunctionsRoute = DashboardPlutoFunctionsRouteImport.update({
   path: '/pluto-functions',
   getParentRoute: () => DashboardRoute,
 } as any)
+const DashboardPlutoComplianceRoute =
+  DashboardPlutoComplianceRouteImport.update({
+    id: '/pluto-compliance',
+    path: '/pluto-compliance',
+    getParentRoute: () => DashboardRoute,
+  } as any)
 const DashboardPlutoBranchesRoute = DashboardPlutoBranchesRouteImport.update({
   id: '/pluto-branches',
   path: '/pluto-branches',
@@ -261,6 +281,11 @@ const DashboardPlutoAuthAdvancedRoute =
 const DashboardPlutoAuditRoute = DashboardPlutoAuditRouteImport.update({
   id: '/pluto-audit',
   path: '/pluto-audit',
+  getParentRoute: () => DashboardRoute,
+} as any)
+const DashboardPlutoAiRoute = DashboardPlutoAiRouteImport.update({
+  id: '/pluto-ai',
+  path: '/pluto-ai',
   getParentRoute: () => DashboardRoute,
 } as any)
 const DashboardPlutoAdminRoute = DashboardPlutoAdminRouteImport.update({
@@ -429,17 +454,21 @@ export interface FileRoutesByFullPath {
   '/dashboard/migrations': typeof DashboardMigrationsRoute
   '/dashboard/observability': typeof DashboardObservabilityRoute
   '/dashboard/pluto-admin': typeof DashboardPlutoAdminRoute
+  '/dashboard/pluto-ai': typeof DashboardPlutoAiRoute
   '/dashboard/pluto-audit': typeof DashboardPlutoAuditRoute
   '/dashboard/pluto-auth-advanced': typeof DashboardPlutoAuthAdvancedRoute
   '/dashboard/pluto-backups': typeof DashboardPlutoBackupsRoute
   '/dashboard/pluto-billing': typeof DashboardPlutoBillingRoute
   '/dashboard/pluto-branches': typeof DashboardPlutoBranchesRoute
+  '/dashboard/pluto-compliance': typeof DashboardPlutoComplianceRoute
   '/dashboard/pluto-functions': typeof DashboardPlutoFunctionsRoute
   '/dashboard/pluto-functions-plus': typeof DashboardPlutoFunctionsPlusRoute
   '/dashboard/pluto-graphql': typeof DashboardPlutoGraphqlRoute
   '/dashboard/pluto-migrations': typeof DashboardPlutoMigrationsRoute
   '/dashboard/pluto-orgs': typeof DashboardPlutoOrgsRoute
+  '/dashboard/pluto-queues': typeof DashboardPlutoQueuesRoute
   '/dashboard/pluto-realtime': typeof DashboardPlutoRealtimeRoute
+  '/dashboard/pluto-replicas': typeof DashboardPlutoReplicasRoute
   '/dashboard/pluto-schema': typeof DashboardPlutoSchemaRoute
   '/dashboard/pluto-sdk': typeof DashboardPlutoSdkRoute
   '/dashboard/pluto-search': typeof DashboardPlutoSearchRoute
@@ -494,17 +523,21 @@ export interface FileRoutesByTo {
   '/dashboard/migrations': typeof DashboardMigrationsRoute
   '/dashboard/observability': typeof DashboardObservabilityRoute
   '/dashboard/pluto-admin': typeof DashboardPlutoAdminRoute
+  '/dashboard/pluto-ai': typeof DashboardPlutoAiRoute
   '/dashboard/pluto-audit': typeof DashboardPlutoAuditRoute
   '/dashboard/pluto-auth-advanced': typeof DashboardPlutoAuthAdvancedRoute
   '/dashboard/pluto-backups': typeof DashboardPlutoBackupsRoute
   '/dashboard/pluto-billing': typeof DashboardPlutoBillingRoute
   '/dashboard/pluto-branches': typeof DashboardPlutoBranchesRoute
+  '/dashboard/pluto-compliance': typeof DashboardPlutoComplianceRoute
   '/dashboard/pluto-functions': typeof DashboardPlutoFunctionsRoute
   '/dashboard/pluto-functions-plus': typeof DashboardPlutoFunctionsPlusRoute
   '/dashboard/pluto-graphql': typeof DashboardPlutoGraphqlRoute
   '/dashboard/pluto-migrations': typeof DashboardPlutoMigrationsRoute
   '/dashboard/pluto-orgs': typeof DashboardPlutoOrgsRoute
+  '/dashboard/pluto-queues': typeof DashboardPlutoQueuesRoute
   '/dashboard/pluto-realtime': typeof DashboardPlutoRealtimeRoute
+  '/dashboard/pluto-replicas': typeof DashboardPlutoReplicasRoute
   '/dashboard/pluto-schema': typeof DashboardPlutoSchemaRoute
   '/dashboard/pluto-sdk': typeof DashboardPlutoSdkRoute
   '/dashboard/pluto-search': typeof DashboardPlutoSearchRoute
@@ -561,17 +594,21 @@ export interface FileRoutesById {
   '/dashboard/migrations': typeof DashboardMigrationsRoute
   '/dashboard/observability': typeof DashboardObservabilityRoute
   '/dashboard/pluto-admin': typeof DashboardPlutoAdminRoute
+  '/dashboard/pluto-ai': typeof DashboardPlutoAiRoute
   '/dashboard/pluto-audit': typeof DashboardPlutoAuditRoute
   '/dashboard/pluto-auth-advanced': typeof DashboardPlutoAuthAdvancedRoute
   '/dashboard/pluto-backups': typeof DashboardPlutoBackupsRoute
   '/dashboard/pluto-billing': typeof DashboardPlutoBillingRoute
   '/dashboard/pluto-branches': typeof DashboardPlutoBranchesRoute
+  '/dashboard/pluto-compliance': typeof DashboardPlutoComplianceRoute
   '/dashboard/pluto-functions': typeof DashboardPlutoFunctionsRoute
   '/dashboard/pluto-functions-plus': typeof DashboardPlutoFunctionsPlusRoute
   '/dashboard/pluto-graphql': typeof DashboardPlutoGraphqlRoute
   '/dashboard/pluto-migrations': typeof DashboardPlutoMigrationsRoute
   '/dashboard/pluto-orgs': typeof DashboardPlutoOrgsRoute
+  '/dashboard/pluto-queues': typeof DashboardPlutoQueuesRoute
   '/dashboard/pluto-realtime': typeof DashboardPlutoRealtimeRoute
+  '/dashboard/pluto-replicas': typeof DashboardPlutoReplicasRoute
   '/dashboard/pluto-schema': typeof DashboardPlutoSchemaRoute
   '/dashboard/pluto-sdk': typeof DashboardPlutoSdkRoute
   '/dashboard/pluto-search': typeof DashboardPlutoSearchRoute
@@ -629,17 +666,21 @@ export interface FileRouteTypes {
     | '/dashboard/migrations'
     | '/dashboard/observability'
     | '/dashboard/pluto-admin'
+    | '/dashboard/pluto-ai'
     | '/dashboard/pluto-audit'
     | '/dashboard/pluto-auth-advanced'
     | '/dashboard/pluto-backups'
     | '/dashboard/pluto-billing'
     | '/dashboard/pluto-branches'
+    | '/dashboard/pluto-compliance'
     | '/dashboard/pluto-functions'
     | '/dashboard/pluto-functions-plus'
     | '/dashboard/pluto-graphql'
     | '/dashboard/pluto-migrations'
     | '/dashboard/pluto-orgs'
+    | '/dashboard/pluto-queues'
     | '/dashboard/pluto-realtime'
+    | '/dashboard/pluto-replicas'
     | '/dashboard/pluto-schema'
     | '/dashboard/pluto-sdk'
     | '/dashboard/pluto-search'
@@ -694,17 +735,21 @@ export interface FileRouteTypes {
     | '/dashboard/migrations'
     | '/dashboard/observability'
     | '/dashboard/pluto-admin'
+    | '/dashboard/pluto-ai'
     | '/dashboard/pluto-audit'
     | '/dashboard/pluto-auth-advanced'
     | '/dashboard/pluto-backups'
     | '/dashboard/pluto-billing'
     | '/dashboard/pluto-branches'
+    | '/dashboard/pluto-compliance'
     | '/dashboard/pluto-functions'
     | '/dashboard/pluto-functions-plus'
     | '/dashboard/pluto-graphql'
     | '/dashboard/pluto-migrations'
     | '/dashboard/pluto-orgs'
+    | '/dashboard/pluto-queues'
     | '/dashboard/pluto-realtime'
+    | '/dashboard/pluto-replicas'
     | '/dashboard/pluto-schema'
     | '/dashboard/pluto-sdk'
     | '/dashboard/pluto-search'
@@ -760,17 +805,21 @@ export interface FileRouteTypes {
     | '/dashboard/migrations'
     | '/dashboard/observability'
     | '/dashboard/pluto-admin'
+    | '/dashboard/pluto-ai'
     | '/dashboard/pluto-audit'
     | '/dashboard/pluto-auth-advanced'
     | '/dashboard/pluto-backups'
     | '/dashboard/pluto-billing'
     | '/dashboard/pluto-branches'
+    | '/dashboard/pluto-compliance'
     | '/dashboard/pluto-functions'
     | '/dashboard/pluto-functions-plus'
     | '/dashboard/pluto-graphql'
     | '/dashboard/pluto-migrations'
     | '/dashboard/pluto-orgs'
+    | '/dashboard/pluto-queues'
     | '/dashboard/pluto-realtime'
+    | '/dashboard/pluto-replicas'
     | '/dashboard/pluto-schema'
     | '/dashboard/pluto-sdk'
     | '/dashboard/pluto-search'
@@ -993,11 +1042,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardPlutoSchemaRouteImport
       parentRoute: typeof DashboardRoute
     }
+    '/dashboard/pluto-replicas': {
+      id: '/dashboard/pluto-replicas'
+      path: '/pluto-replicas'
+      fullPath: '/dashboard/pluto-replicas'
+      preLoaderRoute: typeof DashboardPlutoReplicasRouteImport
+      parentRoute: typeof DashboardRoute
+    }
     '/dashboard/pluto-realtime': {
       id: '/dashboard/pluto-realtime'
       path: '/pluto-realtime'
       fullPath: '/dashboard/pluto-realtime'
       preLoaderRoute: typeof DashboardPlutoRealtimeRouteImport
+      parentRoute: typeof DashboardRoute
+    }
+    '/dashboard/pluto-queues': {
+      id: '/dashboard/pluto-queues'
+      path: '/pluto-queues'
+      fullPath: '/dashboard/pluto-queues'
+      preLoaderRoute: typeof DashboardPlutoQueuesRouteImport
       parentRoute: typeof DashboardRoute
     }
     '/dashboard/pluto-orgs': {
@@ -1035,6 +1098,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardPlutoFunctionsRouteImport
       parentRoute: typeof DashboardRoute
     }
+    '/dashboard/pluto-compliance': {
+      id: '/dashboard/pluto-compliance'
+      path: '/pluto-compliance'
+      fullPath: '/dashboard/pluto-compliance'
+      preLoaderRoute: typeof DashboardPlutoComplianceRouteImport
+      parentRoute: typeof DashboardRoute
+    }
     '/dashboard/pluto-branches': {
       id: '/dashboard/pluto-branches'
       path: '/pluto-branches'
@@ -1068,6 +1138,13 @@ declare module '@tanstack/react-router' {
       path: '/pluto-audit'
       fullPath: '/dashboard/pluto-audit'
       preLoaderRoute: typeof DashboardPlutoAuditRouteImport
+      parentRoute: typeof DashboardRoute
+    }
+    '/dashboard/pluto-ai': {
+      id: '/dashboard/pluto-ai'
+      path: '/pluto-ai'
+      fullPath: '/dashboard/pluto-ai'
+      preLoaderRoute: typeof DashboardPlutoAiRouteImport
       parentRoute: typeof DashboardRoute
     }
     '/dashboard/pluto-admin': {
@@ -1299,17 +1376,21 @@ interface DashboardRouteChildren {
   DashboardMigrationsRoute: typeof DashboardMigrationsRoute
   DashboardObservabilityRoute: typeof DashboardObservabilityRoute
   DashboardPlutoAdminRoute: typeof DashboardPlutoAdminRoute
+  DashboardPlutoAiRoute: typeof DashboardPlutoAiRoute
   DashboardPlutoAuditRoute: typeof DashboardPlutoAuditRoute
   DashboardPlutoAuthAdvancedRoute: typeof DashboardPlutoAuthAdvancedRoute
   DashboardPlutoBackupsRoute: typeof DashboardPlutoBackupsRoute
   DashboardPlutoBillingRoute: typeof DashboardPlutoBillingRoute
   DashboardPlutoBranchesRoute: typeof DashboardPlutoBranchesRoute
+  DashboardPlutoComplianceRoute: typeof DashboardPlutoComplianceRoute
   DashboardPlutoFunctionsRoute: typeof DashboardPlutoFunctionsRoute
   DashboardPlutoFunctionsPlusRoute: typeof DashboardPlutoFunctionsPlusRoute
   DashboardPlutoGraphqlRoute: typeof DashboardPlutoGraphqlRoute
   DashboardPlutoMigrationsRoute: typeof DashboardPlutoMigrationsRoute
   DashboardPlutoOrgsRoute: typeof DashboardPlutoOrgsRoute
+  DashboardPlutoQueuesRoute: typeof DashboardPlutoQueuesRoute
   DashboardPlutoRealtimeRoute: typeof DashboardPlutoRealtimeRoute
+  DashboardPlutoReplicasRoute: typeof DashboardPlutoReplicasRoute
   DashboardPlutoSchemaRoute: typeof DashboardPlutoSchemaRoute
   DashboardPlutoSdkRoute: typeof DashboardPlutoSdkRoute
   DashboardPlutoSearchRoute: typeof DashboardPlutoSearchRoute
@@ -1353,17 +1434,21 @@ const DashboardRouteChildren: DashboardRouteChildren = {
   DashboardMigrationsRoute: DashboardMigrationsRoute,
   DashboardObservabilityRoute: DashboardObservabilityRoute,
   DashboardPlutoAdminRoute: DashboardPlutoAdminRoute,
+  DashboardPlutoAiRoute: DashboardPlutoAiRoute,
   DashboardPlutoAuditRoute: DashboardPlutoAuditRoute,
   DashboardPlutoAuthAdvancedRoute: DashboardPlutoAuthAdvancedRoute,
   DashboardPlutoBackupsRoute: DashboardPlutoBackupsRoute,
   DashboardPlutoBillingRoute: DashboardPlutoBillingRoute,
   DashboardPlutoBranchesRoute: DashboardPlutoBranchesRoute,
+  DashboardPlutoComplianceRoute: DashboardPlutoComplianceRoute,
   DashboardPlutoFunctionsRoute: DashboardPlutoFunctionsRoute,
   DashboardPlutoFunctionsPlusRoute: DashboardPlutoFunctionsPlusRoute,
   DashboardPlutoGraphqlRoute: DashboardPlutoGraphqlRoute,
   DashboardPlutoMigrationsRoute: DashboardPlutoMigrationsRoute,
   DashboardPlutoOrgsRoute: DashboardPlutoOrgsRoute,
+  DashboardPlutoQueuesRoute: DashboardPlutoQueuesRoute,
   DashboardPlutoRealtimeRoute: DashboardPlutoRealtimeRoute,
+  DashboardPlutoReplicasRoute: DashboardPlutoReplicasRoute,
   DashboardPlutoSchemaRoute: DashboardPlutoSchemaRoute,
   DashboardPlutoSdkRoute: DashboardPlutoSdkRoute,
   DashboardPlutoSearchRoute: DashboardPlutoSearchRoute,
