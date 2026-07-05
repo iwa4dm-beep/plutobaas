@@ -1183,7 +1183,7 @@ function TerminalCard() {
 }
 
 function ModuleDetails({
-  id, labelledBy, probe, history, apiUrl, onClose, panelRef,
+  id, labelledBy, probe, history, apiUrl, onClose, panelRef, onReprobe, reprobing,
 }: {
   id: string;
   labelledBy: string;
@@ -1191,6 +1191,8 @@ function ModuleDetails({
   history: { ts: number; m: HistoryModule }[];
   apiUrl: string;
   onClose: () => void;
+  onReprobe?: () => void;
+  reprobing?: boolean;
   panelRef?: (el: HTMLDivElement | null) => void;
 }) {
   const codeCounts = history.reduce<Record<string, number>>((acc, { m }) => {
@@ -1200,6 +1202,15 @@ function ModuleDetails({
   }, {});
   const codes = Object.entries(codeCounts).sort((a, b) => b[1] - a[1]);
   const recent = history.slice(-8).reverse();
+  // Uptime % over the retained window — quick health signal without opening the trend chart.
+  const upCount = history.filter(({ m }) => m.status === "up").length;
+  const uptimePct = history.length ? Math.round((upCount / history.length) * 100) : null;
+  const uptimeColor =
+    uptimePct === null ? "text-muted-foreground" :
+    uptimePct >= 99 ? "text-emerald-500" :
+    uptimePct >= 90 ? "text-amber-500" : "text-destructive";
+  const fullUrl = `${apiUrl.replace(/\/$/, "")}${probe.path}`;
+  const [endpointCopied, setEndpointCopied] = useState(false);
   const innerRef = useRef<HTMLDivElement | null>(null);
   // Move focus into the panel on open so screen readers announce it and Esc works.
   useEffect(() => { innerRef.current?.focus(); }, []);
@@ -1224,6 +1235,14 @@ function ModuleDetails({
     else if (!e.shiftKey && active === last) { e.preventDefault(); first.focus(); }
   }
 
+  async function copyEndpoint() {
+    try {
+      await navigator.clipboard.writeText(fullUrl);
+      setEndpointCopied(true);
+      setTimeout(() => setEndpointCopied(false), 1200);
+    } catch { /* ignore */ }
+  }
+
   return (
     <div
       id={id}
@@ -1235,27 +1254,53 @@ function ModuleDetails({
       data-testid="module-details-panel"
       className="mx-1 my-1 rounded-md border border-border bg-muted/30 p-3 text-[11px] leading-relaxed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
     >
-      <div className="mb-2 flex items-center justify-between">
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
         <span className="text-muted-foreground">module details · press Esc to close</span>
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label={`Close ${probe.name} details`}
-          className="rounded px-1.5 py-0.5 text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          close
-        </button>
+        <div className="flex items-center gap-1">
+          {onReprobe && (
+            <button
+              type="button"
+              onClick={onReprobe}
+              disabled={reprobing}
+              aria-label={`Re-probe ${probe.name} now`}
+              className="rounded px-1.5 py-0.5 text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {reprobing ? "re-probing…" : "re-probe"}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={copyEndpoint}
+            aria-label={endpointCopied ? "Endpoint copied" : "Copy endpoint URL"}
+            className="rounded px-1.5 py-0.5 text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            {endpointCopied ? "copied ✓" : "copy url"}
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label={`Close ${probe.name} details`}
+            className="rounded px-1.5 py-0.5 text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            close
+          </button>
+        </div>
       </div>
       <div className="grid gap-x-3 gap-y-1 sm:grid-cols-[auto_1fr]">
         <span className="text-muted-foreground">endpoint</span>
-        <code className="whitespace-pre-wrap break-all">{apiUrl.replace(/\/$/, "")}{probe.path}</code>
+        <code className="whitespace-pre-wrap break-all">{fullUrl}</code>
         <span className="text-muted-foreground">latest attempts</span>
         <span>{probe.attempts ?? 0} / {MAX_ATTEMPTS}</span>
         <span className="text-muted-foreground">latest error</span>
         <span className={probe.error ? "text-destructive" : "text-muted-foreground"}>
           {probe.error ?? "none"}
         </span>
+        <span className="text-muted-foreground">uptime (window)</span>
+        <span className={uptimeColor}>
+          {uptimePct === null ? "—" : `${uptimePct}% · ${upCount}/${history.length} probes`}
+        </span>
       </div>
+      {history.length >= 2 && <ModuleSparkline points={history} />}
       {codes.length > 0 && (
         <div className="mt-2">
           <div className="text-muted-foreground">http code distribution</div>
