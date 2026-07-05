@@ -114,10 +114,10 @@ create table if not exists admin.quotas (
   metric       text not null,
   soft_limit   bigint,
   hard_limit   bigint,
-  window       text not null default 'month' check (window in ('day','month')),
+  "window"     text not null default 'month' check ("window" in ('day','month')),
   enabled      boolean not null default true,
   created_at   timestamptz not null default now(),
-  unique (project_id, metric, window)
+  unique (project_id, metric, "window")
 );
 
 create table if not exists admin.alert_rules (
