@@ -1336,6 +1336,40 @@ function ModuleDetails({
   );
 }
 
+function ModuleSparkline({ points }: { points: { ts: number; m: HistoryModule }[] }) {
+  const W = 240, H = 36, PAD_X = 3, PAD_Y = 4;
+  const n = points.length;
+  const lats = points.map((p) => p.m.latency_ms ?? 0);
+  const maxLat = Math.max(50, ...lats);
+  const x = (i: number) => n === 1 ? W / 2 : PAD_X + (i * (W - PAD_X * 2)) / (n - 1);
+  const y = (v: number) => H - PAD_Y - ((v / maxLat) * (H - PAD_Y * 2));
+  const path = lats.map((v, i) => `${i === 0 ? "M" : "L"} ${x(i).toFixed(1)} ${y(v).toFixed(1)}`).join(" ");
+  const lastLat = lats[lats.length - 1];
+  const label = `Latency sparkline: ${n} points, latest ${lastLat}ms, peak ${Math.max(...lats)}ms`;
+  return (
+    <div className="mt-2">
+      <div className="text-muted-foreground">latency trend ({n} probes · peak {Math.max(...lats)}ms)</div>
+      <svg
+        viewBox={`0 0 ${W} ${H}`}
+        width="100%"
+        preserveAspectRatio="none"
+        role="img"
+        aria-label={label}
+        className="mt-1 h-8 w-full"
+      >
+        <path d={path} fill="none" stroke="currentColor" strokeWidth="1.25" className="text-primary" />
+        {points.map((p, i) => (
+          <circle
+            key={p.ts}
+            cx={x(i)} cy={y(p.m.latency_ms ?? 0)} r={1.5}
+            className={p.m.status === "up" ? "fill-emerald-500" : p.m.status === "down" ? "fill-destructive" : "fill-muted-foreground"}
+          />
+        ))}
+      </svg>
+    </div>
+  );
+}
+
 function TrendChart({ history }: { history: HistoryPoint[] }) {
   const W = 320;
   const H = 56;
