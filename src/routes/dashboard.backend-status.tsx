@@ -5,6 +5,7 @@ import {
   Lock, Plug, Clock, TrendingUp,
 } from "lucide-react";
 import { useAuth } from "@/lib/pluto/auth-context";
+import { AdminGate } from "@/components/AdminGate";
 
 export const Route = createFileRoute("/dashboard/backend-status")({
   head: () => ({
@@ -14,8 +15,16 @@ export const Route = createFileRoute("/dashboard/backend-status")({
       { name: "robots", content: "noindex,nofollow" },
     ],
   }),
-  component: BackendStatusPage,
+  component: ProtectedBackendStatus,
 });
+
+function ProtectedBackendStatus() {
+  return (
+    <AdminGate>
+      <BackendStatusPage />
+    </AdminGate>
+  );
+}
 
 const API = (import.meta.env.VITE_PLUTO_API_URL as string) || "https://api.timescard.cloud";
 const REFRESH_MS = 15_000;
