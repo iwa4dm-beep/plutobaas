@@ -1,12 +1,14 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { CheckCircle2, XCircle, RefreshCw, Activity, Database, ShieldCheck, GitCommit } from "lucide-react";
+import { CheckCircle2, XCircle, RefreshCw, Activity, Database, ShieldCheck, GitCommit, Lock } from "lucide-react";
+import { useAuth } from "@/lib/pluto/auth-context";
 
 export const Route = createFileRoute("/dashboard/backend-status")({
   head: () => ({
     meta: [
       { title: "Backend Status — Pluto Dashboard" },
       { name: "description", content: "Live health, readiness, and migration status for the Pluto backend." },
+      { name: "robots", content: "noindex,nofollow" },
     ],
   }),
   component: BackendStatusPage,
@@ -69,18 +71,38 @@ function Card({ title, icon, children, ms, ok }: { title: string; icon: React.Re
 }
 
 function BackendStatusPage() {
+  const { session, loading: authLoading } = useAuth();
+  const navigate = useNavigate();
   const [live, setLive] = useState<Fetched<LiveResp>>({ data: null, error: null, loading: true, ms: 0 });
   const [ready, setReady] = useState<Fetched<ReadyResp>>({ data: null, error: null, loading: true, ms: 0 });
   const [mig, setMig] = useState<Fetched<MigResp>>({ data: null, error: null, loading: true, ms: 0 });
   const [refreshing, setRefreshing] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
+  const authed = !!session;
+  const isAdmin = authed && (session as any)?.role === "admin";
+
   const refresh = async () => {
+    if (!authed) return;
     setRefreshing(true);
+    const headers: HeadersInit = (session as any)?.token
+      ? { Authorization: `Bearer ${(session as any).token}` }
+      : {};
+    const probeAuth = async <T,>(path: string): Promise<Fetched<T>> => {
+      const t0 = performance.now();
+      try {
+        const r = await fetch(`${API}${path}`, { cache: "no-store", headers });
+        const ms = Math.round(performance.now() - t0);
+        if (!r.ok) return { data: null, error: `HTTP ${r.status}`, loading: false, ms };
+        return { data: (await r.json()) as T, error: null, loading: false, ms };
+      } catch (e) {
+        return { data: null, error: (e as Error).message, loading: false, ms: Math.round(performance.now() - t0) };
+      }
+    };
     const [l, r, m] = await Promise.all([
-      probe<LiveResp>("/livez"),
-      probe<ReadyResp>("/readyz"),
-      probe<MigResp>("/health/migrations"),
+      probeAuth<LiveResp>("/livez"),
+      probeAuth<ReadyResp>("/readyz"),
+      probeAuth<MigResp>("/health/migrations"),
     ]);
     setLive(l); setReady(r); setMig(m);
     setLastUpdated(new Date());
@@ -88,10 +110,49 @@ function BackendStatusPage() {
   };
 
   useEffect(() => {
+    if (!authed) return;
     refresh();
     const t = setInterval(refresh, REFRESH_MS);
     return () => clearInterval(t);
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authed]);
+
+  if (authLoading) {
+    return <main className="mx-auto max-w-5xl p-6"><p className="text-sm text-muted-foreground">Loading…</p></main>;
+  }
+
+  if (!authed) {
+    return (
+      <main className="mx-auto flex min-h-[60vh] max-w-md flex-col items-center justify-center p-6 text-center">
+        <Lock className="mb-3 h-8 w-8 text-muted-foreground" />
+        <h1 className="text-xl font-semibold text-foreground">Sign in required</h1>
+        <p className="mt-2 text-sm text-muted-foreground">
+          Backend status is restricted to authorized users only.
+        </p>
+        <button
+          onClick={() => navigate({ to: "/auth", search: { redirect: "/dashboard/backend-status" } as any })}
+          className="mt-4 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
+        >
+          Sign in
+        </button>
+        <Link to="/" className="mt-2 text-xs text-muted-foreground hover:underline">Back to home</Link>
+      </main>
+    );
+  }
+
+  if (!isAdmin) {
+    return (
+      <main className="mx-auto flex min-h-[60vh] max-w-md flex-col items-center justify-center p-6 text-center">
+        <Lock className="mb-3 h-8 w-8 text-rose-500" />
+        <h1 className="text-xl font-semibold text-foreground">Forbidden</h1>
+        <p className="mt-2 text-sm text-muted-foreground">
+          This page is restricted to admin accounts. Signed in as{" "}
+          <code className="rounded bg-muted px-1.5 py-0.5 text-xs">{(session as any)?.email}</code>.
+        </p>
+      </main>
+    );
+  }
+
 
   const allOk = live.data?.status === "ok" && (ready.data?.status === "ok" || ready.data?.status === "ready") && mig.data?.status === "ok";
 
