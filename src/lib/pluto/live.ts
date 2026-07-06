@@ -543,8 +543,14 @@ export const live = {
       }));
     },
     stats: async () => {
-      const buckets = await api<unknown[]>("/storage/v1/bucket").catch(() => []);
-      return { users: 0, buckets: buckets.length, objects: 0, storage_bytes: 0 };
+      const raw = await api<unknown>("/storage/v1/bucket").catch(() => []);
+      const buckets = Array.isArray(raw) ? raw : Array.isArray((raw as { items?: unknown[] })?.items) ? (raw as { items: unknown[] }).items : [];
+      let users = 0;
+      try {
+        const u = await api<unknown>("/admin/v1/users", { service: true });
+        users = Array.isArray(u) ? u.length : Array.isArray((u as { items?: unknown[] })?.items) ? (u as { items: unknown[] }).items.length : 0;
+      } catch { /* ignore */ }
+      return { users, buckets: buckets.length, objects: 0, storage_bytes: 0 };
     },
     apiKeys: {
       list:   (wsId: string) => api<{ items: WorkspaceKey[] }>(`/admin/v1/workspaces/${wsId}/keys`, { service: true }),
