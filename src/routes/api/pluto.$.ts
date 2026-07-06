@@ -21,6 +21,20 @@ const CORS_HEADERS: Record<string, string> = {
   "access-control-max-age": "86400",
 };
 
+const GATEWAY_FAILURE_STATUSES = new Set([502, 503, 504, 521, 522, 523, 524]);
+
+function offlineJson(payload: Record<string, unknown>) {
+  return new Response(JSON.stringify({ ok: false, offline: true, ...payload }), {
+    status: 200,
+    headers: {
+      "content-type": "application/json",
+      "cache-control": "no-store",
+      "x-pluto-offline": "1",
+      ...CORS_HEADERS,
+    },
+  });
+}
+
 async function handle({ request, params }: { request: Request; params: { _splat?: string } }) {
   const upstream = process.env.PLUTO_UPSTREAM_URL ?? "https://api.timescard.cloud";
   const splat = params._splat ?? "";
@@ -31,24 +45,11 @@ async function handle({ request, params }: { request: Request; params: { _splat?
     // Graceful offline stub — probes see a well-formed 200 with offline:true
     // instead of a network error, and TerminalCard renders "backend not
     // configured" rather than the misleading "Failed to fetch".
-    return new Response(
-      JSON.stringify({
-        ok: false,
-        offline: true,
-        path: `/${splat}`,
-        reason: "PLUTO_UPSTREAM_URL not set — configure the Fastify backend URL in project secrets to enable live probes.",
-        issues,
-      }),
-      {
-        status: 200,
-        headers: {
-          "content-type": "application/json",
-          "cache-control": "no-store",
-          "x-pluto-offline": "1",
-          ...CORS_HEADERS,
-        },
-      },
-    );
+    return offlineJson({
+      path: `/${splat}`,
+      reason: "PLUTO_UPSTREAM_URL not set — configure the Fastify backend URL in project secrets to enable live probes.",
+      issues,
+    });
   }
 
   const target = upstream.replace(/\/$/, "") + "/" + splat + (url.search || "");
@@ -64,6 +65,16 @@ async function handle({ request, params }: { request: Request; params: { _splat?
       body: ["GET", "HEAD"].includes(request.method) ? undefined : await request.arrayBuffer(),
       redirect: "manual",
     });
+    if (GATEWAY_FAILURE_STATUSES.has(upstreamRes.status)) {
+      recordError(`/${splat}`, `upstream gateway failure ${upstreamRes.status}`);
+      return offlineJson({
+        path: `/${splat}`,
+        target,
+        upstreamStatus: upstreamRes.status,
+        upstreamStatusText: upstreamRes.statusText,
+        reason: "The Pluto backend origin is unreachable or unhealthy.",
+      });
+    }
     const respHeaders = new Headers();
     upstreamRes.headers.forEach((value, key) => {
       if (!HOP_BY_HOP.has(key.toLowerCase())) respHeaders.set(key, value);
@@ -83,15 +94,7 @@ async function handle({ request, params }: { request: Request; params: { _splat?
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     recordError(`/${splat}`, msg);
-    return new Response(
-      JSON.stringify({
-        ok: false,
-        offline: true,
-        error: msg,
-        target,
-      }),
-      { status: 200, headers: { "content-type": "application/json", "x-pluto-offline": "1", ...CORS_HEADERS } },
-    );
+    return offlineJson({ error: msg, target });
   }
 }
 

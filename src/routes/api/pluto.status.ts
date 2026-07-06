@@ -8,7 +8,8 @@ async function probe(url: string, signal: AbortSignal): Promise<{ ok: boolean; s
   const started = Date.now();
   try {
     const res = await fetch(url.replace(/\/$/, "") + "/readyz", { signal });
-    return { ok: res.ok, status: res.status, latencyMs: Date.now() - started };
+    if (res.ok) return { ok: true, status: res.status, latencyMs: Date.now() - started };
+    return { ok: false, status: res.status, error: `upstream returned ${res.status}`, latencyMs: Date.now() - started };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err), latencyMs: Date.now() - started };
   }
