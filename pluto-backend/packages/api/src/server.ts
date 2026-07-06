@@ -89,6 +89,10 @@ async function main() {
   // Metrics — register BEFORE routes so hooks capture everything
   await metricsPlugin(app);
 
+  // OpenAPI / Swagger UI — must be registered BEFORE routes so it can
+  // introspect every route added afterwards.
+  await swaggerPlugin(app, cfg);
+
   // Routes
   await healthRoutes(app, cfg);
   await authRoutes(app, cfg);
