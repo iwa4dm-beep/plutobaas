@@ -86,6 +86,21 @@ function normalizeAuthResponse(r: AuthSession | { user: AuthUser; session: AuthS
   return { user: normalizeAuthUser(user), session };
 }
 
+async function refreshAdminRole(): Promise<AuthUser | null> {
+  const sess = readSession();
+  const user = sess?.user as AuthUser | undefined;
+  if (!sess || !user) return null;
+  try {
+    const actor = await api<{ isSuperadmin?: boolean; is_superadmin?: boolean; role?: string }>("/admin/v1/whoami");
+    const isAdmin = Boolean(actor.isSuperadmin ?? actor.is_superadmin) || actor.role === "service_role";
+    const next = normalizeAuthUser({ ...user, role: isAdmin ? "admin" : user.role, is_superadmin: isAdmin });
+    persistSession(sess as AuthSession, next);
+    return next;
+  } catch {
+    return null;
+  }
+}
+
 export type MigrationEntry = {
   version: string;
   name: string;
