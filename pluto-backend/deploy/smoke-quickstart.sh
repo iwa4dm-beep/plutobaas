@@ -50,12 +50,15 @@ done
 if [[ -n "${ADMIN_JWT:-}" ]]; then
   echo
   printf '  %-10s %-28s %s\n' AUTH_PATH PATH STATUS
+  AUTH_HEADERS=(-H "authorization: Bearer ${ADMIN_JWT}")
+  if [[ -n "${ANON_KEY:-}" ]]; then
+    AUTH_HEADERS+=(-H "apikey: ${ANON_KEY}")
+  fi
   for row in "${AUTH_PROBES[@]}"; do
     name="${row%% *}"
     path="${row##* }"
     code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 8 \
-      -H "authorization: Bearer ${ADMIN_JWT}" \
-      ${ANON_KEY:+-H "apikey: ${ANON_KEY}"} \
+      "${AUTH_HEADERS[@]}" \
       "$BASE_URL$path" || echo "000")
     if [[ "$code" == "200" ]]; then
       printf '  %-10s %-28s \033[32m✔ %s\033[0m\n' "$name" "$path" "$code"
