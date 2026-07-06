@@ -213,17 +213,30 @@ async function main() {
     endpoints: ['/livez', '/readyz', '/healthz', '/health/deps', '/metrics', '/docs', '/openapi.json', '/auth/v1/*', '/rest/v1/*', '/storage/v1/*', '/realtime/v1/*', '/admin/v1/*', '/functions/v1/*', '/jobs/v1/*', '/tokens/v1/*'],
   }));
 
-  // Global error handler — always JSON
-  app.setErrorHandler((err, _req, reply) => {
-    const error = err as { statusCode?: number; name?: string; message?: string };
-    app.log.error(err);
-    const status = error.statusCode || 500;
+  // Global error handler — always JSON, always echoes traceId + x-request-id
+  // so the client can display it and operators can grep the API log for
+  // the same ID. Postgres RLS/permission errors are surfaced with their
+  // native code + hint fields (e.g. `42501 new row violates row-level
+  // security policy`) instead of a generic 500.
+  app.setErrorHandler((err, req, reply) => {
+    const e = err as { statusCode?: number; name?: string; message?: string; code?: string; hint?: string; detail?: string };
+    const traceId = (req as any).traceId as string | undefined;
+    // Map Postgres permission/RLS errors → 403
+    let status = e.statusCode || 500;
+    if (typeof e.code === 'string' && /^42501$/.test(e.code)) status = 403;
+    app.log.error({ traceId, code: e.code, hint: e.hint, detail: e.detail }, e.message || 'error');
+    if (traceId) reply.header('x-request-id', traceId);
     reply.code(status).send({
-      error: error.name || 'Error',
-      message: error.message || 'Internal Server Error',
+      error: e.name || 'Error',
+      message: e.message || 'Internal Server Error',
+      code: e.code,
+      hint: e.hint,
+      detail: e.detail,
       statusCode: status,
+      traceId,
     });
   });
+
 
   // Boot-time schema check — hit /health/migrations/required internally so
   // missing Phase-17 tables surface in `docker logs` immediately, not only
