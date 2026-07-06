@@ -334,29 +334,32 @@ export const live = {
   // that subsequent `api()` calls forward the Bearer JWT.
   auth: {
     signUp: async (email: string, password: string) => {
-      const r = await api<{ user: AuthUser; session: AuthSession }>("/auth/v1/sign-up", {
+      const r = await api<AuthSession | { user: AuthUser; session: AuthSession }>("/auth/v1/signup", {
         method: "POST", body: JSON.stringify({ email, password }),
       });
-      persistSession(r.session, r.user);
-      return r;
+      const normalized = normalizeAuthResponse(r);
+      persistSession(normalized.session, normalized.user);
+      return normalized;
     },
     signIn: async (email: string, password: string) => {
-      const r = await api<{ user: AuthUser; session: AuthSession }>("/auth/v1/sign-in", {
-        method: "POST", body: JSON.stringify({ email, password }),
+      const r = await api<AuthSession | { user: AuthUser; session: AuthSession }>("/auth/v1/token", {
+        method: "POST", body: JSON.stringify({ grant_type: "password", email, password }),
       });
-      persistSession(r.session, r.user);
-      return r;
+      const normalized = normalizeAuthResponse(r);
+      persistSession(normalized.session, normalized.user);
+      return normalized;
     },
     refresh: async () => {
       const sess = readSession(); if (!sess) throw new Error("no_session");
-      const r = await api<{ session: AuthSession }>("/auth/v1/refresh", {
-        method: "POST", body: JSON.stringify({ refresh_token: sess.refresh_token }),
+      const r = await api<AuthSession | { session: AuthSession }>("/auth/v1/token", {
+        method: "POST", body: JSON.stringify({ grant_type: "refresh_token", refresh_token: sess.refresh_token }),
       });
-      persistSession(r.session, sess.user as AuthUser);
-      return r.session;
+      const session = "session" in r ? r.session : r;
+      persistSession(session, sess.user as AuthUser);
+      return session;
     },
     signOut: async () => {
-      try { await api("/auth/v1/sign-out", { method: "POST" }); } catch { /* clear anyway */ }
+      try { await api("/auth/v1/logout", { method: "POST" }); } catch { /* clear anyway */ }
       localStorage.removeItem(SESSION_KEY);
     },
     me: () => api<{ user: AuthUser }>("/auth/v1/user"),
@@ -375,18 +378,21 @@ export const live = {
     config: () => api<{
       require_email_confirmation: boolean; sms_otp_enabled: boolean;
       email_provider: string; sms_provider: string;
-    }>("/auth/v1/config"),
+    }>("/auth/v1/settings"),
 
     /** Send a password-reset email. Always resolves — no user-enumeration. */
     resetPasswordForEmail: (email: string) =>
       api<{ ok: true }>("/auth/v1/recover", { method: "POST", body: JSON.stringify({ email }) }),
 
     /** Consume a reset token and set a new password. Returns a fresh session. */
-    verifyPasswordRecovery: (token: string, new_password: string) =>
-      api<{ ok: true; session: AuthSession & { user: AuthUser } }>(
-        "/auth/v1/verify-recovery",
-        { method: "POST", body: JSON.stringify({ token, new_password }) },
-      ).then((r) => { persistSession(r.session, r.session.user); return r; }),
+    verifyPasswordRecovery: async (token: string, new_password: string) => {
+      const r = await api<{ ok: true; session: AuthSession & { user: AuthUser } }>(
+        `/auth/v1/verify?${new URLSearchParams({ token, type: "recovery" }).toString()}`,
+      );
+      persistSession(r.session, r.session.user);
+      await api<AuthUser>("/auth/v1/user", { method: "PUT", body: JSON.stringify({ password: new_password }) });
+      return r;
+    },
 
     /** Send an email-confirmation link to the currently signed-in user. */
     sendEmailConfirmation: () =>
@@ -394,7 +400,7 @@ export const live = {
 
     /** Consume an email-confirmation token from the link the user clicked. */
     confirmEmail: (token: string) =>
-      api<{ ok: true }>("/auth/v1/confirm-email", { method: "POST", body: JSON.stringify({ token }) }),
+      api<{ ok: true }>(`/auth/v1/verify?${new URLSearchParams({ token, type: "signup" }).toString()}`),
 
     /** Anonymous resend (rate-limited server-side to one every 60s). */
     resendConfirmation: (email: string) =>
