@@ -150,7 +150,7 @@ async function verifyWorkspaceToken(req: FastifyRequest, cfg: Config) {
 }
 
 export async function tokensRoutes(app: FastifyInstance, cfg: Config) {
-  app.get('/tokens/v1/health', async () => ({ status: 'ok', service: 'pluto-tokens', ts: new Date().toISOString() }));
+  // /tokens/v1/health is registered by health.ts (shared health route registry)
   app.get('/tokens/v1/scopes', async () => ({ scopes: SCOPES }));
   app.get('/tokens/v1/coverage', async () => ({ coverage: COVERAGE }));
 
