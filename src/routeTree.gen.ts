@@ -84,6 +84,7 @@ import { Route as AuthResetPasswordRouteImport } from './routes/auth.reset-passw
 import { Route as AuthPhoneRouteImport } from './routes/auth.phone'
 import { Route as AuthForgotRouteImport } from './routes/auth.forgot'
 import { Route as AuthConfirmEmailRouteImport } from './routes/auth.confirm-email'
+import { Route as DashboardIntegrationsLovableFrontendRouteImport } from './routes/dashboard.integrations.lovable-frontend'
 import { Route as DashboardAdminInviteRouteImport } from './routes/dashboard.admin.invite'
 import { Route as ApiPlutoStatusRouteImport } from './routes/api/pluto.status'
 import { Route as ApiPlutoMonitorRouteImport } from './routes/api/pluto.monitor'
@@ -470,6 +471,12 @@ const AuthConfirmEmailRoute = AuthConfirmEmailRouteImport.update({
   path: '/confirm-email',
   getParentRoute: () => AuthRoute,
 } as any)
+const DashboardIntegrationsLovableFrontendRoute =
+  DashboardIntegrationsLovableFrontendRouteImport.update({
+    id: '/lovable-frontend',
+    path: '/lovable-frontend',
+    getParentRoute: () => DashboardIntegrationsRoute,
+  } as any)
 const DashboardAdminInviteRoute = DashboardAdminInviteRouteImport.update({
   id: '/admin/invite',
   path: '/admin/invite',
@@ -518,7 +525,7 @@ export interface FileRoutesByFullPath {
   '/dashboard/enterprise': typeof DashboardEnterpriseRoute
   '/dashboard/functions': typeof DashboardFunctionsRoute
   '/dashboard/graphql': typeof DashboardGraphqlRoute
-  '/dashboard/integrations': typeof DashboardIntegrationsRoute
+  '/dashboard/integrations': typeof DashboardIntegrationsRouteWithChildren
   '/dashboard/jobs': typeof DashboardJobsRoute
   '/dashboard/logs': typeof DashboardLogsRoute
   '/dashboard/logs-explorer': typeof DashboardLogsExplorerRoute
@@ -571,6 +578,7 @@ export interface FileRoutesByFullPath {
   '/api/pluto/monitor': typeof ApiPlutoMonitorRoute
   '/api/pluto/status': typeof ApiPlutoStatusRoute
   '/dashboard/admin/invite': typeof DashboardAdminInviteRoute
+  '/dashboard/integrations/lovable-frontend': typeof DashboardIntegrationsLovableFrontendRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -598,7 +606,7 @@ export interface FileRoutesByTo {
   '/dashboard/enterprise': typeof DashboardEnterpriseRoute
   '/dashboard/functions': typeof DashboardFunctionsRoute
   '/dashboard/graphql': typeof DashboardGraphqlRoute
-  '/dashboard/integrations': typeof DashboardIntegrationsRoute
+  '/dashboard/integrations': typeof DashboardIntegrationsRouteWithChildren
   '/dashboard/jobs': typeof DashboardJobsRoute
   '/dashboard/logs': typeof DashboardLogsRoute
   '/dashboard/logs-explorer': typeof DashboardLogsExplorerRoute
@@ -651,6 +659,7 @@ export interface FileRoutesByTo {
   '/api/pluto/monitor': typeof ApiPlutoMonitorRoute
   '/api/pluto/status': typeof ApiPlutoStatusRoute
   '/dashboard/admin/invite': typeof DashboardAdminInviteRoute
+  '/dashboard/integrations/lovable-frontend': typeof DashboardIntegrationsLovableFrontendRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -680,7 +689,7 @@ export interface FileRoutesById {
   '/dashboard/enterprise': typeof DashboardEnterpriseRoute
   '/dashboard/functions': typeof DashboardFunctionsRoute
   '/dashboard/graphql': typeof DashboardGraphqlRoute
-  '/dashboard/integrations': typeof DashboardIntegrationsRoute
+  '/dashboard/integrations': typeof DashboardIntegrationsRouteWithChildren
   '/dashboard/jobs': typeof DashboardJobsRoute
   '/dashboard/logs': typeof DashboardLogsRoute
   '/dashboard/logs-explorer': typeof DashboardLogsExplorerRoute
@@ -733,6 +742,7 @@ export interface FileRoutesById {
   '/api/pluto/monitor': typeof ApiPlutoMonitorRoute
   '/api/pluto/status': typeof ApiPlutoStatusRoute
   '/dashboard/admin/invite': typeof DashboardAdminInviteRoute
+  '/dashboard/integrations/lovable-frontend': typeof DashboardIntegrationsLovableFrontendRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -816,6 +826,7 @@ export interface FileRouteTypes {
     | '/api/pluto/monitor'
     | '/api/pluto/status'
     | '/dashboard/admin/invite'
+    | '/dashboard/integrations/lovable-frontend'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -896,6 +907,7 @@ export interface FileRouteTypes {
     | '/api/pluto/monitor'
     | '/api/pluto/status'
     | '/dashboard/admin/invite'
+    | '/dashboard/integrations/lovable-frontend'
   id:
     | '__root__'
     | '/'
@@ -977,6 +989,7 @@ export interface FileRouteTypes {
     | '/api/pluto/monitor'
     | '/api/pluto/status'
     | '/dashboard/admin/invite'
+    | '/dashboard/integrations/lovable-frontend'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -1522,6 +1535,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthConfirmEmailRouteImport
       parentRoute: typeof AuthRoute
     }
+    '/dashboard/integrations/lovable-frontend': {
+      id: '/dashboard/integrations/lovable-frontend'
+      path: '/lovable-frontend'
+      fullPath: '/dashboard/integrations/lovable-frontend'
+      preLoaderRoute: typeof DashboardIntegrationsLovableFrontendRouteImport
+      parentRoute: typeof DashboardIntegrationsRoute
+    }
     '/dashboard/admin/invite': {
       id: '/dashboard/admin/invite'
       path: '/admin/invite'
@@ -1569,6 +1589,20 @@ const AuthRouteChildren: AuthRouteChildren = {
 
 const AuthRouteWithChildren = AuthRoute._addFileChildren(AuthRouteChildren)
 
+interface DashboardIntegrationsRouteChildren {
+  DashboardIntegrationsLovableFrontendRoute: typeof DashboardIntegrationsLovableFrontendRoute
+}
+
+const DashboardIntegrationsRouteChildren: DashboardIntegrationsRouteChildren = {
+  DashboardIntegrationsLovableFrontendRoute:
+    DashboardIntegrationsLovableFrontendRoute,
+}
+
+const DashboardIntegrationsRouteWithChildren =
+  DashboardIntegrationsRoute._addFileChildren(
+    DashboardIntegrationsRouteChildren,
+  )
+
 interface DashboardRouteChildren {
   DashboardAiRoute: typeof DashboardAiRoute
   DashboardApiRoute: typeof DashboardApiRoute
@@ -1584,7 +1618,7 @@ interface DashboardRouteChildren {
   DashboardEnterpriseRoute: typeof DashboardEnterpriseRoute
   DashboardFunctionsRoute: typeof DashboardFunctionsRoute
   DashboardGraphqlRoute: typeof DashboardGraphqlRoute
-  DashboardIntegrationsRoute: typeof DashboardIntegrationsRoute
+  DashboardIntegrationsRoute: typeof DashboardIntegrationsRouteWithChildren
   DashboardJobsRoute: typeof DashboardJobsRoute
   DashboardLogsRoute: typeof DashboardLogsRoute
   DashboardLogsExplorerRoute: typeof DashboardLogsExplorerRoute
@@ -1649,7 +1683,7 @@ const DashboardRouteChildren: DashboardRouteChildren = {
   DashboardEnterpriseRoute: DashboardEnterpriseRoute,
   DashboardFunctionsRoute: DashboardFunctionsRoute,
   DashboardGraphqlRoute: DashboardGraphqlRoute,
-  DashboardIntegrationsRoute: DashboardIntegrationsRoute,
+  DashboardIntegrationsRoute: DashboardIntegrationsRouteWithChildren,
   DashboardJobsRoute: DashboardJobsRoute,
   DashboardLogsRoute: DashboardLogsRoute,
   DashboardLogsExplorerRoute: DashboardLogsExplorerRoute,
