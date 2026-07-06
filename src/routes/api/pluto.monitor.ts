@@ -38,7 +38,12 @@ export const Route = createFileRoute("/api/pluto/monitor")({
           const timer = setTimeout(() => ctrl.abort(), 3000);
           try {
             const res = await fetch(status.upstreamUrl.replace(/\/$/, "") + "/readyz", { signal: ctrl.signal });
-            reachable = { ok: res.ok, status: res.status, latencyMs: Date.now() - started };
+            reachable = {
+              ok: res.ok,
+              status: res.status,
+              latencyMs: Date.now() - started,
+              ...(res.ok ? {} : { error: `upstream returned ${res.status}` }),
+            };
           } catch (err) {
             reachable = { ok: false, latencyMs: Date.now() - started, error: err instanceof Error ? err.message : String(err) };
           } finally {
