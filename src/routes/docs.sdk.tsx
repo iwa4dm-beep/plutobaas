@@ -1,266 +1,211 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
-import { Copy, Check, Rocket, KeyRound, Database, Radio, ShieldCheck, Terminal, BookOpen } from "lucide-react";
-import { AdminGate } from "@/components/AdminGate";
+import { createFileRoute, Link } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/docs/sdk")({
   head: () => ({
     meta: [
-      { title: "SDK Integration Guide — Pluto BaaS" },
-      { name: "description", content: "Step-by-step guide to connect any frontend (React, Vue, Svelte, Next.js, mobile) to the Pluto backend via @pluto/js." },
-      { name: "robots", content: "noindex,nofollow" },
+      { title: "Pluto SDK — Quick Start & API Reference" },
+      { name: "description", content: "Connect any app to Pluto in under 2 minutes. Auth, database, storage, realtime, onboarding — one SDK." },
+      { property: "og:title", content: "Pluto SDK — Quick Start" },
+      { property: "og:description", content: "Supabase-compatible client SDK for Pluto BaaS." },
     ],
   }),
-  component: ProtectedSdkGuide,
+  component: DocsSdk,
 });
 
-function ProtectedSdkGuide() {
+function Code({ children, lang = "bash" }: { children: string; lang?: string }) {
   return (
-    <AdminGate>
-      <SdkGuide />
-    </AdminGate>
+    <pre className="bg-slate-900 text-slate-100 rounded-lg p-4 overflow-x-auto text-sm my-3">
+      <code data-lang={lang}>{children.trim()}</code>
+    </pre>
   );
 }
 
-const API = (import.meta.env.VITE_PLUTO_API_URL as string) || "https://api.timescard.cloud";
-
-function CodeBlock({ code, lang = "bash" }: { code: string; lang?: string }) {
-  const [copied, setCopied] = useState(false);
-  const copy = async () => {
-    await navigator.clipboard.writeText(code);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
-  };
+function Section({ id, title, children }: { id: string; title: string; children: React.ReactNode }) {
   return (
-    <div className="group relative overflow-hidden rounded-lg border border-border bg-muted/30">
-      <div className="flex items-center justify-between border-b border-border bg-muted/50 px-3 py-1.5">
-        <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">{lang}</span>
-        <button onClick={copy} className="inline-flex items-center gap-1 rounded px-2 py-0.5 text-[11px] text-muted-foreground hover:bg-background hover:text-foreground">
-          {copied ? <Check className="h-3 w-3 text-emerald-500" /> : <Copy className="h-3 w-3" />}
-          {copied ? "Copied" : "Copy"}
-        </button>
-      </div>
-      <pre className="overflow-x-auto p-4 font-mono text-xs leading-relaxed"><code>{code}</code></pre>
-    </div>
-  );
-}
-
-function Step({ n, title, icon, children }: { n: number; title: string; icon: React.ReactNode; children: React.ReactNode }) {
-  return (
-    <section className="mb-8 rounded-xl border border-border bg-card p-6">
-      <div className="mb-4 flex items-center gap-3">
-        <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary">{n}</div>
-        <div className="flex items-center gap-2">
-          {icon}
-          <h2 className="text-lg font-semibold text-foreground">{title}</h2>
-        </div>
-      </div>
-      <div className="ml-11 space-y-3 text-sm text-muted-foreground">{children}</div>
+    <section id={id} className="mb-10 scroll-mt-20">
+      <h2 className="text-2xl font-semibold mb-3 border-b pb-2">{title}</h2>
+      {children}
     </section>
   );
 }
 
-function SdkGuide() {
+function DocsSdk() {
+  const API = "https://api.timescard.cloud";
+
   return (
-    <main className="mx-auto max-w-4xl p-6 md:p-10">
-      <header className="mb-10 text-center">
-        <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1 text-xs text-muted-foreground">
-          <BookOpen className="h-3.5 w-3.5" /> Pluto BaaS · Integration Guide
-        </div>
-        <h1 className="text-3xl font-bold tracking-tight text-foreground md:text-4xl">Connect any frontend in 5 minutes</h1>
-        <p className="mx-auto mt-3 max-w-2xl text-base text-muted-foreground">
-          <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-sm">@pluto/js</code> is a Supabase-compatible SDK. If you've used Supabase, the API surface is identical — swap the URL and key and you're done.
+    <div className="mx-auto max-w-4xl px-6 py-10">
+      <header className="mb-8">
+        <p className="text-sm text-muted-foreground mb-1">Documentation</p>
+        <h1 className="text-4xl font-bold mb-2">Pluto SDK</h1>
+        <p className="text-lg text-muted-foreground">
+          Supabase-compatible client. Same API surface — auth, database, storage, realtime — plus native onboarding &amp; multi-tenant helpers.
         </p>
-        <div className="mt-4 inline-flex items-center gap-2 rounded-full border border-border bg-muted/40 px-3 py-1 font-mono text-xs text-muted-foreground">
-          API base · <span className="text-foreground">{API}</span>
-        </div>
+        <nav className="mt-4 flex flex-wrap gap-3 text-sm">
+          <a href="#install" className="text-blue-600 hover:underline">Install</a>
+          <a href="#init" className="text-blue-600 hover:underline">Initialize</a>
+          <a href="#signup" className="text-blue-600 hover:underline">Self-serve signup</a>
+          <a href="#auth" className="text-blue-600 hover:underline">Auth</a>
+          <a href="#database" className="text-blue-600 hover:underline">Database</a>
+          <a href="#storage" className="text-blue-600 hover:underline">Storage</a>
+          <a href="#realtime" className="text-blue-600 hover:underline">Realtime</a>
+          <a href="#domains" className="text-blue-600 hover:underline">Domains &amp; CORS</a>
+          <a href="#invites" className="text-blue-600 hover:underline">Invites</a>
+          <a href="#curl" className="text-blue-600 hover:underline">Raw HTTP</a>
+        </nav>
       </header>
 
-      <Step n={1} title="Install the SDK" icon={<Rocket className="h-5 w-5 text-primary" />}>
-        <p>Works with any JavaScript / TypeScript project — React, Vue, Svelte, Next.js, React Native, or plain HTML.</p>
-        <CodeBlock lang="bash" code={`npm i @pluto/js
+      <div className="rounded-lg border p-4 bg-amber-50 dark:bg-amber-950/20 text-sm mb-8">
+        <strong>Need an account?</strong>{" "}
+        <Link to="/signup" className="underline text-blue-600">Sign up</Link> — you'll get a workspace, project, and API keys instantly.
+      </div>
+
+      <Section id="install" title="1. Install">
+        <Code lang="bash">{`npm install @pluto/js
 # or
-bun add @pluto/js
+pnpm add @pluto/js
 # or
-pnpm add @pluto/js`} />
-      </Step>
+bun add @pluto/js`}</Code>
+      </Section>
 
-      <Step n={2} title="Get your publishable key" icon={<KeyRound className="h-5 w-5 text-primary" />}>
-        <p>The publishable (anon) key is safe to ship in browser code — it's protected by Row-Level Security policies on the server.</p>
-        <ol className="ml-4 list-decimal space-y-1 text-sm">
-          <li>Open the Pluto dashboard → <b className="text-foreground">Tokens</b></li>
-          <li>Copy the <b className="text-foreground">publishable</b> key (starts with <code className="rounded bg-muted px-1 font-mono text-xs">pk_...</code>)</li>
-          <li>Never expose the <span className="text-rose-500">service-role</span> key in frontend code — it bypasses RLS</li>
-        </ol>
-      </Step>
+      <Section id="init" title="2. Initialize the client">
+        <p className="mb-2">Grab your <strong>publishable key</strong> from the dashboard (Project → API).</p>
+        <Code lang="ts">{`import { createClient } from '@pluto/js';
 
-      <Step n={3} title="Environment variables" icon={<Terminal className="h-5 w-5 text-primary" />}>
-        <p>Add to your project's <code className="rounded bg-muted px-1 font-mono text-xs">.env.local</code> (Vite / Next.js / SvelteKit — prefix accordingly):</p>
-        <CodeBlock lang=".env" code={`# Vite / React / Solid
-VITE_PLUTO_API_URL=${API}
-VITE_PLUTO_PUBLISHABLE_KEY=pk_your_key_here
+const pluto = createClient(
+  '${API}',
+  'pk_live_your_publishable_key_here'
+);`}</Code>
+        <p className="text-sm text-muted-foreground">The publishable key is safe in browser code — Row-Level Security policies gate every table.</p>
+      </Section>
 
-# Next.js
-NEXT_PUBLIC_PLUTO_API_URL=${API}
-NEXT_PUBLIC_PLUTO_PUBLISHABLE_KEY=pk_your_key_here`} />
-      </Step>
-
-      <Step n={4} title="Initialize the client" icon={<Rocket className="h-5 w-5 text-primary" />}>
-        <p>Create one shared client instance and import it wherever you need it.</p>
-        <CodeBlock lang="ts" code={`// src/lib/pluto.ts
-import { createClient } from "@pluto/js";
-
-export const pluto = createClient(
-  import.meta.env.VITE_PLUTO_API_URL,
-  import.meta.env.VITE_PLUTO_PUBLISHABLE_KEY
-);`} />
-      </Step>
-
-      <Step n={5} title="Authentication" icon={<ShieldCheck className="h-5 w-5 text-primary" />}>
-        <p>Full auth flows — email/password, magic link, phone OTP, password reset, email confirmation.</p>
-        <CodeBlock lang="ts" code={`// Sign up
-const { data, error } = await pluto.auth.signUp({
-  email: "user@example.com",
-  password: "secret123",
+      <Section id="signup" title="3. Self-serve signup (one call, full onboarding)">
+        <p className="mb-2">
+          Creates the user, a workspace, a project, API keys, adds the caller's domain to CORS, and seeds a demo table — all atomically.
+        </p>
+        <Code lang="ts">{`const { data, error } = await pluto.onboarding.signupFull({
+  email: 'founder@acme.com',
+  password: 'a-strong-password',
+  workspace_name: 'Acme Inc',
+  project_name: 'Production',
+  domain: 'https://app.acme.com',
+  seed_demo: true,
 });
 
-// Sign in
+if (error) throw error;
+console.log(data.api_keys.publishable);   // pk_live_...
+console.log(data.api_keys.secret);        // sk_live_... (store server-side)
+console.log(data.session.access_token);   // JWT — user is auto-logged-in`}</Code>
+      </Section>
+
+      <Section id="auth" title="4. Auth">
+        <Code lang="ts">{`// sign in
 await pluto.auth.signInWithPassword({ email, password });
 
-// Get current session
+// sign up (simple, no workspace)
+await pluto.auth.signUp({ email, password });
+
+// current session
 const { data: { session } } = await pluto.auth.getSession();
 
-// Listen to auth changes
+// listen for changes
 pluto.auth.onAuthStateChange((event, session) => {
-  console.log(event, session);
+  if (event === 'SIGNED_OUT') redirect('/login');
 });
 
-// Sign out
-await pluto.auth.signOut();
+// sign out
+await pluto.auth.signOut();`}</Code>
+      </Section>
 
-// Password reset
-await pluto.auth.resetPasswordForEmail(email, {
-  redirectTo: \`\${window.location.origin}/reset-password\`,
-});`} />
-      </Step>
-
-      <Step n={6} title="Database queries" icon={<Database className="h-5 w-5 text-primary" />}>
-        <p>PostgREST-compatible query builder — select, filter, insert, update, delete.</p>
-        <CodeBlock lang="ts" code={`// Select with filters and ordering
-const { data: posts } = await pluto
-  .from("posts")
-  .select("id, title, author:users(name)")
-  .eq("published", true)
-  .order("created_at", { ascending: false })
+      <Section id="database" title="5. Database (REST + query builder)">
+        <Code lang="ts">{`// select
+const { data, error } = await pluto
+  .from('posts')
+  .select('id, title, author:users(name)')
+  .eq('published', true)
+  .order('created_at', { ascending: false })
   .limit(20);
 
-// Insert
-const { data } = await pluto
-  .from("posts")
-  .insert({ title: "Hello", body: "World" })
-  .select()
-  .single();
+// insert
+await pluto.from('posts').insert({ title: 'Hello', body: '...' });
 
-// Update
-await pluto.from("posts").update({ title: "New" }).eq("id", 42);
+// update
+await pluto.from('posts').update({ published: true }).eq('id', postId);
 
-// Delete
-await pluto.from("posts").delete().eq("id", 42);`} />
-      </Step>
+// delete
+await pluto.from('posts').delete().eq('id', postId);
 
-      <Step n={7} title="Storage (file uploads)" icon={<Database className="h-5 w-5 text-primary" />}>
-        <p>Upload, download, list, delete — with signed URLs for private buckets.</p>
-        <CodeBlock lang="ts" code={`// Upload
-await pluto.storage.from("avatars").upload("me.png", file, {
-  contentType: file.type,
-  upsert: true,
-});
+// call a Postgres function
+const { data } = await pluto.rpc('search_posts', { q: 'hello' });`}</Code>
+      </Section>
 
-// Public URL (public bucket)
-const { data: { publicUrl } } = pluto.storage.from("avatars").getPublicUrl("me.png");
+      <Section id="storage" title="6. Storage">
+        <Code lang="ts">{`// upload
+await pluto.storage.from('avatars').upload('user-123.png', file);
 
-// Signed URL (private bucket, 1 hour)
-const { data } = await pluto.storage.from("private").createSignedUrl("doc.pdf", 3600);
+// public URL
+const { data: { publicUrl } } = pluto.storage
+  .from('avatars')
+  .getPublicUrl('user-123.png');
 
-// Download
-const { data: blob } = await pluto.storage.from("avatars").download("me.png");`} />
-      </Step>
+// signed URL (private buckets)
+const { data } = await pluto.storage
+  .from('private-docs')
+  .createSignedUrl('report.pdf', 60);`}</Code>
+      </Section>
 
-      <Step n={8} title="Realtime subscriptions" icon={<Radio className="h-5 w-5 text-primary" />}>
-        <p>WebSocket-based channels for broadcast messages, presence, and Postgres change events.</p>
-        <CodeBlock lang="ts" code={`// Broadcast — chat, notifications
-const channel = pluto.channel("room-1")
-  .on("broadcast", { event: "msg" }, ({ payload }) => console.log(payload))
+      <Section id="realtime" title="7. Realtime">
+        <Code lang="ts">{`const channel = pluto
+  .channel('room-42')
+  .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' },
+    (payload) => console.log('new message', payload.new)
+  )
   .subscribe();
 
-await channel.send({ type: "broadcast", event: "msg", payload: { text: "hi" } });
+// broadcast
+await channel.send({ type: 'broadcast', event: 'typing', payload: { user: 'me' } });
 
-// Presence — who's online
-channel.on("presence", { event: "sync" }, () => {
-  console.log(channel.presenceState());
-});
+// leave
+await channel.unsubscribe();`}</Code>
+      </Section>
 
-// Postgres change data capture
-pluto.channel("posts-changes")
-  .on("postgres_changes", { event: "*", schema: "public", table: "posts" },
-     (payload) => console.log(payload))
-  .subscribe();`} />
-      </Step>
+      <Section id="domains" title="8. Manage domains / CORS programmatically">
+        <p className="mb-2">Add a customer's domain from your onboarding flow — CORS auto-reloads within 15s.</p>
+        <Code lang="ts">{`await pluto.domains.add(projectId, 'https://customer.example.com', 'Customer X');
+const { data: domains } = await pluto.domains.list(projectId);
+await pluto.domains.remove(projectId, domains![0].id);`}</Code>
+      </Section>
 
-      <Step n={9} title="Framework-specific patterns" icon={<Rocket className="h-5 w-5 text-primary" />}>
-        <div className="space-y-4">
-          <div>
-            <h3 className="mb-2 text-sm font-semibold text-foreground">React (hook)</h3>
-            <CodeBlock lang="tsx" code={`import { useEffect, useState } from "react";
-import { pluto } from "./lib/pluto";
+      <Section id="invites" title="9. Admin invites">
+        <Code lang="ts">{`// superadmin sends invite (48h single-use token)
+const { data: invite } = await pluto.onboarding.createInvite('teammate@acme.com', 'admin');
 
-export function useUser() {
-  const [user, setUser] = useState(null);
-  useEffect(() => {
-    pluto.auth.getSession().then(({ data }) => setUser(data.session?.user ?? null));
-    const { data: sub } = pluto.auth.onAuthStateChange((_e, s) => setUser(s?.user ?? null));
-    return () => sub.subscription.unsubscribe();
-  }, []);
-  return user;
-}`} />
-          </div>
-          <div>
-            <h3 className="mb-2 text-sm font-semibold text-foreground">Next.js App Router</h3>
-            <CodeBlock lang="ts" code={`// Server Component — use server-side client with cookies
-// Client Component — use the shared browser client above.
-// Middleware — refresh session with pluto.auth.getSession() before render.`} />
-          </div>
-          <div>
-            <h3 className="mb-2 text-sm font-semibold text-foreground">React Native</h3>
-            <CodeBlock lang="ts" code={`import "react-native-url-polyfill/auto";
-import AsyncStorage from "@react-native-async-storage/async-storage";
-import { createClient } from "@pluto/js";
+// invited user accepts (link contains the token)
+await pluto.onboarding.acceptInvite(tokenFromUrl, 'their-new-password');`}</Code>
+      </Section>
 
-export const pluto = createClient(URL, KEY, {
-  auth: { storage: AsyncStorage, detectSessionInUrl: false },
-});`} />
-          </div>
-        </div>
-      </Step>
+      <Section id="curl" title="10. Prefer raw HTTP? Every SDK call is one endpoint.">
+        <Code lang="bash">{`# Self-serve signup
+curl -X POST ${API}/auth/v1/signup-full \\
+  -H "Content-Type: application/json" \\
+  -H "apikey: pk_live_..." \\
+  -d '{"email":"you@x.com","password":"...","domain":"https://x.com"}'
 
-      <Step n={10} title="Production checklist" icon={<ShieldCheck className="h-5 w-5 text-primary" />}>
-        <ul className="ml-4 list-disc space-y-1">
-          <li>Enable RLS on every table (dashboard → Database → Policies)</li>
-          <li>Add CORS origins for your production domain (dashboard → CORS)</li>
-          <li>Set up email templates + branded sender domain (dashboard → Auth settings)</li>
-          <li>Rotate keys periodically (dashboard → Tokens)</li>
-          <li>Monitor <a className="text-primary hover:underline" href="/dashboard/backend-status">/dashboard/backend-status</a> for backend health</li>
-          <li>Subscribe to UptimeRobot alerts for your API URL</li>
-        </ul>
-      </Step>
+# Select rows
+curl "${API}/rest/v1/posts?select=*&published=eq.true" \\
+  -H "apikey: pk_live_..." \\
+  -H "Authorization: Bearer <access_token>"
 
-      <div className="mt-10 rounded-xl border border-border bg-muted/30 p-6 text-center">
-        <p className="text-sm text-muted-foreground">Stuck? Open the dashboard SQL runner and validate your query, or check the API docs.</p>
-        <div className="mt-4 flex justify-center gap-3">
-          <a href="/dashboard/backend-status" className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-4 py-2 text-sm font-medium hover:bg-accent">Backend status</a>
-          <a href="/docs/api" className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90">API reference</a>
-        </div>
-      </div>
-    </main>
+# Add a domain
+curl -X POST ${API}/admin/v1/projects/<id>/domains \\
+  -H "Content-Type: application/json" \\
+  -H "Authorization: Bearer <access_token>" \\
+  -d '{"origin":"https://customer.com"}'`}</Code>
+      </Section>
+
+      <footer className="mt-12 pt-6 border-t text-sm text-muted-foreground flex justify-between">
+        <span>Base URL: <code className="bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded">{API}</code></span>
+        <Link to="/docs/api" className="text-blue-600 hover:underline">Full REST reference →</Link>
+      </footer>
+    </div>
   );
 }
