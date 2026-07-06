@@ -68,7 +68,8 @@ function AuditPage() {
     setErr(null);
     try {
       if (!isLive()) {
-        setPageData({ items: mockEvents, total: mockEvents.length, limit: PAGE_SIZE, offset: 0, next_offset: null });
+        setPageData({ items: [], total: 0, limit: PAGE_SIZE, offset: 0, next_offset: null });
+        setErr("Backend not configured.");
         return;
       }
       const q: AuditQuery = { limit: PAGE_SIZE, offset };
