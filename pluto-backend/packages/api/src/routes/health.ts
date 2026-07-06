@@ -229,7 +229,19 @@ export async function healthRoutes(app: FastifyInstance, cfg: Config) {
   // Public health snapshot for /api/pluto/status probes
   app.get('/healthz', async () => ({ status: 'ok', service: 'pluto-api', ts: new Date().toISOString() }));
 
-  // Auth v1 health (SDK / Lovable dashboard probe)
-  app.get('/auth/v1/health', async () => ({ status: 'ok', service: 'pluto-auth', ts: new Date().toISOString() }));
+  // Per-module health snapshots (Lovable dashboard probes).
+  // Every module lives in this single Fastify server; a 200 here confirms
+  // the process is serving that module's route surface.
+  const modules: Array<[string, string]> = [
+    ['/auth/v1/health',      'pluto-auth'],
+    ['/rest/v1/health',      'pluto-rest'],
+    ['/storage/v1/health',   'pluto-storage'],
+    ['/functions/v1/health', 'pluto-functions'],
+    ['/jobs/v1/health',      'pluto-jobs'],
+    ['/admin/v1/health',     'pluto-admin'],
+  ];
+  for (const [path, service] of modules) {
+    app.get(path, async () => ({ status: 'ok', service, ts: new Date().toISOString() }));
+  }
 }
 

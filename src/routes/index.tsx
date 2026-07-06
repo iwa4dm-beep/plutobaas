@@ -335,12 +335,12 @@ type ReadyState =
 const MODULE_PROBES: { name: string; path: string }[] = [
   { name: "core",     path: "/readyz" },
   { name: "auth",     path: "/auth/v1/health" },
-  { name: "rest",     path: "/rest/v1/" },
-  { name: "storage",  path: "/storage/v1/" },
-  { name: "realtime", path: "/realtime/v1/" },
-  { name: "edge",     path: "/functions/v1/" },
-  { name: "jobs",     path: "/jobs/v1/" },
-  { name: "admin",    path: "/admin/v1/stats" },
+  { name: "rest",     path: "/rest/v1/health" },
+  { name: "storage",  path: "/storage/v1/health" },
+  { name: "realtime", path: "/realtime/v1/health" },
+  { name: "edge",     path: "/functions/v1/health" },
+  { name: "jobs",     path: "/jobs/v1/health" },
+  { name: "admin",    path: "/admin/v1/health" },
 ];
 
 const REFRESH_OPTIONS: { label: string; value: number }[] = [
