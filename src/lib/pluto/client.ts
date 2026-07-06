@@ -1,13 +1,13 @@
 /**
- * @pluto/client — adapter SDK
+ * @pluto/client — adapter SDK (live-only)
  *
- * Public shape is stable. When `VITE_PLUTO_URL` (+ `VITE_PLUTO_ANON_KEY`)
- * are configured, every method routes to the real Fastify backend via
- * `./live`. Otherwise it falls back to a localStorage-backed mock so the
- * dashboard remains fully interactive with no backend.
+ * Every method routes to the real Pluto backend via `./live`, which itself
+ * goes through the same-origin `/api/pluto` proxy. There is no mock or
+ * demo fallback — if the backend is unreachable, the call throws and
+ * callers must render a real error state.
  *
- * Adding a new method? Add both a `live` branch and a `mock` branch inside
- * the same function so callers never need to know which is active.
+ * Adding a new method? Wrap the corresponding `live.*` call and map the
+ * response into the stable public shape defined in this module.
  */
 
 import { isLive, live, type AdminUser, type LogEntry, type SqlResult } from "./live";
@@ -55,114 +55,15 @@ export type PlutoSettings = {
   jwtRotatedAt: string | null;
 };
 
-// ---------- Mock backing store ----------
+// ---------- Guards ----------
 
-const STORAGE_KEY = "pluto.mock.v1";
-
-type MockDB = {
-  session: PlutoSession | null;
-  users: PlutoUser[];
-  tables: PlutoTable[];
-  rows: Record<string, Record<string, unknown>[]>;
-  buckets: PlutoBucket[];
-  files: Record<string, PlutoFile[]>;
-  logs: PlutoLog[];
-  settings: PlutoSettings;
-};
-
-const seed = (): MockDB => ({
-  session: null,
-  users: [
-    { id: "u_001", email: "admin@pluto.local", role: "admin", email_verified: true, created_at: new Date(Date.now() - 86400000 * 14).toISOString() },
-    { id: "u_002", email: "alice@example.com", role: "user", email_verified: true, created_at: new Date(Date.now() - 86400000 * 7).toISOString() },
-    { id: "u_003", email: "bob@example.com", role: "user", email_verified: false, created_at: new Date(Date.now() - 86400000 * 2).toISOString() },
-  ],
-  tables: [
-    {
-      name: "posts", schema: "public", row_count: 3,
-      columns: [
-        { name: "id", type: "uuid", nullable: false, pk: true },
-        { name: "title", type: "text", nullable: false },
-        { name: "body", type: "text", nullable: true },
-        { name: "author_id", type: "uuid", nullable: false },
-        { name: "created_at", type: "timestamptz", nullable: false },
-      ],
-    },
-    {
-      name: "profiles", schema: "public", row_count: 3,
-      columns: [
-        { name: "id", type: "uuid", nullable: false, pk: true },
-        { name: "user_id", type: "uuid", nullable: false },
-        { name: "display_name", type: "text", nullable: true },
-      ],
-    },
-  ],
-  rows: {
-    posts: [
-      { id: "p1", title: "Hello Pluto", body: "First post", author_id: "u_002", created_at: new Date().toISOString() },
-      { id: "p2", title: "Self-hosted BaaS", body: "Auth + REST + Storage", author_id: "u_002", created_at: new Date().toISOString() },
-      { id: "p3", title: "Docker compose up", body: "One command setup", author_id: "u_003", created_at: new Date().toISOString() },
-    ],
-    profiles: [
-      { id: "pr1", user_id: "u_001", display_name: "Admin" },
-      { id: "pr2", user_id: "u_002", display_name: "Alice" },
-      { id: "pr3", user_id: "u_003", display_name: "Bob" },
-    ],
-  },
-  buckets: [
-    { name: "avatars", public: true, file_count: 2, size_bytes: 51200 },
-    { name: "uploads", public: false, file_count: 1, size_bytes: 204800 },
-  ],
-  files: {
-    avatars: [
-      { key: "u_002.png", size: 25600, content_type: "image/png", updated_at: new Date().toISOString() },
-      { key: "u_003.png", size: 25600, content_type: "image/png", updated_at: new Date().toISOString() },
-    ],
-    uploads: [
-      { key: "report.pdf", size: 204800, content_type: "application/pdf", updated_at: new Date().toISOString() },
-    ],
-  },
-  logs: Array.from({ length: 18 }).map((_, i) => ({
-    id: `l_${i}`,
-    ts: new Date(Date.now() - i * 60000).toISOString(),
-    level: (["info", "info", "info", "warn", "error"] as const)[i % 5],
-    source: (["auth", "rest", "storage", "admin"] as const)[i % 4],
-    message: ["sign-in ok", "GET /rest/v1/posts 200", "upload avatars/u_002.png", "rate-limit warn", "invalid jwt"][i % 5],
-  })),
-  settings: {
-    backendUrl: "http://localhost:8000",
-    smtpHost: "smtp.example.com",
-    smtpPort: 587,
-    smtpUser: "no-reply@example.com",
-    storageDriver: "local",
-    s3Bucket: "",
-    s3Region: "us-east-1",
-    jwtRotatedAt: null,
-  },
-});
-
-function load(): MockDB {
-  if (typeof window === "undefined") return seed();
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) {
-      const fresh = seed();
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(fresh));
-      return fresh;
-    }
-    return JSON.parse(raw) as MockDB;
-  } catch {
-    return seed();
+function ensureLive(): void {
+  if (!isLive()) {
+    throw new Error(
+      "Pluto backend not configured. Set VITE_PLUTO_URL and VITE_PLUTO_ANON_KEY (or use the default same-origin /api/pluto proxy).",
+    );
   }
 }
-
-function save(db: MockDB) {
-  if (typeof window === "undefined") return;
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(db));
-}
-
-const wait = (ms = 180) => new Promise((r) => setTimeout(r, ms));
-const rid = () => Math.random().toString(36).slice(2, 10);
 
 // ---------- Adapters (live → public shape) ----------
 
@@ -186,7 +87,7 @@ function adaptLog(l: LogEntry): PlutoLog {
   return { id: l.id, ts: l.ts, level, source, message: l.message };
 }
 
-/** SqlResult → mock-shaped `{ columns, rows }`. */
+/** SqlResult → `{ columns, rows }` used by the SQL editor. */
 function adaptSqlResult(res: SqlResult | undefined): { columns: string[]; rows: unknown[][] } {
   if (!res) return { columns: [], rows: [] };
   const columns = res.columns.map((c) => c.name);
@@ -194,463 +95,291 @@ function adaptSqlResult(res: SqlResult | undefined): { columns: string[]; rows: 
   return { columns, rows };
 }
 
+const DEFAULT_SETTINGS: PlutoSettings = {
+  backendUrl: "",
+  smtpHost: "",
+  smtpPort: 587,
+  smtpUser: "",
+  storageDriver: "local",
+  s3Bucket: "",
+  s3Region: "",
+  jwtRotatedAt: null,
+};
+
 // ---------- Public API ----------
 
 export const pluto = {
-  /** True when calls go to the real Fastify backend. */
+  /** Always true now — kept for backwards compatibility with existing callers. */
   isLive: () => isLive(),
 
   auth: {
     async signIn(email: string, password: string): Promise<PlutoSession> {
       if (!email || !password) throw new Error("Email এবং password দিন।");
-      if (isLive()) {
-        const r = await live.auth.signIn(email, password);
-        return {
-          access_token: r.session.access_token,
-          refresh_token: r.session.refresh_token,
-          expires_at: r.session.expires_at,
-          user: adaptAuthUser(r.user),
-        };
-      }
-      await wait();
-      const db = load();
-      let user = db.users.find((u) => u.email.toLowerCase() === email.toLowerCase());
-      if (!user) {
-        user = { id: `u_${rid()}`, email, role: "admin", email_verified: true, created_at: new Date().toISOString() };
-        db.users.unshift(user);
-      }
-      const session: PlutoSession = {
-        access_token: `mock.${rid()}.${rid()}`,
-        refresh_token: `mock.${rid()}`,
-        user,
-        expires_at: Date.now() + 15 * 60 * 1000,
+      ensureLive();
+      const r = await live.auth.signIn(email, password);
+      return {
+        access_token: r.session.access_token,
+        refresh_token: r.session.refresh_token,
+        expires_at: r.session.expires_at,
+        user: adaptAuthUser(r.user),
       };
-      db.session = session;
-      db.logs.unshift({ id: `l_${rid()}`, ts: new Date().toISOString(), level: "info", source: "auth", message: `sign-in ${email}` });
-      save(db);
-      return session;
     },
 
     async signUp(email: string, password: string): Promise<PlutoSession> {
-      if (isLive()) {
-        const r = await live.auth.signUp(email, password);
-        return {
-          access_token: r.session.access_token,
-          refresh_token: r.session.refresh_token,
-          expires_at: r.session.expires_at,
-          user: adaptAuthUser(r.user),
-        };
-      }
-      // Mock: signUp behaves like signIn for the demo dashboard.
-      return this.signIn(email, password);
+      ensureLive();
+      const r = await live.auth.signUp(email, password);
+      return {
+        access_token: r.session.access_token,
+        refresh_token: r.session.refresh_token,
+        expires_at: r.session.expires_at,
+        user: adaptAuthUser(r.user),
+      };
     },
 
     async signOut() {
-      if (isLive()) { await live.auth.signOut(); return; }
-      const db = load();
-      db.session = null;
-      save(db);
+      ensureLive();
+      await live.auth.signOut();
     },
 
     getSession(): PlutoSession | null {
-      if (isLive()) {
-        const s = live.auth.session();
-        if (!s || !s.user) return null;
-        return {
-          access_token: s.access_token,
-          refresh_token: s.refresh_token,
-          expires_at: s.expires_at,
-          user: adaptAuthUser(s.user),
-        };
-      }
-      return load().session;
+      if (!isLive()) return null;
+      const s = live.auth.session();
+      if (!s || !s.user) return null;
+      return {
+        access_token: s.access_token,
+        refresh_token: s.refresh_token,
+        expires_at: s.expires_at,
+        user: adaptAuthUser(s.user),
+      };
     },
   },
 
   db: {
     async listTables(): Promise<PlutoTable[]> {
-      if (isLive()) {
-        try {
-          const { tables } = await live.schema.introspect();
-          // Coerce live shape into the simpler mock shape.
-          return (tables ?? []).filter((t) => t.schema === "public").map((t) => ({
-            name: t.name,
-            schema: "public",
-            row_count: (t as unknown as { row_count?: number }).row_count ?? 0,
-            columns: ((t as unknown as { columns?: Array<{ name: string; data_type?: string; type?: string; is_nullable?: boolean; nullable?: boolean; is_pk?: boolean; pk?: boolean }> }).columns ?? []).map((c) => ({
-              name: c.name,
-              type: c.data_type ?? c.type ?? "text",
-              nullable: c.is_nullable ?? c.nullable ?? true,
-              pk: c.is_pk ?? c.pk ?? false,
-            })),
-          }));
-        } catch {
-          return [];
-        }
-      }
-      await wait();
-      return load().tables;
+      ensureLive();
+      const { tables } = await live.schema.introspect();
+      return (tables ?? []).filter((t) => t.schema === "public").map((t) => ({
+        name: t.name,
+        schema: "public",
+        row_count: (t as unknown as { row_count?: number }).row_count ?? 0,
+        columns: ((t as unknown as { columns?: Array<{ name: string; data_type?: string; type?: string; is_nullable?: boolean; nullable?: boolean; is_pk?: boolean; pk?: boolean }> }).columns ?? []).map((c) => ({
+          name: c.name,
+          type: c.data_type ?? c.type ?? "text",
+          nullable: c.is_nullable ?? c.nullable ?? true,
+          pk: c.is_pk ?? c.pk ?? false,
+        })),
+      }));
     },
 
     async listRows(table: string): Promise<Record<string, unknown>[]> {
-      if (isLive()) {
-        try {
-          const res = await live.sql.run(`select * from "${table}" limit 200`, { read_only: true });
-          const first = res.results?.[0];
-          if (!first) return [];
-          return (first.rows as Record<string, unknown>[]) ?? [];
-        } catch {
-          return [];
-        }
-      }
-      await wait();
-      return load().rows[table] ?? [];
+      ensureLive();
+      const res = await live.sql.run(`select * from "${table}" limit 200`, { read_only: true });
+      const first = res.results?.[0];
+      if (!first) return [];
+      return (first.rows as Record<string, unknown>[]) ?? [];
     },
 
     async insertRow(table: string, row: Record<string, unknown>) {
-      if (isLive()) {
-        const cols = Object.keys(row);
-        const placeholders = cols.map((_, i) => `$${i + 1}`).join(", ");
-        const colList = cols.map((c) => `"${c}"`).join(", ");
-        const sql = `insert into "${table}" (${colList}) values (${placeholders}) returning *`;
-        const res = await live.sql.run(sql, { params: cols.map((c) => row[c]) });
-        return (res.results?.[0]?.rows?.[0] as Record<string, unknown>) ?? { id: rid(), ...row };
-      }
-      const db = load();
-      const r = { id: rid(), ...row };
-      db.rows[table] = [r, ...(db.rows[table] ?? [])];
-      const t = db.tables.find((x) => x.name === table);
-      if (t) t.row_count = (db.rows[table] ?? []).length;
-      save(db);
-      return r;
+      ensureLive();
+      const cols = Object.keys(row);
+      const placeholders = cols.map((_, i) => `$${i + 1}`).join(", ");
+      const colList = cols.map((c) => `"${c}"`).join(", ");
+      const sql = `insert into "${table}" (${colList}) values (${placeholders}) returning *`;
+      const res = await live.sql.run(sql, { params: cols.map((c) => row[c]) });
+      return (res.results?.[0]?.rows?.[0] as Record<string, unknown>) ?? row;
     },
 
     async deleteRow(table: string, id: string) {
-      if (isLive()) {
-        await live.sql.run(`delete from "${table}" where id = $1`, { params: [id] });
-        return;
-      }
-      const db = load();
-      db.rows[table] = (db.rows[table] ?? []).filter((r) => (r.id as string) !== id);
-      const t = db.tables.find((x) => x.name === table);
-      if (t) t.row_count = (db.rows[table] ?? []).length;
-      save(db);
+      ensureLive();
+      await live.sql.run(`delete from "${table}" where id = $1`, { params: [id] });
     },
 
     async runSql(sql: string): Promise<{ columns: string[]; rows: unknown[][] }> {
-      if (isLive()) {
-        const res = await live.sql.run(sql);
-        return adaptSqlResult(res.results?.[0]);
-      }
-      await wait();
-      return {
-        columns: ["statement", "executed_at"],
-        rows: [[sql.trim().slice(0, 200), new Date().toISOString()]],
-      };
+      ensureLive();
+      const res = await live.sql.run(sql);
+      return adaptSqlResult(res.results?.[0]);
     },
 
     async updateRow(table: string, id: string, patch: Record<string, unknown>) {
+      ensureLive();
       const cols = Object.keys(patch);
-      if (isLive()) {
-        if (!cols.length) return;
-        const sets = cols.map((c, i) => `"${c}" = $${i + 1}`).join(", ");
-        const sql = `update "${table}" set ${sets} where id = $${cols.length + 1}`;
-        await live.sql.run(sql, { params: [...cols.map((c) => patch[c]), id] });
-        return;
-      }
-      const db = load();
-      db.rows[table] = (db.rows[table] ?? []).map((r) =>
-        (r.id as string) === id ? { ...r, ...patch } : r,
-      );
-      save(db);
+      if (!cols.length) return;
+      const sets = cols.map((c, i) => `"${c}" = $${i + 1}`).join(", ");
+      const sql = `update "${table}" set ${sets} where id = $${cols.length + 1}`;
+      await live.sql.run(sql, { params: [...cols.map((c) => patch[c]), id] });
     },
 
     async createTable(name: string, columns: Array<{ name: string; type: string; nullable?: boolean; pk?: boolean }>) {
+      ensureLive();
       const defs = columns.map((c) => {
         const parts = [`"${c.name}"`, c.type];
         if (c.pk) parts.push("primary key");
         if (!c.nullable && !c.pk) parts.push("not null");
         return parts.join(" ");
       }).join(", ");
-      const sql = `create table "${name}" (${defs})`;
-      if (isLive()) { await live.sql.run(sql); return; }
-      const db = load();
-      db.tables.push({ name, schema: "public", row_count: 0, columns: columns.map((c) => ({ ...c, nullable: c.nullable ?? true, pk: c.pk ?? false })) });
-      db.rows[name] = [];
-      save(db);
+      await live.sql.run(`create table "${name}" (${defs})`);
     },
 
     async dropTable(name: string) {
-      if (isLive()) { await live.sql.run(`drop table if exists "${name}" cascade`); return; }
-      const db = load();
-      db.tables = db.tables.filter((t) => t.name !== name);
-      delete db.rows[name];
-      save(db);
+      ensureLive();
+      await live.sql.run(`drop table if exists "${name}" cascade`);
     },
 
     async addColumn(table: string, col: { name: string; type: string; nullable?: boolean }) {
+      ensureLive();
       const sql = `alter table "${table}" add column "${col.name}" ${col.type}${col.nullable === false ? " not null" : ""}`;
-      if (isLive()) { await live.sql.run(sql); return; }
-      const db = load();
-      const t = db.tables.find((x) => x.name === table);
-      if (t) t.columns.push({ name: col.name, type: col.type, nullable: col.nullable ?? true, pk: false });
-      save(db);
+      await live.sql.run(sql);
     },
 
     async dropColumn(table: string, column: string) {
-      if (isLive()) { await live.sql.run(`alter table "${table}" drop column "${column}"`); return; }
-      const db = load();
-      const t = db.tables.find((x) => x.name === table);
-      if (t) t.columns = t.columns.filter((c) => c.name !== column);
-      db.rows[table] = (db.rows[table] ?? []).map((r) => {
-        const { [column]: _, ...rest } = r; return rest;
-      });
-      save(db);
+      ensureLive();
+      await live.sql.run(`alter table "${table}" drop column "${column}"`);
     },
 
     async importRows(table: string, rows: Record<string, unknown>[]) {
       if (!rows.length) return { inserted: 0 };
-      if (isLive()) {
-        // Batch in chunks of 100 to keep SQL small.
-        let inserted = 0;
-        for (let i = 0; i < rows.length; i += 100) {
-          const chunk = rows.slice(i, i + 100);
-          const cols = Object.keys(chunk[0]);
-          const colList = cols.map((c) => `"${c}"`).join(", ");
-          const params: unknown[] = [];
-          const valuesSql = chunk.map((row) => {
-            const placeholders = cols.map((c) => { params.push(row[c]); return `$${params.length}`; }).join(", ");
-            return `(${placeholders})`;
-          }).join(", ");
-          await live.sql.run(`insert into "${table}" (${colList}) values ${valuesSql}`, { params });
-          inserted += chunk.length;
-        }
-        return { inserted };
+      ensureLive();
+      let inserted = 0;
+      for (let i = 0; i < rows.length; i += 100) {
+        const chunk = rows.slice(i, i + 100);
+        const cols = Object.keys(chunk[0]);
+        const colList = cols.map((c) => `"${c}"`).join(", ");
+        const params: unknown[] = [];
+        const valuesSql = chunk.map((row) => {
+          const placeholders = cols.map((c) => { params.push(row[c]); return `$${params.length}`; }).join(", ");
+          return `(${placeholders})`;
+        }).join(", ");
+        await live.sql.run(`insert into "${table}" (${colList}) values ${valuesSql}`, { params });
+        inserted += chunk.length;
       }
-      const db = load();
-      const withIds = rows.map((r) => ({ id: (r.id as string) ?? rid(), ...r }));
-      db.rows[table] = [...withIds, ...(db.rows[table] ?? [])];
-      const t = db.tables.find((x) => x.name === table);
-      if (t) t.row_count = (db.rows[table] ?? []).length;
-      save(db);
-      return { inserted: rows.length };
+      return { inserted };
     },
   },
 
-
   users: {
     async list(): Promise<PlutoUser[]> {
-      if (isLive()) {
-        try {
-          const items = await live.admin.users.list();
-          return items.map(adaptAdminUser);
-        } catch {
-          return [];
-        }
-      }
-      await wait();
-      return load().users;
+      ensureLive();
+      const items = await live.admin.users.list();
+      return items.map(adaptAdminUser);
     },
 
     async setRole(id: string, role: "admin" | "user") {
-      if (isLive()) { await live.admin.users.update(id, { role }); return; }
-      const db = load();
-      const u = db.users.find((x) => x.id === id);
-      if (u) u.role = role;
-      save(db);
+      ensureLive();
+      await live.admin.users.update(id, { role });
     },
 
     async remove(id: string) {
-      if (isLive()) { await live.admin.users.remove(id); return; }
-      const db = load();
-      db.users = db.users.filter((u) => u.id !== id);
-      save(db);
+      ensureLive();
+      await live.admin.users.remove(id);
     },
   },
 
   storage: {
-    // Note: live storage bucket/object endpoints (/storage/v1/buckets, /objects)
-    // are proxied through the same `api()` helper; if the surface ever moves
-    // into `live.storage.*`, swap the fetch bodies below for those calls.
     async listBuckets(): Promise<PlutoBucket[]> {
-      if (isLive()) {
-        try {
-          const { api } = await import("./live");
-          const rows = await api<Array<{ name: string; public?: boolean; file_count?: number; size_bytes?: number }>>(
-            "/storage/v1/buckets",
-            { service: true },
-          );
-          return rows.map((b) => ({
-            name: b.name,
-            public: !!b.public,
-            file_count: b.file_count ?? 0,
-            size_bytes: b.size_bytes ?? 0,
-          }));
-        } catch {
-          return [];
-        }
-      }
-      await wait();
-      return load().buckets;
+      ensureLive();
+      const { api } = await import("./live");
+      const rows = await api<Array<{ name: string; public?: boolean; file_count?: number; size_bytes?: number }>>(
+        "/storage/v1/buckets",
+        { service: true },
+      );
+      return rows.map((b) => ({
+        name: b.name,
+        public: !!b.public,
+        file_count: b.file_count ?? 0,
+        size_bytes: b.size_bytes ?? 0,
+      }));
     },
 
     async createBucket(name: string, isPublic: boolean) {
-      if (isLive()) {
-        const { api } = await import("./live");
-        await api("/storage/v1/buckets", {
-          method: "POST", service: true,
-          body: JSON.stringify({ name, public: isPublic }),
-        });
-        return;
-      }
-      const db = load();
-      if (db.buckets.some((b) => b.name === name)) throw new Error("এই নামে bucket আছে।");
-      db.buckets.push({ name, public: isPublic, file_count: 0, size_bytes: 0 });
-      db.files[name] = [];
-      save(db);
+      ensureLive();
+      const { api } = await import("./live");
+      await api("/storage/v1/buckets", {
+        method: "POST", service: true,
+        body: JSON.stringify({ name, public: isPublic }),
+      });
     },
 
     async deleteBucket(name: string) {
-      if (isLive()) {
-        const { api } = await import("./live");
-        await api(`/storage/v1/buckets/${encodeURIComponent(name)}`, { method: "DELETE", service: true });
-        return;
-      }
-      const db = load();
-      db.buckets = db.buckets.filter((b) => b.name !== name);
-      delete db.files[name];
-      save(db);
+      ensureLive();
+      const { api } = await import("./live");
+      await api(`/storage/v1/buckets/${encodeURIComponent(name)}`, { method: "DELETE", service: true });
     },
 
     async listFiles(bucket: string): Promise<PlutoFile[]> {
-      if (isLive()) {
-        try {
-          const { api } = await import("./live");
-          const rows = await api<Array<{ key: string; size: number; content_type?: string; updated_at?: string }>>(
-            `/storage/v1/list/${encodeURIComponent(bucket)}`,
-            { service: true },
-          );
-          return rows.map((f) => ({
-            key: f.key,
-            size: f.size,
-            content_type: f.content_type ?? "application/octet-stream",
-            updated_at: f.updated_at ?? new Date().toISOString(),
-          }));
-        } catch {
-          return [];
-        }
-      }
-      await wait();
-      return load().files[bucket] ?? [];
+      ensureLive();
+      const { api } = await import("./live");
+      const rows = await api<Array<{ key: string; size: number; content_type?: string; updated_at?: string }>>(
+        `/storage/v1/list/${encodeURIComponent(bucket)}`,
+        { service: true },
+      );
+      return rows.map((f) => ({
+        key: f.key,
+        size: f.size,
+        content_type: f.content_type ?? "application/octet-stream",
+        updated_at: f.updated_at ?? new Date().toISOString(),
+      }));
     },
 
-    async upload(bucket: string, file: { name: string; size: number; type: string }) {
-      if (isLive()) {
-        // Live upload requires the actual Blob/File — this metadata-only
-        // signature is a mock legacy. Dashboard upload UI should call
-        // live.storage.upload directly with the File.
-        return;
-      }
-      const db = load();
-      const f: PlutoFile = { key: file.name, size: file.size, content_type: file.type || "application/octet-stream", updated_at: new Date().toISOString() };
-      db.files[bucket] = [f, ...(db.files[bucket] ?? []).filter((x) => x.key !== f.key)];
-      const b = db.buckets.find((x) => x.name === bucket);
-      if (b) {
-        b.file_count = db.files[bucket].length;
-        b.size_bytes = db.files[bucket].reduce((s, x) => s + x.size, 0);
-      }
-      save(db);
+    async upload(_bucket: string, _file: { name: string; size: number; type: string }) {
+      // Metadata-only signature is deprecated. UI must call live.storage.upload
+      // directly with the real File/Blob object.
+      throw new Error("pluto.storage.upload requires a File/Blob — use live.storage.upload directly.");
     },
 
     async remove(bucket: string, key: string) {
-      if (isLive()) {
-        const { api } = await import("./live");
-        await api(`/storage/v1/object/${encodeURIComponent(bucket)}/${key.split("/").map(encodeURIComponent).join("/")}`,
-          { method: "DELETE", service: true });
-        return;
-      }
-      const db = load();
-      db.files[bucket] = (db.files[bucket] ?? []).filter((f) => f.key !== key);
-      const b = db.buckets.find((x) => x.name === bucket);
-      if (b) {
-        b.file_count = db.files[bucket].length;
-        b.size_bytes = db.files[bucket].reduce((s, x) => s + x.size, 0);
-      }
-      save(db);
+      ensureLive();
+      const { api } = await import("./live");
+      await api(`/storage/v1/object/${encodeURIComponent(bucket)}/${key.split("/").map(encodeURIComponent).join("/")}`,
+        { method: "DELETE", service: true });
     },
   },
 
   logs: {
     async list(): Promise<PlutoLog[]> {
-      if (isLive()) {
-        try {
-          const items = await live.admin.logs({ limit: 100 });
-          return items.map(adaptLog);
-        } catch {
-          return [];
-        }
-      }
-      await wait();
-      return load().logs;
+      ensureLive();
+      const items = await live.admin.logs({ limit: 100 });
+      return items.map(adaptLog);
     },
   },
 
   settings: {
     async get(): Promise<PlutoSettings> {
-      if (isLive()) {
-        try {
-          const { items } = await live.admin.settings.list();
-          const map = new Map(items.map((r) => [r.key, r.value]));
-          const s = load().settings;
-          return {
-            backendUrl: (map.get("backend_url") as string) ?? s.backendUrl,
-            smtpHost:   (map.get("smtp_host")   as string) ?? s.smtpHost,
-            smtpPort:   (map.get("smtp_port")   as number) ?? s.smtpPort,
-            smtpUser:   (map.get("smtp_user")   as string) ?? s.smtpUser,
-            storageDriver: ((map.get("storage_driver") as "local" | "s3") ?? s.storageDriver),
-            s3Bucket:   (map.get("s3_bucket")   as string) ?? s.s3Bucket,
-            s3Region:   (map.get("s3_region")   as string) ?? s.s3Region,
-            jwtRotatedAt: (map.get("jwt_rotated_at") as string | null) ?? s.jwtRotatedAt,
-          };
-        } catch {
-          return load().settings;
-        }
-      }
-      await wait();
-      return load().settings;
+      ensureLive();
+      const { items } = await live.admin.settings.list();
+      const map = new Map(items.map((r) => [r.key, r.value]));
+      return {
+        backendUrl: (map.get("backend_url") as string) ?? DEFAULT_SETTINGS.backendUrl,
+        smtpHost:   (map.get("smtp_host")   as string) ?? DEFAULT_SETTINGS.smtpHost,
+        smtpPort:   (map.get("smtp_port")   as number) ?? DEFAULT_SETTINGS.smtpPort,
+        smtpUser:   (map.get("smtp_user")   as string) ?? DEFAULT_SETTINGS.smtpUser,
+        storageDriver: ((map.get("storage_driver") as "local" | "s3") ?? DEFAULT_SETTINGS.storageDriver),
+        s3Bucket:   (map.get("s3_bucket")   as string) ?? DEFAULT_SETTINGS.s3Bucket,
+        s3Region:   (map.get("s3_region")   as string) ?? DEFAULT_SETTINGS.s3Region,
+        jwtRotatedAt: (map.get("jwt_rotated_at") as string | null) ?? DEFAULT_SETTINGS.jwtRotatedAt,
+      };
     },
 
     async update(patch: Partial<PlutoSettings>) {
-      if (isLive()) {
-        const keyMap: Record<keyof PlutoSettings, string> = {
-          backendUrl: "backend_url",
-          smtpHost: "smtp_host",
-          smtpPort: "smtp_port",
-          smtpUser: "smtp_user",
-          storageDriver: "storage_driver",
-          s3Bucket: "s3_bucket",
-          s3Region: "s3_region",
-          jwtRotatedAt: "jwt_rotated_at",
-        };
-        for (const [k, v] of Object.entries(patch)) {
-          const key = keyMap[k as keyof PlutoSettings];
-          if (key) await live.admin.settings.upsert({ key, value: v });
-        }
-        return;
+      ensureLive();
+      const keyMap: Record<keyof PlutoSettings, string> = {
+        backendUrl: "backend_url",
+        smtpHost: "smtp_host",
+        smtpPort: "smtp_port",
+        smtpUser: "smtp_user",
+        storageDriver: "storage_driver",
+        s3Bucket: "s3_bucket",
+        s3Region: "s3_region",
+        jwtRotatedAt: "jwt_rotated_at",
+      };
+      for (const [k, v] of Object.entries(patch)) {
+        const key = keyMap[k as keyof PlutoSettings];
+        if (key) await live.admin.settings.upsert({ key, value: v });
       }
-      const db = load();
-      db.settings = { ...db.settings, ...patch };
-      save(db);
     },
 
     async rotateJwt() {
-      if (isLive()) {
-        await live.admin.settings.upsert({ key: "jwt_rotated_at", value: new Date().toISOString() });
-        return;
-      }
-      const db = load();
-      db.settings.jwtRotatedAt = new Date().toISOString();
-      save(db);
+      ensureLive();
+      await live.admin.settings.upsert({ key: "jwt_rotated_at", value: new Date().toISOString() });
     },
   },
 };
