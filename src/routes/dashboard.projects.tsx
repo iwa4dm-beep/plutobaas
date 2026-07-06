@@ -16,34 +16,36 @@ function ProjectsPage() {
   const [projects, setProjects] = useState<Array<{ id: string; name: string; slug: string; workspace_id?: string | null }>>([]);
   const [wsId, setWsId] = useState<string | null>(null);
   const [keys, setKeys] = useState<WorkspaceKey[]>([]);
-  const [err, setErr] = useState<string | null>(null);
+  const [err, setErr] = useState<unknown>(null);
   const [minted, setMinted] = useState<{ name: string; plaintext: string } | null>(null);
   const [newName, setNewName] = useState("");
   const [newKind, setNewKind] = useState<"anon" | "service_role">("anon");
   const [projectName, setProjectName] = useState("");
   const [projectSlug, setProjectSlug] = useState("");
 
-  useEffect(() => {
+  const loadTop = useCallback(async () => {
     if (!isLive()) return;
-    (async () => {
-      try {
-        const { workspaces: ws } = await live.workspaces.list();
-        setWorkspaces(ws);
-        if (ws.length && !wsId) setWsId(ws[0].id);
-        setProjects(await live.admin.projects.list());
-      } catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
-    })();
-  }, []);
-
-  useEffect(() => {
-    if (!isLive() || !wsId) return;
-    (async () => {
-      try {
-        const { items } = await live.admin.apiKeys.list(wsId);
-        setKeys(items);
-      } catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
-    })();
+    setErr(null);
+    try {
+      const { workspaces: ws } = await live.workspaces.list();
+      setWorkspaces(ws);
+      if (ws.length && !wsId) setWsId(ws[0].id);
+      setProjects(await live.admin.projects.list());
+    } catch (e) { setErr(e); }
   }, [wsId]);
+
+  const loadKeys = useCallback(async () => {
+    if (!isLive() || !wsId) return;
+    setErr(null);
+    try {
+      const { items } = await live.admin.apiKeys.list(wsId);
+      setKeys(items);
+    } catch (e) { setErr(e); }
+  }, [wsId]);
+
+  useEffect(() => { void loadTop(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { void loadKeys(); }, [loadKeys]);
+
 
   function copy(v: string) {
     navigator.clipboard.writeText(v);
