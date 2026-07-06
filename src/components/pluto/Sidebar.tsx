@@ -1,11 +1,11 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useRouterState } from "@tanstack/react-router";
 import {
   Activity, Archive, Boxes, Building2, ChevronDown, Cloud, Database, Files,
   Gauge, GitBranch, Globe, HeartPulse, History, KeyRound, LineChart,
   LockKeyhole, LogOut, Package, Radio, Rocket, ScrollText, Search, Server,
   Settings, Shield, ShieldAlert, ShieldCheck, ShoppingBag, Sparkles, Table2,
-  Terminal, Users, Waves, Zap,
+  Terminal, Users, Waves, X, Zap,
 } from "lucide-react";
 import { useAuth } from "@/lib/pluto/auth-context";
 import { WorkspaceSwitcher } from "@/components/pluto/WorkspaceSwitcher";
@@ -13,8 +13,6 @@ import { WorkspaceSwitcher } from "@/components/pluto/WorkspaceSwitcher";
 type Item = { to: string; label: string; icon: typeof Gauge };
 type Group = { label: string; items: Item[] };
 
-// Grouped nav — duplicate/legacy routes hidden. Every distinct page still
-// reachable via CommandPalette (⌘K).
 const groups: Group[] = [
   {
     label: "Overview",
@@ -119,12 +117,18 @@ const groups: Group[] = [
   },
 ];
 
-export function Sidebar() {
+/** Sidebar renders as a fixed left rail on desktop, a slide-in drawer on mobile.
+ *  `mobileOpen` / `onCloseMobile` are supplied by the dashboard layout header. */
+export function Sidebar({
+  mobileOpen = false,
+  onCloseMobile,
+}: {
+  mobileOpen?: boolean;
+  onCloseMobile?: () => void;
+}) {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const { session, signOut } = useAuth();
 
-  // Auto-expand the group that contains the active route so users land on
-  // context after a page load.
   const initialOpen = new Set<string>();
   for (const g of groups) {
     if (g.items.some((i) => pathname === i.to || (i.to !== "/dashboard" && pathname.startsWith(i.to)))) {
@@ -133,6 +137,9 @@ export function Sidebar() {
   }
   if (initialOpen.size === 0) initialOpen.add("Overview");
   const [open, setOpen] = useState<Set<string>>(initialOpen);
+
+  // Close mobile drawer on route change.
+  useEffect(() => { onCloseMobile?.(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [pathname]);
 
   const toggle = (label: string) => {
     setOpen((prev) => {
@@ -143,16 +150,25 @@ export function Sidebar() {
     });
   };
 
-  return (
-    <aside className="hidden md:flex w-64 shrink-0 flex-col border-r border-border bg-card">
-      <div className="flex items-center gap-2 px-5 py-5 border-b border-border">
-        <div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary text-primary-foreground">
-          <Zap className="h-4 w-4" />
+  const body = (
+    <>
+      <div className="flex items-center gap-2.5 px-5 py-5 border-b border-sidebar-border">
+        <div className="relative flex h-9 w-9 items-center justify-center rounded-xl gradient-primary text-primary-foreground shadow-elegant animate-glow-pulse">
+          <Zap className="h-4 w-4" strokeWidth={2.5} />
         </div>
-        <div>
-          <div className="text-sm font-semibold tracking-tight">Pluto BaaS</div>
-          <div className="text-[11px] text-muted-foreground">Admin Console</div>
+        <div className="min-w-0">
+          <div className="text-sm font-semibold tracking-tight font-display truncate">Pluto BaaS</div>
+          <div className="text-[11px] text-muted-foreground truncate">Admin Console</div>
         </div>
+        {onCloseMobile && (
+          <button
+            onClick={onCloseMobile}
+            className="md:hidden ml-auto rounded-md p-1.5 text-muted-foreground hover:bg-sidebar-accent hover:text-foreground transition-colors"
+            aria-label="Close menu"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        )}
       </div>
 
       <WorkspaceSwitcher />
@@ -165,13 +181,13 @@ export function Sidebar() {
               <button
                 type="button"
                 onClick={() => toggle(g.label)}
-                className="flex w-full items-center justify-between rounded-md px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground hover:text-foreground"
+                className="flex w-full items-center justify-between rounded-md px-3 py-1.5 text-[10.5px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/80 hover:text-foreground transition-colors"
               >
                 <span>{g.label}</span>
-                <ChevronDown className={`h-3 w-3 transition-transform ${isOpen ? "" : "-rotate-90"}`} />
+                <ChevronDown className={`h-3 w-3 transition-transform duration-300 ${isOpen ? "" : "-rotate-90"}`} />
               </button>
               {isOpen && (
-                <div className="mt-0.5 space-y-0.5">
+                <div className="mt-1 space-y-0.5 animate-fade-in-up">
                   {g.items.map(({ to, label, icon: Icon }) => {
                     const active =
                       pathname === to || (to !== "/dashboard" && pathname.startsWith(to));
@@ -180,14 +196,17 @@ export function Sidebar() {
                         key={to}
                         to={to}
                         className={
-                          "flex items-center gap-2.5 rounded-md px-3 py-1.5 text-sm transition-colors " +
+                          "group relative flex items-center gap-2.5 rounded-lg px-3 py-1.5 text-[13px] transition-all duration-200 " +
                           (active
-                            ? "bg-accent text-accent-foreground font-medium"
-                            : "text-muted-foreground hover:bg-accent/60 hover:text-foreground")
+                            ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
+                            : "text-muted-foreground hover:bg-sidebar-accent/50 hover:text-foreground hover:translate-x-0.5")
                         }
                       >
-                        <Icon className="h-4 w-4" />
-                        {label}
+                        {active && (
+                          <span className="absolute left-0 top-1/2 -translate-y-1/2 h-5 w-0.5 rounded-r gradient-primary" />
+                        )}
+                        <Icon className={`h-4 w-4 shrink-0 transition-colors ${active ? "text-primary" : "text-muted-foreground group-hover:text-primary/80"}`} />
+                        <span className="truncate">{label}</span>
                       </Link>
                     );
                   })}
@@ -198,18 +217,47 @@ export function Sidebar() {
         })}
       </nav>
 
-      <div className="border-t border-border p-3">
-        <div className="px-2 pb-2 text-xs text-muted-foreground truncate">
-          {session?.user?.email ?? "—"}
+      <div className="border-t border-sidebar-border p-3">
+        <div className="flex items-center gap-2 px-2 pb-2">
+          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-accent text-[11px] font-semibold text-accent-foreground uppercase">
+            {(session?.user?.email ?? "?").slice(0, 1)}
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="text-xs text-foreground truncate">{session?.user?.email ?? "—"}</div>
+            <div className="text-[10px] text-muted-foreground truncate">Signed in</div>
+          </div>
         </div>
         <button
           onClick={() => signOut()}
-          className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+          className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors"
         >
           <LogOut className="h-4 w-4" />
           Sign out
         </button>
       </div>
-    </aside>
+    </>
+  );
+
+  return (
+    <>
+      {/* Desktop rail */}
+      <aside className="hidden md:flex w-64 shrink-0 flex-col border-r border-sidebar-border bg-sidebar/95 backdrop-blur-xl">
+        {body}
+      </aside>
+
+      {/* Mobile drawer */}
+      <div
+        className={`fixed inset-0 z-40 md:hidden transition-opacity duration-300 ${mobileOpen ? "opacity-100" : "pointer-events-none opacity-0"}`}
+        onClick={onCloseMobile}
+      >
+        <div className="absolute inset-0 bg-background/70 backdrop-blur-sm" />
+        <aside
+          onClick={(e) => e.stopPropagation()}
+          className={`absolute left-0 top-0 h-full w-72 flex flex-col bg-sidebar border-r border-sidebar-border shadow-elegant transition-transform duration-300 ${mobileOpen ? "translate-x-0" : "-translate-x-full"}`}
+        >
+          {body}
+        </aside>
+      </div>
+    </>
   );
 }
