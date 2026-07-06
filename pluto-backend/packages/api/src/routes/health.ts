@@ -239,6 +239,7 @@ export async function healthRoutes(app: FastifyInstance, cfg: Config) {
     ['/functions/v1/health', 'pluto-functions'],
     ['/jobs/v1/health',      'pluto-jobs'],
     ['/admin/v1/health',     'pluto-admin'],
+    ['/tokens/v1/health',    'pluto-tokens'],
   ];
   for (const [path, service] of modules) {
     app.get(path, async () => ({ status: 'ok', service, ts: new Date().toISOString() }));

@@ -1,8 +1,9 @@
-import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { randomBytes, createHash } from 'node:crypto';
 import { getSql } from '../db/pool.js';
 import type { Config } from '../config.js';
+import { logAudit } from '../audit/logger.js';
 
 // ---------- helpers ----------
 
@@ -45,6 +46,42 @@ async function requireProjectRole(
   }
 }
 
+async function requireWorkspaceRole(
+  cfg: Config, workspaceId: string, actor: Actor, roles: string[],
+): Promise<void> {
+  if (actor.isSuperadmin || actor.role === 'service_role') return;
+  const sql = getSql(cfg);
+  const [row] = await sql<any[]>`
+    select role from admin.workspace_members
+    where workspace_id = ${workspaceId} and user_id = ${actor.userId}`;
+  if (!row || !roles.includes(row.role)) {
+    const e: any = new Error('Forbidden'); e.statusCode = 403; throw e;
+  }
+}
+
+async function defaultWorkspaceForActor(cfg: Config, actor: Actor): Promise<string> {
+  const sql = getSql(cfg);
+  const rows = actor.isSuperadmin || actor.role === 'service_role'
+    ? await sql<any[]>`select id from admin.workspaces where archived_at is null order by created_at asc limit 1`
+    : await sql<any[]>`
+        select w.id from admin.workspaces w
+        join admin.workspace_members m on m.workspace_id = w.id
+        where m.user_id = ${actor.userId} and w.archived_at is null
+        order by w.created_at asc limit 1`;
+  if (rows[0]?.id) return rows[0].id;
+
+  const slug = 'workspace-' + randomBytes(4).toString('hex');
+  const [ws] = await sql<any[]>`
+    insert into admin.workspaces (slug, name, owner_id)
+    values (${slug}, 'Root workspace', ${actor.userId})
+    returning id`;
+  await sql`
+    insert into admin.workspace_members (workspace_id, user_id, role)
+    values (${ws.id}, ${actor.userId}, 'owner')
+    on conflict do nothing`;
+  return ws.id;
+}
+
 function mintApiKey(role: 'anon' | 'authenticated' | 'service_role'): {
   key: string; prefix: string; hash: string;
 } {
@@ -59,6 +96,7 @@ function mintApiKey(role: 'anon' | 'authenticated' | 'service_role'): {
 const createProjectBody = z.object({
   name: z.string().min(1).max(120),
   slug: slugSchema,
+  workspace_id: uuidSchema.optional(),
 });
 
 const addMemberBody = z.object({
@@ -68,7 +106,23 @@ const addMemberBody = z.object({
 
 const createKeyBody = z.object({
   name: z.string().min(1).max(80),
-  role: z.enum(['anon', 'authenticated', 'service_role']),
+  role: z.enum(['anon', 'authenticated', 'service_role']).optional(),
+  kind: z.enum(['anon', 'authenticated', 'service_role']).optional(),
+});
+
+const createWorkspaceBody = z.object({
+  slug: slugSchema,
+  name: z.string().min(1).max(120),
+});
+
+const addWorkspaceMemberBody = z.object({
+  email: z.string().trim().toLowerCase().email().optional(),
+  user_id: uuidSchema.optional(),
+  role: z.enum(['owner', 'admin', 'developer', 'viewer']),
+}).refine((v) => !!v.email || !!v.user_id, { message: 'email or user_id is required' });
+
+const patchWorkspaceMemberBody = z.object({
+  role: z.enum(['owner', 'admin', 'developer', 'viewer']),
 });
 
 // ---------- routes ----------
@@ -97,6 +151,169 @@ export async function adminRoutes(app: FastifyInstance, cfg: Config) {
     return reply.send(actor);
   });
 
+  // --- Workspaces ---
+  app.get('/admin/v1/workspaces', async (req, reply) => {
+    const actor = await requireAuth(req, cfg);
+    const sql = getSql(cfg);
+    const rows = actor.isSuperadmin || actor.role === 'service_role'
+      ? await sql`
+          select w.*,
+                 (select count(*)::int from admin.workspace_members m where m.workspace_id = w.id) as member_count,
+                 (select count(*)::int from admin.api_keys k join admin.projects p on p.id = k.project_id where p.workspace_id = w.id and k.revoked_at is null) as active_keys
+          from admin.workspaces w
+          order by w.created_at desc`
+      : await sql`
+          select w.*,
+                 (select count(*)::int from admin.workspace_members m2 where m2.workspace_id = w.id) as member_count,
+                 (select count(*)::int from admin.api_keys k join admin.projects p on p.id = k.project_id where p.workspace_id = w.id and k.revoked_at is null) as active_keys
+          from admin.workspaces w
+          join admin.workspace_members m on m.workspace_id = w.id
+          where m.user_id = ${actor.userId}
+          order by w.created_at desc`;
+    return reply.send({ workspaces: rows });
+  });
+
+  app.post('/admin/v1/workspaces', async (req, reply) => {
+    const actor = await requireAuth(req, cfg);
+    const body = createWorkspaceBody.parse(req.body);
+    const anon = mintApiKey('anon');
+    const svc = mintApiKey('service_role');
+    const sql = getSql(cfg);
+    const result = await sql.begin(async (tx) => {
+      const [workspace] = await tx<any[]>`
+        insert into admin.workspaces (slug, name, owner_id)
+        values (${body.slug}, ${body.name}, ${actor.userId})
+        returning id, slug, name, created_at, archived_at`;
+      await tx`
+        insert into admin.workspace_members (workspace_id, user_id, role)
+        values (${workspace.id}, ${actor.userId}, 'owner')
+        on conflict do nothing`;
+      const [project] = await tx<any[]>`
+        insert into admin.projects (name, slug, owner_id, workspace_id)
+        values (${body.name}, ${body.slug}, ${actor.userId}, ${workspace.id})
+        returning id, slug, name`;
+      await tx`
+        insert into admin.project_members (project_id, user_id, role)
+        values (${project.id}, ${actor.userId}, 'owner')
+        on conflict do nothing`;
+      await tx`
+        insert into admin.api_keys (project_id, name, key_hash, key_prefix, role)
+        values (${project.id}, 'default-anon', ${anon.hash}, ${anon.prefix}, 'anon')`;
+      await tx`
+        insert into admin.api_keys (project_id, name, key_hash, key_prefix, role)
+        values (${project.id}, 'default-service-role', ${svc.hash}, ${svc.prefix}, 'service_role')`;
+      return { ...workspace, project };
+    });
+    await logAudit(cfg, { actor_id: actor.userId, project_id: result.project.id, action: 'workspace.create', resource_type: 'workspace', resource_id: result.id, params: { slug: body.slug } });
+    return reply.code(201).send({ ...result, keys: { anon: anon.key, service_role: svc.key } });
+  });
+
+  app.get<{ Params: { id: string } }>('/admin/v1/workspaces/:id/members', async (req, reply) => {
+    uuidSchema.parse(req.params.id);
+    const actor = await requireAuth(req, cfg);
+    await requireWorkspaceRole(cfg, req.params.id, actor, ['owner', 'admin', 'developer', 'viewer']);
+    const rows = await getSql(cfg)`
+      select m.user_id, m.role, m.created_at, u.email
+      from admin.workspace_members m
+      join auth.users u on u.id = m.user_id
+      where m.workspace_id = ${req.params.id}
+      order by m.created_at asc`;
+    return reply.send({ members: rows });
+  });
+
+  app.post<{ Params: { id: string } }>('/admin/v1/workspaces/:id/members', async (req, reply) => {
+    uuidSchema.parse(req.params.id);
+    const actor = await requireAuth(req, cfg);
+    await requireWorkspaceRole(cfg, req.params.id, actor, ['owner', 'admin']);
+    const body = addWorkspaceMemberBody.parse(req.body);
+    const sql = getSql(cfg);
+    let userId = body.user_id;
+    if (!userId && body.email) {
+      const [u] = await sql<any[]>`
+        insert into auth.users (email, email_confirmed_at)
+        values (${body.email}, now())
+        on conflict (email) do update set updated_at = now()
+        returning id`;
+      userId = u.id;
+    }
+    const [row] = await sql<any[]>`
+      insert into admin.workspace_members (workspace_id, user_id, role)
+      values (${req.params.id}, ${userId}, ${body.role})
+      on conflict (workspace_id, user_id) do update set role = excluded.role
+      returning *`;
+    await logAudit(cfg, { actor_id: actor.userId, action: 'workspace.member.upsert', resource_type: 'workspace', resource_id: req.params.id, params: { user_id: userId, role: body.role } });
+    return reply.code(201).send(row);
+  });
+
+  app.patch<{ Params: { id: string; userId: string } }>('/admin/v1/workspaces/:id/members/:userId', async (req, reply) => {
+    uuidSchema.parse(req.params.id); uuidSchema.parse(req.params.userId);
+    const actor = await requireAuth(req, cfg);
+    await requireWorkspaceRole(cfg, req.params.id, actor, ['owner', 'admin']);
+    const body = patchWorkspaceMemberBody.parse(req.body);
+    const [row] = await getSql(cfg)<any[]>`
+      update admin.workspace_members set role = ${body.role}
+      where workspace_id = ${req.params.id} and user_id = ${req.params.userId}
+      returning *`;
+    if (!row) return reply.code(404).send({ error: 'not_found' });
+    return reply.send(row);
+  });
+
+  app.delete<{ Params: { id: string; userId: string } }>('/admin/v1/workspaces/:id/members/:userId', async (req, reply) => {
+    uuidSchema.parse(req.params.id); uuidSchema.parse(req.params.userId);
+    const actor = await requireAuth(req, cfg);
+    await requireWorkspaceRole(cfg, req.params.id, actor, ['owner', 'admin']);
+    await getSql(cfg)`delete from admin.workspace_members where workspace_id = ${req.params.id} and user_id = ${req.params.userId}`;
+    return reply.code(204).send();
+  });
+
+  app.get<{ Params: { id: string } }>('/admin/v1/workspaces/:id/keys', async (req, reply) => {
+    uuidSchema.parse(req.params.id);
+    const actor = await requireAuth(req, cfg);
+    await requireWorkspaceRole(cfg, req.params.id, actor, ['owner', 'admin', 'developer', 'viewer']);
+    const rows = await getSql(cfg)<any[]>`
+      select k.id, k.name, k.key_prefix, k.role as kind, k.created_at, k.revoked_at,
+             null::timestamptz as last_used_at, 0::bigint as use_count
+      from admin.api_keys k
+      join admin.projects p on p.id = k.project_id
+      where p.workspace_id = ${req.params.id}
+      order by k.created_at desc`;
+    return reply.send({ keys: rows, items: rows });
+  });
+
+  app.post<{ Params: { id: string } }>('/admin/v1/workspaces/:id/keys', async (req, reply) => {
+    uuidSchema.parse(req.params.id);
+    const actor = await requireAuth(req, cfg);
+    await requireWorkspaceRole(cfg, req.params.id, actor, ['owner', 'admin']);
+    const parsed = createKeyBody.parse(req.body);
+    const role = parsed.role ?? parsed.kind ?? 'anon';
+    const sql = getSql(cfg);
+    const [project] = await sql<any[]>`
+      select id from admin.projects where workspace_id = ${req.params.id} order by created_at asc limit 1`;
+    if (!project) return reply.code(404).send({ error: 'workspace_has_no_project' });
+    const minted = mintApiKey(role);
+    const [row] = await sql<any[]>`
+      insert into admin.api_keys (project_id, name, key_hash, key_prefix, role)
+      values (${project.id}, ${parsed.name}, ${minted.hash}, ${minted.prefix}, ${role})
+      returning id, name, key_prefix, role as kind, created_at, revoked_at`;
+    await logAudit(cfg, { actor_id: actor.userId, project_id: project.id, action: 'workspace_key.create', resource_type: 'api_key', resource_id: row.id, params: { workspace_id: req.params.id, role } });
+    return reply.code(201).send({ ...row, plaintext: minted.key, api_key: minted.key, last_used_at: null, use_count: 0 });
+  });
+
+  async function revokeWorkspaceKey(req: FastifyRequest, reply: any) {
+    const params = req.params as { id: string; keyId: string };
+    uuidSchema.parse(params.id); uuidSchema.parse(params.keyId);
+    const actor = await requireAuth(req, cfg);
+    await requireWorkspaceRole(cfg, params.id, actor, ['owner', 'admin']);
+    await getSql(cfg)`
+      update admin.api_keys k set revoked_at = now()
+      from admin.projects p
+      where k.id = ${params.keyId} and p.id = k.project_id and p.workspace_id = ${params.id}`;
+    return reply.send({ ok: true });
+  }
+
+  app.post('/admin/v1/workspaces/:id/keys/:keyId/revoke', revokeWorkspaceKey);
+  app.delete('/admin/v1/workspaces/:id/keys/:keyId', revokeWorkspaceKey);
+
   // --- Projects ---
   app.get('/admin/v1/projects', async (req, reply) => {
     const actor = await requireAuth(req, cfg);
@@ -115,16 +332,23 @@ export async function adminRoutes(app: FastifyInstance, cfg: Config) {
     const actor = await requireAuth(req, cfg);
     const body = createProjectBody.parse(req.body);
     const sql = getSql(cfg);
+    const workspaceId = body.workspace_id ?? await defaultWorkspaceForActor(cfg, actor);
+    await requireWorkspaceRole(cfg, workspaceId, actor, ['owner', 'admin', 'developer']);
     const result = await sql.begin(async (tx) => {
       const [p] = await tx<any[]>`
-        insert into admin.projects (name, slug, owner_id)
-        values (${body.name}, ${body.slug}, ${actor.userId})
+        insert into admin.projects (name, slug, owner_id, workspace_id)
+        values (${body.name}, ${body.slug}, ${actor.userId}, ${workspaceId})
         returning *`;
       await tx`
         insert into admin.project_members (project_id, user_id, role)
         values (${p.id}, ${actor.userId}, 'owner')`;
+      await tx`
+        insert into admin.workspace_members (workspace_id, user_id, role)
+        values (${workspaceId}, ${actor.userId}, 'owner')
+        on conflict do nothing`;
       return p;
     });
+    await logAudit(cfg, { actor_id: actor.userId, project_id: result.id, action: 'project.create', resource_type: 'project', resource_id: result.id, params: { workspace_id: workspaceId, slug: body.slug } });
     return reply.code(201).send(result);
   });
 
@@ -147,7 +371,7 @@ export async function adminRoutes(app: FastifyInstance, cfg: Config) {
     return reply.send({ message: 'Deleted' });
   });
 
-  // --- Members ---
+  // --- Project members ---
   app.get<{ Params: { id: string } }>('/admin/v1/projects/:id/members', async (req, reply) => {
     uuidSchema.parse(req.params.id);
     const actor = await requireAuth(req, cfg);
@@ -191,14 +415,15 @@ export async function adminRoutes(app: FastifyInstance, cfg: Config) {
     },
   );
 
-  // --- API keys ---
+  // --- Project API keys ---
   app.get<{ Params: { id: string } }>('/admin/v1/projects/:id/keys', async (req, reply) => {
     uuidSchema.parse(req.params.id);
     const actor = await requireAuth(req, cfg);
     await requireProjectRole(cfg, req.params.id, actor, ['owner', 'admin', 'developer']);
     const sql = getSql(cfg);
     const rows = await sql`
-      select id, name, key_prefix, role, created_at, revoked_at
+      select id, name, key_prefix, role, role as kind, created_at, revoked_at,
+             null::timestamptz as last_used_at, 0::bigint as use_count
       from admin.api_keys
       where project_id = ${req.params.id}
       order by created_at desc`;
@@ -210,14 +435,14 @@ export async function adminRoutes(app: FastifyInstance, cfg: Config) {
     const actor = await requireAuth(req, cfg);
     await requireProjectRole(cfg, req.params.id, actor, ['owner', 'admin']);
     const body = createKeyBody.parse(req.body);
-    const minted = mintApiKey(body.role);
+    const role = body.role ?? body.kind ?? 'anon';
+    const minted = mintApiKey(role);
     const sql = getSql(cfg);
     const [row] = await sql<any[]>`
       insert into admin.api_keys (project_id, name, key_hash, key_prefix, role)
-      values (${req.params.id}, ${body.name}, ${minted.hash}, ${minted.prefix}, ${body.role})
-      returning id, name, key_prefix, role, created_at`;
-    // Key value returned ONCE — never stored plain, cannot be retrieved again.
-    return reply.code(201).send({ ...row, api_key: minted.key });
+      values (${req.params.id}, ${body.name}, ${minted.hash}, ${minted.prefix}, ${role})
+      returning id, name, key_prefix, role, role as kind, created_at`;
+    return reply.code(201).send({ ...row, api_key: minted.key, plaintext: minted.key });
   });
 
   app.delete<{ Params: { id: string; keyId: string } }>(
@@ -235,7 +460,6 @@ export async function adminRoutes(app: FastifyInstance, cfg: Config) {
     },
   );
 
-  // Rotate: revoke old + mint replacement with same name/role. Plaintext returned once.
   app.post<{ Params: { id: string; keyId: string } }>(
     '/admin/v1/projects/:id/keys/:keyId/rotate',
     async (req, reply) => {
@@ -255,13 +479,12 @@ export async function adminRoutes(app: FastifyInstance, cfg: Config) {
       const [row] = await sql<any[]>`
         insert into admin.api_keys (project_id, name, key_hash, key_prefix, role)
         values (${req.params.id}, ${rotatedName}, ${minted.hash}, ${minted.prefix}, ${existing.role})
-        returning id, name, key_prefix, role, created_at`;
-      return reply.code(201).send({ ...row, api_key: minted.key, rotated_from: req.params.keyId });
+        returning id, name, key_prefix, role, role as kind, created_at`;
+      return reply.code(201).send({ ...row, api_key: minted.key, plaintext: minted.key, rotated_from: req.params.keyId });
     },
   );
 
-
-  // --- Superadmin: users list ---
+  // --- Superadmin: users / stats ---
   app.get('/admin/v1/users', async (req, reply) => {
     const actor = await requireAuth(req, cfg);
     if (!actor.isSuperadmin && actor.role !== 'service_role') {
@@ -274,11 +497,15 @@ export async function adminRoutes(app: FastifyInstance, cfg: Config) {
     return reply.send(rows);
   });
 
-  // --- Superadmin: update user (role + is_superadmin + email_verified) ---
-  // Role model: three logical roles surfaced to the dashboard:
-  //   'user'        -> role='user',  is_superadmin=false
-  //   'admin'       -> role='admin', is_superadmin=false
-  //   'super_admin' -> role='admin', is_superadmin=true
+  app.get('/admin/v1/stats', async (req, reply) => {
+    const actor = await requireAuth(req, cfg);
+    if (!actor.isSuperadmin && actor.role !== 'service_role') {
+      return reply.code(403).send({ error: 'Forbidden' });
+    }
+    const [row] = await getSql(cfg)<any[]>`select * from admin.v_stats`;
+    return reply.send(row ?? { users: 0, workspaces: 0, projects: 0, buckets: 0, storage_bytes: 0, objects: 0, ts: new Date().toISOString() });
+  });
+
   const patchUserBody = z.object({
     role: z.enum(['user', 'admin', 'super_admin']).optional(),
     is_superadmin: z.boolean().optional(),
@@ -319,7 +546,6 @@ export async function adminRoutes(app: FastifyInstance, cfg: Config) {
     },
   );
 
-  // --- Superadmin: delete user ---
   app.delete<{ Params: { id: string } }>(
     '/admin/v1/users/:id',
     async (req, reply) => {
@@ -340,10 +566,6 @@ export async function adminRoutes(app: FastifyInstance, cfg: Config) {
       return reply.code(204).send();
     },
   );
-
-  // audit log endpoint is registered in auditRoutes (routes/audit.ts)
-
-
 
   // --- Public: config for the frontend dashboard ---
   app.get('/admin/v1/settings', async () => ({
