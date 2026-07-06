@@ -341,7 +341,8 @@ export const live = {
       });
       const normalized = normalizeAuthResponse(r);
       persistSession(normalized.session, normalized.user);
-      return normalized;
+      const user = await refreshAdminRole();
+      return { user: user ?? normalized.user, session: { ...normalized.session, user: user ?? normalized.user } };
     },
     signIn: async (email: string, password: string) => {
       const r = await api<AuthSession | { user: AuthUser; session: AuthSession }>("/auth/v1/token", {
@@ -349,7 +350,8 @@ export const live = {
       });
       const normalized = normalizeAuthResponse(r);
       persistSession(normalized.session, normalized.user);
-      return normalized;
+      const user = await refreshAdminRole();
+      return { user: user ?? normalized.user, session: { ...normalized.session, user: user ?? normalized.user } };
     },
     refresh: async () => {
       const sess = readSession(); if (!sess) throw new Error("no_session");
