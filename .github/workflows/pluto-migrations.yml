@@ -1,0 +1,101 @@
+name: migrations
+
+on:
+  push:
+    paths:
+      - "pluto-backend/migrations/**"
+      - "pluto-backend/packages/api/scripts/**"
+      - ".github/workflows/pluto-migrations.yml"
+  pull_request:
+    paths:
+      - "pluto-backend/migrations/**"
+      - "pluto-backend/packages/api/scripts/**"
+
+jobs:
+  auto-migrate-fresh-db:
+    name: AUTO_MIGRATE=1 against clean Postgres
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: pluto
+          POSTGRES_PASSWORD: plutopw
+          POSTGRES_DB: pluto
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U pluto"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=10
+
+    env:
+      DATABASE_URL: postgres://pluto:plutopw@localhost:5432/pluto
+      AUTO_MIGRATE: "1"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install postgres client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
+      - name: Install migration runner deps
+        working-directory: pluto-backend
+        run: npm i --no-save postgres@3
+
+      - name: Bootstrap auth.* compatibility shim
+        working-directory: pluto-backend
+        run: node packages/api/scripts/bootstrap-auth-shim.mjs
+
+      - name: Run migrations (AUTO_MIGRATE=1 equivalent)
+        working-directory: pluto-backend
+        run: node packages/api/scripts/migrate.mjs
+
+      - name: Fail if any migration references an undefined auth.* function
+        run: |
+          set -e
+          # After a successful migrate, auth.uid / auth.role / auth.jwt MUST
+          # be resolvable. If a migration referenced auth.some_other() we
+          # would have crashed above — this is a belt-and-suspenders probe
+          # that produces a clear failure message.
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "select auth.uid() is null as ok;"
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "select auth.role();"
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "select auth.jwt() is null as ok;"
+
+          # Scan every migration for auth.<fn>( references and confirm each
+          # referenced function actually exists in pg_proc. Fails CI with the
+          # missing function name if a migration was added that calls an
+          # unshimmed auth.* helper.
+          refs=$(grep -RhoE 'auth\.[a-z_]+\s*\(' pluto-backend/migrations \
+                 | sed -E 's/\s*\(//' | sort -u)
+          echo "auth.* references found in migrations:"
+          echo "$refs"
+          for fn in $refs; do
+            short="${fn#auth.}"
+            exists=$(psql "$DATABASE_URL" -Atc \
+              "select 1 from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+               where n.nspname='auth' and p.proname='$short' limit 1")
+            if [ "$exists" != "1" ]; then
+              echo "::error::migration references missing function $fn — add it to bootstrap-auth-shim.mjs"
+              exit 1
+            fi
+          done
+
+      - name: Assert shim was applied BEFORE 0016_stats_workspaces.sql
+        run: |
+          # auth.uid() must exist and 0016 must be recorded as applied — if
+          # the shim had run after 0016, migrate.mjs would have thrown 42883.
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c \
+            "select 1/count(*) from pg_proc p
+               join pg_namespace n on n.oid=p.pronamespace
+              where n.nspname='auth' and p.proname='uid';"
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c \
+            "select name from public._pluto_migrations
+              where name='0016_stats_workspaces.sql';" \
+            | grep -q 0016_stats_workspaces.sql
