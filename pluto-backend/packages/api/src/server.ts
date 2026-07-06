@@ -129,7 +129,7 @@ async function main() {
     service: 'pluto-api',
     version: '0.1.0',
     docs: 'https://github.com/your-org/pluto-backend',
-    endpoints: ['/livez', '/readyz', '/healthz', '/metrics', '/auth/v1/*', '/rest/v1/*', '/storage/v1/*', '/realtime/v1/*', '/admin/v1/*', '/functions/v1/*'],
+    endpoints: ['/livez', '/readyz', '/healthz', '/metrics', '/auth/v1/*', '/rest/v1/*', '/storage/v1/*', '/realtime/v1/*', '/admin/v1/*', '/functions/v1/*', '/jobs/v1/*'],
   }));
 
   // Global error handler — always JSON
