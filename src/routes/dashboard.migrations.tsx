@@ -39,8 +39,8 @@ function MigrationsPage() {
     setErr(null);
     try {
       if (!isLive()) {
-        setEntries(mockEntries);
-        setNote("Showing sample data — configure VITE_PLUTO_URL & VITE_PLUTO_ANON_KEY to run against a live Pluto instance.");
+        setEntries([]);
+        setErr("Backend not configured — set VITE_PLUTO_URL & VITE_PLUTO_ANON_KEY.");
         return;
       }
       const [{ migrations }, boot] = await Promise.all([
