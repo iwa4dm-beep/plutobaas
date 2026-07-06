@@ -159,8 +159,8 @@ export async function onboardingRoutes(app: FastifyInstance, cfg: Config) {
         values (${workspace.id}, ${user.id}, 'owner')`;
 
       const [project] = await tx`
-        insert into admin.projects (name, slug, owner_id)
-        values (${workspace_name}, ${projectSlug}, ${user.id})
+        insert into admin.projects (name, slug, owner_id, workspace_id)
+        values (${workspace_name}, ${projectSlug}, ${user.id}, ${workspace.id})
         returning id, slug, name`;
 
       await tx`
@@ -232,11 +232,13 @@ export async function onboardingRoutes(app: FastifyInstance, cfg: Config) {
     const actor = await requireAuth(req, cfg);
     const sql = getSql(cfg);
     const [project] = await sql<any[]>`
-      select owner_id from admin.projects where id = ${req.params.id}`;
+      select owner_id, workspace_id from admin.projects where id = ${req.params.id}`;
     if (!project) return reply.code(404).send({ error: 'not_found' });
     // Find owner's workspace to scope domains
     const [ws] = await sql<any[]>`
-      select id from admin.workspaces where owner_id = ${project.owner_id} order by created_at asc limit 1`;
+      select id from admin.workspaces
+      where id = ${project.workspace_id} or owner_id = ${project.owner_id}
+      order by (id = ${project.workspace_id}) desc, created_at asc limit 1`;
     if (!ws) return reply.send({ items: [] });
     await requireWorkspaceRole(cfg, ws.id, actor.userId, actor.isSuperadmin,
       ['owner', 'admin', 'developer', 'viewer']);
@@ -259,10 +261,12 @@ export async function onboardingRoutes(app: FastifyInstance, cfg: Config) {
     const actor = await requireAuth(req, cfg);
     const sql = getSql(cfg);
     const [project] = await sql<any[]>`
-      select owner_id from admin.projects where id = ${req.params.id}`;
+      select owner_id, workspace_id from admin.projects where id = ${req.params.id}`;
     if (!project) return reply.code(404).send({ error: 'not_found' });
     const [ws] = await sql<any[]>`
-      select id from admin.workspaces where owner_id = ${project.owner_id} order by created_at asc limit 1`;
+      select id from admin.workspaces
+      where id = ${project.workspace_id} or owner_id = ${project.owner_id}
+      order by (id = ${project.workspace_id}) desc, created_at asc limit 1`;
     if (!ws) return reply.code(404).send({ error: 'workspace_not_found' });
     await requireWorkspaceRole(cfg, ws.id, actor.userId, actor.isSuperadmin, ['owner', 'admin']);
 
@@ -290,10 +294,12 @@ export async function onboardingRoutes(app: FastifyInstance, cfg: Config) {
       const actor = await requireAuth(req, cfg);
       const sql = getSql(cfg);
       const [project] = await sql<any[]>`
-        select owner_id from admin.projects where id = ${req.params.id}`;
+        select owner_id, workspace_id from admin.projects where id = ${req.params.id}`;
       if (!project) return reply.code(404).send({ error: 'not_found' });
       const [ws] = await sql<any[]>`
-        select id from admin.workspaces where owner_id = ${project.owner_id} order by created_at asc limit 1`;
+        select id from admin.workspaces
+        where id = ${project.workspace_id} or owner_id = ${project.owner_id}
+        order by (id = ${project.workspace_id}) desc, created_at asc limit 1`;
       if (!ws) return reply.code(404).send({ error: 'workspace_not_found' });
       await requireWorkspaceRole(cfg, ws.id, actor.userId, actor.isSuperadmin, ['owner', 'admin']);
 
