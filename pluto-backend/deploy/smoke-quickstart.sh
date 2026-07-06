@@ -19,7 +19,16 @@ PROBES=(
   "edge       /functions/v1/health"
   "jobs       /jobs/v1/health"
   "admin      /admin/v1/health"
+  "tokens     /tokens/v1/health"
+  "scopes     /tokens/v1/scopes"
+  "coverage   /tokens/v1/coverage"
   "aggregate  /v1/health"
+)
+
+AUTH_PROBES=(
+  "workspaces /admin/v1/workspaces"
+  "projects   /admin/v1/projects"
+  "api_tokens /tokens/v1/tokens"
 )
 
 fail=0
@@ -37,6 +46,31 @@ for row in "${PROBES[@]}"; do
     fail=1
   fi
 done
+
+if [[ -n "${ADMIN_JWT:-}" ]]; then
+  echo
+  printf '  %-10s %-28s %s\n' AUTH_PATH PATH STATUS
+  AUTH_HEADERS=(-H "authorization: Bearer ${ADMIN_JWT}")
+  if [[ -n "${ANON_KEY:-}" ]]; then
+    AUTH_HEADERS+=(-H "apikey: ${ANON_KEY}")
+  fi
+  for row in "${AUTH_PROBES[@]}"; do
+    name="${row%% *}"
+    path="${row##* }"
+    code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 8 \
+      "${AUTH_HEADERS[@]}" \
+      "$BASE_URL$path" || echo "000")
+    if [[ "$code" == "200" ]]; then
+      printf '  %-10s %-28s \033[32m✔ %s\033[0m\n' "$name" "$path" "$code"
+    else
+      printf '  %-10s %-28s \033[31m✘ %s\033[0m\n' "$name" "$path" "$code"
+      fail=1
+    fi
+  done
+else
+  echo
+  echo "↷ skipping authenticated create/list route probes (set ADMIN_JWT and optional ANON_KEY to enable)"
+fi
 
 echo
 if [[ $fail -ne 0 ]]; then

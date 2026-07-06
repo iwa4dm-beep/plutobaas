@@ -86,8 +86,8 @@ export async function invitesRoutes(app: FastifyInstance, cfg: Config) {
         insert into admin.workspace_members (workspace_id, user_id, role)
         values (${workspace.id}, ${user.id}, 'owner')`;
       const [project] = await tx`
-        insert into admin.projects (name, slug, owner_id)
-        values (${workspace_name}, ${projectSlug}, ${user.id})
+        insert into admin.projects (name, slug, owner_id, workspace_id)
+        values (${workspace_name}, ${projectSlug}, ${user.id}, ${workspace.id})
         returning id, slug`;
       await tx`
         insert into admin.api_keys (project_id, name, key_hash, key_prefix, role)

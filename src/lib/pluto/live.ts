@@ -354,8 +354,12 @@ export const live = {
 
   workspaces: {
     list: async () => {
-      const raw = await api<unknown>("/admin/v1/projects", { service: true }).catch(() => []);
-      const projects = (Array.isArray(raw) ? raw : Array.isArray((raw as { items?: unknown[] })?.items) ? (raw as { items: unknown[] }).items : []) as Array<{ id: string; slug?: string; name?: string; created_at?: string; archived_at?: string | null }>;
+      const raw = await api<unknown>("/admin/v1/workspaces", { service: true })
+        .catch(async () => api<unknown>("/admin/v1/projects", { service: true }).catch(() => []));
+      const direct = Array.isArray((raw as { workspaces?: unknown[] })?.workspaces)
+        ? (raw as { workspaces: unknown[] }).workspaces
+        : null;
+      const projects = (direct ?? (Array.isArray(raw) ? raw : Array.isArray((raw as { items?: unknown[] })?.items) ? (raw as { items: unknown[] }).items : [])) as Array<{ id: string; slug?: string; name?: string; created_at?: string; archived_at?: string | null; member_count?: number; active_keys?: number }>;
       return {
         workspaces: projects.map((p, index) => ({
           id: p.id,
@@ -363,17 +367,25 @@ export const live = {
           name: p.name ?? (index === 0 ? "Root workspace" : `Project ${index + 1}`),
           created_at: p.created_at ?? new Date().toISOString(),
           archived_at: p.archived_at ?? null,
-          member_count: 1,
-          active_keys: 0,
+          member_count: p.member_count ?? 1,
+          active_keys: p.active_keys ?? 0,
         })),
       };
     },
     create: (slug: string, name: string) =>
       api<{ id: string; slug: string; name: string; keys: { anon: string; service_role: string } }>(
-        "/admin/v1/workspaces/",
+        "/admin/v1/workspaces",
         { method: "POST", service: true, body: JSON.stringify({ slug, name }) }
       ),
-    keys: (id: string) => api<{ keys: WorkspaceKey[] }>(`/admin/v1/workspaces/${id}/keys`, { service: true }),
+    keys: async (id: string) => {
+      const raw = await api<unknown>(`/admin/v1/workspaces/${id}/keys`, { service: true });
+      const keys = Array.isArray((raw as { keys?: unknown[] })?.keys)
+        ? (raw as { keys: WorkspaceKey[] }).keys
+        : Array.isArray((raw as { items?: unknown[] })?.items)
+          ? (raw as { items: WorkspaceKey[] }).items
+          : Array.isArray(raw) ? raw as WorkspaceKey[] : [];
+      return { keys };
+    },
     mintKey: (id: string, kind: "anon" | "service_role", name: string) =>
       api<{ id: string; kind: string; plaintext: string }>(
         `/admin/v1/workspaces/${id}/keys`,
@@ -381,7 +393,13 @@ export const live = {
       ),
     revokeKey: (id: string, keyId: string) =>
       api(`/admin/v1/workspaces/${id}/keys/${keyId}/revoke`, { method: "POST", service: true }),
-    members: (id: string) => api<{ members: WorkspaceMember[] }>(`/admin/v1/workspaces/${id}/members`, { service: true }),
+    members: async (id: string) => {
+      const raw = await api<unknown>(`/admin/v1/workspaces/${id}/members`, { service: true });
+      const members = Array.isArray((raw as { members?: unknown[] })?.members)
+        ? (raw as { members: WorkspaceMember[] }).members
+        : Array.isArray(raw) ? raw as WorkspaceMember[] : [];
+      return { members };
+    },
   },
   sql: {
     run: (sql: string, opts: { read_only?: boolean; workspace_id?: string; params?: unknown[] } = {}) =>
@@ -629,6 +647,14 @@ export const live = {
 
   // ---- Admin surfaces (used by dashboard pages) ----
   admin: {
+    projects: {
+      list: () => api<Array<{ id: string; slug: string; name: string; workspace_id?: string | null; created_at: string }>>("/admin/v1/projects", { service: true }),
+      create: (input: { name: string; slug: string; workspace_id?: string | null }) =>
+        api<{ id: string; slug: string; name: string; workspace_id?: string | null; created_at: string }>(
+          "/admin/v1/projects",
+          { method: "POST", service: true, body: JSON.stringify(input) },
+        ),
+    },
     users: {
       list:   () => api<AdminUser[]>("/admin/v1/users", { service: true }),
       update: (id: string, patch: { role?: "super_admin" | "admin" | "user"; is_superadmin?: boolean; email_verified?: boolean }) =>
@@ -658,7 +684,15 @@ export const live = {
       return { users, buckets: buckets.length, objects: 0, storage_bytes: 0 };
     },
     apiKeys: {
-      list:   (wsId: string) => api<{ items: WorkspaceKey[] }>(`/admin/v1/workspaces/${wsId}/keys`, { service: true }),
+      list:   async (wsId: string) => {
+        const raw = await api<unknown>(`/admin/v1/workspaces/${wsId}/keys`, { service: true });
+        const items = Array.isArray((raw as { items?: unknown[] })?.items)
+          ? (raw as { items: WorkspaceKey[] }).items
+          : Array.isArray((raw as { keys?: unknown[] })?.keys)
+            ? (raw as { keys: WorkspaceKey[] }).keys
+            : Array.isArray(raw) ? raw as WorkspaceKey[] : [];
+        return { items };
+      },
       mint:   (wsId: string, name: string, kind: "anon" | "service_role") =>
         api<{ id: string; kind: string; name: string; key_prefix: string; plaintext: string }>(
           `/admin/v1/workspaces/${wsId}/keys`,

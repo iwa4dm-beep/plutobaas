@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { Copy, KeyRound, Plus, Trash2 } from "lucide-react";
+import { Copy, FolderKanban, KeyRound, Plus, Trash2 } from "lucide-react";
 import { PageHeader } from "@/components/pluto/PageHeader";
 import { isLive, live, type Workspace, type WorkspaceKey } from "@/lib/pluto/live";
 
@@ -11,12 +11,15 @@ export const Route = createFileRoute("/dashboard/projects")({
 function ProjectsPage() {
   const [copied, setCopied] = useState<string | null>(null);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
+  const [projects, setProjects] = useState<Array<{ id: string; name: string; slug: string; workspace_id?: string | null }>>([]);
   const [wsId, setWsId] = useState<string | null>(null);
   const [keys, setKeys] = useState<WorkspaceKey[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [minted, setMinted] = useState<{ name: string; plaintext: string } | null>(null);
   const [newName, setNewName] = useState("");
   const [newKind, setNewKind] = useState<"anon" | "service_role">("anon");
+  const [projectName, setProjectName] = useState("");
+  const [projectSlug, setProjectSlug] = useState("");
 
   useEffect(() => {
     if (!isLive()) return;
@@ -25,6 +28,7 @@ function ProjectsPage() {
         const { workspaces: ws } = await live.workspaces.list();
         setWorkspaces(ws);
         if (ws.length && !wsId) setWsId(ws[0].id);
+        setProjects(await live.admin.projects.list());
       } catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
     })();
   }, []);
@@ -55,6 +59,19 @@ function ProjectsPage() {
       setKeys(items);
     } catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
   }
+
+  async function createProject() {
+    if (!wsId || !projectName.trim() || !projectSlug.trim()) return;
+    try {
+      await live.admin.projects.create({ name: projectName.trim(), slug: projectSlug.trim(), workspace_id: wsId });
+      setProjectName("");
+      setProjectSlug("");
+      setProjects(await live.admin.projects.list());
+      setErr(null);
+    } catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
+  }
+
+  const visibleProjects = projects.filter((p) => !wsId || !p.workspace_id || p.workspace_id === wsId);
 
   async function revoke(id: string) {
     if (!wsId) return;
@@ -93,6 +110,53 @@ function ProjectsPage() {
       />
 
       {err && <div className="mb-4 rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">{err}</div>}
+
+      <div className="mb-4 rounded-lg border border-border bg-card p-5">
+        <div className="flex items-center gap-2 mb-4">
+          <FolderKanban className="h-4 w-4 text-muted-foreground" />
+          <h2 className="font-medium">Create project</h2>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <input
+            placeholder="Project name"
+            value={projectName}
+            onChange={(e) => setProjectName(e.target.value)}
+            className="min-w-56 flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm"
+          />
+          <input
+            placeholder="project-slug"
+            value={projectSlug}
+            onChange={(e) => setProjectSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "-"))}
+            className="min-w-48 flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm font-mono"
+          />
+          <button
+            onClick={createProject}
+            disabled={!wsId || !projectName.trim() || !projectSlug.trim()}
+            className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground hover:opacity-90 disabled:opacity-50"
+          >
+            <Plus className="h-3.5 w-3.5" /> Create
+          </button>
+        </div>
+        <div className="mt-4 overflow-hidden rounded-md border border-border">
+          <table className="w-full text-sm">
+            <thead className="bg-muted/40">
+              <tr>
+                <th className="text-left px-3 py-2 text-xs font-medium text-muted-foreground">Project</th>
+                <th className="text-left px-3 py-2 text-xs font-medium text-muted-foreground">Slug</th>
+              </tr>
+            </thead>
+            <tbody>
+              {visibleProjects.length === 0 && <tr><td colSpan={2} className="px-3 py-4 text-center text-xs text-muted-foreground">No projects in this workspace yet.</td></tr>}
+              {visibleProjects.map((p) => (
+                <tr key={p.id} className="border-t border-border">
+                  <td className="px-3 py-2">{p.name}</td>
+                  <td className="px-3 py-2 font-mono text-xs">{p.slug}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
 
       {minted && (
         <div className="mb-4 rounded-md border border-amber-500/40 bg-amber-500/5 p-4">

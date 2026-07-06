@@ -40,6 +40,7 @@ import { jobsRoutes } from './routes/jobs.js';
 import { corsRoutes } from './routes/cors.js';
 import { onboardingRoutes } from './routes/onboarding.js';
 import { invitesRoutes } from './routes/invites.js';
+import { tokensRoutes } from './routes/tokens.js';
 import { makeOriginCallback, primeCorsCache } from './cors/registry.js';
 import { startEmailWorker } from './email/queue.js';
 
@@ -144,6 +145,7 @@ async function main() {
   await corsRoutes(app, cfg);
   await onboardingRoutes(app, cfg);
   await invitesRoutes(app, cfg);
+  await tokensRoutes(app, cfg);
 
 
 
@@ -155,7 +157,7 @@ async function main() {
     service: 'pluto-api',
     version: '0.1.0',
     docs: 'https://github.com/your-org/pluto-backend',
-    endpoints: ['/livez', '/readyz', '/healthz', '/health/deps', '/metrics', '/docs', '/openapi.json', '/auth/v1/*', '/rest/v1/*', '/storage/v1/*', '/realtime/v1/*', '/admin/v1/*', '/functions/v1/*', '/jobs/v1/*'],
+    endpoints: ['/livez', '/readyz', '/healthz', '/health/deps', '/metrics', '/docs', '/openapi.json', '/auth/v1/*', '/rest/v1/*', '/storage/v1/*', '/realtime/v1/*', '/admin/v1/*', '/functions/v1/*', '/jobs/v1/*', '/tokens/v1/*'],
   }));
 
   // Global error handler — always JSON
