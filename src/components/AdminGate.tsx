@@ -38,7 +38,7 @@ export function AdminGate({ children }: { children: ReactNode }) {
     );
   }
 
-  const role = String((session as { role?: string }).role ?? "").toLowerCase();
+  const role = String(session.user?.role ?? (session as { role?: string }).role ?? "").toLowerCase();
   const isAdmin = role === "admin" || role === "owner" || role === "service_role";
 
   if (!isAdmin) {
@@ -48,7 +48,7 @@ export function AdminGate({ children }: { children: ReactNode }) {
           <h1 className="text-2xl font-semibold text-rose-200">Admin access only</h1>
           <p className="mt-2 text-sm text-muted-foreground">
             You are signed in as{" "}
-            <span className="font-mono">{(session as { email?: string }).email ?? "unknown"}</span>{" "}
+            <span className="font-mono">{session.user?.email ?? "unknown"}</span>{" "}
             with role <span className="font-mono">{role || "user"}</span>. This
             page shows sensitive backend URLs and health probe history, so it is
             limited to accounts with the <span className="font-mono">admin</span>{" "}

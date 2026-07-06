@@ -8,13 +8,17 @@
 
 export type LiveConfig = {
   url: string;
+  upstreamUrl: string;
   anonKey: string;
   serviceKey?: string;      // optional — only set for admin operations
 };
 
 const env = (import.meta as unknown as { env: Record<string, string | undefined> }).env;
-const URL_ = env.VITE_PLUTO_URL;
-const ANON_KEY = env.VITE_PLUTO_ANON_KEY;
+const DEFAULT_PLUTO_URL = "https://api.timescard.cloud";
+const DEFAULT_PLUTO_ANON_KEY = "pk_anon_8439f8cb55a8be5f9559105c55401a4f26ab5667e8364718";
+const URL_ = env.VITE_PLUTO_URL ?? DEFAULT_PLUTO_URL;
+const ANON_KEY = env.VITE_PLUTO_ANON_KEY ?? DEFAULT_PLUTO_ANON_KEY;
+const BROWSER_URL = env.VITE_PLUTO_BROWSER_URL ?? "/api/pluto";
 
 // Service role is optional and only used by admin surfaces (migrations,
 // job tokens, edge deploy). Prefer supplying it at runtime via the
@@ -27,7 +31,7 @@ export function isLive(): boolean {
 
 export function liveConfig(): LiveConfig | null {
   if (!isLive()) return null;
-  return { url: URL_!, anonKey: ANON_KEY!, serviceKey: SERVICE_KEY };
+  return { url: BROWSER_URL!, upstreamUrl: URL_!, anonKey: ANON_KEY!, serviceKey: SERVICE_KEY };
 }
 
 const SESSION_KEY = "pluto.session.v1";
@@ -66,12 +70,35 @@ export async function api<T = unknown>(
   const text = await res.text();
   const json = text ? (() => { try { return JSON.parse(text); } catch { return text; } })() : null;
   if (!res.ok) {
-    const message = typeof json === "object" && json && "message" in json
-      ? String((json as { message?: unknown }).message)
+    const message = typeof json === "object" && json
+      ? String((json as { message?: unknown; error?: unknown }).message ?? (json as { error?: unknown }).error ?? `HTTP ${res.status}`)
       : (typeof json === "string" ? json : `HTTP ${res.status}`);
     throw new Error(message);
   }
   return json as T;
+}
+
+function normalizeAuthResponse(r: AuthSession | { user: AuthUser; session: AuthSession }): { user: AuthUser; session: AuthSession } {
+  if ("session" in r) return { user: normalizeAuthUser(r.user), session: r.session };
+  const session = r as AuthSession;
+  const user = session.user;
+  if (!user) throw new Error("Auth response did not include a user.");
+  return { user: normalizeAuthUser(user), session };
+}
+
+async function refreshAdminRole(): Promise<AuthUser | null> {
+  const sess = readSession();
+  const user = sess?.user as AuthUser | undefined;
+  if (!sess || !user) return null;
+  try {
+    const actor = await api<{ isSuperadmin?: boolean; is_superadmin?: boolean; role?: string }>("/admin/v1/whoami");
+    const isAdmin = Boolean(actor.isSuperadmin ?? actor.is_superadmin) || actor.role === "service_role";
+    const next = normalizeAuthUser({ ...user, role: isAdmin ? "admin" : user.role, is_superadmin: isAdmin });
+    persistSession(sess as AuthSession, next);
+    return next;
+  } catch {
+    return null;
+  }
 }
 
 export type MigrationEntry = {
@@ -222,7 +249,20 @@ export const live = {
     },
   },
   workspaces: {
-    list: () => api<{ workspaces: Workspace[] }>("/admin/v1/workspaces/", { service: true }),
+    list: async () => {
+      const projects = await api<Array<{ id: string; slug?: string; name?: string; created_at?: string; archived_at?: string | null }>>("/admin/v1/projects", { service: true });
+      return {
+        workspaces: projects.map((p, index) => ({
+          id: p.id,
+          slug: p.slug ?? (index === 0 ? "root" : `project-${index + 1}`),
+          name: p.name ?? (index === 0 ? "Root workspace" : `Project ${index + 1}`),
+          created_at: p.created_at ?? new Date().toISOString(),
+          archived_at: p.archived_at ?? null,
+          member_count: 1,
+          active_keys: 0,
+        })),
+      };
+    },
     create: (slug: string, name: string) =>
       api<{ id: string; slug: string; name: string; keys: { anon: string; service_role: string } }>(
         "/admin/v1/workspaces/",
@@ -265,8 +305,54 @@ export const live = {
     historyEntry: (id: string) => api<SqlHistoryEntry & { sql: string }>(`/admin/v1/sql/history/${id}`, { service: true }),
   },
   schema: {
-    introspect: () => api<{ tables: SchemaTable[] }>("/admin/v1/schema", { service: true }),
-    summary:    () => api<SchemaSummary>("/admin/v1/schema/summary"),
+    introspect: async () => {
+      const rows = await api<Array<{ schema?: string; name: string; columns?: number }>>("/admin/v1/studio/tables?schema=public", { service: true });
+      const tables = await Promise.all(rows.map(async (row) => {
+        const schema = row.schema ?? "public";
+        const details = await api<{ columns: Array<{ name: string; data_type?: string; is_nullable?: string | boolean }>; primary_key?: string[] }>(
+          `/admin/v1/studio/columns?${new URLSearchParams({ schema, table: row.name }).toString()}`,
+          { service: true },
+        ).catch(() => ({ columns: [], primary_key: [] }));
+        const primaryKey = details.primary_key ?? [];
+        return {
+          schema,
+          name: row.name,
+          comment: null,
+          columns: details.columns.map((c) => ({
+            name: c.name,
+            data_type: c.data_type ?? "text",
+            udt_name: c.data_type ?? "text",
+            is_nullable: c.is_nullable === true || c.is_nullable === "YES",
+            has_default: false,
+            is_primary_key: primaryKey.includes(c.name),
+            is_unique: false,
+            references: null,
+          })),
+          primary_key: primaryKey,
+          rls_enabled: false,
+          policies: [],
+          workspace_scoped: false,
+          privileges: { anon: [], authenticated: [], service_role: [] },
+        } satisfies SchemaTable;
+      }));
+      return { tables };
+    },
+    summary: async () => {
+      const { tables } = await live.schema.introspect();
+      return {
+        workspace_id: null,
+        role: "authenticated",
+        endpoints: tables.map((t) => ({
+          table: t.name,
+          workspace_scoped: t.workspace_scoped,
+          rls_enabled: t.rls_enabled,
+          primary_key: t.primary_key,
+          columns: t.columns.map((c) => c.name),
+          methods: ["GET", "POST", "PATCH", "DELETE"],
+          base: `/rest/v1/${t.name}`,
+        })),
+      } satisfies SchemaSummary;
+    },
     openapi:    () => api<Record<string, unknown>>("/admin/v1/schema/openapi.json"),
   },
 
@@ -324,29 +410,34 @@ export const live = {
   // that subsequent `api()` calls forward the Bearer JWT.
   auth: {
     signUp: async (email: string, password: string) => {
-      const r = await api<{ user: AuthUser; session: AuthSession }>("/auth/v1/sign-up", {
+      const r = await api<AuthSession | { user: AuthUser; session: AuthSession }>("/auth/v1/signup", {
         method: "POST", body: JSON.stringify({ email, password }),
       });
-      persistSession(r.session, r.user);
-      return r;
+      const normalized = normalizeAuthResponse(r);
+      persistSession(normalized.session, normalized.user);
+      const user = await refreshAdminRole();
+      return { user: user ?? normalized.user, session: { ...normalized.session, user: user ?? normalized.user } };
     },
     signIn: async (email: string, password: string) => {
-      const r = await api<{ user: AuthUser; session: AuthSession }>("/auth/v1/sign-in", {
-        method: "POST", body: JSON.stringify({ email, password }),
+      const r = await api<AuthSession | { user: AuthUser; session: AuthSession }>("/auth/v1/token", {
+        method: "POST", body: JSON.stringify({ grant_type: "password", email, password }),
       });
-      persistSession(r.session, r.user);
-      return r;
+      const normalized = normalizeAuthResponse(r);
+      persistSession(normalized.session, normalized.user);
+      const user = await refreshAdminRole();
+      return { user: user ?? normalized.user, session: { ...normalized.session, user: user ?? normalized.user } };
     },
     refresh: async () => {
       const sess = readSession(); if (!sess) throw new Error("no_session");
-      const r = await api<{ session: AuthSession }>("/auth/v1/refresh", {
-        method: "POST", body: JSON.stringify({ refresh_token: sess.refresh_token }),
+      const r = await api<AuthSession | { session: AuthSession }>("/auth/v1/token", {
+        method: "POST", body: JSON.stringify({ grant_type: "refresh_token", refresh_token: sess.refresh_token }),
       });
-      persistSession(r.session, sess.user as AuthUser);
-      return r.session;
+      const session = "session" in r ? r.session : r;
+      persistSession(session, sess.user as AuthUser);
+      return session;
     },
     signOut: async () => {
-      try { await api("/auth/v1/sign-out", { method: "POST" }); } catch { /* clear anyway */ }
+      try { await api("/auth/v1/logout", { method: "POST" }); } catch { /* clear anyway */ }
       localStorage.removeItem(SESSION_KEY);
     },
     me: () => api<{ user: AuthUser }>("/auth/v1/user"),
@@ -365,18 +456,21 @@ export const live = {
     config: () => api<{
       require_email_confirmation: boolean; sms_otp_enabled: boolean;
       email_provider: string; sms_provider: string;
-    }>("/auth/v1/config"),
+    }>("/auth/v1/settings"),
 
     /** Send a password-reset email. Always resolves — no user-enumeration. */
     resetPasswordForEmail: (email: string) =>
       api<{ ok: true }>("/auth/v1/recover", { method: "POST", body: JSON.stringify({ email }) }),
 
     /** Consume a reset token and set a new password. Returns a fresh session. */
-    verifyPasswordRecovery: (token: string, new_password: string) =>
-      api<{ ok: true; session: AuthSession & { user: AuthUser } }>(
-        "/auth/v1/verify-recovery",
-        { method: "POST", body: JSON.stringify({ token, new_password }) },
-      ).then((r) => { persistSession(r.session, r.session.user); return r; }),
+    verifyPasswordRecovery: async (token: string, new_password: string) => {
+      const r = await api<{ ok: true; session: AuthSession & { user: AuthUser } }>(
+        `/auth/v1/verify?${new URLSearchParams({ token, type: "recovery" }).toString()}`,
+      );
+      persistSession(r.session, r.session.user);
+      await api<AuthUser>("/auth/v1/user", { method: "PUT", body: JSON.stringify({ password: new_password }) });
+      return r;
+    },
 
     /** Send an email-confirmation link to the currently signed-in user. */
     sendEmailConfirmation: () =>
@@ -384,7 +478,7 @@ export const live = {
 
     /** Consume an email-confirmation token from the link the user clicked. */
     confirmEmail: (token: string) =>
-      api<{ ok: true }>("/auth/v1/confirm-email", { method: "POST", body: JSON.stringify({ token }) }),
+      api<{ ok: true }>(`/auth/v1/verify?${new URLSearchParams({ token, type: "signup" }).toString()}`),
 
     /** Anonymous resend (rate-limited server-side to one every 60s). */
     resendConfirmation: (email: string) =>
@@ -434,16 +528,22 @@ export const live = {
         api(`/admin/v1/users/${id}`, { method: "PATCH", service: true, body: JSON.stringify(patch) }),
       remove: (id: string) => api(`/admin/v1/users/${id}`, { method: "DELETE", service: true }),
     },
-    logs:  (params: { source?: string; level?: string; limit?: number } = {}) => {
-      const qs = new URLSearchParams();
-      if (params.source) qs.set("source", params.source);
-      if (params.level)  qs.set("level",  params.level);
-      qs.set("limit", String(params.limit ?? 100));
-      return api<LogEntry[]>(`/admin/v1/logs?${qs.toString()}`, { service: true });
+    logs:  async (params: { source?: string; level?: string; limit?: number } = {}) => {
+      const audit = await live.audit.list({ limit: params.limit ?? 100 }).catch(() => ({ items: [] }));
+      return audit.items.map((item) => ({
+        id: item.id,
+        ts: item.ts,
+        source: "admin",
+        level: item.status === "error" ? "error" : "info",
+        message: `${item.action}${item.target ? ` · ${item.target}` : ""}`,
+        user_id: item.actor_id,
+        metadata: item.metadata,
+      }));
     },
-    stats: () => api<{ users: number; buckets: number; objects: number; storage_bytes: number }>(
-      "/admin/v1/stats", { service: true }
-    ),
+    stats: async () => {
+      const buckets = await api<unknown[]>("/storage/v1/bucket").catch(() => []);
+      return { users: 0, buckets: buckets.length, objects: 0, storage_bytes: 0 };
+    },
     apiKeys: {
       list:   (wsId: string) => api<{ items: WorkspaceKey[] }>(`/admin/v1/workspaces/${wsId}/keys`, { service: true }),
       mint:   (wsId: string, name: string, kind: "anon" | "service_role") =>
@@ -485,13 +585,21 @@ export type AllowedOrigin = {
 
 // ---- Session persistence helpers (used by live.auth.*) ----
 function persistSession(s: AuthSession, u: AuthUser): void {
-  localStorage.setItem(SESSION_KEY, JSON.stringify({ ...s, user: u }));
+  localStorage.setItem(SESSION_KEY, JSON.stringify({ ...s, user: normalizeAuthUser(u) }));
+}
+
+function normalizeAuthUser(u: AuthUser): AuthUser {
+  return {
+    ...u,
+    role: u.is_superadmin || u.role === "admin" ? "admin" : "user",
+    email_verified: u.email_verified ?? Boolean(u.email_confirmed_at),
+  };
 }
 
 // ---- Auth / admin type surface ----
-export type AuthUser = { id: string; email: string; role: "admin" | "user"; email_verified?: boolean };
+export type AuthUser = { id: string; email: string; role: string; email_verified?: boolean; email_confirmed_at?: string | null; is_superadmin?: boolean; created_at?: string };
 export type AuthSession = { access_token: string; refresh_token: string; expires_at: number; user?: AuthUser };
-export type AdminUser = AuthUser & { created_at: string };
+export type AdminUser = AuthUser & { created_at: string; is_superadmin?: boolean };
 export type LogEntry = {
   id: string; ts: string; source: string; level: string;
   message: string; user_id: string | null; metadata: unknown;

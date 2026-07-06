@@ -26,7 +26,7 @@ function ProtectedBackendStatus() {
   );
 }
 
-const API = (import.meta.env.VITE_PLUTO_API_URL as string) || "https://api.timescard.cloud";
+const API = (import.meta.env.VITE_PLUTO_BROWSER_URL as string) || "/api/pluto";
 const REFRESH_MS = 15_000;
 const HISTORY_LIMIT = 40;
 
@@ -161,7 +161,7 @@ function BackendStatusPage() {
   const [test, setTest] = useState<TestState>({ status: "idle" });
 
   const authed = !!session;
-  const token = (session as any)?.token as string | undefined;
+  const token = session?.access_token;
 
   const refresh = async () => {
     if (!authed) return;

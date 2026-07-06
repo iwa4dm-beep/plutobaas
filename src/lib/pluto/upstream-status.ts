@@ -31,7 +31,7 @@ export function recordError(path: string, error: string) {
 }
 
 export function getStatus(): PlutoStatus {
-  const upstream = process.env.PLUTO_UPSTREAM_URL ?? null;
+  const upstream = process.env.PLUTO_UPSTREAM_URL ?? "https://api.timescard.cloud";
   state.configured = Boolean(upstream);
   state.upstreamUrl = upstream;
   return { ...state };
@@ -42,7 +42,7 @@ export function getStatus(): PlutoStatus {
  */
 export function validateSecrets(): string[] {
   const issues: string[] = [];
-  const url = process.env.PLUTO_UPSTREAM_URL;
+  const url = process.env.PLUTO_UPSTREAM_URL ?? "https://api.timescard.cloud";
   if (!url) {
     issues.push("PLUTO_UPSTREAM_URL is not set. Add it in Lovable project secrets, e.g. https://api.yourdomain.com");
   } else {

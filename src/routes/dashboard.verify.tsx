@@ -31,8 +31,8 @@ type Check = {
 const INITIAL: Check[] = [
   { id: "cfg.url",         group: "Config",       label: "VITE_PLUTO_URL is set", status: "idle" },
   { id: "cfg.anon",        group: "Config",       label: "VITE_PLUTO_ANON_KEY is set", status: "idle" },
-  { id: "cfg.service",     group: "Config",       label: "VITE_PLUTO_SERVICE_ROLE_KEY is set (admin surfaces)", status: "idle", requiresService: true },
-  { id: "http.healthz",    group: "HTTP",         label: "GET /healthz responds 200", status: "idle" },
+  { id: "cfg.service",     group: "Config",       label: "VITE_PLUTO_SERVICE_KEY is set (admin surfaces)", status: "idle", requiresService: true },
+  { id: "http.healthz",    group: "HTTP",         label: "GET /livez responds 200", status: "idle" },
   { id: "http.readyz",     group: "HTTP",         label: "GET /readyz reports DB + storage ready", status: "idle" },
   { id: "admin.migrations",group: "Auth & Admin", label: "GET /admin/v1/migrations returns ledger", status: "idle", requiresService: true },
   { id: "admin.bootrun",   group: "Auth & Admin", label: "GET /admin/v1/migrations/last-boot returns last boot", status: "idle", requiresService: true },
@@ -74,7 +74,7 @@ function VerifyPage() {
     await runOne("cfg.url",     async () => cfg?.url    || Promise.reject(new Error("missing")), (v) => v as string);
     await runOne("cfg.anon",    async () => cfg?.anonKey || Promise.reject(new Error("missing")), (v) => `${(v as string).slice(0, 12)}…`);
     await runOne("cfg.service", async () => {
-      const k = (import.meta.env.VITE_PLUTO_SERVICE_ROLE_KEY as string | undefined) ?? "";
+      const k = cfg?.serviceKey ?? "";
       if (!k) throw new Error("Optional but required for admin checks below");
       return k;
     }, (v) => `${(v as string).slice(0, 12)}…`);
@@ -83,7 +83,7 @@ function VerifyPage() {
 
     // — HTTP surface (unauthenticated) —
     await runOne("http.healthz", async () => {
-      const r = await fetch(`${cfg.url}/healthz`); if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const r = await fetch(`${cfg.url}/livez`); if (!r.ok) throw new Error(`HTTP ${r.status}`);
       return r.json() as Promise<Record<string, unknown>>;
     }, (r) => JSON.stringify(r));
     await runOne("http.readyz", async () => {

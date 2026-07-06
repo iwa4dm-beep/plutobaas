@@ -10,10 +10,11 @@ import { recordError, recordSuccess, validateSecrets } from "@/lib/pluto/upstrea
 const HOP_BY_HOP = new Set([
   "connection", "keep-alive", "proxy-authenticate", "proxy-authorization",
   "te", "trailer", "transfer-encoding", "upgrade", "host", "content-length",
+  "content-encoding",
 ]);
 
 async function handle({ request, params }: { request: Request; params: { _splat?: string } }) {
-  const upstream = process.env.PLUTO_UPSTREAM_URL;
+  const upstream = process.env.PLUTO_UPSTREAM_URL ?? "https://api.timescard.cloud";
   const splat = params._splat ?? "";
   const url = new URL(request.url);
 

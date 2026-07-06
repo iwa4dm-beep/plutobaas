@@ -79,6 +79,12 @@ export async function adminRoutes(app: FastifyInstance, cfg: Config) {
   if (rootEmail) {
     try {
       const sql = getSql(cfg);
+      await sql`
+        insert into admin.runtime_config (key, value, updated_at)
+        values ('root_email', ${rootEmail.toLowerCase()}, now())
+        on conflict (key) do update
+        set value = excluded.value, updated_at = now()
+      `;
       await sql`update auth.users set is_superadmin = true where lower(email) = ${rootEmail.toLowerCase()}`;
     } catch (e: any) {
       app.log.warn({ err: e.message }, 'admin: could not bootstrap superadmin');

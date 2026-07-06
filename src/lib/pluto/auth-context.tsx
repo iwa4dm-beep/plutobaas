@@ -5,6 +5,7 @@ import { isLive, live } from "./live";
 type AuthCtx = {
   session: PlutoSession | null;
   signIn: (email: string, password: string) => Promise<void>;
+  signUp: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
   loading: boolean;
 };
@@ -24,8 +25,8 @@ function liveSessionToPluto(): PlutoSession | null {
       id: s.user.id,
       email: s.user.email,
       role: s.user.role === "admin" ? "admin" : "user",
-      created_at: "",
-      email_verified: true,
+      created_at: s.user.created_at ?? "",
+      email_verified: s.user.email_verified ?? Boolean(s.user.email_confirmed_at),
     },
   };
 }
@@ -53,13 +54,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const signUp = useCallback(async (email: string, password: string) => {
+    if (isLive()) {
+      await live.auth.signUp(email, password);
+      setSession(liveSessionToPluto());
+    } else {
+      const s = await pluto.auth.signUp(email, password);
+      setSession(s);
+    }
+  }, []);
+
   const signOut = useCallback(async () => {
     if (isLive()) await live.auth.signOut();
     else await pluto.auth.signOut();
     setSession(null);
   }, []);
 
-  const value = useMemo(() => ({ session, signIn, signOut, loading }), [session, signIn, signOut, loading]);
+  const value = useMemo(() => ({ session, signIn, signUp, signOut, loading }), [session, signIn, signUp, signOut, loading]);
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
 

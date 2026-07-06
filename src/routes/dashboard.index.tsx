@@ -9,7 +9,7 @@ import { pluto } from "@/lib/pluto/client";
 import { isLive, live } from "@/lib/pluto/live";
 import { OnboardingWizard, type Plan } from "@/components/pluto/OnboardingWizard";
 
-const API_BASE = (import.meta.env.VITE_PLUTO_API_URL as string) || "https://api.timescard.cloud";
+const API_BASE = (import.meta.env.VITE_PLUTO_BROWSER_URL as string) || "/api/pluto";
 
 const STORAGE_KEY = "pluto.onboarding.v1";
 
