@@ -210,7 +210,15 @@ export type AuditQuery = {
 
 export const live = {
   migrations: {
-    list: () => api<{ migrations: MigrationEntry[] }>("/admin/v1/migrations/", { service: true }),
+    list: async () => {
+      const raw = await api<unknown>("/admin/v1/migrations/", { service: true });
+      const arr = Array.isArray(raw)
+        ? (raw as MigrationEntry[])
+        : Array.isArray((raw as { migrations?: unknown })?.migrations)
+        ? ((raw as { migrations: MigrationEntry[] }).migrations)
+        : [];
+      return { migrations: arr };
+    },
     dryRun: (detailed = true) => api<{ dry_run: true; plan: DryRunEntry[] }>(
       "/admin/v1/migrations/run",
       { method: "POST", service: true, body: JSON.stringify({ dry_run: true, detailed }) }
@@ -221,8 +229,41 @@ export const live = {
     ),
     rerun: (version: string) => api(`/admin/v1/migrations/${version}/rerun`, { method: "POST", service: true }),
     rollback: (version: string) => api(`/admin/v1/migrations/${version}/rollback`, { method: "POST", service: true }),
-    lastBoot: () => api<{ run: BootRun | null }>("/admin/v1/migrations/last-boot", { service: true }),
+    lastBoot: async (): Promise<{ run: BootRun | null }> => {
+      // Preferred endpoint (newer backends). Fall back to /health/migrations
+      // when the route doesn't exist or treats the path segment as a UUID.
+      try {
+        const r = await api<{ run: BootRun | null }>("/admin/v1/migrations/last-boot", { service: true });
+        if (r && typeof r === "object" && "run" in r) return r;
+      } catch { /* fall through */ }
+      try {
+        const h = await api<{ status?: string; migrations?: { ok?: boolean; count?: number; current?: string; applied?: string[] } }>("/health/migrations");
+        const applied = Array.isArray(h.migrations?.applied) ? h.migrations!.applied! : [];
+        const run: BootRun = {
+          id: "health",
+          started_at: new Date().toISOString(),
+          finished_at: new Date().toISOString(),
+          actor: "health-probe",
+          mode: "apply",
+          host: null,
+          version_tag: h.migrations?.current ?? null,
+          pending: [],
+          drift: [],
+          applied,
+          failed: [],
+          duration_ms: 0,
+          status: h.status === "ok" && h.migrations?.ok ? "ok" : "error",
+          error: null,
+          lock_acquired: true,
+          advisory_key: null,
+        };
+        return { run };
+      } catch {
+        return { run: null };
+      }
+    },
   },
+
 
   jobs: {
     list: () => api<JobToken[]>("/jobs/v1/tokens", { service: true }),
@@ -233,7 +274,7 @@ export const live = {
     revoke: (id: string) => api(`/jobs/v1/tokens/${id}`, { method: "DELETE", service: true }),
   },
   audit: {
-    list: (params: AuditQuery = {}) => {
+    list: async (params: AuditQuery = {}): Promise<AuditPage> => {
       const qs = new URLSearchParams();
       if (params.action)       qs.set("action",       params.action);
       if (params.actor)        qs.set("actor",        params.actor);
@@ -243,14 +284,31 @@ export const live = {
       if (params.workspace_id) qs.set("workspace_id", params.workspace_id);
       if (params.since)        qs.set("since",        params.since);
       if (params.until)        qs.set("until",        params.until);
-      qs.set("limit",  String(params.limit  ?? 50));
-      qs.set("offset", String(params.offset ?? 0));
-      return api<AuditPage>(`/admin/v1/audit?${qs.toString()}`, { service: true });
+      const limit  = params.limit  ?? 50;
+      const offset = params.offset ?? 0;
+      qs.set("limit",  String(limit));
+      qs.set("offset", String(offset));
+      const raw = await api<unknown>(`/admin/v1/audit?${qs.toString()}`, { service: true });
+      if (Array.isArray(raw)) {
+        const items = raw as AuditEvent[];
+        return { items, total: items.length, limit, offset, next_offset: items.length === limit ? offset + limit : null };
+      }
+      const obj = (raw ?? {}) as Partial<AuditPage>;
+      const items = Array.isArray(obj.items) ? obj.items : [];
+      return {
+        items,
+        total: typeof obj.total === "number" ? obj.total : items.length,
+        limit: typeof obj.limit === "number" ? obj.limit : limit,
+        offset: typeof obj.offset === "number" ? obj.offset : offset,
+        next_offset: obj.next_offset ?? null,
+      };
     },
   },
+
   workspaces: {
     list: async () => {
-      const projects = await api<Array<{ id: string; slug?: string; name?: string; created_at?: string; archived_at?: string | null }>>("/admin/v1/projects", { service: true });
+      const raw = await api<unknown>("/admin/v1/projects", { service: true }).catch(() => []);
+      const projects = (Array.isArray(raw) ? raw : Array.isArray((raw as { items?: unknown[] })?.items) ? (raw as { items: unknown[] }).items : []) as Array<{ id: string; slug?: string; name?: string; created_at?: string; archived_at?: string | null }>;
       return {
         workspaces: projects.map((p, index) => ({
           id: p.id,

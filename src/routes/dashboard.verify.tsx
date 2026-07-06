@@ -88,8 +88,14 @@ function VerifyPage() {
     }, (r) => JSON.stringify(r));
     await runOne("http.readyz", async () => {
       const r = await fetch(`${cfg.url}/readyz`); if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      return r.json() as Promise<{ ok: boolean; db?: boolean; storage?: boolean }>;
-    }, (r) => `db=${r.db} storage=${r.storage}`);
+      const j = await r.json() as { status?: string; ok?: boolean; db?: boolean; storage?: boolean; checks?: Record<string, { ok?: boolean; latencyMs?: number }> };
+      const dbOk = j.db ?? j.checks?.db?.ok;
+      const storageOk = j.storage ?? j.checks?.storage?.ok;
+      const jwtOk = j.checks?.jwt?.ok;
+      if (dbOk === false) throw new Error("db check failed");
+      if (j.status && j.status !== "ready" && j.status !== "ok" && j.ok !== true) throw new Error(`status=${j.status}`);
+      return { dbOk, storageOk, jwtOk };
+    }, (r) => `db=${r.dbOk ?? "n/a"} storage=${r.storageOk ?? "n/a"} jwt=${r.jwtOk ?? "n/a"}`);
 
     // — Admin surface (needs service role) —
     await runOne("admin.migrations", () => live.migrations.list(),  (r) => `${r.migrations.length} entries`);
