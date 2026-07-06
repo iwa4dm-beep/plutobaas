@@ -274,7 +274,7 @@ export const live = {
     revoke: (id: string) => api(`/jobs/v1/tokens/${id}`, { method: "DELETE", service: true }),
   },
   audit: {
-    list: (params: AuditQuery = {}) => {
+    list: async (params: AuditQuery = {}): Promise<AuditPage> => {
       const qs = new URLSearchParams();
       if (params.action)       qs.set("action",       params.action);
       if (params.actor)        qs.set("actor",        params.actor);
@@ -284,11 +284,27 @@ export const live = {
       if (params.workspace_id) qs.set("workspace_id", params.workspace_id);
       if (params.since)        qs.set("since",        params.since);
       if (params.until)        qs.set("until",        params.until);
-      qs.set("limit",  String(params.limit  ?? 50));
-      qs.set("offset", String(params.offset ?? 0));
-      return api<AuditPage>(`/admin/v1/audit?${qs.toString()}`, { service: true });
+      const limit  = params.limit  ?? 50;
+      const offset = params.offset ?? 0;
+      qs.set("limit",  String(limit));
+      qs.set("offset", String(offset));
+      const raw = await api<unknown>(`/admin/v1/audit?${qs.toString()}`, { service: true });
+      if (Array.isArray(raw)) {
+        const items = raw as AuditEvent[];
+        return { items, total: items.length, limit, offset, next_offset: items.length === limit ? offset + limit : null };
+      }
+      const obj = (raw ?? {}) as Partial<AuditPage>;
+      const items = Array.isArray(obj.items) ? obj.items : [];
+      return {
+        items,
+        total: typeof obj.total === "number" ? obj.total : items.length,
+        limit: typeof obj.limit === "number" ? obj.limit : limit,
+        offset: typeof obj.offset === "number" ? obj.offset : offset,
+        next_offset: obj.next_offset ?? null,
+      };
     },
   },
+
   workspaces: {
     list: async () => {
       const projects = await api<Array<{ id: string; slug?: string; name?: string; created_at?: string; archived_at?: string | null }>>("/admin/v1/projects", { service: true });
