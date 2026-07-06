@@ -14,9 +14,11 @@ export type LiveConfig = {
 };
 
 const env = (import.meta as unknown as { env: Record<string, string | undefined> }).env;
-const URL_ = env.VITE_PLUTO_URL;
-const ANON_KEY = env.VITE_PLUTO_ANON_KEY;
-const BROWSER_URL = env.VITE_PLUTO_BROWSER_URL ?? (URL_ ? "/api/pluto" : undefined);
+const DEFAULT_PLUTO_URL = "https://api.timescard.cloud";
+const DEFAULT_PLUTO_ANON_KEY = "pk_anon_8439f8cb55a8be5f9559105c55401a4f26ab5667e8364718";
+const URL_ = env.VITE_PLUTO_URL ?? DEFAULT_PLUTO_URL;
+const ANON_KEY = env.VITE_PLUTO_ANON_KEY ?? DEFAULT_PLUTO_ANON_KEY;
+const BROWSER_URL = env.VITE_PLUTO_BROWSER_URL ?? "/api/pluto";
 
 // Service role is optional and only used by admin surfaces (migrations,
 // job tokens, edge deploy). Prefer supplying it at runtime via the
