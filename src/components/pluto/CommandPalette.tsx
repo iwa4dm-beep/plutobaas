@@ -104,17 +104,22 @@ const entries: Entry[] = [
 /** Global ⌘K / Ctrl-K palette. Mount once in the dashboard shell. */
 export function CommandPalette() {
   const [open, setOpen] = React.useState(false);
+  const [query, setQuery] = React.useState("");
   const nav = useNavigate();
   const { signOut } = useAuth();
+  const lastFocusRef = React.useRef<HTMLElement | null>(null);
 
   React.useEffect(() => {
     const on = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
-      // Allow the shortcut even when focus is in inputs.
+      // ⌘K / Ctrl-K — always toggle
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
         setOpen((v) => !v);
-      } else if (e.key === "/" && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        return;
+      }
+      // "/" quick-open when not typing in a field
+      if (e.key === "/" && !e.metaKey && !e.ctrlKey && !e.altKey) {
         const isTyping =
           target &&
           (target.tagName === "INPUT" ||
@@ -130,8 +135,23 @@ export function CommandPalette() {
     return () => window.removeEventListener("keydown", on);
   }, []);
 
+  // Focus restoration: remember the element that opened the palette and
+  // return focus to it on close so keyboard flow is uninterrupted.
+  const handleOpenChange = React.useCallback((next: boolean) => {
+    if (next) {
+      lastFocusRef.current = document.activeElement as HTMLElement | null;
+    } else {
+      setQuery("");
+      // Defer so Radix has finished unmounting the dialog first.
+      requestAnimationFrame(() => {
+        lastFocusRef.current?.focus?.();
+      });
+    }
+    setOpen(next);
+  }, []);
+
   const go = (to: string) => {
-    setOpen(false);
+    handleOpenChange(false);
     nav({ to });
   };
 
@@ -145,14 +165,25 @@ export function CommandPalette() {
   }, []);
 
   return (
-    <CommandDialog open={open} onOpenChange={setOpen}>
-
+    <CommandDialog open={open} onOpenChange={handleOpenChange}>
       <CommandInput
+        value={query}
+        onValueChange={setQuery}
         placeholder="Search pages, actions, docs…  (try ‘sql’, ‘users’, ‘logs’)"
         aria-label="Search pages and actions"
       />
-      <CommandList>
-        <CommandEmpty>No matches. Try a different keyword.</CommandEmpty>
+      <CommandList className="max-h-[60vh]">
+        <CommandEmpty>
+          <div className="py-6 text-center">
+            <div className="text-sm font-medium text-foreground">
+              No matches for “{query || "…"}”
+            </div>
+            <div className="mt-1 text-xs text-muted-foreground">
+              Try shorter keywords like <kbd className="font-mono">sql</kbd>,{" "}
+              <kbd className="font-mono">users</kbd>, or <kbd className="font-mono">logs</kbd>.
+            </div>
+          </div>
+        </CommandEmpty>
 
         {grouped.map(([group, items], gi) => (
           <React.Fragment key={group}>
@@ -186,7 +217,7 @@ export function CommandPalette() {
           <CommandItem
             value="sign out logout"
             onSelect={async () => {
-              setOpen(false);
+              handleOpenChange(false);
               await signOut();
               nav({ to: "/auth", replace: true });
             }}
@@ -198,6 +229,30 @@ export function CommandPalette() {
           </CommandItem>
         </CommandGroup>
       </CommandList>
+
+      {/* Keyboard hints footer */}
+      <div className="flex items-center justify-between gap-3 border-t border-border/60 bg-muted/30 px-3 py-2 text-[11px] text-muted-foreground">
+        <div className="flex items-center gap-3">
+          <span className="inline-flex items-center gap-1">
+            <kbd className="rounded border border-border/60 bg-background/60 px-1.5 py-0.5 font-mono">↑</kbd>
+            <kbd className="rounded border border-border/60 bg-background/60 px-1.5 py-0.5 font-mono">↓</kbd>
+            navigate
+          </span>
+          <span className="inline-flex items-center gap-1">
+            <kbd className="rounded border border-border/60 bg-background/60 px-1.5 py-0.5 font-mono">↵</kbd>
+            open
+          </span>
+          <span className="hidden sm:inline-flex items-center gap-1">
+            <kbd className="rounded border border-border/60 bg-background/60 px-1.5 py-0.5 font-mono">esc</kbd>
+            close
+          </span>
+        </div>
+        <span className="hidden sm:inline-flex items-center gap-1">
+          <kbd className="rounded border border-border/60 bg-background/60 px-1.5 py-0.5 font-mono">/</kbd>
+          quick open
+        </span>
+      </div>
     </CommandDialog>
   );
 }
+
