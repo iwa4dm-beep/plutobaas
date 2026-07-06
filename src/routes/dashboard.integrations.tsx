@@ -69,6 +69,12 @@ function IntegrationsPage() {
             <span className="text-xs text-muted-foreground">Generated {new Date(data.generated_at).toLocaleString()}</span>
           </div>
 
+          {data.modules.length === 0 && (
+            <div className="rounded-md border border-border bg-card px-4 py-6 text-sm text-muted-foreground text-center">
+              No integration modules are registered on this backend. Enable Phase 15/16 modules (MFA, SSO, Push, Templates, AI, Vector) on the server to see readiness here.
+            </div>
+          )}
+
           <div className="grid gap-4 md:grid-cols-2">
             {data.modules.map((m) => (
               <div key={m.module} className="rounded-lg border border-border bg-card p-4 space-y-3">
