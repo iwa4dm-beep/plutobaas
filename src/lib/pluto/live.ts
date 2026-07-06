@@ -536,16 +536,39 @@ export const live = {
         api(`/admin/v1/users/${id}`, { method: "PATCH", service: true, body: JSON.stringify(patch) }),
       remove: (id: string) => api(`/admin/v1/users/${id}`, { method: "DELETE", service: true }),
     },
-    logs:  (params: { source?: string; level?: string; limit?: number } = {}) => {
+    logs:  async (params: { source?: string; level?: string; limit?: number } = {}) => {
       const qs = new URLSearchParams();
       if (params.source) qs.set("source", params.source);
       if (params.level)  qs.set("level",  params.level);
       qs.set("limit", String(params.limit ?? 100));
-      return api<LogEntry[]>(`/admin/v1/logs?${qs.toString()}`, { service: true });
+      try {
+        return await api<LogEntry[]>(`/admin/v1/logs?${qs.toString()}`, { service: true });
+      } catch {
+        const audit = await live.audit.list({ limit: params.limit ?? 100 }).catch(() => ({ items: [] }));
+        return audit.items.map((item) => ({
+          id: item.id,
+          ts: item.ts,
+          source: "admin",
+          level: item.status === "error" ? "error" : "info",
+          message: `${item.action}${item.target ? ` · ${item.target}` : ""}`,
+          user_id: item.actor_id,
+          metadata: item.metadata,
+        }));
+      }
     },
-    stats: () => api<{ users: number; buckets: number; objects: number; storage_bytes: number }>(
-      "/admin/v1/stats", { service: true }
-    ),
+    stats: async () => {
+      try {
+        return await api<{ users: number; buckets: number; objects: number; storage_bytes: number }>(
+          "/admin/v1/stats", { service: true }
+        );
+      } catch {
+        const [users, buckets] = await Promise.all([
+          live.admin.users.list().catch(() => []),
+          api<unknown[]>("/storage/v1/bucket").catch(() => []),
+        ]);
+        return { users: users.length, buckets: buckets.length, objects: 0, storage_bytes: 0 };
+      }
+    },
     apiKeys: {
       list:   (wsId: string) => api<{ items: WorkspaceKey[] }>(`/admin/v1/workspaces/${wsId}/keys`, { service: true }),
       mint:   (wsId: string, name: string, kind: "anon" | "service_role") =>
