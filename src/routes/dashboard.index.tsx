@@ -177,9 +177,9 @@ function Overview() {
               <div className="inline-flex items-center gap-1.5 rounded-full border border-border bg-background/70 px-2.5 py-0.5 text-[11px] font-medium text-muted-foreground backdrop-blur">
                 <span
                   aria-hidden="true"
-                  className={`h-1.5 w-1.5 rounded-full ${source === "live" ? "bg-emerald-500 shadow-[0_0_8px_theme(colors.emerald.500)]" : "bg-muted-foreground/60"}`}
+                  className={`h-1.5 w-1.5 rounded-full ${err ? "bg-destructive" : "bg-emerald-500 shadow-[0_0_8px_theme(colors.emerald.500)]"}`}
                 />
-                {source === "live" ? "Live data" : "Mock data"} · Pluto instance
+                {err ? "Backend unreachable" : "Live data"} · Pluto instance
               </div>
               <a
                 href={API_BASE}
