@@ -172,6 +172,13 @@ async function main() {
 
   await app.listen({ port: cfg.PORT, host: cfg.HOST });
   app.log.info(`🚀 Pluto API listening on http://${cfg.HOST}:${cfg.PORT}`);
+
+  // Background email worker — polls admin.email_queue every 10s.
+  startEmailWorker(cfg, {
+    info: (m: string) => app.log.info(m),
+    error: (m: string) => app.log.error(m),
+  });
+
 }
 
 main().catch((err) => {
