@@ -139,6 +139,8 @@ async function main() {
   await marketplaceRoutes(app, cfg);
   await jobsRoutes(app, cfg);
   await corsRoutes(app, cfg);
+  await onboardingRoutes(app, cfg);
+
 
 
 
