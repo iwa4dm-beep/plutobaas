@@ -307,7 +307,8 @@ export const live = {
 
   workspaces: {
     list: async () => {
-      const projects = await api<Array<{ id: string; slug?: string; name?: string; created_at?: string; archived_at?: string | null }>>("/admin/v1/projects", { service: true });
+      const raw = await api<unknown>("/admin/v1/projects", { service: true }).catch(() => []);
+      const projects = (Array.isArray(raw) ? raw : Array.isArray((raw as { items?: unknown[] })?.items) ? (raw as { items: unknown[] }).items : []) as Array<{ id: string; slug?: string; name?: string; created_at?: string; archived_at?: string | null }>;
       return {
         workspaces: projects.map((p, index) => ({
           id: p.id,
