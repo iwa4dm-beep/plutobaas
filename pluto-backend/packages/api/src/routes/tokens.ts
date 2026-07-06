@@ -70,8 +70,9 @@ function hash(raw: string): string {
 }
 
 function mintToken(): { raw: string; prefix: string; hash: string } {
-  const raw = 'plt_' + randomBytes(4).toString('hex') + '_' + randomBytes(32).toString('base64url');
-  return { raw, prefix: raw.slice(0, 13), hash: hash(raw) };
+  const prefix = randomBytes(4).toString('hex');
+  const raw = 'plt_' + prefix + '_' + randomBytes(32).toString('base64url');
+  return { raw, prefix, hash: hash(raw) };
 }
 
 function validateScopes(scopes: string[]) {
