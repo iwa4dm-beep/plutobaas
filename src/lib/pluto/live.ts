@@ -584,8 +584,8 @@ export const live = {
   admin: {
     users: {
       list:   () => api<AdminUser[]>("/admin/v1/users", { service: true }),
-      update: (id: string, patch: { role?: "admin" | "user"; email_verified?: boolean }) =>
-        api(`/admin/v1/users/${id}`, { method: "PATCH", service: true, body: JSON.stringify(patch) }),
+      update: (id: string, patch: { role?: "super_admin" | "admin" | "user"; is_superadmin?: boolean; email_verified?: boolean }) =>
+        api<AdminUser>(`/admin/v1/users/${id}`, { method: "PATCH", service: true, body: JSON.stringify(patch) }),
       remove: (id: string) => api(`/admin/v1/users/${id}`, { method: "DELETE", service: true }),
     },
     logs:  async (params: { source?: string; level?: string; limit?: number } = {}) => {

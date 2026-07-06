@@ -78,6 +78,78 @@ function ApiDocsPage() {
         <span><strong className="text-foreground">Realtime:</strong> <code>WS /rt/v1</code> — see the Realtime dashboard</span>
       </div>
 
+      <div className="border-b border-border px-6 py-4">
+        <h2 className="text-sm font-semibold mb-2">Endpoint reference</h2>
+        <p className="text-xs text-muted-foreground mb-3">
+          All routes are served under <code>{"{VITE_PLUTO_URL}"}</code> (same-origin via <code>/api/pluto/*</code> proxy).
+          Auth: send <code>Authorization: Bearer &lt;access_token&gt;</code> + <code>apikey: &lt;VITE_PLUTO_ANON_KEY&gt;</code>.
+          Admin routes additionally require a session with <code>is_superadmin=true</code> (or a service-role key).
+        </p>
+        <div className="grid gap-3 md:grid-cols-2">
+          <RouteGroup title="Health" rows={[
+            ["GET",  "/livez",  "Liveness probe"],
+            ["GET",  "/readyz", "Readiness — DB + JWT"],
+            ["GET",  "/health/migrations", "Applied migrations ledger"],
+          ]} />
+          <RouteGroup title="Auth" rows={[
+            ["POST", "/auth/v1/signup",  "Email + password sign-up"],
+            ["POST", "/auth/v1/token",   "Password / refresh grant"],
+            ["POST", "/auth/v1/recover", "Send password reset email"],
+            ["POST", "/auth/v1/verify",  "Verify email OTP"],
+            ["POST", "/auth/v1/logout",  "Revoke current session"],
+          ]} />
+          <RouteGroup title="Admin · Users" badge="super_admin" rows={[
+            ["GET",    "/admin/v1/users",       "List users (500 most recent)"],
+            ["PATCH",  "/admin/v1/users/:id",   "Update role / is_superadmin / email_verified"],
+            ["DELETE", "/admin/v1/users/:id",   "Delete a user (cannot delete self)"],
+          ]} />
+          <RouteGroup title="Admin · Projects & Keys" badge="super_admin" rows={[
+            ["GET",  "/admin/v1/projects",                 "List projects"],
+            ["POST", "/admin/v1/projects",                 "Create project"],
+            ["GET",  "/admin/v1/projects/:id/members",     "List members"],
+            ["POST", "/admin/v1/projects/:id/members",     "Add member (owner/admin/developer/viewer)"],
+            ["GET",  "/admin/v1/projects/:id/keys",        "List API keys"],
+            ["POST", "/admin/v1/projects/:id/keys",        "Mint API key"],
+            ["POST", "/admin/v1/projects/:id/keys/:keyId/rotate", "Rotate API key"],
+          ]} />
+          <RouteGroup title="Admin · Audit & Studio" rows={[
+            ["GET",  "/admin/v1/audit",                   "Paginated audit events"],
+            ["GET",  "/admin/v1/studio/tables?schema=…",  "List tables in a schema"],
+            ["GET",  "/admin/v1/studio/columns?schema=…&table=…", "Columns + FK + PK"],
+            ["GET",  "/admin/v1/settings",                "Feature flags"],
+          ]} />
+          <RouteGroup title="Storage" rows={[
+            ["GET",    "/storage/v1/bucket",           "List buckets"],
+            ["POST",   "/storage/v1/bucket",           "Create bucket"],
+            ["POST",   "/storage/v1/object/:bucket/*", "Upload object"],
+            ["GET",    "/storage/v1/object/:bucket/*", "Download object"],
+            ["DELETE", "/storage/v1/object/:bucket/*", "Delete object"],
+          ]} />
+          <RouteGroup title="Data API (REST)" rows={[
+            ["GET",    "/rest/v1/:table?select=*",  "Select rows (PostgREST-compatible)"],
+            ["POST",   "/rest/v1/:table",           "Insert rows"],
+            ["PATCH",  "/rest/v1/:table?id=eq.…",   "Update rows"],
+            ["DELETE", "/rest/v1/:table?id=eq.…",   "Delete rows"],
+          ]} />
+          <RouteGroup title="Jobs & Functions" rows={[
+            ["GET",  "/jobs/v1/tokens",       "List job tokens"],
+            ["POST", "/jobs/v1/tokens",       "Mint job token"],
+            ["GET",  "/functions/v1/list",   "List edge functions"],
+            ["POST", "/functions/v1/:slug",  "Invoke edge function"],
+          ]} />
+        </div>
+
+        <details className="mt-4 text-xs text-muted-foreground">
+          <summary className="cursor-pointer hover:text-foreground">Not yet on the backend (returns 404 today)</summary>
+          <ul className="mt-2 ml-4 list-disc space-y-0.5">
+            <li><code>/admin/v1/stats</code>, <code>/admin/v1/workspaces</code>, <code>/admin/v1/integrations/health</code></li>
+            <li><code>/admin/v1/sql/history</code>, <code>/admin/v1/cors/origins</code>, <code>/admin/v1/rate-limits</code></li>
+            <li><code>/ai/v1/*</code>, <code>/queue/v1/*</code>, <code>/templates/v1</code>, <code>/push/v1/*</code></li>
+            <li><code>/auth/v1/sso/providers</code>, WS <code>system:audit</code> / <code>system:migrations</code></li>
+          </ul>
+        </details>
+      </div>
+
       <main className="flex-1 min-h-0">
         {/* RapiDoc is a custom element registered at runtime by the CDN script above. */}
         <div
@@ -102,8 +174,31 @@ function ApiDocsPage() {
             el.appendChild(doc);
           }}
         />
-
       </main>
+    </div>
+  );
+}
+
+function RouteGroup({ title, rows, badge }: { title: string; rows: [string, string, string][]; badge?: string }) {
+  return (
+    <div className="rounded-md border border-border bg-card/50 p-3">
+      <div className="flex items-center gap-2 mb-2">
+        <h3 className="text-xs font-semibold">{title}</h3>
+        {badge && <span className="rounded-full bg-primary/15 px-2 py-0.5 text-[10px] font-medium text-primary">{badge}</span>}
+      </div>
+      <ul className="space-y-1 text-[11px] font-mono">
+        {rows.map(([m, p, d]) => (
+          <li key={m + p} className="flex items-baseline gap-2">
+            <span className={"inline-block w-14 shrink-0 text-center rounded px-1 py-0.5 text-[10px] font-semibold " +
+              (m === "GET" ? "bg-emerald-500/15 text-emerald-500" :
+               m === "POST" ? "bg-blue-500/15 text-blue-500" :
+               m === "PATCH" ? "bg-amber-500/15 text-amber-500" :
+               m === "DELETE" ? "bg-red-500/15 text-red-500" : "bg-muted text-muted-foreground")}>{m}</span>
+            <code className="text-foreground/90">{p}</code>
+            <span className="text-muted-foreground truncate">— {d}</span>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
