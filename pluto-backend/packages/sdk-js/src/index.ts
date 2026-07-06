@@ -421,12 +421,98 @@ class RealtimeClient {
   }
 }
 
+// ---------- Onboarding / admin helpers ----------
+
+export interface SignupFullPayload {
+  email: string;
+  password: string;
+  workspace_name?: string;
+  project_name?: string;
+  domain?: string;
+  seed_demo?: boolean;
+}
+
+export interface SignupFullResult {
+  user: User;
+  session: Session;
+  workspace: { id: string; name: string };
+  project: { id: string; name: string };
+  api_keys: { publishable: string; secret: string };
+}
+
+export interface Invite {
+  id: string;
+  email: string;
+  role: string;
+  token?: string;
+  expires_at: string;
+  accepted_at: string | null;
+}
+
+export interface Domain {
+  id: string;
+  origin: string;
+  description: string | null;
+  enabled: boolean;
+  created_at: string;
+}
+
+class OnboardingClient {
+  constructor(private baseUrl: string, private apiKey: string, private authHeader: () => Record<string, string>, private fetchImpl: typeof fetch) {}
+  private async req<T>(path: string, init: RequestInit, auth = false): Promise<PlutoResponse<T>> {
+    try {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json', apikey: this.apiKey, ...(init.headers as any) };
+      if (auth) Object.assign(headers, this.authHeader());
+      const res = await this.fetchImpl(`${this.baseUrl}${path}`, { ...init, headers });
+      const text = await res.text();
+      const data = text ? JSON.parse(text) : null;
+      if (!res.ok) return { data: null, error: { message: (data && data.message) || res.statusText, status: res.status }, status: res.status };
+      return { data, error: null, status: res.status };
+    } catch (e: any) {
+      return { data: null, error: { message: e.message }, status: 0 };
+    }
+  }
+  signupFull(payload: SignupFullPayload) {
+    return this.req<SignupFullResult>('/auth/v1/signup-full', { method: 'POST', body: JSON.stringify(payload) });
+  }
+  acceptInvite(token: string, password: string) {
+    return this.req<{ user: User; session: Session }>('/auth/v1/accept-invite', { method: 'POST', body: JSON.stringify({ token, password }) });
+  }
+  createInvite(email: string, role = 'admin') {
+    return this.req<Invite>('/admin/v1/invite', { method: 'POST', body: JSON.stringify({ email, role }) }, true);
+  }
+}
+
+class DomainsClient {
+  constructor(private baseUrl: string, private authHeader: () => Record<string, string>, private fetchImpl: typeof fetch) {}
+  private async req<T>(path: string, init: RequestInit = {}): Promise<PlutoResponse<T>> {
+    try {
+      const res = await this.fetchImpl(`${this.baseUrl}${path}`, { ...init, headers: { 'Content-Type': 'application/json', ...this.authHeader(), ...(init.headers as any) } });
+      const text = await res.text();
+      const data = text ? JSON.parse(text) : null;
+      if (!res.ok) return { data: null, error: { message: (data && data.message) || res.statusText, status: res.status }, status: res.status };
+      return { data, error: null, status: res.status };
+    } catch (e: any) {
+      return { data: null, error: { message: e.message }, status: 0 };
+    }
+  }
+  list(projectId: string) { return this.req<Domain[]>(`/admin/v1/projects/${encodeURIComponent(projectId)}/domains`); }
+  add(projectId: string, origin: string, description?: string) {
+    return this.req<Domain>(`/admin/v1/projects/${encodeURIComponent(projectId)}/domains`, { method: 'POST', body: JSON.stringify({ origin, description }) });
+  }
+  remove(projectId: string, domainId: string) {
+    return this.req<{ ok: true }>(`/admin/v1/projects/${encodeURIComponent(projectId)}/domains/${encodeURIComponent(domainId)}`, { method: 'DELETE' });
+  }
+}
+
 // ---------- Main client ----------
 
 export class PlutoClient {
   auth: AuthClient;
   storage: StorageClient;
   realtime: RealtimeClient;
+  onboarding: OnboardingClient;
+  domains: DomainsClient;
   private baseUrl: string;
   private apiKey: string;
   private fetchImpl: typeof fetch;
@@ -447,6 +533,8 @@ export class PlutoClient {
     );
     this.storage = new StorageClient(this.baseUrl, () => this.auth._authHeader(), this.fetchImpl);
     this.realtime = new RealtimeClient(this.baseUrl, apiKey);
+    this.onboarding = new OnboardingClient(this.baseUrl, apiKey, () => this.auth._authHeader(), this.fetchImpl);
+    this.domains = new DomainsClient(this.baseUrl, () => this.auth._authHeader(), this.fetchImpl);
   }
 
   from<T = any>(table: string): QueryBuilder<T> {
@@ -477,3 +565,4 @@ export function createClient(url: string, apiKey: string, opts?: PlutoClientOpti
 }
 
 export default createClient;
+
