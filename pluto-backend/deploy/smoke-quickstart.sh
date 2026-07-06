@@ -22,8 +22,10 @@ PROBES=(
   "tokens     /tokens/v1/health"
   "scopes     /tokens/v1/scopes"
   "coverage   /tokens/v1/coverage"
+  "migrations /health/migrations/required"
   "aggregate  /v1/health"
 )
+
 
 AUTH_PROBES=(
   "workspaces /admin/v1/workspaces"
