@@ -70,26 +70,27 @@ export async function primeCorsCache(cfg: Config): Promise<void> {
 export function makeOriginCallback(cfg: Config) {
   const isDev = cfg.NODE_ENV !== 'production';
   const wildcard = cfg.CORS_ORIGINS === '*';
+  // @fastify/cors AsyncOriginFunction signature: (origin, request) => Promise<boolean|string|RegExp|Array>
   return async function originCallback(
     origin: string | undefined,
-    cb: (err: Error | null, allow?: boolean) => void,
-  ): Promise<void> {
+    _request: unknown,
+  ): Promise<boolean> {
     // Same-origin / server-to-server / curl → no Origin header
-    if (!origin) return cb(null, true);
-    if (wildcard) return cb(null, true);
+    if (!origin) return true;
+    if (wildcard) return true;
     const o = normalize(origin);
     if (isDev && /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(o)) {
-      return cb(null, true);
+      return true;
     }
     try {
       await ensureFresh(cfg);
     } catch {
       // ignore — fall through with whatever we have
     }
-    if (state.origins.has(o)) return cb(null, true);
-    return cb(null, false);
+    return state.origins.has(o);
   };
 }
+
 
 export function listCached(): string[] {
   return Array.from(state.origins).sort();
