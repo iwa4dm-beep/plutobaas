@@ -567,13 +567,63 @@ export async function adminRoutes(app: FastifyInstance, cfg: Config) {
     },
   );
 
-  // --- Public: config for the frontend dashboard ---
-  app.get('/admin/v1/settings', async () => ({
-    service: 'pluto-admin',
-    version: '0.1.0',
-    features: {
-      auth: true, rest: true, storage: true, realtime: true,
-      multi_tenant: true,
-    },
-  }));
+  // --- Runtime settings used by dashboard integration pages ---
+  app.get('/admin/v1/settings', async (req, reply) => {
+    const actor = await requireAuth(req, cfg);
+    if (!actor.isSuperadmin && actor.role !== 'service_role') {
+      return reply.code(403).send({ error: 'Forbidden' });
+    }
+    const url = new URL(req.url, 'http://local');
+    const workspaceId = url.searchParams.get('workspace_id');
+    const prefix = workspaceId ? `workspace:${workspaceId}:` : '';
+    const rows = await getSql(cfg)<any[]>`
+      select key, value, updated_at
+      from admin.runtime_config
+      where key <> 'root_email'
+        and (${prefix}::text = '' or key like ${prefix + '%'} )
+      order by key asc`;
+    return {
+      items: rows.map((r) => {
+        let value: unknown = r.value;
+        try { value = JSON.parse(r.value); } catch { /* keep raw string */ }
+        return { key: prefix ? r.key.slice(prefix.length) : r.key, value, is_secret: false, updated_at: r.updated_at };
+      }),
+    };
+  });
+
+  app.put('/admin/v1/settings', async (req, reply) => {
+    const actor = await requireAuth(req, cfg);
+    if (!actor.isSuperadmin && actor.role !== 'service_role') {
+      return reply.code(403).send({ error: 'Forbidden' });
+    }
+    const body = z.object({
+      key: z.string().min(1).max(180),
+      value: z.unknown(),
+      is_secret: z.boolean().optional(),
+      workspace_id: uuidSchema.optional(),
+    }).parse(req.body);
+    if (body.key === 'root_email') return reply.code(400).send({ error: 'reserved_key' });
+    const storedKey = body.workspace_id ? `workspace:${body.workspace_id}:${body.key}` : body.key;
+    const value = typeof body.value === 'string' ? body.value : JSON.stringify(body.value);
+    const [row] = await getSql(cfg)<any[]>`
+      insert into admin.runtime_config (key, value, updated_at)
+      values (${storedKey}, ${value}, now())
+      on conflict (key) do update set value = excluded.value, updated_at = now()
+      returning key, value, updated_at`;
+    return { key: body.key, value: body.value, is_secret: false, updated_at: row.updated_at };
+  });
+
+  app.delete<{ Params: { key: string } }>('/admin/v1/settings/:key', async (req, reply) => {
+    const actor = await requireAuth(req, cfg);
+    if (!actor.isSuperadmin && actor.role !== 'service_role') {
+      return reply.code(403).send({ error: 'Forbidden' });
+    }
+    const url = new URL(req.url, 'http://local');
+    const workspaceId = url.searchParams.get('workspace_id');
+    const key = decodeURIComponent(req.params.key);
+    if (key === 'root_email') return reply.code(400).send({ error: 'reserved_key' });
+    const storedKey = workspaceId ? `workspace:${workspaceId}:${key}` : key;
+    await getSql(cfg)`delete from admin.runtime_config where key = ${storedKey}`;
+    return { ok: true };
+  });
 }
