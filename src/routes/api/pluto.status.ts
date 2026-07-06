@@ -35,6 +35,7 @@ export const Route = createFileRoute("/api/pluto/status")({
         return new Response(
           JSON.stringify({
             ok,
+            offline: !ok,
             configured: status.configured,
             upstreamUrl: status.upstreamUrl,
             issues,
@@ -50,6 +51,7 @@ export const Route = createFileRoute("/api/pluto/status")({
             headers: {
               "content-type": "application/json",
               "cache-control": "no-store",
+              ...(ok ? {} : { "x-pluto-offline": "1" }),
             },
           },
         );
