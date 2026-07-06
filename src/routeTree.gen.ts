@@ -47,6 +47,7 @@ import { Route as DashboardPlutoMarketplaceRouteImport } from './routes/dashboar
 import { Route as DashboardPlutoGraphqlRouteImport } from './routes/dashboard.pluto-graphql'
 import { Route as DashboardPlutoFunctionsPlusRouteImport } from './routes/dashboard.pluto-functions-plus'
 import { Route as DashboardPlutoFunctionsRouteImport } from './routes/dashboard.pluto-functions'
+import { Route as DashboardPlutoDeployRouteImport } from './routes/dashboard.pluto-deploy'
 import { Route as DashboardPlutoComplianceRouteImport } from './routes/dashboard.pluto-compliance'
 import { Route as DashboardPlutoBranchesRouteImport } from './routes/dashboard.pluto-branches'
 import { Route as DashboardPlutoBillingRouteImport } from './routes/dashboard.pluto-billing'
@@ -277,6 +278,11 @@ const DashboardPlutoFunctionsRoute = DashboardPlutoFunctionsRouteImport.update({
   path: '/pluto-functions',
   getParentRoute: () => DashboardRoute,
 } as any)
+const DashboardPlutoDeployRoute = DashboardPlutoDeployRouteImport.update({
+  id: '/pluto-deploy',
+  path: '/pluto-deploy',
+  getParentRoute: () => DashboardRoute,
+} as any)
 const DashboardPlutoComplianceRoute =
   DashboardPlutoComplianceRouteImport.update({
     id: '/pluto-compliance',
@@ -493,6 +499,7 @@ export interface FileRoutesByFullPath {
   '/dashboard/pluto-billing': typeof DashboardPlutoBillingRoute
   '/dashboard/pluto-branches': typeof DashboardPlutoBranchesRoute
   '/dashboard/pluto-compliance': typeof DashboardPlutoComplianceRoute
+  '/dashboard/pluto-deploy': typeof DashboardPlutoDeployRoute
   '/dashboard/pluto-functions': typeof DashboardPlutoFunctionsRoute
   '/dashboard/pluto-functions-plus': typeof DashboardPlutoFunctionsPlusRoute
   '/dashboard/pluto-graphql': typeof DashboardPlutoGraphqlRoute
@@ -567,6 +574,7 @@ export interface FileRoutesByTo {
   '/dashboard/pluto-billing': typeof DashboardPlutoBillingRoute
   '/dashboard/pluto-branches': typeof DashboardPlutoBranchesRoute
   '/dashboard/pluto-compliance': typeof DashboardPlutoComplianceRoute
+  '/dashboard/pluto-deploy': typeof DashboardPlutoDeployRoute
   '/dashboard/pluto-functions': typeof DashboardPlutoFunctionsRoute
   '/dashboard/pluto-functions-plus': typeof DashboardPlutoFunctionsPlusRoute
   '/dashboard/pluto-graphql': typeof DashboardPlutoGraphqlRoute
@@ -643,6 +651,7 @@ export interface FileRoutesById {
   '/dashboard/pluto-billing': typeof DashboardPlutoBillingRoute
   '/dashboard/pluto-branches': typeof DashboardPlutoBranchesRoute
   '/dashboard/pluto-compliance': typeof DashboardPlutoComplianceRoute
+  '/dashboard/pluto-deploy': typeof DashboardPlutoDeployRoute
   '/dashboard/pluto-functions': typeof DashboardPlutoFunctionsRoute
   '/dashboard/pluto-functions-plus': typeof DashboardPlutoFunctionsPlusRoute
   '/dashboard/pluto-graphql': typeof DashboardPlutoGraphqlRoute
@@ -720,6 +729,7 @@ export interface FileRouteTypes {
     | '/dashboard/pluto-billing'
     | '/dashboard/pluto-branches'
     | '/dashboard/pluto-compliance'
+    | '/dashboard/pluto-deploy'
     | '/dashboard/pluto-functions'
     | '/dashboard/pluto-functions-plus'
     | '/dashboard/pluto-graphql'
@@ -794,6 +804,7 @@ export interface FileRouteTypes {
     | '/dashboard/pluto-billing'
     | '/dashboard/pluto-branches'
     | '/dashboard/pluto-compliance'
+    | '/dashboard/pluto-deploy'
     | '/dashboard/pluto-functions'
     | '/dashboard/pluto-functions-plus'
     | '/dashboard/pluto-graphql'
@@ -869,6 +880,7 @@ export interface FileRouteTypes {
     | '/dashboard/pluto-billing'
     | '/dashboard/pluto-branches'
     | '/dashboard/pluto-compliance'
+    | '/dashboard/pluto-deploy'
     | '/dashboard/pluto-functions'
     | '/dashboard/pluto-functions-plus'
     | '/dashboard/pluto-graphql'
@@ -1188,6 +1200,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardPlutoFunctionsRouteImport
       parentRoute: typeof DashboardRoute
     }
+    '/dashboard/pluto-deploy': {
+      id: '/dashboard/pluto-deploy'
+      path: '/pluto-deploy'
+      fullPath: '/dashboard/pluto-deploy'
+      preLoaderRoute: typeof DashboardPlutoDeployRouteImport
+      parentRoute: typeof DashboardRoute
+    }
     '/dashboard/pluto-compliance': {
       id: '/dashboard/pluto-compliance'
       path: '/pluto-compliance'
@@ -1481,6 +1500,7 @@ interface DashboardRouteChildren {
   DashboardPlutoBillingRoute: typeof DashboardPlutoBillingRoute
   DashboardPlutoBranchesRoute: typeof DashboardPlutoBranchesRoute
   DashboardPlutoComplianceRoute: typeof DashboardPlutoComplianceRoute
+  DashboardPlutoDeployRoute: typeof DashboardPlutoDeployRoute
   DashboardPlutoFunctionsRoute: typeof DashboardPlutoFunctionsRoute
   DashboardPlutoFunctionsPlusRoute: typeof DashboardPlutoFunctionsPlusRoute
   DashboardPlutoGraphqlRoute: typeof DashboardPlutoGraphqlRoute
@@ -1543,6 +1563,7 @@ const DashboardRouteChildren: DashboardRouteChildren = {
   DashboardPlutoBillingRoute: DashboardPlutoBillingRoute,
   DashboardPlutoBranchesRoute: DashboardPlutoBranchesRoute,
   DashboardPlutoComplianceRoute: DashboardPlutoComplianceRoute,
+  DashboardPlutoDeployRoute: DashboardPlutoDeployRoute,
   DashboardPlutoFunctionsRoute: DashboardPlutoFunctionsRoute,
   DashboardPlutoFunctionsPlusRoute: DashboardPlutoFunctionsPlusRoute,
   DashboardPlutoGraphqlRoute: DashboardPlutoGraphqlRoute,
