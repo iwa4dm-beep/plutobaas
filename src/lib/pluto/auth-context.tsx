@@ -37,12 +37,38 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Consume `#access_token=…` fragment after an OAuth redirect-back so
-    // the session is persisted before we read it.
     if (isLive()) live.auth.completeOAuthRedirect();
     setSession(isLive() ? liveSessionToPluto() : pluto.auth.getSession());
     setLoading(false);
+
+    if (!isLive()) return;
+
+    // Listen for cross-tab session changes + refresh events + hard sign-outs.
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === "pluto.session.v1") setSession(liveSessionToPluto());
+    };
+    const onRefreshed = () => setSession(liveSessionToPluto());
+    const onSignedOut = () => setSession(null);
+    window.addEventListener("storage", onStorage);
+    window.addEventListener("pluto:auth:refreshed", onRefreshed as EventListener);
+    window.addEventListener("pluto:auth:signed-out", onSignedOut as EventListener);
+    return () => {
+      window.removeEventListener("storage", onStorage);
+      window.removeEventListener("pluto:auth:refreshed", onRefreshed as EventListener);
+      window.removeEventListener("pluto:auth:signed-out", onSignedOut as EventListener);
+    };
   }, []);
+
+  // Proactive refresh: schedule a refresh ~60s before expiry.
+  useEffect(() => {
+    if (!isLive() || !session?.expires_at) return;
+    const msUntilExpiry = session.expires_at * 1000 - Date.now();
+    const delay = Math.max(5_000, msUntilExpiry - 60_000);
+    const t = setTimeout(() => {
+      live.auth.refresh().then(() => setSession(liveSessionToPluto())).catch(() => setSession(null));
+    }, delay);
+    return () => clearTimeout(t);
+  }, [session?.access_token, session?.expires_at]);
 
   const signIn = useCallback(async (email: string, password: string) => {
     if (isLive()) {
