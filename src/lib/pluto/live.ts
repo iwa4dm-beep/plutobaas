@@ -87,6 +87,41 @@ function looksLikeExpiredAuth(status: number, message: string): boolean {
   return m.includes("expired") || m.includes("jwt") || m.includes("token");
 }
 
+/**
+ * ApiError — thrown by `api()` on any non-2xx / offline response.
+ *
+ * `message` is a human string, `status` is the HTTP status code,
+ * `path` is the request path, `body` is the parsed response body
+ * (JSON object, string, or null). Dashboard error banners surface
+ * `.status`, `.message`, and — when present — `body.error / body.hint`
+ * so operators can see the exact backend failure and retry.
+ */
+export class ApiError extends Error {
+  status: number;
+  path: string;
+  body: unknown;
+  constructor(message: string, opts: { status: number; path: string; body: unknown }) {
+    super(message);
+    this.name = "ApiError";
+    this.status = opts.status;
+    this.path = opts.path;
+    this.body = opts.body;
+  }
+}
+
+export function describeError(e: unknown): { title: string; detail?: string; status?: number } {
+  if (e instanceof ApiError) {
+    const b = e.body as { error?: string; hint?: string; details?: string } | null;
+    const parts: string[] = [];
+    if (b?.error && b.error !== e.message) parts.push(b.error);
+    if (b?.hint) parts.push(`hint: ${b.hint}`);
+    if (b?.details) parts.push(b.details);
+    return { title: `${e.status} · ${e.message}`, detail: parts.join(" — ") || undefined, status: e.status };
+  }
+  if (e instanceof Error) return { title: e.message };
+  return { title: String(e) };
+}
+
 export async function api<T = unknown>(
   path: string,
   init: RequestInit & { service?: boolean; skipRefresh?: boolean } = {}
@@ -109,8 +144,6 @@ export async function api<T = unknown>(
     ? String((json as { message?: unknown; error?: unknown; reason?: unknown }).message ?? (json as { error?: unknown }).error ?? (json as { reason?: unknown }).reason ?? `HTTP ${res.status}`)
     : (typeof json === "string" ? json : `HTTP ${res.status}`));
 
-  // Reactive refresh: on expired-token 401, refresh once then retry.
-  // Skip for the refresh call itself and for service-key requests.
   if (!skipRefresh && !service && looksLikeExpiredAuth(res.status, messageOf())) {
     const ok = await attemptRefresh();
     if (ok) {
@@ -121,9 +154,12 @@ export async function api<T = unknown>(
   }
 
   const offline = typeof json === "object" && json && (json as { offline?: unknown }).offline === true;
-  if (!res.ok || offline) throw new Error(messageOf());
+  if (!res.ok || offline) {
+    throw new ApiError(messageOf(), { status: res.status, path, body: json });
+  }
   return json as T;
 }
+
 
 function normalizeAuthResponse(r: AuthSession | { user: AuthUser; session: AuthSession }): { user: AuthUser; session: AuthSession } {
   if ("session" in r) return { user: normalizeAuthUser(r.user), session: r.session };
