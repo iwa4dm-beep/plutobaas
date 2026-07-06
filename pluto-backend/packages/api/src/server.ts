@@ -36,6 +36,7 @@ import { complianceRoutes } from './routes/compliance.js';
 import { vaultRoutes } from './routes/vault.js';
 import { studioRoutes } from './routes/studio.js';
 import { marketplaceRoutes } from './routes/marketplace.js';
+import { jobsRoutes } from './routes/jobs.js';
 import { metricsPlugin } from './observability/metrics.js';
 
 
@@ -119,6 +120,7 @@ async function main() {
   await vaultRoutes(app, cfg);
   await studioRoutes(app, cfg);
   await marketplaceRoutes(app, cfg);
+  await jobsRoutes(app, cfg);
 
 
 
