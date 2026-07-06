@@ -166,12 +166,12 @@ const rid = () => Math.random().toString(36).slice(2, 10);
 
 // ---------- Adapters (live → public shape) ----------
 
-function adaptAuthUser(u: { id: string; email: string; role: "admin" | "user"; email_verified?: boolean; created_at?: string }): PlutoUser {
+function adaptAuthUser(u: { id: string; email: string; role?: string; email_verified?: boolean; created_at?: string; is_superadmin?: boolean; email_confirmed_at?: string | null }): PlutoUser {
   return {
     id: u.id,
     email: u.email,
-    role: u.role,
-    email_verified: u.email_verified ?? false,
+    role: u.is_superadmin || u.role === "admin" ? "admin" : "user",
+    email_verified: u.email_verified ?? Boolean(u.email_confirmed_at),
     created_at: u.created_at ?? new Date().toISOString(),
   };
 }
