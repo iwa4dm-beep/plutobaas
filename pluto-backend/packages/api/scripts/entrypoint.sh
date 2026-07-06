@@ -1,6 +1,6 @@
 #!/bin/sh
-# Container entrypoint — optionally runs migrations before starting the API.
-# Enable via AUTO_MIGRATE=1 (default: off).
+# Container entrypoint — runs migrations before starting the API.
+# Disable only for special maintenance via AUTO_MIGRATE=0.
 set -e
 
 MIGRATE_SCRIPT="/app/packages/api/scripts/migrate.mjs"
@@ -17,7 +17,7 @@ else
   echo "⚠ bootstrap script missing at $BOOTSTRAP_SCRIPT — skipping shim" >&2
 fi
 
-if [ "${AUTO_MIGRATE:-0}" = "1" ]; then
+if [ "${AUTO_MIGRATE:-1}" = "1" ]; then
   if [ ! -f "$MIGRATE_SCRIPT" ]; then
     echo "❌ AUTO_MIGRATE=1 but migrate script not found at $MIGRATE_SCRIPT" >&2
     echo "   Container layout is broken — rebuild the image (docker compose build api)." >&2
