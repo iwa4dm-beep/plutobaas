@@ -95,11 +95,13 @@ function Overview() {
       try {
         if (!isLive()) throw new Error("Backend not configured");
         const [s, l, sch] = await Promise.all([
-          live.admin.stats(),
-          live.admin.logs({ limit: 100 }),
+          live.admin.stats().catch(() => ({ users: 0, buckets: 0, objects: 0, storage_bytes: 0 })),
+          live.admin.logs({ limit: 100 }).catch(() => [] as unknown[]),
           live.schema.introspect().catch(() => ({ tables: [] as unknown[] })),
         ]);
-        setStats({ users: s.users, tables: sch.tables.length, buckets: s.buckets, logs: l.length });
+        const tables = Array.isArray(sch?.tables) ? sch.tables.length : 0;
+        const logs = Array.isArray(l) ? l.length : 0;
+        setStats({ users: s?.users ?? 0, tables, buckets: s?.buckets ?? 0, logs });
       } catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
       finally { setLoaded(true); }
     })();
