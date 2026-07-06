@@ -217,6 +217,7 @@ function VerifyPage() {
 function StatusIcon({ status }: { status: Status }) {
   if (status === "pass")    return <CheckCircle2 className="h-4 w-4 text-emerald-500 mt-0.5" />;
   if (status === "fail")    return <XCircle       className="h-4 w-4 text-red-500 mt-0.5" />;
+  if (status === "skip")    return <MinusCircle   className="h-4 w-4 text-amber-500 mt-0.5" />;
   if (status === "running") return <Loader2       className="h-4 w-4 text-primary animate-spin mt-0.5" />;
   return <Circle className="h-4 w-4 text-muted-foreground mt-0.5" />;
 }
