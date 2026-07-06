@@ -37,8 +37,12 @@ import { vaultRoutes } from './routes/vault.js';
 import { studioRoutes } from './routes/studio.js';
 import { marketplaceRoutes } from './routes/marketplace.js';
 import { jobsRoutes } from './routes/jobs.js';
+import { corsRoutes } from './routes/cors.js';
+import { makeOriginCallback, primeCorsCache } from './cors/registry.js';
 import { metricsPlugin } from './observability/metrics.js';
 import { swaggerPlugin } from './observability/swagger.js';
+
+
 
 
 
@@ -57,15 +61,21 @@ async function main() {
   // Security
   await app.register(helmet, { contentSecurityPolicy: false });
 
-  // CORS
-  const origins = cfg.CORS_ORIGINS === '*' ? true : cfg.CORS_ORIGINS.split(',').map((s) => s.trim());
+  // CORS — database-driven allow-list (admin.cors_origins), refreshed every
+  // 15s + on every mutation. CORS_ORIGINS env is merged in as a static
+  // fallback so the API's own domain survives DB outages. localhost is
+  // auto-allowed in NODE_ENV=development.
+  await primeCorsCache(cfg).catch(() => undefined);
   await app.register(cors, {
-    origin: origins,
+    origin: makeOriginCallback(cfg),
     credentials: true,
     methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'apikey', 'x-client-info', 'prefer', 'range'],
     exposedHeaders: ['content-range', 'x-total-count'],
+    maxAge: 86400,
   });
+
+
 
   // Rate limit
   await app.register(rateLimit, {
@@ -126,6 +136,8 @@ async function main() {
   await studioRoutes(app, cfg);
   await marketplaceRoutes(app, cfg);
   await jobsRoutes(app, cfg);
+  await corsRoutes(app, cfg);
+
 
 
 
