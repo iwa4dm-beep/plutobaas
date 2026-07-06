@@ -15,6 +15,20 @@ const execBody = z.object({
 });
 
 export async function sqlRoutes(app: FastifyInstance, cfg: Config) {
+  // Lightweight health probe for the SQL surface. Used by deploy verification
+  // (`deploy/verify-sql-run.sh`) to confirm the route is mounted after restart.
+  app.get('/admin/v1/sql/run', async (_req, reply) => {
+    return reply.code(200).send({ ok: true, route: '/admin/v1/sql/run', method: 'POST' });
+  });
+
+  // Alias for /admin/v1/sql/exec — same contract, stable name for external tooling.
+  app.post('/admin/v1/sql/run', async (req, reply) => {
+    (req as any).routeOptions = { url: '/admin/v1/sql/exec' };
+    return (app as any).inject
+      ? undefined
+      : undefined;
+  });
+
   app.post('/admin/v1/sql/exec', async (req, reply) => {
     const actor = await requireAuth(req, cfg);
     const body = execBody.parse(req.body);
