@@ -13,6 +13,14 @@ const HOP_BY_HOP = new Set([
   "content-encoding",
 ]);
 
+const CORS_HEADERS: Record<string, string> = {
+  "access-control-allow-origin": "*",
+  "access-control-allow-methods": "GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS",
+  "access-control-allow-headers": "content-type, authorization, apikey, x-requested-with, accept, origin",
+  "access-control-expose-headers": "content-type, x-pluto-offline, x-request-id",
+  "access-control-max-age": "86400",
+};
+
 async function handle({ request, params }: { request: Request; params: { _splat?: string } }) {
   const upstream = process.env.PLUTO_UPSTREAM_URL ?? "https://api.timescard.cloud";
   const splat = params._splat ?? "";
