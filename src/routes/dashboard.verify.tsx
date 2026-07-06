@@ -77,11 +77,12 @@ function VerifyPage() {
     // — Config —
     await runOne("cfg.url",     async () => cfg?.url    || Promise.reject(new Error("missing")), (v) => v as string);
     await runOne("cfg.anon",    async () => cfg?.anonKey || Promise.reject(new Error("missing")), (v) => `${(v as string).slice(0, 12)}…`);
-    await runOne("cfg.service", async () => {
-      const k = cfg?.serviceKey ?? "";
-      if (!k) throw new Error("Optional but required for admin checks below");
-      return k;
-    }, (v) => `${(v as string).slice(0, 12)}…`);
+    const hasServiceKey = Boolean(cfg?.serviceKey);
+    if (hasServiceKey) {
+      await runOne("cfg.service", async () => cfg!.serviceKey!, (v) => `${v.slice(0, 12)}…`);
+    } else {
+      skipOne("cfg.service", "Not configured — signed-in admin session is used for admin routes instead");
+    }
 
     if (!cfg) { setRunning(false); setSummary("Not live — no backend URL configured. Set VITE_PLUTO_URL and reload."); return; }
 
