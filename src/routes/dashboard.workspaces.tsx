@@ -2,7 +2,9 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
 import { AlertTriangle, Copy, KeyRound, Plus, ShieldCheck, Trash2, Users2 } from "lucide-react";
 import { PageHeader } from "@/components/pluto/PageHeader";
+import { ErrorBanner } from "@/components/pluto/ErrorBanner";
 import { isLive, live, type Workspace, type WorkspaceKey, type WorkspaceMember } from "@/lib/pluto/live";
+
 
 export const Route = createFileRoute("/dashboard/workspaces")({
   component: WorkspacesPage,
