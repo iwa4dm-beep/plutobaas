@@ -65,22 +65,12 @@ function ProjectsPage() {
     } catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
   }
 
-  // Fallback (no live backend configured) — keep the original static
-  // display so the dashboard still renders in demo mode.
   if (!isLive()) {
-    const demo = [
-      { name: "anon (public)", value: "pk_anon_3f9k2lq8d7s2nv0w", danger: false },
-      { name: "service_role (server only)", value: "sk_service_8xv2j7l4m1q5pdz0", danger: true },
-    ];
     return (
       <div>
-        <PageHeader title="Projects & API Keys" description="এই Pluto instance-এর project URL ও keys। (mock)" />
-        <div className="rounded-lg border border-border bg-card p-6">
-          <div className="flex items-center gap-2"><KeyRound className="h-4 w-4 text-muted-foreground" /><h2 className="font-medium">Default project</h2></div>
-          <div className="mt-5 space-y-4">
-            <Field label="Project URL" value="http://localhost:8000" onCopy={copy} copied={copied} />
-            {demo.map((k) => <Field key={k.name} label={k.name} value={k.value} onCopy={copy} copied={copied} danger={k.danger} />)}
-          </div>
+        <PageHeader title="Projects & API Keys" description="Backend not configured." />
+        <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-6 text-sm text-destructive">
+          Pluto backend URL এবং anon key configure করা নেই। Environment variables set করে reload করুন।
         </div>
       </div>
     );

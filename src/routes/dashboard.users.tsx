@@ -43,7 +43,7 @@ function UsersPage() {
     <div>
       <PageHeader
         title="Auth & Users"
-        description={`Sign-up, email verification, এবং role management।${isLive() ? " (live)" : " (mock)"}`}
+        description="Sign-up, email verification, এবং role management।"
       />
       {err && <div className="mb-4 rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">{err}</div>}
 

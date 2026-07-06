@@ -41,7 +41,7 @@ function LogsPage() {
     <div>
       <PageHeader
         title="Logs"
-        description={`Auth, REST, Storage, এবং Admin API request log।${isLive() ? " (live)" : " (mock)"}`}
+        description="Auth, REST, Storage, এবং Admin API request log।"
         actions={
           <select value={filter} onChange={(e) => setFilter(e.target.value)} className="rounded-md border border-input bg-background px-2 py-1 text-sm">
 

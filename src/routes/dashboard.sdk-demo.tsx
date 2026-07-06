@@ -23,7 +23,7 @@ const DEFAULT_ANON =
 function SdkDemo() {
   const [baseUrl, setBaseUrl] = useState(DEFAULT_URL);
   const [apikey, setApikey] = useState(DEFAULT_ANON);
-  const [email, setEmail] = useState("admin@pluto.local");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [session, setSession] = useState<Session | null>(null);
   const [table, setTable] = useState("posts");

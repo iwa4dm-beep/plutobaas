@@ -39,8 +39,8 @@ function MigrationsPage() {
     setErr(null);
     try {
       if (!isLive()) {
-        setEntries(mockEntries);
-        setNote("Showing sample data — configure VITE_PLUTO_URL & VITE_PLUTO_ANON_KEY to run against a live Pluto instance.");
+        setEntries([]);
+        setErr("Backend not configured — set VITE_PLUTO_URL & VITE_PLUTO_ANON_KEY.");
         return;
       }
       const [{ migrations }, boot] = await Promise.all([
@@ -486,10 +486,3 @@ function BootStat({ label, items, tone }: { label: string; items: string[]; tone
   );
 }
 
-
-const mockEntries: MigrationEntry[] = [
-  { version: "0001_init", name: "init", status: "applied", file_checksum: "abc", db_checksum: "abc", applied_at: new Date(Date.now() - 86400000 * 30).toISOString(), duration_ms: 240, has_down: false, error: null },
-  { version: "0002_rls_helpers", name: "rls_helpers", status: "applied", file_checksum: "def", db_checksum: "def", applied_at: new Date(Date.now() - 86400000 * 20).toISOString(), duration_ms: 88, has_down: false, error: null },
-  { version: "0003_phase5", name: "phase5", status: "drift", file_checksum: "111", db_checksum: "222", applied_at: new Date(Date.now() - 86400000 * 5).toISOString(), duration_ms: 130, has_down: false, error: null },
-  { version: "0004_phase6", name: "phase6", status: "pending", file_checksum: "999", db_checksum: null, applied_at: null, duration_ms: null, has_down: true, error: null },
-];
