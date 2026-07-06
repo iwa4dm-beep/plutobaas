@@ -208,8 +208,27 @@ async function main() {
     });
   });
 
+  // Boot-time schema check — hit /health/migrations/required internally so
+  // missing Phase-17 tables surface in `docker logs` immediately, not only
+  // when the dashboard tries to create a workspace/project/token.
+  try {
+    const probe = await app.inject({ method: 'GET', url: '/health/migrations/required' });
+    if (probe.statusCode !== 200) {
+      const body = probe.json() as { missing?: string[]; hint?: string };
+      app.log.warn(
+        { missing: body.missing, hint: body.hint },
+        `⚠ required migrations not applied — dashboard project/workspace/token flows will fail. Set AUTO_MIGRATE=1 and restart.`,
+      );
+    } else {
+      app.log.info('✓ required migrations verified (workspaces / projects / tokens schema present)');
+    }
+  } catch (e: any) {
+    app.log.warn({ err: e?.message }, 'migrations preflight probe failed');
+  }
+
   await app.listen({ port: cfg.PORT, host: cfg.HOST });
   app.log.info(`🚀 Pluto API listening on http://${cfg.HOST}:${cfg.PORT}`);
+
 
   // Background email worker — polls admin.email_queue every 10s.
   startEmailWorker(cfg, {
