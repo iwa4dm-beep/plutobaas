@@ -116,6 +116,33 @@ export async function healthRoutes(app: FastifyInstance, cfg: Config) {
       out.migrations = { ok: false, error: e.message };
     }
 
+    // auth.* compatibility shim probes — these functions are required by
+    // migrations 0016+. If any is missing or throws, surface the exact
+    // Postgres error so deploy tooling can react (see deploy/verify-*.sh).
+    const authProbes: Array<{ name: string; sql: string }> = [
+      { name: 'auth.uid',  sql: 'select auth.uid()  as v' },
+      { name: 'auth.role', sql: 'select auth.role() as v' },
+      { name: 'auth.jwt',  sql: 'select auth.jwt()  as v' },
+    ];
+    const authResults: Record<string, any> = {};
+    let authOk = true;
+    for (const p of authProbes) {
+      try {
+        await sql.unsafe(p.sql);
+        authResults[p.name] = { ok: true };
+      } catch (e: any) {
+        authOk = false;
+        authResults[p.name] = {
+          ok: false,
+          error: e.message,
+          code: e.code ?? null,           // 42883 = undefined_function
+          hint: e.hint ?? null,
+          routine: e.routine ?? null,
+        };
+      }
+    }
+    out.auth_shim = { ok: authOk, probes: authResults };
+
     // audit_log required columns
     const requiredCols: Record<string, string> = {
       project_id: 'uuid',

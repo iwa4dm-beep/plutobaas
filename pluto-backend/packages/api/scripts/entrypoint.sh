@@ -4,7 +4,18 @@
 set -e
 
 MIGRATE_SCRIPT="/app/packages/api/scripts/migrate.mjs"
+BOOTSTRAP_SCRIPT="/app/packages/api/scripts/bootstrap-auth-shim.mjs"
 SERVER_ENTRY="/app/packages/api/dist/server.js"
+
+# Always ensure the auth.* compatibility shim exists before the API boots.
+# Migrations 0016+ reference auth.uid() / auth.role() / auth.jwt(); without
+# these functions the API would crash on the first RLS-guarded query.
+if [ -f "$BOOTSTRAP_SCRIPT" ]; then
+  echo "▶ bootstrapping auth.* compatibility shim"
+  node "$BOOTSTRAP_SCRIPT"
+else
+  echo "⚠ bootstrap script missing at $BOOTSTRAP_SCRIPT — skipping shim" >&2
+fi
 
 if [ "${AUTO_MIGRATE:-0}" = "1" ]; then
   if [ ! -f "$MIGRATE_SCRIPT" ]; then
