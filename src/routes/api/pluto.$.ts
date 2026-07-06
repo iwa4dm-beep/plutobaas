@@ -45,6 +45,7 @@ async function handle({ request, params }: { request: Request; params: { _splat?
           "content-type": "application/json",
           "cache-control": "no-store",
           "x-pluto-offline": "1",
+          ...CORS_HEADERS,
         },
       },
     );
