@@ -68,6 +68,8 @@ async function handle({ request, params }: { request: Request; params: { _splat?
     upstreamRes.headers.forEach((value, key) => {
       if (!HOP_BY_HOP.has(key.toLowerCase())) respHeaders.set(key, value);
     });
+    // Same-origin proxy — attach CORS defensively so callers on any subdomain work too.
+    for (const [k, v] of Object.entries(CORS_HEADERS)) respHeaders.set(k, v);
     if (upstreamRes.ok) {
       recordSuccess(`/${splat}`);
     } else {
@@ -88,7 +90,7 @@ async function handle({ request, params }: { request: Request; params: { _splat?
         error: msg,
         target,
       }),
-      { status: 200, headers: { "content-type": "application/json", "x-pluto-offline": "1" } },
+      { status: 200, headers: { "content-type": "application/json", "x-pluto-offline": "1", ...CORS_HEADERS } },
     );
   }
 }
