@@ -1,66 +1,43 @@
 # @pluto/js
 
-Official JavaScript / TypeScript client for **Pluto BaaS**.
-Supabase-compatible API — if you know `@supabase/supabase-js`, you already know this.
+Official JavaScript / TypeScript SDK for [Pluto](https://api.timescard.cloud) — a Supabase-compatible BaaS.
 
 ```bash
-npm i @pluto/js
+npm install @pluto/js
 ```
-
-## Usage
 
 ```ts
-import { createClient } from '@pluto/js'
+import { createClient } from '@pluto/js';
 
-const pluto = createClient(
-  'https://api.your-domain.com',
-  'pk_publishable_key_here'
-)
+const pluto = createClient('https://api.timescard.cloud', 'pk_live_...');
 
-// --- Auth ---
-await pluto.auth.signUp({ email: 'a@b.c', password: 'secret1234' })
-const { data, error } = await pluto.auth.signInWithPassword({ email, password })
-pluto.auth.onAuthStateChange((event, session) => { console.log(event, session) })
-await pluto.auth.signOut()
+// Full self-serve onboarding in one call
+const { data } = await pluto.onboarding.signupFull({
+  email: 'you@example.com',
+  password: '...',
+  domain: 'https://yourapp.com',
+  seed_demo: true,
+});
 
-// --- Database ---
-const { data: posts } = await pluto
-  .from('posts')
-  .select('id, title, author_id')
-  .eq('published', true)
-  .order('created_at', { ascending: false })
-  .limit(20)
-
-await pluto.from('posts').insert({ title: 'Hello', body: '...' })
-await pluto.from('posts').update({ published: true }).eq('id', 42)
-await pluto.from('posts').upsert({ id: 42, title: 'x' }, { onConflict: 'id' })
-await pluto.from('posts').delete().eq('id', 42)
-
-// --- RPC ---
-const { data } = await pluto.rpc('increment_counter', { by: 1 })
-
-// --- Storage ---
-await pluto.storage.from('avatars').upload('me.png', file)
-const { data: url } = pluto.storage.from('avatars').getPublicUrl('me.png')
-
-// --- Realtime ---
-pluto.channel('room-1')
-  .on('postgres_changes', { event: 'INSERT', table: 'messages' }, (p) => console.log(p))
-  .subscribe()
+// Then use like Supabase
+await pluto.from('posts').select('*').eq('published', true);
+await pluto.storage.from('avatars').upload('me.png', file);
+pluto.channel('room').on('postgres_changes', {...}, cb).subscribe();
 ```
 
-## Framework support
+Full docs: <https://backend-joy.lovable.app/docs/sdk>
 
-Works in React, Next.js, TanStack Start, Vue, Svelte, vanilla JS, React Native, and any modern runtime with `fetch` and `WebSocket`. SSR-safe (auto-detects `localStorage`, falls back to in-memory).
+## API surface
 
-## Migrating from Supabase
-
-Most calls are drop-in. Replace:
-
-```diff
-- import { createClient } from '@supabase/supabase-js'
-+ import { createClient } from '@pluto/js'
-```
+| Namespace          | Purpose                                           |
+| ------------------ | ------------------------------------------------- |
+| `pluto.auth`       | sign in/up/out, session, `onAuthStateChange`     |
+| `pluto.from(t)`    | REST query builder (`select/insert/update/delete`)|
+| `pluto.rpc(fn)`    | call Postgres functions                          |
+| `pluto.storage`    | file upload, public/signed URLs                  |
+| `pluto.realtime`   | channels, presence, broadcast, CDC               |
+| `pluto.onboarding` | `signupFull`, `acceptInvite`, `createInvite`     |
+| `pluto.domains`    | `list`, `add`, `remove` — auto-CORS              |
 
 ## License
 
