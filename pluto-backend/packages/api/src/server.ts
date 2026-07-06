@@ -38,6 +38,7 @@ import { studioRoutes } from './routes/studio.js';
 import { marketplaceRoutes } from './routes/marketplace.js';
 import { jobsRoutes } from './routes/jobs.js';
 import { metricsPlugin } from './observability/metrics.js';
+import { swaggerPlugin } from './observability/swagger.js';
 
 
 
@@ -70,7 +71,7 @@ async function main() {
   await app.register(rateLimit, {
     max: cfg.RATE_LIMIT_GLOBAL,
     timeWindow: '1 minute',
-    allowList: (req) => req.url === '/livez' || req.url === '/readyz' || req.url === '/healthz',
+    allowList: (req) => req.url === '/livez' || req.url === '/readyz' || req.url === '/healthz' || req.url === '/openapi.json' || req.url.startsWith('/docs'),
   });
 
   // JWT
@@ -87,6 +88,10 @@ async function main() {
 
   // Metrics — register BEFORE routes so hooks capture everything
   await metricsPlugin(app);
+
+  // OpenAPI / Swagger UI — must be registered BEFORE routes so it can
+  // introspect every route added afterwards.
+  await swaggerPlugin(app, cfg);
 
   // Routes
   await healthRoutes(app, cfg);
@@ -129,7 +134,7 @@ async function main() {
     service: 'pluto-api',
     version: '0.1.0',
     docs: 'https://github.com/your-org/pluto-backend',
-    endpoints: ['/livez', '/readyz', '/healthz', '/metrics', '/auth/v1/*', '/rest/v1/*', '/storage/v1/*', '/realtime/v1/*', '/admin/v1/*', '/functions/v1/*', '/jobs/v1/*'],
+    endpoints: ['/livez', '/readyz', '/healthz', '/health/deps', '/metrics', '/docs', '/openapi.json', '/auth/v1/*', '/rest/v1/*', '/storage/v1/*', '/realtime/v1/*', '/admin/v1/*', '/functions/v1/*', '/jobs/v1/*'],
   }));
 
   // Global error handler — always JSON
