@@ -218,6 +218,7 @@ export async function healthRoutes(app: FastifyInstance, cfg: Config) {
 
     const healthy =
       out.migrations?.ok &&
+      out.auth_shim?.ok &&
       out.audit_log_columns?.ok &&
       out.audit_log_fk?.ok &&
       out.audit_log_indexes?.ok;
