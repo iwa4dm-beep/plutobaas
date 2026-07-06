@@ -52,14 +52,49 @@ function bearer(useService = false): Record<string, string> {
   };
 }
 
+// Single-flight refresh: multiple concurrent 401s share one refresh call.
+let refreshInFlight: Promise<boolean> | null = null;
+
+async function attemptRefresh(): Promise<boolean> {
+  if (refreshInFlight) return refreshInFlight;
+  refreshInFlight = (async () => {
+    const sess = readSession();
+    if (!sess?.refresh_token) return false;
+    try {
+      const r = await api<AuthSession | { session: AuthSession }>("/auth/v1/token", {
+        method: "POST",
+        body: JSON.stringify({ grant_type: "refresh_token", refresh_token: sess.refresh_token }),
+        skipRefresh: true,
+      });
+      const session = "session" in r ? r.session : (r as AuthSession);
+      persistSession(session, sess.user as AuthUser);
+      try { window.dispatchEvent(new CustomEvent("pluto:auth:refreshed")); } catch { /* ignore */ }
+      return true;
+    } catch {
+      try { localStorage.removeItem(SESSION_KEY); } catch { /* ignore */ }
+      try { window.dispatchEvent(new CustomEvent("pluto:auth:signed-out", { detail: { reason: "refresh_failed" } })); } catch { /* ignore */ }
+      return false;
+    } finally {
+      refreshInFlight = null;
+    }
+  })();
+  return refreshInFlight;
+}
+
+function looksLikeExpiredAuth(status: number, message: string): boolean {
+  if (status !== 401) return false;
+  const m = message.toLowerCase();
+  return m.includes("expired") || m.includes("jwt") || m.includes("token");
+}
+
 export async function api<T = unknown>(
   path: string,
-  init: RequestInit & { service?: boolean } = {}
+  init: RequestInit & { service?: boolean; skipRefresh?: boolean } = {}
 ): Promise<T> {
   const cfg = liveConfig();
   if (!cfg) throw new Error("Pluto backend not configured (set VITE_PLUTO_URL & VITE_PLUTO_ANON_KEY)");
-  const { service, headers, ...rest } = init;
-  const res = await fetch(cfg.url.replace(/\/$/, "") + path, {
+  const { service, skipRefresh, headers, ...rest } = init;
+  const doFetch = () => fetch(cfg.url.replace(/\/$/, "") + path, {
     ...rest,
     headers: {
       "content-type": "application/json",
@@ -67,15 +102,26 @@ export async function api<T = unknown>(
       ...(headers as Record<string, string> | undefined),
     },
   });
-  const text = await res.text();
-  const json = text ? (() => { try { return JSON.parse(text); } catch { return text; } })() : null;
-  const offline = typeof json === "object" && json && (json as { offline?: unknown }).offline === true;
-  if (!res.ok || offline) {
-    const message = typeof json === "object" && json
-      ? String((json as { message?: unknown; error?: unknown; reason?: unknown }).message ?? (json as { error?: unknown }).error ?? (json as { reason?: unknown }).reason ?? `HTTP ${res.status}`)
-      : (typeof json === "string" ? json : `HTTP ${res.status}`);
-    throw new Error(message);
+  let res = await doFetch();
+  let text = await res.text();
+  let json = text ? (() => { try { return JSON.parse(text); } catch { return text; } })() : null;
+  const messageOf = () => (typeof json === "object" && json
+    ? String((json as { message?: unknown; error?: unknown; reason?: unknown }).message ?? (json as { error?: unknown }).error ?? (json as { reason?: unknown }).reason ?? `HTTP ${res.status}`)
+    : (typeof json === "string" ? json : `HTTP ${res.status}`));
+
+  // Reactive refresh: on expired-token 401, refresh once then retry.
+  // Skip for the refresh call itself and for service-key requests.
+  if (!skipRefresh && !service && looksLikeExpiredAuth(res.status, messageOf())) {
+    const ok = await attemptRefresh();
+    if (ok) {
+      res = await doFetch();
+      text = await res.text();
+      json = text ? (() => { try { return JSON.parse(text); } catch { return text; } })() : null;
+    }
   }
+
+  const offline = typeof json === "object" && json && (json as { offline?: unknown }).offline === true;
+  if (!res.ok || offline) throw new Error(messageOf());
   return json as T;
 }
 
