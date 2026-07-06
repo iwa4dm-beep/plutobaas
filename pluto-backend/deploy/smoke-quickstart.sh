@@ -19,6 +19,7 @@ PROBES=(
   "edge       /functions/v1/health"
   "jobs       /jobs/v1/health"
   "admin      /admin/v1/health"
+  "tokens     /tokens/v1/health"
   "aggregate  /v1/health"
 )
 
