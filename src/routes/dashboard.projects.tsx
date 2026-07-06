@@ -1,12 +1,14 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Copy, FolderKanban, KeyRound, Plus, Trash2 } from "lucide-react";
 import { PageHeader } from "@/components/pluto/PageHeader";
+import { ErrorBanner } from "@/components/pluto/ErrorBanner";
 import { isLive, live, type Workspace, type WorkspaceKey } from "@/lib/pluto/live";
 
 export const Route = createFileRoute("/dashboard/projects")({
   component: ProjectsPage,
 });
+
 
 function ProjectsPage() {
   const [copied, setCopied] = useState<string | null>(null);
