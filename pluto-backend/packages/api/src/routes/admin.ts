@@ -179,6 +179,7 @@ export async function adminRoutes(app: FastifyInstance, cfg: Config) {
     const anon = mintApiKey('anon');
     const svc = mintApiKey('service_role');
     const sql = getSql(cfg);
+    const projectSlug = `${body.slug.slice(0, 54)}-${randomBytes(3).toString('hex')}`;
     const result = await sql.begin(async (tx) => {
       const [workspace] = await tx<any[]>`
         insert into admin.workspaces (slug, name, owner_id)
@@ -190,7 +191,7 @@ export async function adminRoutes(app: FastifyInstance, cfg: Config) {
         on conflict do nothing`;
       const [project] = await tx<any[]>`
         insert into admin.projects (name, slug, owner_id, workspace_id)
-        values (${body.name}, ${body.slug}, ${actor.userId}, ${workspace.id})
+        values (${body.name}, ${projectSlug}, ${actor.userId}, ${workspace.id})
         returning id, slug, name`;
       await tx`
         insert into admin.project_members (project_id, user_id, role)
