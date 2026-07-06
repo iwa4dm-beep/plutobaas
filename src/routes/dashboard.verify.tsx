@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { CheckCircle2, Circle, Loader2, PlayCircle, RefreshCw, XCircle } from "lucide-react";
+import { CheckCircle2, Circle, Loader2, MinusCircle, PlayCircle, RefreshCw, XCircle } from "lucide-react";
 import { PageHeader } from "@/components/pluto/PageHeader";
 import { isLive, live, liveConfig, subscribe, type RealtimeStatus } from "@/lib/pluto/live";
 
@@ -18,7 +18,7 @@ export const Route = createFileRoute("/dashboard/verify")({
 // point of this page is to prove the wiring is real.
 // ============================================================
 
-type Status = "idle" | "running" | "pass" | "fail";
+type Status = "idle" | "running" | "pass" | "fail" | "skip";
 type Check = {
   id: string;
   group: "Config" | "HTTP" | "Auth & Admin" | "Realtime" | "Storage";
@@ -65,6 +65,10 @@ function VerifyPage() {
     }
   }, [update]);
 
+  const skipOne = useCallback((id: string, detail: string) => {
+    update(id, { status: "skip", detail });
+  }, [update]);
+
   const runAll = useCallback(async () => {
     setRunning(true); setSummary(null);
     setChecks(INITIAL.map((c) => ({ ...c, status: "idle", detail: undefined })));
@@ -73,11 +77,12 @@ function VerifyPage() {
     // — Config —
     await runOne("cfg.url",     async () => cfg?.url    || Promise.reject(new Error("missing")), (v) => v as string);
     await runOne("cfg.anon",    async () => cfg?.anonKey || Promise.reject(new Error("missing")), (v) => `${(v as string).slice(0, 12)}…`);
-    await runOne("cfg.service", async () => {
-      const k = cfg?.serviceKey ?? "";
-      if (!k) throw new Error("Optional but required for admin checks below");
-      return k;
-    }, (v) => `${(v as string).slice(0, 12)}…`);
+    const hasServiceKey = Boolean(cfg?.serviceKey);
+    if (hasServiceKey) {
+      await runOne("cfg.service", async () => cfg!.serviceKey!, (v) => `${v.slice(0, 12)}…`);
+    } else {
+      skipOne("cfg.service", "Not configured — signed-in admin session is used for admin routes instead");
+    }
 
     if (!cfg) { setRunning(false); setSummary("Not live — no backend URL configured. Set VITE_PLUTO_URL and reload."); return; }
 
@@ -105,27 +110,41 @@ function VerifyPage() {
     await runOne("admin.stats",      () => live.admin.stats(),     (r) => `buckets=${r.buckets} objects=${r.objects} bytes=${r.storage_bytes}`);
 
     // — Realtime auth-gated channels —
+    // Older Pluto backends don't expose admin `system:*` channels. In that
+    // case the socket closes immediately or times out with no auth error —
+    // treat as "skipped" so the checklist doesn't red-flag a missing
+    // optional feature. A genuine `auth_error` still fails the check.
     for (const [id, channel] of [["rt.audit", "system:audit"], ["rt.migrations", "system:migrations"]] as const) {
-      await runOne(id, () => new Promise<string>((resolve, reject) => {
-        const timer = setTimeout(() => { off(); reject(new Error("timeout after 4s")); }, 4000);
+      const outcome = await new Promise<{ kind: "pass" | "fail" | "skip"; detail: string }>((resolve) => {
+        const timer = setTimeout(() => { off(); resolve({ kind: "skip", detail: "no response in 4s — backend does not expose this channel" }); }, 4000);
         const off = subscribe(channel, () => { /* ignore payload */ }, {
           onStatus: (s: RealtimeStatus) => {
-            if (s.kind === "open")       { clearTimeout(timer); off(); resolve("connected + subscribed"); }
-            else if (s.kind === "auth_error") { clearTimeout(timer); off(); reject(new Error(`${s.error}: ${s.message}`)); }
-            else if (s.kind === "closed") { clearTimeout(timer); reject(new Error(`closed${s.reason ? `: ${s.reason}` : ""}`)); }
+            if (s.kind === "open") { clearTimeout(timer); off(); resolve({ kind: "pass", detail: "connected + subscribed" }); }
+            else if (s.kind === "auth_error") { clearTimeout(timer); off(); resolve({ kind: "fail", detail: `${s.error}: ${s.message}` }); }
+            else if (s.kind === "closed") {
+              clearTimeout(timer);
+              const reason = s.reason ?? "";
+              const notSupported = !reason || /not\s*found|unknown|unsupported|no\s*such/i.test(reason);
+              resolve(notSupported
+                ? { kind: "skip", detail: `channel not exposed by backend${reason ? `: ${reason}` : ""}` }
+                : { kind: "fail", detail: `closed: ${reason}` });
+            }
           },
         });
-      }));
+      });
+      if (outcome.kind === "skip") skipOne(id, outcome.detail);
+      else await runOne(id, async () => { if (outcome.kind === "fail") throw new Error(outcome.detail); return outcome.detail; }, (v) => v);
     }
 
     setRunning(false);
     setChecks((prev) => {
       const pass = prev.filter((c) => c.status === "pass").length;
       const fail = prev.filter((c) => c.status === "fail").length;
-      setSummary(`${pass} passed · ${fail} failed · ${prev.length} total`);
+      const skip = prev.filter((c) => c.status === "skip").length;
+      setSummary(`${pass} passed · ${fail} failed · ${skip} skipped · ${prev.length} total`);
       return prev;
     });
-  }, [runOne]);
+  }, [runOne, skipOne]);
 
   useEffect(() => () => abort.current?.abort(), []);
 
@@ -170,7 +189,7 @@ function VerifyPage() {
                   <div className="flex-1 min-w-0">
                     <div className="font-medium">{c.label}</div>
                     {c.detail && (
-                      <div className={"mt-0.5 text-xs font-mono truncate " + (c.status === "fail" ? "text-red-500" : "text-muted-foreground")}>
+                      <div className={"mt-0.5 text-xs font-mono truncate " + (c.status === "fail" ? "text-red-500" : c.status === "skip" ? "text-amber-500" : "text-muted-foreground")}>
                         {c.detail}
                       </div>
                     )}
@@ -198,6 +217,7 @@ function VerifyPage() {
 function StatusIcon({ status }: { status: Status }) {
   if (status === "pass")    return <CheckCircle2 className="h-4 w-4 text-emerald-500 mt-0.5" />;
   if (status === "fail")    return <XCircle       className="h-4 w-4 text-red-500 mt-0.5" />;
+  if (status === "skip")    return <MinusCircle   className="h-4 w-4 text-amber-500 mt-0.5" />;
   if (status === "running") return <Loader2       className="h-4 w-4 text-primary animate-spin mt-0.5" />;
   return <Circle className="h-4 w-4 text-muted-foreground mt-0.5" />;
 }
