@@ -210,8 +210,3 @@ function JobsPage() {
     </div>
   );
 }
-
-const mockTokens: JobToken[] = [
-  { id: "t1", name: "nightly-rollup", scope: ["rollup_invoices"], created_at: new Date().toISOString(), expires_at: new Date(Date.now() + 86400000 * 7).toISOString(), revoked_at: null, last_used_at: null, use_count: 42 },
-  { id: "t2", name: "webhook-consumer", scope: [], created_at: new Date().toISOString(), expires_at: new Date(Date.now() + 86400000 * 30).toISOString(), revoked_at: null, last_used_at: new Date().toISOString(), use_count: 1284 },
-];
