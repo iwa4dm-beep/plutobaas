@@ -18,7 +18,7 @@ export const Route = createFileRoute("/dashboard/verify")({
 // point of this page is to prove the wiring is real.
 // ============================================================
 
-type Status = "idle" | "running" | "pass" | "fail";
+type Status = "idle" | "running" | "pass" | "fail" | "skip";
 type Check = {
   id: string;
   group: "Config" | "HTTP" | "Auth & Admin" | "Realtime" | "Storage";
