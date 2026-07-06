@@ -541,11 +541,8 @@ export const live = {
       }));
     },
     stats: async () => {
-      const [users, buckets] = await Promise.all([
-        live.admin.users.list().catch(() => []),
-        api<unknown[]>("/storage/v1/bucket").catch(() => []),
-      ]);
-      return { users: users.length, buckets: buckets.length, objects: 0, storage_bytes: 0 };
+      const buckets = await api<unknown[]>("/storage/v1/bucket").catch(() => []);
+      return { users: 0, buckets: buckets.length, objects: 0, storage_bytes: 0 };
     },
     apiKeys: {
       list:   (wsId: string) => api<{ items: WorkspaceKey[] }>(`/admin/v1/workspaces/${wsId}/keys`, { service: true }),
