@@ -249,7 +249,24 @@ export const live = {
     },
   },
   workspaces: {
-    list: () => api<{ workspaces: Workspace[] }>("/admin/v1/workspaces/", { service: true }),
+    list: async () => {
+      try {
+        return await api<{ workspaces: Workspace[] }>("/admin/v1/workspaces/", { service: true });
+      } catch {
+        const projects = await api<Array<{ id: string; slug?: string; name?: string; created_at?: string; archived_at?: string | null }>>("/admin/v1/projects", { service: true });
+        return {
+          workspaces: projects.map((p, index) => ({
+            id: p.id,
+            slug: p.slug ?? (index === 0 ? "root" : `project-${index + 1}`),
+            name: p.name ?? (index === 0 ? "Root workspace" : `Project ${index + 1}`),
+            created_at: p.created_at ?? new Date().toISOString(),
+            archived_at: p.archived_at ?? null,
+            member_count: 1,
+            active_keys: 0,
+          })),
+        };
+      }
+    },
     create: (slug: string, name: string) =>
       api<{ id: string; slug: string; name: string; keys: { anon: string; service_role: string } }>(
         "/admin/v1/workspaces/",
