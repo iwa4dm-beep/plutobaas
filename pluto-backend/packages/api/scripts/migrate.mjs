@@ -69,6 +69,17 @@ try {
   const applied = new Set(appliedRows.map((r) => r.name));
   report.applied_before = appliedRows.map((r) => ({ name: r.name, applied_at: r.applied_at }));
 
+  // Verify required auth.* shim functions exist. In dry-run this is the
+  // primary safety check; in apply-mode a missing function will simply crash
+  // 0016+ but we still surface the state clearly.
+  const fnRows = await sql`
+    select p.proname as name
+      from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+     where n.nspname = 'auth' and p.proname = any(${REQUIRED_AUTH_FNS})`;
+  const havFns = new Set(fnRows.map((r) => r.name));
+  report.auth_functions = REQUIRED_AUTH_FNS.map((n) => ({ name: `auth.${n}`, exists: havFns.has(n) }));
+  report.summary.auth_missing = report.auth_functions.filter((f) => !f.exists).length;
+
   const files = (await readdir(MIG_DIR)).filter((f) => f.endsWith('.sql')).sort();
   const pending = files.filter((f) => !applied.has(f));
   report.pending = pending;
@@ -77,6 +88,12 @@ try {
   if (DRY_RUN) {
     log(`▶ dry-run: ${pending.length} pending migration(s)`);
     for (const f of pending) log(`  · ${f}   (${join(MIG_DIR, f)})`);
+    log(`▶ auth.* shim check:`);
+    for (const f of report.auth_functions) log(`  ${f.exists ? '✔' : '✘'} ${f.name}`);
+    if (report.summary.auth_missing > 0) {
+      log(`✘ ${report.summary.auth_missing} required auth.* function(s) missing — migrations 0016+ WILL fail`);
+      process.exitCode = 2;
+    }
     report.summary.skipped = pending.length;
   } else {
     for (const f of pending) {
