@@ -37,10 +37,16 @@ fail=0
 printf '▶ smoke-testing quickstart probes against %s\n\n' "$BASE_URL"
 printf '  %-10s %-28s %s\n' MODULE PATH STATUS
 
+# Note: `curl -w '%{http_code}'` already prints 000 on connection failure,
+# so we suppress the trailing `|| echo 000` that used to give "000000".
+probe() { # probe METHOD PATH → prints numeric HTTP status
+  curl -s -o /dev/null -w '%{http_code}' --max-time 8 "$@" 2>/dev/null || printf '000'
+}
+
 for row in "${PROBES[@]}"; do
   name="${row%% *}"
   path="${row##* }"
-  code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 8 "$BASE_URL$path" || echo "000")
+  code="$(probe "$BASE_URL$path")"
   if [[ "$code" == "200" ]]; then
     printf '  %-10s %-28s \033[32m✔ %s\033[0m\n' "$name" "$path" "$code"
   else
@@ -59,9 +65,7 @@ if [[ -n "${ADMIN_JWT:-}" ]]; then
   for row in "${AUTH_PROBES[@]}"; do
     name="${row%% *}"
     path="${row##* }"
-    code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 8 \
-      "${AUTH_HEADERS[@]}" \
-      "$BASE_URL$path" || echo "000")
+    code="$(probe "${AUTH_HEADERS[@]}" "$BASE_URL$path")"
     if [[ "$code" == "200" ]]; then
       printf '  %-10s %-28s \033[32m✔ %s\033[0m\n' "$name" "$path" "$code"
     else
@@ -69,6 +73,7 @@ if [[ -n "${ADMIN_JWT:-}" ]]; then
       fail=1
     fi
   done
+
 else
   echo
   echo "↷ skipping authenticated create/list route probes (set ADMIN_JWT and optional ANON_KEY to enable)"
