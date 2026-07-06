@@ -1,0 +1,19 @@
+# Overlay compose file — adds a one-shot `migrator` service that reuses the
+# api image and simply runs the migrations script against the same
+# DATABASE_URL. Invoke via deploy/run-migrator.sh, not directly.
+services:
+  migrator:
+    build:
+      context: ..
+      dockerfile: packages/api/Dockerfile
+    image: ${API_IMAGE:-docker-api}
+    profiles: ["migrate"]
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+      - ../.env
+    environment:
+      AUTO_MIGRATE: "0"
+    entrypoint: ["node", "/app/packages/api/scripts/migrate.mjs"]
