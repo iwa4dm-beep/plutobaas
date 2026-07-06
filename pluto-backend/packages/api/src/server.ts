@@ -39,7 +39,10 @@ import { marketplaceRoutes } from './routes/marketplace.js';
 import { jobsRoutes } from './routes/jobs.js';
 import { corsRoutes } from './routes/cors.js';
 import { onboardingRoutes } from './routes/onboarding.js';
+import { invitesRoutes } from './routes/invites.js';
 import { makeOriginCallback, primeCorsCache } from './cors/registry.js';
+import { startEmailWorker } from './email/queue.js';
+
 
 import { metricsPlugin } from './observability/metrics.js';
 import { swaggerPlugin } from './observability/swagger.js';
