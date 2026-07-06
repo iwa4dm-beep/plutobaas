@@ -371,7 +371,12 @@ async function probeOnce(url: string, path: string, signal: AbortSignal): Promis
     const r = await fetch(`${url.replace(/\/$/, "")}${path}`, {
       signal: inner.signal, method: "GET", headers: { accept: "application/json" },
     });
-    return { ok: r.status < 500, code: r.status, latency_ms: Math.round(performance.now() - t0) };
+    const latency_ms = Math.round(performance.now() - t0);
+    const body = await r.clone().json().catch(() => null) as { offline?: boolean; ok?: boolean; reason?: string; error?: string; upstreamStatus?: number } | null;
+    if (body?.offline) {
+      return { ok: false, code: body.upstreamStatus ?? r.status, latency_ms, error: body.reason ?? body.error ?? "Pluto backend offline" };
+    }
+    return { ok: r.ok && body?.ok !== false, code: r.status, latency_ms, error: r.ok ? undefined : `HTTP ${r.status}` };
   } catch (e) {
     return { ok: false, latency_ms: Math.round(performance.now() - t0), error: (e as Error).message || "network error" };
   } finally {
@@ -551,7 +556,7 @@ function TerminalCard() {
           const body = await r.json().catch(() => ({}));
           const allUp = results.every((x) => x.status === "up");
           setReady(
-            r.ok && body.ok && allUp
+            r.ok && body.ok && !body.offline && allUp
               ? { kind: "ok", uptime_s: body.uptime_s ?? 0 }
               : { kind: "degraded", uptime_s: body.uptime_s }
           );

@@ -44,14 +44,22 @@ type MigResp = {
 type Probe = { at: number; ok: boolean; ms: number; code: number | null; note?: string };
 type Fetched<T> = { data: T | null; error: string | null; loading: boolean; ms: number; at: number; code: number | null };
 
+function offlineMessage(data: unknown): string | null {
+  if (!data || typeof data !== "object") return null;
+  const body = data as { offline?: boolean; reason?: string; error?: string; upstreamStatus?: number };
+  if (!body.offline) return null;
+  return body.reason ?? body.error ?? `Pluto backend offline${body.upstreamStatus ? ` (${body.upstreamStatus})` : ""}`;
+}
+
 async function probe<T>(path: string, headers: HeadersInit = {}): Promise<Fetched<T>> {
   const t0 = performance.now();
   const at = Date.now();
   try {
     const r = await fetch(`${API}${path}`, { cache: "no-store", headers });
     const ms = Math.round(performance.now() - t0);
-    if (!r.ok) return { data: null, error: `HTTP ${r.status}`, loading: false, ms, at, code: r.status };
     const data = (await r.json()) as T;
+    const offline = offlineMessage(data);
+    if (!r.ok || offline) return { data: null, error: offline ?? `HTTP ${r.status}`, loading: false, ms, at, code: r.status };
     return { data, error: null, loading: false, ms, at, code: r.status };
   } catch (e) {
     return { data: null, error: (e as Error).message, loading: false, ms: Math.round(performance.now() - t0), at, code: null };
@@ -205,6 +213,11 @@ function BackendStatusPage() {
       }
       let parsed: any = null;
       try { parsed = JSON.parse(body); } catch { /* ignore */ }
+      const offline = offlineMessage(parsed);
+      if (offline) {
+        setTest({ status: "err", ms, message: offline, details: JSON.stringify(parsed ?? { raw: body.slice(0, 200) }, null, 2) });
+        return;
+      }
       const okStatus = parsed?.status === "ok" || parsed?.status === "ready";
       setTest({
         status: okStatus ? "ok" : "err",

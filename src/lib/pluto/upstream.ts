@@ -47,9 +47,10 @@ export async function plutoApi<T>(path: string, init: RequestInit = {}): Promise
   const text = await res.text();
   let data: unknown = null;
   try { data = text ? JSON.parse(text) : null; } catch { data = text; }
-  if (!res.ok) {
-    const d = data as { message?: string; error?: string } | null;
+  const d = data && typeof data === "object" ? data as { message?: string; error?: string; reason?: string; offline?: boolean } : null;
+  if (!res.ok || d?.offline) {
     const err = new Error(d?.message || d?.error || res.statusText) as Error & { status?: number; body?: unknown };
+    err.message = d?.message || d?.error || d?.reason || res.statusText || "Pluto backend offline";
     err.status = res.status;
     err.body = data;
     throw err;

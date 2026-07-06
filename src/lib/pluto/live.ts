@@ -69,9 +69,10 @@ export async function api<T = unknown>(
   });
   const text = await res.text();
   const json = text ? (() => { try { return JSON.parse(text); } catch { return text; } })() : null;
-  if (!res.ok) {
+  const offline = typeof json === "object" && json && (json as { offline?: unknown }).offline === true;
+  if (!res.ok || offline) {
     const message = typeof json === "object" && json
-      ? String((json as { message?: unknown; error?: unknown }).message ?? (json as { error?: unknown }).error ?? `HTTP ${res.status}`)
+      ? String((json as { message?: unknown; error?: unknown; reason?: unknown }).message ?? (json as { error?: unknown }).error ?? (json as { reason?: unknown }).reason ?? `HTTP ${res.status}`)
       : (typeof json === "string" ? json : `HTTP ${res.status}`);
     throw new Error(message);
   }

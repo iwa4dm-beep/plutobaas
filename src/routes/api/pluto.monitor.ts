@@ -69,10 +69,14 @@ export const Route = createFileRoute("/api/pluto/monitor")({
         }
 
         return new Response(
-          JSON.stringify({ healthy, issues, reachable, recentError, status, alert, checkedAt: now }, null, 2),
+          JSON.stringify({ healthy, ok: healthy, offline: !healthy, issues, reachable, recentError, status, alert, checkedAt: now }, null, 2),
           {
-            status: healthy ? 200 : 503,
-            headers: { "content-type": "application/json", "cache-control": "no-store" },
+            status: 200,
+            headers: {
+              "content-type": "application/json",
+              "cache-control": "no-store",
+              ...(healthy ? {} : { "x-pluto-offline": "1" }),
+            },
           },
         );
       },
