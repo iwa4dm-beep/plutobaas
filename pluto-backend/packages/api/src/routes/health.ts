@@ -226,8 +226,61 @@ export async function healthRoutes(app: FastifyInstance, cfg: Config) {
     return { status: healthy ? 'ok' : 'degraded', ...out };
   });
 
+  // Phase-17 required-schema check — verifies the tables + columns the
+  // dashboard's workspace/project/token flows depend on. Returns 200 with
+  // {ok:true, checks:[...]} when everything is present; 503 with the
+  // missing objects listed so `deploy/recover-api.sh` / smoke scripts can
+  // fail fast BEFORE the dashboard reports 404s on create.
+  app.get('/health/migrations/required', async (_req, reply) => {
+    const sql = getSql(cfg);
+    const required = [
+      { kind: 'table',  schema: 'admin', name: 'workspaces' },
+      { kind: 'table',  schema: 'admin', name: 'workspace_members' },
+      { kind: 'table',  schema: 'admin', name: 'workspace_tokens' },
+      { kind: 'table',  schema: 'admin', name: 'projects' },
+      { kind: 'table',  schema: 'admin', name: 'project_members' },
+      { kind: 'table',  schema: 'admin', name: 'api_keys' },
+      { kind: 'column', schema: 'admin', name: 'projects.workspace_id' },
+      { kind: 'column', schema: 'admin', name: 'workspace_tokens.token_hash' },
+      { kind: 'column', schema: 'admin', name: 'workspace_tokens.scopes' },
+    ] as const;
+    const results: Array<{ object: string; kind: string; ok: boolean; error?: string }> = [];
+    for (const r of required) {
+      try {
+        if (r.kind === 'table') {
+          const [row] = await sql<any[]>`
+            select 1 as ok from information_schema.tables
+             where table_schema = ${r.schema} and table_name = ${r.name} limit 1`;
+          results.push({ object: `${r.schema}.${r.name}`, kind: r.kind, ok: !!row });
+        } else {
+          const [tbl, col] = r.name.split('.');
+          const [row] = await sql<any[]>`
+            select 1 as ok from information_schema.columns
+             where table_schema = ${r.schema} and table_name = ${tbl} and column_name = ${col} limit 1`;
+          results.push({ object: `${r.schema}.${r.name}`, kind: r.kind, ok: !!row });
+        }
+      } catch (e: any) {
+        results.push({ object: `${r.schema}.${r.name}`, kind: r.kind, ok: false, error: e.message });
+      }
+    }
+    const missing = results.filter((r) => !r.ok);
+    const healthy = missing.length === 0;
+    reply.code(healthy ? 200 : 503);
+    return {
+      status: healthy ? 'ok' : 'degraded',
+      ts: new Date().toISOString(),
+      required_migration: '0029_workspaces_tokens.sql',
+      missing: missing.map((m) => m.object),
+      checks: results,
+      hint: healthy
+        ? undefined
+        : "Run `docker compose exec api node dist/migrate.js` or set AUTO_MIGRATE=1 and restart the api container.",
+    };
+  });
+
   // Public health snapshot for /api/pluto/status probes
   app.get('/healthz', async () => ({ status: 'ok', service: 'pluto-api', ts: new Date().toISOString() }));
+
 
   // Per-module health snapshots (Lovable dashboard probes).
   // Every module lives in this single Fastify server; a 200 here confirms

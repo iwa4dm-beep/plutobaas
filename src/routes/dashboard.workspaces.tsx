@@ -1,8 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
-import { AlertTriangle, Copy, KeyRound, Plus, ShieldCheck, Trash2, Users2 } from "lucide-react";
+import { Copy, KeyRound, Plus, ShieldCheck, Trash2, Users2 } from "lucide-react";
 import { PageHeader } from "@/components/pluto/PageHeader";
+import { ErrorBanner } from "@/components/pluto/ErrorBanner";
 import { isLive, live, type Workspace, type WorkspaceKey, type WorkspaceMember } from "@/lib/pluto/live";
+
 
 export const Route = createFileRoute("/dashboard/workspaces")({
   component: WorkspacesPage,
@@ -10,19 +12,19 @@ export const Route = createFileRoute("/dashboard/workspaces")({
 
 function WorkspacesPage() {
   const [items, setItems] = useState<Workspace[] | null>(null);
-  const [err, setErr] = useState<string | null>(null);
+  const [err, setErr] = useState<unknown>(null);
   const [active, setActive] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [freshKeys, setFreshKeys] = useState<{ slug: string; anon: string; service_role: string } | null>(null);
 
   const load = useCallback(async () => {
     setErr(null);
-    if (!isLive()) { setItems([]); setErr("Backend not configured (VITE_PLUTO_URL / VITE_PLUTO_SERVICE_KEY)."); return; }
+    if (!isLive()) { setItems([]); setErr(new Error("Backend not configured (VITE_PLUTO_URL / VITE_PLUTO_SERVICE_KEY).")); return; }
     try {
       const { workspaces } = await live.workspaces.list();
       setItems(workspaces);
       if (!active && workspaces[0]) setActive(workspaces[0].id);
-    } catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
+    } catch (e) { setErr(e); }
   }, [active]);
 
   useEffect(() => { void load(); }, [load]);
@@ -34,11 +36,8 @@ function WorkspacesPage() {
         description="Each workspace has its own users, API keys, and RLS-scoped data. The 'root' workspace is served by the env-configured keys."
       />
 
-      {err && (
-        <div className="mb-4 rounded-md border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200 flex items-start gap-2">
-          <AlertTriangle className="h-4 w-4 mt-0.5" /> {err}
-        </div>
-      )}
+      <ErrorBanner error={err} onRetry={() => void load()} onDismiss={() => setErr(null)} />
+
 
       <div className="grid lg:grid-cols-[280px_1fr] gap-4">
         <aside className="rounded-lg border border-border bg-card">

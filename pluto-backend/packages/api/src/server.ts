@@ -83,12 +83,48 @@ async function main() {
 
 
 
+  // Detailed request/response logging for the dashboard flows that operators
+  // most often need to debug (workspace / project / API-key / token creation).
+  // We capture the parsed body pre-handler and re-emit it — along with the
+  // response payload and status — in an `onResponse` hook. The log line is
+  // structured (pino) so `docker logs api | grep dashboardFlow` surfaces
+  // every 4xx/5xx with the full request + backend error message.
+  const LOGGED_PATH_RE = /^\/(admin\/v1\/(workspaces|projects)(\/|$)|tokens\/v1\/tokens(\/|$))/;
+  app.addHook('preHandler', async (req) => {
+    if (LOGGED_PATH_RE.test(req.url)) {
+      (req as any)._loggedBody = req.body ?? null;
+    }
+  });
+  app.addHook('onSend', async (req, _reply, payload) => {
+    if (LOGGED_PATH_RE.test(req.url) && typeof payload === 'string' && payload.length <= 4096) {
+      (req as any)._loggedResponse = payload;
+    }
+    return payload;
+  });
+  app.addHook('onResponse', async (req, reply) => {
+    if (!LOGGED_PATH_RE.test(req.url)) return;
+    const status = reply.statusCode;
+    const level = status >= 500 ? 'error' : status >= 400 ? 'warn' : 'info';
+    let response: unknown = (req as any)._loggedResponse ?? null;
+    if (typeof response === 'string') { try { response = JSON.parse(response); } catch { /* keep as string */ } }
+    app.log[level]({
+      dashboardFlow: true,
+      method: req.method,
+      url: req.url,
+      status,
+      durationMs: reply.elapsedTime,
+      requestBody: (req as any)._loggedBody ?? null,
+      response,
+    }, `dashboardFlow ${req.method} ${req.url} → ${status}`);
+  });
+
   // Rate limit
   await app.register(rateLimit, {
     max: cfg.RATE_LIMIT_GLOBAL,
     timeWindow: '1 minute',
     allowList: (req) => req.url === '/livez' || req.url === '/readyz' || req.url === '/healthz' || req.url === '/openapi.json' || req.url.startsWith('/docs'),
   });
+
 
   // JWT
   await app.register(jwt, {
@@ -172,8 +208,27 @@ async function main() {
     });
   });
 
+  // Boot-time schema check — hit /health/migrations/required internally so
+  // missing Phase-17 tables surface in `docker logs` immediately, not only
+  // when the dashboard tries to create a workspace/project/token.
+  try {
+    const probe = await app.inject({ method: 'GET', url: '/health/migrations/required' });
+    if (probe.statusCode !== 200) {
+      const body = probe.json() as { missing?: string[]; hint?: string };
+      app.log.warn(
+        { missing: body.missing, hint: body.hint },
+        `⚠ required migrations not applied — dashboard project/workspace/token flows will fail. Set AUTO_MIGRATE=1 and restart.`,
+      );
+    } else {
+      app.log.info('✓ required migrations verified (workspaces / projects / tokens schema present)');
+    }
+  } catch (e: any) {
+    app.log.warn({ err: e?.message }, 'migrations preflight probe failed');
+  }
+
   await app.listen({ port: cfg.PORT, host: cfg.HOST });
   app.log.info(`🚀 Pluto API listening on http://${cfg.HOST}:${cfg.PORT}`);
+
 
   // Background email worker — polls admin.email_queue every 10s.
   startEmailWorker(cfg, {
