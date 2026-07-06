@@ -688,8 +688,59 @@ export const live = {
       remove: (id: string) =>
         api<{ ok: true }>(`/admin/v1/cors/origins/${id}`, { method: "DELETE", service: true }),
     },
+    invite: (email: string, workspace_name: string) =>
+      api<InviteResult>("/admin/v1/invite", {
+        method: "POST", service: true,
+        body: JSON.stringify({ email, workspace_name }),
+      }),
+    domains: {
+      list: (projectId: string) =>
+        api<{ items: AllowedOrigin[]; workspace_id: string }>(
+          `/admin/v1/projects/${projectId}/domains`,
+        ),
+      add: (projectId: string, origin: string, description?: string) =>
+        api<{ item: AllowedOrigin }>(`/admin/v1/projects/${projectId}/domains`, {
+          method: "POST", body: JSON.stringify({ origin, description }),
+        }),
+      remove: (projectId: string, originId: string) =>
+        api<{ ok: true }>(`/admin/v1/projects/${projectId}/domains/${originId}`, {
+          method: "DELETE",
+        }),
+    },
+  },
+  onboarding: {
+    signupFull: (input: {
+      email: string; password: string; workspace_name: string;
+      initial_domain?: string; seed_demo?: boolean;
+    }) => api<SignupFullResult>("/auth/v1/signup-full", {
+      method: "POST", body: JSON.stringify(input),
+    }),
+    acceptInvite: (token: string, password: string) =>
+      api<{ access_token: string; user: { id: string; email: string };
+            workspace_id: string; project_id: string }>(
+        "/auth/v1/accept-invite",
+        { method: "POST", body: JSON.stringify({ token, password }) },
+      ),
   },
 };
+
+export type SignupFullResult = {
+  user: { id: string; email: string };
+  workspace: { id: string; slug: string; name: string };
+  project: { id: string; slug: string; name: string };
+  keys: { anon: string; service_role: string };
+  cors_added: boolean;
+  demo_schema: string | null;
+};
+
+export type InviteResult = {
+  invite_id: string;
+  expires_at: string;
+  workspace: { id: string; slug: string; name: string };
+  project: { id: string; slug: string };
+  invite_link: string;
+};
+
 
 export type AllowedOrigin = {
   id: string; workspace_id: string | null;

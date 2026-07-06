@@ -38,7 +38,12 @@ import { studioRoutes } from './routes/studio.js';
 import { marketplaceRoutes } from './routes/marketplace.js';
 import { jobsRoutes } from './routes/jobs.js';
 import { corsRoutes } from './routes/cors.js';
+import { onboardingRoutes } from './routes/onboarding.js';
+import { invitesRoutes } from './routes/invites.js';
 import { makeOriginCallback, primeCorsCache } from './cors/registry.js';
+import { startEmailWorker } from './email/queue.js';
+
+
 import { metricsPlugin } from './observability/metrics.js';
 import { swaggerPlugin } from './observability/swagger.js';
 
@@ -137,6 +142,10 @@ async function main() {
   await marketplaceRoutes(app, cfg);
   await jobsRoutes(app, cfg);
   await corsRoutes(app, cfg);
+  await onboardingRoutes(app, cfg);
+  await invitesRoutes(app, cfg);
+
+
 
 
 
@@ -163,6 +172,13 @@ async function main() {
 
   await app.listen({ port: cfg.PORT, host: cfg.HOST });
   app.log.info(`🚀 Pluto API listening on http://${cfg.HOST}:${cfg.PORT}`);
+
+  // Background email worker — polls admin.email_queue every 10s.
+  startEmailWorker(cfg, {
+    info: (m: string) => app.log.info(m),
+    error: (m: string) => app.log.error(m),
+  });
+
 }
 
 main().catch((err) => {

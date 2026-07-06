@@ -11,8 +11,11 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as StatusRouteImport } from './routes/status'
 import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
+import { Route as SignupRouteImport } from './routes/signup'
+import { Route as OnboardingRouteImport } from './routes/onboarding'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as AuthRouteImport } from './routes/auth'
+import { Route as AcceptInviteRouteImport } from './routes/accept-invite'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as DashboardIndexRouteImport } from './routes/dashboard.index'
 import { Route as DocsSdkRouteImport } from './routes/docs.sdk'
@@ -66,6 +69,7 @@ import { Route as DashboardIntegrationsRouteImport } from './routes/dashboard.in
 import { Route as DashboardGraphqlRouteImport } from './routes/dashboard.graphql'
 import { Route as DashboardFunctionsRouteImport } from './routes/dashboard.functions'
 import { Route as DashboardEnterpriseRouteImport } from './routes/dashboard.enterprise'
+import { Route as DashboardDomainsRouteImport } from './routes/dashboard.domains'
 import { Route as DashboardDevexRouteImport } from './routes/dashboard.devex'
 import { Route as DashboardDatabaseRouteImport } from './routes/dashboard.database'
 import { Route as DashboardCorsRouteImport } from './routes/dashboard.cors'
@@ -80,6 +84,7 @@ import { Route as AuthResetPasswordRouteImport } from './routes/auth.reset-passw
 import { Route as AuthPhoneRouteImport } from './routes/auth.phone'
 import { Route as AuthForgotRouteImport } from './routes/auth.forgot'
 import { Route as AuthConfirmEmailRouteImport } from './routes/auth.confirm-email'
+import { Route as DashboardAdminInviteRouteImport } from './routes/dashboard.admin.invite'
 import { Route as ApiPlutoStatusRouteImport } from './routes/api/pluto.status'
 import { Route as ApiPlutoMonitorRouteImport } from './routes/api/pluto.monitor'
 import { Route as ApiPlutoSplatRouteImport } from './routes/api/pluto.$'
@@ -94,6 +99,16 @@ const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
   path: '/sitemap.xml',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SignupRoute = SignupRouteImport.update({
+  id: '/signup',
+  path: '/signup',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const OnboardingRoute = OnboardingRouteImport.update({
+  id: '/onboarding',
+  path: '/onboarding',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const DashboardRoute = DashboardRouteImport.update({
   id: '/dashboard',
   path: '/dashboard',
@@ -102,6 +117,11 @@ const DashboardRoute = DashboardRouteImport.update({
 const AuthRoute = AuthRouteImport.update({
   id: '/auth',
   path: '/auth',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AcceptInviteRoute = AcceptInviteRouteImport.update({
+  id: '/accept-invite',
+  path: '/accept-invite',
   getParentRoute: () => rootRouteImport,
 } as any)
 const IndexRoute = IndexRouteImport.update({
@@ -375,6 +395,11 @@ const DashboardEnterpriseRoute = DashboardEnterpriseRouteImport.update({
   path: '/enterprise',
   getParentRoute: () => DashboardRoute,
 } as any)
+const DashboardDomainsRoute = DashboardDomainsRouteImport.update({
+  id: '/domains',
+  path: '/domains',
+  getParentRoute: () => DashboardRoute,
+} as any)
 const DashboardDevexRoute = DashboardDevexRouteImport.update({
   id: '/devex',
   path: '/devex',
@@ -445,6 +470,11 @@ const AuthConfirmEmailRoute = AuthConfirmEmailRouteImport.update({
   path: '/confirm-email',
   getParentRoute: () => AuthRoute,
 } as any)
+const DashboardAdminInviteRoute = DashboardAdminInviteRouteImport.update({
+  id: '/admin/invite',
+  path: '/admin/invite',
+  getParentRoute: () => DashboardRoute,
+} as any)
 const ApiPlutoStatusRoute = ApiPlutoStatusRouteImport.update({
   id: '/api/pluto/status',
   path: '/api/pluto/status',
@@ -463,8 +493,11 @@ const ApiPlutoSplatRoute = ApiPlutoSplatRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/accept-invite': typeof AcceptInviteRoute
   '/auth': typeof AuthRouteWithChildren
   '/dashboard': typeof DashboardRouteWithChildren
+  '/onboarding': typeof OnboardingRoute
+  '/signup': typeof SignupRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/status': typeof StatusRoute
   '/auth/confirm-email': typeof AuthConfirmEmailRoute
@@ -481,6 +514,7 @@ export interface FileRoutesByFullPath {
   '/dashboard/cors': typeof DashboardCorsRoute
   '/dashboard/database': typeof DashboardDatabaseRoute
   '/dashboard/devex': typeof DashboardDevexRoute
+  '/dashboard/domains': typeof DashboardDomainsRoute
   '/dashboard/enterprise': typeof DashboardEnterpriseRoute
   '/dashboard/functions': typeof DashboardFunctionsRoute
   '/dashboard/graphql': typeof DashboardGraphqlRoute
@@ -536,10 +570,14 @@ export interface FileRoutesByFullPath {
   '/api/pluto/$': typeof ApiPlutoSplatRoute
   '/api/pluto/monitor': typeof ApiPlutoMonitorRoute
   '/api/pluto/status': typeof ApiPlutoStatusRoute
+  '/dashboard/admin/invite': typeof DashboardAdminInviteRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/accept-invite': typeof AcceptInviteRoute
   '/auth': typeof AuthRouteWithChildren
+  '/onboarding': typeof OnboardingRoute
+  '/signup': typeof SignupRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/status': typeof StatusRoute
   '/auth/confirm-email': typeof AuthConfirmEmailRoute
@@ -556,6 +594,7 @@ export interface FileRoutesByTo {
   '/dashboard/cors': typeof DashboardCorsRoute
   '/dashboard/database': typeof DashboardDatabaseRoute
   '/dashboard/devex': typeof DashboardDevexRoute
+  '/dashboard/domains': typeof DashboardDomainsRoute
   '/dashboard/enterprise': typeof DashboardEnterpriseRoute
   '/dashboard/functions': typeof DashboardFunctionsRoute
   '/dashboard/graphql': typeof DashboardGraphqlRoute
@@ -611,12 +650,16 @@ export interface FileRoutesByTo {
   '/api/pluto/$': typeof ApiPlutoSplatRoute
   '/api/pluto/monitor': typeof ApiPlutoMonitorRoute
   '/api/pluto/status': typeof ApiPlutoStatusRoute
+  '/dashboard/admin/invite': typeof DashboardAdminInviteRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/accept-invite': typeof AcceptInviteRoute
   '/auth': typeof AuthRouteWithChildren
   '/dashboard': typeof DashboardRouteWithChildren
+  '/onboarding': typeof OnboardingRoute
+  '/signup': typeof SignupRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/status': typeof StatusRoute
   '/auth/confirm-email': typeof AuthConfirmEmailRoute
@@ -633,6 +676,7 @@ export interface FileRoutesById {
   '/dashboard/cors': typeof DashboardCorsRoute
   '/dashboard/database': typeof DashboardDatabaseRoute
   '/dashboard/devex': typeof DashboardDevexRoute
+  '/dashboard/domains': typeof DashboardDomainsRoute
   '/dashboard/enterprise': typeof DashboardEnterpriseRoute
   '/dashboard/functions': typeof DashboardFunctionsRoute
   '/dashboard/graphql': typeof DashboardGraphqlRoute
@@ -688,13 +732,17 @@ export interface FileRoutesById {
   '/api/pluto/$': typeof ApiPlutoSplatRoute
   '/api/pluto/monitor': typeof ApiPlutoMonitorRoute
   '/api/pluto/status': typeof ApiPlutoStatusRoute
+  '/dashboard/admin/invite': typeof DashboardAdminInviteRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/accept-invite'
     | '/auth'
     | '/dashboard'
+    | '/onboarding'
+    | '/signup'
     | '/sitemap.xml'
     | '/status'
     | '/auth/confirm-email'
@@ -711,6 +759,7 @@ export interface FileRouteTypes {
     | '/dashboard/cors'
     | '/dashboard/database'
     | '/dashboard/devex'
+    | '/dashboard/domains'
     | '/dashboard/enterprise'
     | '/dashboard/functions'
     | '/dashboard/graphql'
@@ -766,10 +815,14 @@ export interface FileRouteTypes {
     | '/api/pluto/$'
     | '/api/pluto/monitor'
     | '/api/pluto/status'
+    | '/dashboard/admin/invite'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/accept-invite'
     | '/auth'
+    | '/onboarding'
+    | '/signup'
     | '/sitemap.xml'
     | '/status'
     | '/auth/confirm-email'
@@ -786,6 +839,7 @@ export interface FileRouteTypes {
     | '/dashboard/cors'
     | '/dashboard/database'
     | '/dashboard/devex'
+    | '/dashboard/domains'
     | '/dashboard/enterprise'
     | '/dashboard/functions'
     | '/dashboard/graphql'
@@ -841,11 +895,15 @@ export interface FileRouteTypes {
     | '/api/pluto/$'
     | '/api/pluto/monitor'
     | '/api/pluto/status'
+    | '/dashboard/admin/invite'
   id:
     | '__root__'
     | '/'
+    | '/accept-invite'
     | '/auth'
     | '/dashboard'
+    | '/onboarding'
+    | '/signup'
     | '/sitemap.xml'
     | '/status'
     | '/auth/confirm-email'
@@ -862,6 +920,7 @@ export interface FileRouteTypes {
     | '/dashboard/cors'
     | '/dashboard/database'
     | '/dashboard/devex'
+    | '/dashboard/domains'
     | '/dashboard/enterprise'
     | '/dashboard/functions'
     | '/dashboard/graphql'
@@ -917,12 +976,16 @@ export interface FileRouteTypes {
     | '/api/pluto/$'
     | '/api/pluto/monitor'
     | '/api/pluto/status'
+    | '/dashboard/admin/invite'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AcceptInviteRoute: typeof AcceptInviteRoute
   AuthRoute: typeof AuthRouteWithChildren
   DashboardRoute: typeof DashboardRouteWithChildren
+  OnboardingRoute: typeof OnboardingRoute
+  SignupRoute: typeof SignupRoute
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
   StatusRoute: typeof StatusRoute
   DocsApiRoute: typeof DocsApiRoute
@@ -948,6 +1011,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SitemapDotxmlRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/signup': {
+      id: '/signup'
+      path: '/signup'
+      fullPath: '/signup'
+      preLoaderRoute: typeof SignupRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/onboarding': {
+      id: '/onboarding'
+      path: '/onboarding'
+      fullPath: '/onboarding'
+      preLoaderRoute: typeof OnboardingRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/dashboard': {
       id: '/dashboard'
       path: '/dashboard'
@@ -960,6 +1037,13 @@ declare module '@tanstack/react-router' {
       path: '/auth'
       fullPath: '/auth'
       preLoaderRoute: typeof AuthRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/accept-invite': {
+      id: '/accept-invite'
+      path: '/accept-invite'
+      fullPath: '/accept-invite'
+      preLoaderRoute: typeof AcceptInviteRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/': {
@@ -1333,6 +1417,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardEnterpriseRouteImport
       parentRoute: typeof DashboardRoute
     }
+    '/dashboard/domains': {
+      id: '/dashboard/domains'
+      path: '/domains'
+      fullPath: '/dashboard/domains'
+      preLoaderRoute: typeof DashboardDomainsRouteImport
+      parentRoute: typeof DashboardRoute
+    }
     '/dashboard/devex': {
       id: '/dashboard/devex'
       path: '/devex'
@@ -1431,6 +1522,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthConfirmEmailRouteImport
       parentRoute: typeof AuthRoute
     }
+    '/dashboard/admin/invite': {
+      id: '/dashboard/admin/invite'
+      path: '/admin/invite'
+      fullPath: '/dashboard/admin/invite'
+      preLoaderRoute: typeof DashboardAdminInviteRouteImport
+      parentRoute: typeof DashboardRoute
+    }
     '/api/pluto/status': {
       id: '/api/pluto/status'
       path: '/api/pluto/status'
@@ -1482,6 +1580,7 @@ interface DashboardRouteChildren {
   DashboardCorsRoute: typeof DashboardCorsRoute
   DashboardDatabaseRoute: typeof DashboardDatabaseRoute
   DashboardDevexRoute: typeof DashboardDevexRoute
+  DashboardDomainsRoute: typeof DashboardDomainsRoute
   DashboardEnterpriseRoute: typeof DashboardEnterpriseRoute
   DashboardFunctionsRoute: typeof DashboardFunctionsRoute
   DashboardGraphqlRoute: typeof DashboardGraphqlRoute
@@ -1532,6 +1631,7 @@ interface DashboardRouteChildren {
   DashboardVerifyRoute: typeof DashboardVerifyRoute
   DashboardWorkspacesRoute: typeof DashboardWorkspacesRoute
   DashboardIndexRoute: typeof DashboardIndexRoute
+  DashboardAdminInviteRoute: typeof DashboardAdminInviteRoute
 }
 
 const DashboardRouteChildren: DashboardRouteChildren = {
@@ -1545,6 +1645,7 @@ const DashboardRouteChildren: DashboardRouteChildren = {
   DashboardCorsRoute: DashboardCorsRoute,
   DashboardDatabaseRoute: DashboardDatabaseRoute,
   DashboardDevexRoute: DashboardDevexRoute,
+  DashboardDomainsRoute: DashboardDomainsRoute,
   DashboardEnterpriseRoute: DashboardEnterpriseRoute,
   DashboardFunctionsRoute: DashboardFunctionsRoute,
   DashboardGraphqlRoute: DashboardGraphqlRoute,
@@ -1595,6 +1696,7 @@ const DashboardRouteChildren: DashboardRouteChildren = {
   DashboardVerifyRoute: DashboardVerifyRoute,
   DashboardWorkspacesRoute: DashboardWorkspacesRoute,
   DashboardIndexRoute: DashboardIndexRoute,
+  DashboardAdminInviteRoute: DashboardAdminInviteRoute,
 }
 
 const DashboardRouteWithChildren = DashboardRoute._addFileChildren(
@@ -1603,8 +1705,11 @@ const DashboardRouteWithChildren = DashboardRoute._addFileChildren(
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AcceptInviteRoute: AcceptInviteRoute,
   AuthRoute: AuthRouteWithChildren,
   DashboardRoute: DashboardRouteWithChildren,
+  OnboardingRoute: OnboardingRoute,
+  SignupRoute: SignupRoute,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
   StatusRoute: StatusRoute,
   DocsApiRoute: DocsApiRoute,
