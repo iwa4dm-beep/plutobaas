@@ -49,6 +49,16 @@ services:
       - ../.env
     ports:
       - "127.0.0.1:3000:3000"
+    # Fail-fast healthcheck — the container is marked unhealthy (and stopped
+    # by orchestrators) if /health/migrations does not return 200. That
+    # endpoint fails if the auth.* shim is missing, if _pluto_migrations is
+    # unreachable, or if the audit_log schema drifted. See routes/health.ts.
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- --tries=1 --timeout=3 http://127.0.0.1:3000/health/migrations >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
 
 volumes:
   pluto_pg:
