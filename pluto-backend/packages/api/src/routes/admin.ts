@@ -274,6 +274,73 @@ export async function adminRoutes(app: FastifyInstance, cfg: Config) {
     return reply.send(rows);
   });
 
+  // --- Superadmin: update user (role + is_superadmin + email_verified) ---
+  // Role model: three logical roles surfaced to the dashboard:
+  //   'user'        -> role='user',  is_superadmin=false
+  //   'admin'       -> role='admin', is_superadmin=false
+  //   'super_admin' -> role='admin', is_superadmin=true
+  const patchUserBody = z.object({
+    role: z.enum(['user', 'admin', 'super_admin']).optional(),
+    is_superadmin: z.boolean().optional(),
+    email_verified: z.boolean().optional(),
+  }).refine((v) => v.role !== undefined || v.is_superadmin !== undefined || v.email_verified !== undefined, {
+    message: 'At least one of role, is_superadmin, email_verified is required',
+  });
+
+  app.patch<{ Params: { id: string } }>(
+    '/admin/v1/users/:id',
+    async (req, reply) => {
+      const actor = await requireAuth(req, cfg);
+      if (!actor.isSuperadmin && actor.role !== 'service_role') {
+        return reply.code(403).send({ error: 'Forbidden' });
+      }
+      const idParse = uuidSchema.safeParse(req.params.id);
+      if (!idParse.success) return reply.code(400).send({ error: 'invalid_uuid' });
+      const bodyParse = patchUserBody.safeParse(req.body ?? {});
+      if (!bodyParse.success) return reply.code(400).send({ error: 'invalid_body', issues: bodyParse.error.issues });
+
+      let dbRole: 'user' | 'admin' | undefined;
+      let dbSuper: boolean | undefined;
+      if (bodyParse.data.role === 'super_admin') { dbRole = 'admin'; dbSuper = true; }
+      else if (bodyParse.data.role === 'admin')  { dbRole = 'admin'; dbSuper = false; }
+      else if (bodyParse.data.role === 'user')   { dbRole = 'user';  dbSuper = false; }
+      if (bodyParse.data.is_superadmin !== undefined) dbSuper = bodyParse.data.is_superadmin;
+
+      const sql = getSql(cfg);
+      const [row] = await sql<any[]>`
+        update auth.users set
+          role           = coalesce(${dbRole ?? null}::text,   role),
+          is_superadmin  = coalesce(${dbSuper ?? null}::boolean, is_superadmin),
+          email_verified = coalesce(${bodyParse.data.email_verified ?? null}::boolean, email_verified)
+        where id = ${req.params.id}
+        returning id, email, role, is_superadmin, email_verified, last_sign_in_at, created_at`;
+      if (!row) return reply.code(404).send({ error: 'not_found' });
+      return reply.send(row);
+    },
+  );
+
+  // --- Superadmin: delete user ---
+  app.delete<{ Params: { id: string } }>(
+    '/admin/v1/users/:id',
+    async (req, reply) => {
+      const actor = await requireAuth(req, cfg);
+      if (!actor.isSuperadmin && actor.role !== 'service_role') {
+        return reply.code(403).send({ error: 'Forbidden' });
+      }
+      const idParse = uuidSchema.safeParse(req.params.id);
+      if (!idParse.success) return reply.code(400).send({ error: 'invalid_uuid' });
+      if (req.params.id === actor.userId) {
+        return reply.code(400).send({ error: 'cannot_delete_self' });
+      }
+      const sql = getSql(cfg);
+      const [row] = await sql<any[]>`
+        delete from auth.users where id = ${req.params.id}
+        returning id`;
+      if (!row) return reply.code(404).send({ error: 'not_found' });
+      return reply.code(204).send();
+    },
+  );
+
   // audit log endpoint is registered in auditRoutes (routes/audit.ts)
 
 
