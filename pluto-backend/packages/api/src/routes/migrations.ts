@@ -29,7 +29,79 @@ async function assertRole(cfg: Config, projectId: string | null | undefined, act
   await requireProjectRole(cfg, projectId, actor, ['owner', 'admin']);
 }
 
+// Resolve the on-disk migrations directory (../../../migrations from this
+// compiled file at dist/routes/migrations.js). Used by /migrations/history
+// to compute checksums for files that back the applied ledger rows.
+import { readdir, readFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
+import { dirname, join, resolve } from 'node:path';
+
+const __filename = fileURLToPath(import.meta.url);
+const MIG_DIR = resolve(dirname(__filename), '../../../../migrations');
+
+async function loadFileChecksums(): Promise<Map<string, { checksum: string; bytes: number }>> {
+  const out = new Map<string, { checksum: string; bytes: number }>();
+  try {
+    const entries = (await readdir(MIG_DIR)).filter((f) => f.endsWith('.sql'));
+    await Promise.all(entries.map(async (f) => {
+      const buf = await readFile(join(MIG_DIR, f));
+      out.set(f, { checksum: 'sha256:' + createHash('sha256').update(buf).digest('hex'), bytes: buf.length });
+    }));
+  } catch { /* directory missing in some test builds — endpoint still returns ledger */ }
+  return out;
+}
+
+function parseVersion(name: string): string | null {
+  const m = name.match(/^(\d{4}[a-z0-9_]*)/i);
+  return m ? m[1] : null;
+}
+
 export async function migrationsRoutes(app: FastifyInstance, cfg: Config) {
+  // Full history of the low-level runner ledger (public._pluto_migrations).
+  // Superadmin-only. Joins each ledger row with the on-disk file's checksum
+  // + byte size so drift is trivially visible.
+  app.get('/admin/v1/migrations/history', async (req, reply) => {
+    const actor = await requireAuth(req, cfg);
+    if (!(actor.isSuperadmin || actor.role === 'service_role')) {
+      return reply.code(403).send({ error: 'forbidden', message: 'superadmin required' });
+    }
+    const sql = getSql(cfg);
+    const ledger = await sql`
+      select name, applied_at
+        from public._pluto_migrations
+       order by name asc`;
+    const files = await loadFileChecksums();
+    const seen = new Set<string>();
+    const rows = ledger.map((r: any) => {
+      seen.add(r.name);
+      const f = files.get(r.name);
+      return {
+        name: r.name,
+        version: parseVersion(r.name),
+        applied_at: r.applied_at,
+        checksum: f?.checksum ?? null,
+        bytes: f?.bytes ?? null,
+        file_present: !!f,
+      };
+    });
+    // Files on disk not yet applied — surfaced so debugging is one call.
+    const pending: any[] = [];
+    for (const [name, f] of files) {
+      if (seen.has(name)) continue;
+      pending.push({
+        name, version: parseVersion(name),
+        applied_at: null, checksum: f.checksum, bytes: f.bytes,
+        file_present: true,
+      });
+    }
+    return reply.send({
+      count: rows.length,
+      pending_count: pending.length,
+      migrations: rows,
+      pending,
+    });
+  });
+
   app.get('/admin/v1/migrations', async (req, reply) => {
     const actor = await requireAuth(req, cfg);
     const q = listQ.parse(req.query);
