@@ -243,5 +243,36 @@ export async function healthRoutes(app: FastifyInstance, cfg: Config) {
   for (const [path, service] of modules) {
     app.get(path, async () => ({ status: 'ok', service, ts: new Date().toISOString() }));
   }
+
+  // Aggregated snapshot — one call, every module. Used by quickstart, CI
+  // smoke script, and docker healthcheck. Returns 200 if every module is up,
+  // 503 if any is down. `realtime` lives in routes/realtime.ts and exposes
+  // its own /realtime/v1/health; we call it via inject() so a single HTTP
+  // hit reflects the real router state.
+  app.get('/v1/health', async (_req, reply) => {
+    const probes = [
+      ...modules.map(([p, s]) => ({ name: s.replace(/^pluto-/, ''), path: p })),
+      { name: 'realtime', path: '/realtime/v1/health' },
+      { name: 'core',     path: '/readyz' },
+    ];
+    const started = Date.now();
+    const results = await Promise.all(probes.map(async (p) => {
+      const t0 = Date.now();
+      try {
+        const res = await app.inject({ method: 'GET', url: p.path });
+        return {
+          name: p.name, path: p.path,
+          status: res.statusCode >= 200 && res.statusCode < 300 ? 'up' : 'down',
+          code: res.statusCode, latency_ms: Date.now() - t0,
+        };
+      } catch (e) {
+        return { name: p.name, path: p.path, status: 'down', latency_ms: Date.now() - t0, error: (e as Error).message };
+      }
+    }));
+    const ok = results.every((r) => r.status === 'up');
+    reply.code(ok ? 200 : 503);
+    return { status: ok ? 'ok' : 'degraded', took_ms: Date.now() - started, ts: new Date().toISOString(), modules: results };
+  });
 }
+
 
