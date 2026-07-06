@@ -140,10 +140,11 @@ function VerifyPage() {
     setChecks((prev) => {
       const pass = prev.filter((c) => c.status === "pass").length;
       const fail = prev.filter((c) => c.status === "fail").length;
-      setSummary(`${pass} passed · ${fail} failed · ${prev.length} total`);
+      const skip = prev.filter((c) => c.status === "skip").length;
+      setSummary(`${pass} passed · ${fail} failed · ${skip} skipped · ${prev.length} total`);
       return prev;
     });
-  }, [runOne]);
+  }, [runOne, skipOne]);
 
   useEffect(() => () => abort.current?.abort(), []);
 
