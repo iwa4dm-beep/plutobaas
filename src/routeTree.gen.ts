@@ -80,6 +80,7 @@ import { Route as DashboardAuditLogRouteImport } from './routes/dashboard.audit-
 import { Route as DashboardAuditRouteImport } from './routes/dashboard.audit'
 import { Route as DashboardApiRouteImport } from './routes/dashboard.api'
 import { Route as DashboardAiRouteImport } from './routes/dashboard.ai'
+import { Route as DashboardAdmissionsRouteImport } from './routes/dashboard.admissions'
 import { Route as AuthResetPasswordRouteImport } from './routes/auth.reset-password'
 import { Route as AuthPhoneRouteImport } from './routes/auth.phone'
 import { Route as AuthForgotRouteImport } from './routes/auth.forgot'
@@ -451,6 +452,11 @@ const DashboardAiRoute = DashboardAiRouteImport.update({
   path: '/ai',
   getParentRoute: () => DashboardRoute,
 } as any)
+const DashboardAdmissionsRoute = DashboardAdmissionsRouteImport.update({
+  id: '/admissions',
+  path: '/admissions',
+  getParentRoute: () => DashboardRoute,
+} as any)
 const AuthResetPasswordRoute = AuthResetPasswordRouteImport.update({
   id: '/reset-password',
   path: '/reset-password',
@@ -511,6 +517,7 @@ export interface FileRoutesByFullPath {
   '/auth/forgot': typeof AuthForgotRoute
   '/auth/phone': typeof AuthPhoneRoute
   '/auth/reset-password': typeof AuthResetPasswordRoute
+  '/dashboard/admissions': typeof DashboardAdmissionsRoute
   '/dashboard/ai': typeof DashboardAiRoute
   '/dashboard/api': typeof DashboardApiRoute
   '/dashboard/audit': typeof DashboardAuditRoute
@@ -592,6 +599,7 @@ export interface FileRoutesByTo {
   '/auth/forgot': typeof AuthForgotRoute
   '/auth/phone': typeof AuthPhoneRoute
   '/auth/reset-password': typeof AuthResetPasswordRoute
+  '/dashboard/admissions': typeof DashboardAdmissionsRoute
   '/dashboard/ai': typeof DashboardAiRoute
   '/dashboard/api': typeof DashboardApiRoute
   '/dashboard/audit': typeof DashboardAuditRoute
@@ -675,6 +683,7 @@ export interface FileRoutesById {
   '/auth/forgot': typeof AuthForgotRoute
   '/auth/phone': typeof AuthPhoneRoute
   '/auth/reset-password': typeof AuthResetPasswordRoute
+  '/dashboard/admissions': typeof DashboardAdmissionsRoute
   '/dashboard/ai': typeof DashboardAiRoute
   '/dashboard/api': typeof DashboardApiRoute
   '/dashboard/audit': typeof DashboardAuditRoute
@@ -759,6 +768,7 @@ export interface FileRouteTypes {
     | '/auth/forgot'
     | '/auth/phone'
     | '/auth/reset-password'
+    | '/dashboard/admissions'
     | '/dashboard/ai'
     | '/dashboard/api'
     | '/dashboard/audit'
@@ -840,6 +850,7 @@ export interface FileRouteTypes {
     | '/auth/forgot'
     | '/auth/phone'
     | '/auth/reset-password'
+    | '/dashboard/admissions'
     | '/dashboard/ai'
     | '/dashboard/api'
     | '/dashboard/audit'
@@ -922,6 +933,7 @@ export interface FileRouteTypes {
     | '/auth/forgot'
     | '/auth/phone'
     | '/auth/reset-password'
+    | '/dashboard/admissions'
     | '/dashboard/ai'
     | '/dashboard/api'
     | '/dashboard/audit'
@@ -1507,6 +1519,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardAiRouteImport
       parentRoute: typeof DashboardRoute
     }
+    '/dashboard/admissions': {
+      id: '/dashboard/admissions'
+      path: '/admissions'
+      fullPath: '/dashboard/admissions'
+      preLoaderRoute: typeof DashboardAdmissionsRouteImport
+      parentRoute: typeof DashboardRoute
+    }
     '/auth/reset-password': {
       id: '/auth/reset-password'
       path: '/reset-password'
@@ -1604,6 +1623,7 @@ const DashboardIntegrationsRouteWithChildren =
   )
 
 interface DashboardRouteChildren {
+  DashboardAdmissionsRoute: typeof DashboardAdmissionsRoute
   DashboardAiRoute: typeof DashboardAiRoute
   DashboardApiRoute: typeof DashboardApiRoute
   DashboardAuditRoute: typeof DashboardAuditRoute
@@ -1669,6 +1689,7 @@ interface DashboardRouteChildren {
 }
 
 const DashboardRouteChildren: DashboardRouteChildren = {
+  DashboardAdmissionsRoute: DashboardAdmissionsRoute,
   DashboardAiRoute: DashboardAiRoute,
   DashboardApiRoute: DashboardApiRoute,
   DashboardAuditRoute: DashboardAuditRoute,
@@ -1755,13 +1776,3 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { startInstance } from './start.ts'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-    config: Awaited<ReturnType<typeof startInstance.getOptions>>
-  }
-}
