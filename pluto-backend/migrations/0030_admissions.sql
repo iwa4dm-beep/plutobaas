@@ -64,6 +64,7 @@ create trigger trg_admissions_set_updated_at
 -- Data API (PostgREST) requires explicit grants for anon/authenticated.
 revoke all on public.admissions from anon;
 grant select, insert, update, delete on public.admissions to authenticated;
+grant all on public.admissions to service_role;
 
 -- Row Level Security ------------------------------------------------------
 alter table public.admissions enable row level security;
@@ -123,3 +124,4 @@ create or replace view public.admissions_summary as
    order by created_at desc;
 
 grant select on public.admissions_summary to authenticated;
+grant select on public.admissions_summary to service_role;
