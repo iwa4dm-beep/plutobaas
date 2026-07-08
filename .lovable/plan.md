@@ -1,84 +1,65 @@
-# Database Import & Connect Suite — Pluto Admin
+## Goal
 
-আপনার সমস্যা: admin dashboard থেকে database add / import / connect করা যাচ্ছে না। সমাধানে দুই স্তরে কাজ হবে — **Backend (Pluto API on VPS)** এ নতুন endpoints, এবং **Frontend (Lovable admin dashboard)** এ নতুন UI।
+Auth & Users page-এ admin এখন থেকে dashboard থেকেই যেকোনো user-কে এক ক্লিকে verified করতে পারবে (এমনকি user নিজে email confirm না করলেও)। Super Admin / Admin / User — তিন role-ই যাতে সঠিকভাবে কাজ করে সেটাও এই পাশে ঠিক করা হবে।
 
----
+## Scope (কী পরিবর্তন হবে)
 
-## 1. Backend — নতুন Endpoints (`pluto-backend/packages/api/src/routes/dbio.ts`)
+**Frontend only** — backend-এ `PATCH /admin/v1/users/:id` ইতিমধ্যেই `email_verified` accept করে (`admin.ts:513`, `live.ts:699`), তাই নতুন migration/endpoint লাগবে না।
 
-Superadmin-only, `/admin/v1/dbio/*` prefix।
+## Changes
 
-| Endpoint | কাজ |
-|---|---|
-| `POST /connections/test` | Host/port/user/pass/dbname/ssl দিয়ে MySQL/Postgres/SQLite connection test |
-| `POST /connections` | External DB connection save (encrypted, `admin.db_connections` table এ) |
-| `GET  /connections` | Saved connections list |
-| `DELETE /connections/:id` | Remove |
-| `POST /import/schema` | `.sql` schema file upload → target schema এ execute (DDL only, transactional) |
-| `POST /import/dump` | MySQL/Postgres dump file (`.sql`, `.sql.gz`) upload → auto-detect dialect → convert MySQL→PG syntax → execute |
-| `POST /import/csv` | CSV → new/existing table (header auto-detect, type inference) |
-| `POST /import/mysql-live` | Saved MySQL connection থেকে সরাসরি pull → convert → load |
-| `GET  /import/jobs/:id` | Streaming progress (SSE): parsed statements, applied, failed |
-| `POST /export/mysqldump` | Postgres schema → MySQL-compatible dump download |
+### 1. `src/routes/dashboard.users.tsx` — Approve/Verify workflow
 
-**মূল bits:**
-- New migration `0031_dbio.sql` — `admin.db_connections` (encrypted creds via `pgcrypto`), `admin.import_jobs` (status, log, counts)।
-- MySQL→Postgres syntax bridge: `AUTO_INCREMENT`→`GENERATED ... IDENTITY`, backticks→double-quotes, `TINYINT(1)`→`boolean`, `ENGINE=…` strip, `DATETIME`→`timestamptz`, `LONGTEXT`→`text`, engine/charset options strip।
-- Multipart upload via `@fastify/multipart` (up to 500 MB, streamed to `/tmp`, not memory)।
-- `mysql2` + `pg` drivers for live pull; dumped via `pg_dump`/`mysqldump` shell wrappers already available in the container।
-- Audit-logged, dangerous-DDL flag required for DROP inside imports।
+- প্রতিটি **pending** row-এর পাশে একটি "Approve" button (green, checkmark icon)। Click → `live.admin.users.update(id, { email_verified: true })` → toast + refresh।
+- Verified row-এর পাশে ছোট "Revoke" (unverify) link — শুধু super_admin দেখতে পাবে।
+- **Bulk approve**: checkbox column + top toolbar-এ "Approve selected (N)" button।
+- **Filter bar**: `All / Pending / Verified` tabs + email search box (client-side filter)।
+- **Status pill** clearer: pending = amber with clock icon; verified = emerald with check + tooltip showing `email_confirmed_at`।
+- সব mutation optimistic + error হলে rollback + inline `ErrorBanner`।
+- Confirm dialog শুধু destructive action-এ (delete, revoke verification, super_admin promote/demote) — approve-এ নয় (friction কমাতে)।
 
-## 2. Frontend — নতুন Route (`src/routes/dashboard.database-import.tsx`)
+### 2. Role management hardening
 
-Sidebar এ **"Database Import & Connect"** যোগ হবে। Tabs:
+- Role dropdown disable হবে যদি:
+  - target user নিজেই current signed-in user (self-demotion রোধ), অথবা
+  - current user super_admin না হয়ে super_admin কে edit করছে।
+- `super_admin` select করলে confirm dialog: "Grant full backend access to X?"।
+- Non-super_admin admin শুধু `user ↔ admin` toggle করতে পারবে; super_admin select option তার UI-তেই hidden।
+- Current actor-এর role/superadmin flag `useAuth()` থেকে পড়া হবে (already exposed via auth-context)।
 
-1. **Connections** — Add new (dialect picker: PostgreSQL / MySQL / MariaDB / SQLite), Test button (green/red), Save। List of saved connections with quick "Pull schema" / "Pull data" actions।
-2. **Import File** — Drag-drop `.sql` / `.sql.gz` / `.csv` / `.json`। Dialect auto-detect + manual override। Target schema selector। "Dry-run (preview statements)" toggle। Progress bar via SSE, live log tail, error rows list।
-3. **Import from MySQL** — Pick saved connection → choose tables → map to target schema → Start। Progress + row counts।
-4. **Export** — Pick schema/tables → format (Postgres dump / MySQL-compatible dump / CSV zip) → download।
-5. **History** — Past import jobs, retry, download log।
+### 3. Small UX / correctness fixes
 
-সব call `plutoApi()` দিয়ে existing `/admin/v1/*` pattern এ।
+- Toast notifications (`sonner`) — সব success/error-এ।
+- Loading spinner per-row (busy state ইতিমধ্যে আছে, শুধু visible করা)।
+- Empty states আলাদা: "No pending users" vs "No users yet"।
+- Table responsive — mobile-এ role/verified column stack।
+- `refresh()` কে `useCallback` করে dependency ঠিক রাখা; polling নয়।
 
-## 3. Tests
-- `dbio-parser.test.ts` — MySQL→PG syntax converter (15+ cases)।
-- Integration: dump a small MySQL fixture, import, assert row counts।
+### 4. Guard rails
 
----
+- Frontend-এ super_admin action gate থাকলেও backend ইতিমধ্যেই `requireSuperadmin` enforce করে (`admin.ts`) — শুধু UI polish।
+- একজন admin নিজেকে delete/demote করলে সাথে সাথে sign-out + redirect `/auth`।
 
-## VPS-এ আপনাকে কী করতে হবে
+## Out of scope
 
-SSH login করে `cd ~/backend-joy/pluto-backend`, তারপর:
+- Backend schema change nei.
+- Email template বা confirmation flow-এ কোনো পরিবর্তন নেই — user-facing verification email আগের মতোই কাজ করবে; manual approve শুধু সেটার bypass।
 
+## Files
+
+- Edit: `src/routes/dashboard.users.tsx` (মূল কাজ)
+- সম্ভবত edit: `src/components/pluto/PageHeader.tsx` (যদি action slot না থাকে — check করে decide)
+- কোনো নতুন route/migration নেই।
+
+## VPS-এ কী করতে হবে
+
+**কিছুই না।** এটা pure frontend change — শুধু frontend redeploy হলেই feature live। Backend `email_verified` update আগে থেকেই deploy করা আছে (migration `0015_admin_user_mutations.sql`)।
+
+Verify করতে (optional):
 ```bash
-# 1. Latest code pull
-git pull
-
-# 2. New migration apply
-bash deploy/run-migrator.sh
-
-# 3. mysqldump/mysql client container-এ আছে কিনা নিশ্চিত করো
-docker exec $(docker ps --filter name=api -q) which mysqldump || \
-  echo "→ Dockerfile-এ mysql-client apt install করা লাগবে (আমি সেটাও আপডেট করবো)"
-
-# 4. API rebuild + restart
-docker compose -f docker/docker-compose.yml build api
-docker compose -f docker/docker-compose.yml up -d api
-
-# 5. Smoke test
-curl -s https://api.timescard.cloud/admin/v1/dbio/connections \
-  -H "Authorization: Bearer $SUPERADMIN_TOKEN" | jq
+curl -s -X PATCH https://api.timescard.cloud/admin/v1/users/<uuid> \
+  -H "Authorization: Bearer <super_admin_jwt>" \
+  -H "Content-Type: application/json" \
+  -d '{"email_verified": true}'
 ```
-
-Frontend Lovable-এ auto-deploy হবে Publish বাটন চাপলে।
-
----
-
-## Technical Details (দ্রুত reference)
-
-- **Encrypted creds:** `pgp_sym_encrypt(password, current_setting('app.enc_key'))` — `ENC_KEY` env var লাগবে (আমি `generate_secret` দিয়ে তৈরি করবো)।
-- **Streaming import:** statement splitter respects `$$ … $$`, quoted strings, comments; batches of 100 statements per tx।
-- **Rollback safety:** whole import wrapped in savepoint per batch; on error → rollback batch, log statement, continue or abort based on user flag।
-- **Big files:** files > 50 MB use `COPY … FROM STDIN` for data sections; DDL executed inline।
-
-Approve করলে আমি backend routes + migration + frontend page + tests সব এক ধাপে বানিয়ে দেব, তারপর VPS-এ শুধু উপরের ৫টা কমান্ড চালাতে হবে।
+`200` + updated row return করলেই দাশবোর্ডে Approve button কাজ করবে।
