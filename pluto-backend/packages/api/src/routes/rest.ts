@@ -53,23 +53,9 @@ import {
   SAFE_IDENT,
 } from './rest-parser.js';
 
-/**
- * Only three Postgres roles are valid on the Data API path. Application-level
- * roles (admin/user/super_admin) live in JWT claims and are enforced by RLS
- * via `auth.uid()` / `request.jwt.claims` — never as a Postgres role. Anything
- * outside the allowlist collapses to `authenticated` and is logged so we can
- * spot misconfigured issuers.
- */
-export const VALID_PG_ROLES = ['anon', 'authenticated', 'service_role'] as const;
-export type PgRole = typeof VALID_PG_ROLES[number];
+export { VALID_PG_ROLES, resolvePgRole, type PgRole } from './rest-role.js';
+import { resolvePgRole } from './rest-role.js';
 
-export function resolvePgRole(jwtRole: unknown): { pgRole: PgRole; fellBack: boolean; original: string } {
-  const original = typeof jwtRole === 'string' && jwtRole.length > 0 ? jwtRole : 'anon';
-  // service_role must never be reachable via a public bearer token — collapse.
-  if (original === 'anon') return { pgRole: 'anon', fellBack: false, original };
-  if (original === 'authenticated') return { pgRole: 'authenticated', fellBack: false, original };
-  return { pgRole: 'authenticated', fellBack: true, original };
-}
 
 async function resolveClaims(app: FastifyInstance, req: FastifyRequest): Promise<{ role: string; claims: any }> {
   const h = req.headers.authorization;
