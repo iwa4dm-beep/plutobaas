@@ -1,10 +1,15 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { GraduationCap, RefreshCw, Search, ShieldAlert, Trash2, X } from "lucide-react";
 import { PageHeader } from "@/components/pluto/PageHeader";
 import { pluto } from "@/lib/pluto/client";
 
 export const Route = createFileRoute("/dashboard/admissions")({
+  // Accept ?focus=<id> from the command palette so selecting a search hit
+  // opens the matching admission's detail modal on arrival.
+  validateSearch: (s: Record<string, unknown>) => ({
+    focus: typeof s.focus === "string" ? s.focus : undefined,
+  }),
   component: AdmissionsPage,
 });
 
@@ -75,6 +80,20 @@ function AdmissionsPage() {
     } finally { setLoading(false); }
   }
   useEffect(() => { refresh(); }, []);
+
+  // When we arrive with ?focus=<id> (from the command palette), open the
+  // matching row's detail modal as soon as it's loaded and clear the
+  // search param so a manual refresh doesn't re-open it.
+  const { focus } = Route.useSearch();
+  const navigate = useNavigate();
+  useEffect(() => {
+    if (!focus || rows.length === 0) return;
+    const hit = rows.find((r) => r.id === focus);
+    if (hit) {
+      setSelected(hit);
+      navigate({ to: "/dashboard/admissions", search: {}, replace: true });
+    }
+  }, [focus, rows, navigate]);
 
   const filtered = useMemo(() => {
     const s = q.trim().toLowerCase();
