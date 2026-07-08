@@ -171,7 +171,8 @@ export function CommandPalette() {
         }
         if (controller.cancelled) return;
         setAdmissions(rows);
-      } catch {
+      } catch (e) {
+        console.warn("[palette] admissions search failed:", e);
         if (!controller.cancelled) setAdmissions([]);
       } finally {
         if (!controller.cancelled) setAdmissionsLoading(false);
