@@ -2,7 +2,7 @@ import * as React from "react";
 import { useNavigate } from "@tanstack/react-router";
 import {
   Activity, Archive, Boxes, Building2, Cloud, Database, Files, Gauge, GitBranch,
-  Globe, GraduationCap, HeartPulse, History, KeyRound, LineChart, LockKeyhole, Package, Radio,
+  Globe, HeartPulse, History, KeyRound, LineChart, LockKeyhole, Package, Radio,
   Rocket, ScrollText, Search, Server, Settings, Shield, ShieldAlert, ShieldCheck,
   ShoppingBag, Sparkles, Table2, Terminal, Users, Waves, Zap, Home, LogOut,
 } from "lucide-react";
