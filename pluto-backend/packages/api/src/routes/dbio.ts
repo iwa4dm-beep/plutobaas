@@ -27,10 +27,51 @@ import {
 
 // ────────────────────────────── helpers ────────────────────────────────────
 
-async function requireSuperadmin(req: any, cfg: Config) {
+// Access gate for /admin/v1/dbio/*:
+//   - superadmin                                    → full
+//   - service_role                                  → full
+//   - user with admin.dbio_grants.access = 'admin'  → full
+//   - user with admin.dbio_grants.access = 'reader' → read-only routes only
+//   - workspace API token with scope 'dbio:admin'   → full
+//   - workspace API token with scope 'dbio:read'    → read-only
+async function requireDbioAccess(req: any, cfg: Config, need: 'reader' | 'admin' = 'admin') {
+  const h = String(req.headers.authorization ?? '');
+  const bearer = h.startsWith('Bearer ') ? h.slice(7) : '';
+
+  // Workspace API tokens start with `plt_` — check scope directly.
+  if (bearer.startsWith('plt_')) {
+    const { createHash } = await import('node:crypto');
+    const sql = getSql(cfg);
+    const [tok] = await sql<any[]>`
+      select scopes, revoked_at, expires_at from admin.workspace_tokens
+      where token_hash = ${createHash('sha256').update(bearer).digest('hex')} limit 1`;
+    if (!tok || tok.revoked_at || (tok.expires_at && new Date(tok.expires_at) < new Date())) {
+      const e: any = new Error('invalid token'); e.statusCode = 401; throw e;
+    }
+    const scopes: string[] = tok.scopes ?? [];
+    const ok = scopes.includes('*')
+      || (need === 'admin' ? scopes.includes('dbio:admin') : scopes.includes('dbio:admin') || scopes.includes('dbio:read'));
+    if (!ok) { const e: any = new Error(`dbio:${need} scope required`); e.statusCode = 403; throw e; }
+    return { userId: null as string | null, viaToken: true };
+  }
+
+  // Session-based (JWT) — superadmin or grant row
+  const actor = await requireAuth(req, cfg);
+  if (actor.isSuperadmin || actor.role === 'service_role') return { userId: actor.userId, viaToken: false };
+  const sql = getSql(cfg);
+  const [row] = await sql<any[]>`select access from admin.dbio_grants where user_id = ${actor.userId}`;
+  if (!row) { const e: any = new Error('dbio access required (superadmin or admin.dbio_grants entry)'); e.statusCode = 403; throw e; }
+  if (need === 'admin' && row.access !== 'admin') {
+    const e: any = new Error('dbio admin access required'); e.statusCode = 403; throw e;
+  }
+  return { userId: actor.userId, viaToken: false };
+}
+
+// Only superadmins can manage the grants list itself.
+async function requireGrantAdmin(req: any, cfg: Config) {
   const actor = await requireAuth(req, cfg);
   if (!(actor.isSuperadmin || actor.role === 'service_role')) {
-    const e: any = new Error('superadmin required'); e.statusCode = 403; throw e;
+    const e: any = new Error('superadmin required to manage dbio grants'); e.statusCode = 403; throw e;
   }
   return actor;
 }
