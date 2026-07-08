@@ -190,50 +190,8 @@ export function CommandPalette() {
         </CommandEmpty>
 
 
-        {/* Live admission records — searchable by name, mobile, class, id */}
-        {(admissions.length > 0 || admissionsLoading) && (
-          <>
-            <CommandGroup heading={admissionsLoading ? "Admission records (searching…)" : "Admission records"}>
-              {admissions.map((a) => (
-                <CommandItem
-                  key={`adm:${a.id}`}
-                  // Embed the raw query so cmdk's internal fuzzy filter never
-                  // hides a row the server matched (e.g. mobile digits or
-                  // Bengali names that don't literally appear in other fields).
-                  value={`__adm__ ${query} ${a.student_name ?? ""} ${a.mobile ?? ""} ${a.father_name ?? ""} ${a.class_applying_for ?? ""} ${a.id}`}
-                  keywords={[
-                    query,
-                    a.student_name ?? "",
-                    a.mobile ?? "",
-                    a.father_name ?? "",
-                    a.class_applying_for ?? "",
-                    a.id,
-                  ]}
-                  onSelect={() => {
-                    handleOpenChange(false);
-                    nav({ to: "/dashboard/admissions", search: { focus: a.id } as never });
-                  }}
-                  className="gap-2"
-                >
-                  <GraduationCap className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
-                  <span className="flex-1 truncate">
-                    <span className="font-medium">{a.student_name || "(no name)"}</span>
-                    {a.class_applying_for && (
-                      <span className="ml-2 text-[11px] text-muted-foreground">Class {a.class_applying_for}</span>
-                    )}
-                    {a.father_name && (
-                      <span className="ml-2 text-[11px] text-muted-foreground">পিতা: {a.father_name}</span>
-                    )}
-                  </span>
-                  <span className="hidden sm:inline text-[10px] text-muted-foreground/70 font-mono truncate">
-                    {a.mobile || a.id.slice(0, 8)}
-                  </span>
-                </CommandItem>
-              ))}
-            </CommandGroup>
-            <CommandSeparator />
-          </>
-        )}
+
+
 
 
 
