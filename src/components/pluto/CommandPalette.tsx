@@ -171,7 +171,8 @@ export function CommandPalette() {
         }
         if (controller.cancelled) return;
         setAdmissions(rows);
-      } catch {
+      } catch (e) {
+        console.warn("[palette] admissions search failed:", e);
         if (!controller.cancelled) setAdmissions([]);
       } finally {
         if (!controller.cancelled) setAdmissionsLoading(false);
@@ -263,9 +264,18 @@ export function CommandPalette() {
               {admissions.map((a) => (
                 <CommandItem
                   key={`adm:${a.id}`}
-                  // cmdk filters on this value — include every searchable field
-                  // so typing a partial mobile / name still surfaces the row.
-                  value={`admission ${a.student_name ?? ""} ${a.mobile ?? ""} ${a.father_name ?? ""} ${a.class_applying_for ?? ""} ${a.id}`}
+                  // Embed the raw query so cmdk's internal fuzzy filter never
+                  // hides a row the server matched (e.g. mobile digits or
+                  // Bengali names that don't literally appear in other fields).
+                  value={`__adm__ ${query} ${a.student_name ?? ""} ${a.mobile ?? ""} ${a.father_name ?? ""} ${a.class_applying_for ?? ""} ${a.id}`}
+                  keywords={[
+                    query,
+                    a.student_name ?? "",
+                    a.mobile ?? "",
+                    a.father_name ?? "",
+                    a.class_applying_for ?? "",
+                    a.id,
+                  ]}
                   onSelect={() => {
                     handleOpenChange(false);
                     nav({ to: "/dashboard/admissions", search: { focus: a.id } as never });
@@ -277,6 +287,9 @@ export function CommandPalette() {
                     <span className="font-medium">{a.student_name || "(no name)"}</span>
                     {a.class_applying_for && (
                       <span className="ml-2 text-[11px] text-muted-foreground">Class {a.class_applying_for}</span>
+                    )}
+                    {a.father_name && (
+                      <span className="ml-2 text-[11px] text-muted-foreground">পিতা: {a.father_name}</span>
                     )}
                   </span>
                   <span className="hidden sm:inline text-[10px] text-muted-foreground/70 font-mono truncate">
