@@ -25,12 +25,7 @@ const groups: Group[] = [
     ],
   },
   {
-    label: "Applications",
-    items: [
-      { to: "/dashboard/admissions", label: "Admissions", icon: GraduationCap },
-    ],
-  },
-  {
+
     label: "Data",
     items: [
       { to: "/dashboard/database", label: "Database", icon: Database },
