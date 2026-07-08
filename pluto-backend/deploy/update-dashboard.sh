@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
 # ---------------------------------------------------------------------------
 # update-dashboard.sh
-#   VPS-এ Pluto backend + dashboard কে GitHub-এর latest code দিয়ে refresh করে।
+#   VPS-এ Pluto backend + dashboard/frontend কে GitHub-এর latest code দিয়ে refresh করে।
 #   Usage:  bash deploy/update-dashboard.sh
 # ---------------------------------------------------------------------------
 set -euo pipefail
 
-# repo root (script যেখানেই থাকুক)
+# pluto-backend root (script যেখানেই থাকুক)
 cd "$(dirname "$0")/.."
 REPO_ROOT="$(pwd)"
+GIT_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 COMPOSE="docker compose --env-file .env -f docker/docker-compose.yml"
 
 log()  { printf "\n\033[1;36m▶ %s\033[0m\n" "$*"; }
@@ -29,7 +30,7 @@ ok "environment OK  (repo: $REPO_ROOT)"
 # ---------------------------------------------------------------------------
 # 2. GitHub থেকে latest code
 # ---------------------------------------------------------------------------
-log "Pulling latest code from GitHub"
+log "Pulling full latest project from GitHub"
 CURRENT_BRANCH="$(git rev-parse --abbrev-ref HEAD)"
 git fetch --all --prune
 # local dirty change থাকলে stash (data loss হবে না)
@@ -38,8 +39,22 @@ if ! git diff --quiet || ! git diff --cached --quiet; then
   git stash push -u -m "auto-stash-$(date +%s)" || true
 fi
 git reset --hard "origin/${CURRENT_BRANCH}"
+git clean -fd \
+  -e .env -e .env.local -e .env.production \
+  -e backend/.env -e pluto-backend/.env \
+  -e uploads -e storage || true
 NEW_SHA="$(git rev-parse --short HEAD)"
 ok "checked out ${CURRENT_BRANCH} @ ${NEW_SHA}"
+
+log "Verifying Auth & Users dashboard files in Git checkout"
+if [ -f "$GIT_ROOT/src/routes/dashboard.users.tsx" ] && [ -f "$GIT_ROOT/src/components/pluto/Sidebar.tsx" ]; then
+  grep -q 'Auth & Users' "$GIT_ROOT/src/routes/dashboard.users.tsx" \
+    && grep -q '/dashboard/users' "$GIT_ROOT/src/components/pluto/Sidebar.tsx" \
+    && ok "Auth & Users dashboard source is present" \
+    || warn "Auth & Users source exists but expected text/route was not found"
+else
+  warn "Frontend dashboard source not found beside pluto-backend; run the frontend deploy script from the full project repo"
+fi
 
 # ---------------------------------------------------------------------------
 # 3. Role verification (adminসহ সব role আছে কিনা)
@@ -112,14 +127,25 @@ docker image prune -f >/dev/null || true
 ok "cleanup done"
 
 # ---------------------------------------------------------------------------
-# 8. Summary
+# 8. Optional frontend/dashboard deploy (Auth & Users page)
+# ---------------------------------------------------------------------------
+if [ -f "$GIT_ROOT/deploy-frontend.sh" ]; then
+  log "Deploying VPS dashboard frontend (Auth & Users page)"
+  APP_DIR="$GIT_ROOT" bash "$GIT_ROOT/deploy-frontend.sh" || warn "frontend deploy failed — run: APP_DIR=$GIT_ROOT bash $GIT_ROOT/deploy-frontend.sh"
+else
+  warn "deploy-frontend.sh not found at $GIT_ROOT — backend updated only"
+fi
+
+# ---------------------------------------------------------------------------
+# 9. Summary
 # ---------------------------------------------------------------------------
 echo
 echo "───────────────────────────────────────────────"
-ok  "Dashboard backend updated to ${NEW_SHA}"
+ok  "Dashboard/backend updated to ${NEW_SHA}"
 echo "───────────────────────────────────────────────"
 echo "Next steps:"
-echo "  • Lovable dashboard (frontend) → click Publish → Update"
+echo "  • VPS dashboard: open /dashboard/users and hard-refresh (Ctrl+F5)"
+echo "  • Lovable hosted dashboard: click Publish → Update if you use backend-joy.lovable.app"
 echo "  • Verify via nginx:  curl -s -o /dev/null -w '%{http_code}\\n' \\"
 echo "      https://YOUR-DOMAIN/api/pluto/admissions/v1/search?q=ab"
 echo "───────────────────────────────────────────────"
