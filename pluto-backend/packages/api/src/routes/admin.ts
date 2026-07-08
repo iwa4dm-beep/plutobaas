@@ -493,7 +493,9 @@ export async function adminRoutes(app: FastifyInstance, cfg: Config) {
     }
     const sql = getSql(cfg);
     const rows = await sql`
-      select id, email, role, is_superadmin, last_sign_in_at, created_at
+      select id, email, role, is_superadmin,
+             email_verified, email_confirmed_at,
+             last_sign_in_at, created_at
       from auth.users order by created_at desc limit 500`;
     return reply.send(rows);
   });
