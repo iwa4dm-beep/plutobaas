@@ -493,7 +493,9 @@ export async function adminRoutes(app: FastifyInstance, cfg: Config) {
     }
     const sql = getSql(cfg);
     const rows = await sql`
-      select id, email, role, is_superadmin, last_sign_in_at, created_at
+      select id, email, role, is_superadmin,
+             email_verified, email_confirmed_at,
+             last_sign_in_at, created_at
       from auth.users order by created_at desc limit 500`;
     return reply.send(rows);
   });
@@ -537,11 +539,16 @@ export async function adminRoutes(app: FastifyInstance, cfg: Config) {
       const sql = getSql(cfg);
       const [row] = await sql<any[]>`
         update auth.users set
-          role           = coalesce(${dbRole ?? null}::text,   role),
-          is_superadmin  = coalesce(${dbSuper ?? null}::boolean, is_superadmin),
-          email_verified = coalesce(${bodyParse.data.email_verified ?? null}::boolean, email_verified)
+          role              = coalesce(${dbRole ?? null}::text,   role),
+          is_superadmin     = coalesce(${dbSuper ?? null}::boolean, is_superadmin),
+          email_verified    = coalesce(${bodyParse.data.email_verified ?? null}::boolean, email_verified),
+          email_confirmed_at = case
+            when ${bodyParse.data.email_verified ?? null}::boolean is true  and email_confirmed_at is null then now()
+            when ${bodyParse.data.email_verified ?? null}::boolean is false then null
+            else email_confirmed_at
+          end
         where id = ${req.params.id}
-        returning id, email, role, is_superadmin, email_verified, last_sign_in_at, created_at`;
+        returning id, email, role, is_superadmin, email_verified, email_confirmed_at, last_sign_in_at, created_at`;
       if (!row) return reply.code(404).send({ error: 'not_found' });
       return reply.send(row);
     },
