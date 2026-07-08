@@ -225,8 +225,8 @@ export function CommandPalette() {
       <CommandInput
         value={query}
         onValueChange={setQuery}
-        placeholder="Search pages, actions, docs…  (try ‘sql’, ‘users’, ‘logs’)"
-        aria-label="Search pages and actions"
+        placeholder="Search pages, admissions, actions…  (নাম / mobile / class)"
+        aria-label="Search pages, admissions and actions"
       />
       <CommandList className="max-h-[60vh]">
         <CommandEmpty>
@@ -236,10 +236,45 @@ export function CommandPalette() {
             </div>
             <div className="mt-1 text-xs text-muted-foreground">
               Try shorter keywords like <kbd className="font-mono">sql</kbd>,{" "}
-              <kbd className="font-mono">users</kbd>, or <kbd className="font-mono">logs</kbd>.
+              <kbd className="font-mono">admission</kbd>, or a student name / mobile.
             </div>
           </div>
         </CommandEmpty>
+
+        {/* Live admission records — searchable by name, mobile, class, id */}
+        {(admissions.length > 0 || admissionsLoading) && (
+          <>
+            <CommandGroup heading={admissionsLoading ? "Admission records (searching…)" : "Admission records"}>
+              {admissions.map((a) => (
+                <CommandItem
+                  key={`adm:${a.id}`}
+                  // cmdk filters on this value — include every searchable field
+                  // so typing a partial mobile / name still surfaces the row.
+                  value={`admission ${a.student_name ?? ""} ${a.mobile ?? ""} ${a.father_name ?? ""} ${a.class_applying_for ?? ""} ${a.id}`}
+                  onSelect={() => {
+                    handleOpenChange(false);
+                    nav({ to: "/dashboard/admissions", search: { focus: a.id } as never });
+                  }}
+                  className="gap-2"
+                >
+                  <GraduationCap className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+                  <span className="flex-1 truncate">
+                    <span className="font-medium">{a.student_name || "(no name)"}</span>
+                    {a.class_applying_for && (
+                      <span className="ml-2 text-[11px] text-muted-foreground">Class {a.class_applying_for}</span>
+                    )}
+                  </span>
+                  <span className="hidden sm:inline text-[10px] text-muted-foreground/70 font-mono truncate">
+                    {a.mobile || a.id.slice(0, 8)}
+                  </span>
+                </CommandItem>
+              ))}
+            </CommandGroup>
+            <CommandSeparator />
+          </>
+        )}
+
+
 
         {grouped.map(([group, items], gi) => (
           <React.Fragment key={group}>
