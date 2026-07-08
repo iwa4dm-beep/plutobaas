@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useRouterState } from "@tanstack/react-router";
 import {
   Activity, Archive, Boxes, Building2, ChevronDown, Cloud, Database, Files,
-  Gauge, GitBranch, Globe, GraduationCap, HeartPulse, History, KeyRound, LineChart,
+  Gauge, GitBranch, Globe, HeartPulse, History, KeyRound, LineChart,
   LockKeyhole, LogOut, Package, Radio, Rocket, ScrollText, Search, Server,
   Settings, Shield, ShieldAlert, ShieldCheck, ShoppingBag, Sparkles, Table2,
   Terminal, Users, Waves, X, Zap,
@@ -25,12 +25,7 @@ const groups: Group[] = [
     ],
   },
   {
-    label: "Applications",
-    items: [
-      { to: "/dashboard/admissions", label: "Admissions", icon: GraduationCap },
-    ],
-  },
-  {
+
     label: "Data",
     items: [
       { to: "/dashboard/database", label: "Database", icon: Database },

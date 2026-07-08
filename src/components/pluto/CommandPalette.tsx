@@ -2,7 +2,7 @@ import * as React from "react";
 import { useNavigate } from "@tanstack/react-router";
 import {
   Activity, Archive, Boxes, Building2, Cloud, Database, Files, Gauge, GitBranch,
-  Globe, GraduationCap, HeartPulse, History, KeyRound, LineChart, LockKeyhole, Package, Radio,
+  Globe, HeartPulse, History, KeyRound, LineChart, LockKeyhole, Package, Radio,
   Rocket, ScrollText, Search, Server, Settings, Shield, ShieldAlert, ShieldCheck,
   ShoppingBag, Sparkles, Table2, Terminal, Users, Waves, Zap, Home, LogOut,
 } from "lucide-react";
@@ -44,7 +44,7 @@ const entries: Entry[] = [
 
   // Auth & users
   { group: "Auth & Users", label: "Users", to: "/dashboard/users", icon: Users },
-  { group: "Auth & Users", label: "Admissions", to: "/dashboard/admissions", icon: GraduationCap, keywords: "student admission form school class mobile নাম ভর্তি" },
+  
   { group: "Auth & Users", label: "MFA & SSO", to: "/dashboard/mfa", icon: Shield },
   { group: "Auth & Users", label: "Auth advanced (OAuth / MFA / SSO)", to: "/dashboard/pluto-auth-advanced", icon: Shield },
   { group: "Auth & Users", label: "Orgs & Teams", to: "/dashboard/pluto-orgs", icon: Building2 },
@@ -105,81 +105,13 @@ const entries: Entry[] = [
 ];
 
 /** Global ⌘K / Ctrl-K palette. Mount once in the dashboard shell. */
-type AdmissionHit = {
-  id: string;
-  student_name: string;
-  mobile: string | null;
-  class_applying_for: string | null;
-  father_name: string | null;
-};
-
 export function CommandPalette() {
   const [open, setOpen] = React.useState(false);
   const [query, setQuery] = React.useState("");
-  const [admissions, setAdmissions] = React.useState<AdmissionHit[]>([]);
-  const [admissionsLoading, setAdmissionsLoading] = React.useState(false);
   const nav = useNavigate();
   const { signOut } = useAuth();
   const lastFocusRef = React.useRef<HTMLElement | null>(null);
 
-  // Live admission search — debounced. Fires when palette is open and the
-  // query has ≥ 2 chars. Matches student_name / mobile / father_name /
-  // class_applying_for / id (case-insensitive). Uses the same runSql path
-  // the /dashboard/admissions page uses.
-  React.useEffect(() => {
-    if (!open) { setAdmissions([]); return; }
-    const q = query.trim();
-    if (q.length < 2) { setAdmissions([]); return; }
-    const controller = { cancelled: false };
-    const t = setTimeout(async () => {
-      setAdmissionsLoading(true);
-      try {
-        // Prefer the dedicated backend endpoint (parameterized, safer,
-        // rate-limitable). If the API is old and doesn't have it yet,
-        // fall back to the SQL runner so search still works pre-deploy.
-        let rows: AdmissionHit[] = [];
-        try {
-          const res = await api<{ ok: boolean; results: AdmissionHit[] }>(
-            `/admissions/v1/search?q=${encodeURIComponent(q)}&limit=8`,
-          );
-          rows = res.results ?? [];
-        } catch (e: unknown) {
-          const status = (e as { status?: number } | null)?.status;
-          if (status !== 404 && status !== 405) throw e;
-          // Endpoint not deployed yet → SQL fallback (server-side ilike).
-          const safe = q.replace(/'/g, "''");
-          const like = `%${safe}%`;
-          const sql = `
-            select id, student_name, mobile, class_applying_for, father_name
-            from public.admissions
-            where student_name ilike '${like}'
-               or mobile ilike '${like}'
-               or father_name ilike '${like}'
-               or mother_name ilike '${like}'
-               or class_applying_for ilike '${like}'
-               or id::text ilike '${like}'
-            order by created_at desc
-            limit 8
-          `;
-          const sqlRes = await pluto.db.runSql(sql);
-          const cols = sqlRes.columns;
-          rows = sqlRes.rows.map((r) => {
-            const o: Record<string, unknown> = {};
-            cols.forEach((c, i) => { o[c] = r[i]; });
-            return o as unknown as AdmissionHit;
-          });
-        }
-        if (controller.cancelled) return;
-        setAdmissions(rows);
-      } catch (e) {
-        console.warn("[palette] admissions search failed:", e);
-        if (!controller.cancelled) setAdmissions([]);
-      } finally {
-        if (!controller.cancelled) setAdmissionsLoading(false);
-      }
-    }, 200);
-    return () => { controller.cancelled = true; clearTimeout(t); };
-  }, [open, query]);
 
   React.useEffect(() => {
     const on = (e: KeyboardEvent) => {
@@ -241,8 +173,8 @@ export function CommandPalette() {
       <CommandInput
         value={query}
         onValueChange={setQuery}
-        placeholder="Search pages, admissions, actions…  (নাম / mobile / class)"
-        aria-label="Search pages, admissions and actions"
+        placeholder="Search pages, actions…"
+        aria-label="Search pages and actions"
       />
       <CommandList className="max-h-[60vh]">
         <CommandEmpty>
@@ -252,55 +184,14 @@ export function CommandPalette() {
             </div>
             <div className="mt-1 text-xs text-muted-foreground">
               Try shorter keywords like <kbd className="font-mono">sql</kbd>,{" "}
-              <kbd className="font-mono">admission</kbd>, or a student name / mobile.
+              <kbd className="font-mono">users</kbd>, or <kbd className="font-mono">storage</kbd>.
             </div>
           </div>
         </CommandEmpty>
 
-        {/* Live admission records — searchable by name, mobile, class, id */}
-        {(admissions.length > 0 || admissionsLoading) && (
-          <>
-            <CommandGroup heading={admissionsLoading ? "Admission records (searching…)" : "Admission records"}>
-              {admissions.map((a) => (
-                <CommandItem
-                  key={`adm:${a.id}`}
-                  // Embed the raw query so cmdk's internal fuzzy filter never
-                  // hides a row the server matched (e.g. mobile digits or
-                  // Bengali names that don't literally appear in other fields).
-                  value={`__adm__ ${query} ${a.student_name ?? ""} ${a.mobile ?? ""} ${a.father_name ?? ""} ${a.class_applying_for ?? ""} ${a.id}`}
-                  keywords={[
-                    query,
-                    a.student_name ?? "",
-                    a.mobile ?? "",
-                    a.father_name ?? "",
-                    a.class_applying_for ?? "",
-                    a.id,
-                  ]}
-                  onSelect={() => {
-                    handleOpenChange(false);
-                    nav({ to: "/dashboard/admissions", search: { focus: a.id } as never });
-                  }}
-                  className="gap-2"
-                >
-                  <GraduationCap className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
-                  <span className="flex-1 truncate">
-                    <span className="font-medium">{a.student_name || "(no name)"}</span>
-                    {a.class_applying_for && (
-                      <span className="ml-2 text-[11px] text-muted-foreground">Class {a.class_applying_for}</span>
-                    )}
-                    {a.father_name && (
-                      <span className="ml-2 text-[11px] text-muted-foreground">পিতা: {a.father_name}</span>
-                    )}
-                  </span>
-                  <span className="hidden sm:inline text-[10px] text-muted-foreground/70 font-mono truncate">
-                    {a.mobile || a.id.slice(0, 8)}
-                  </span>
-                </CommandItem>
-              ))}
-            </CommandGroup>
-            <CommandSeparator />
-          </>
-        )}
+
+
+
 
 
 
