@@ -8,6 +8,10 @@ services:
       POSTGRES_DB: pluto
     volumes:
       - pluto_pg:/var/lib/postgresql/data
+      # Bootstraps the `postgres`, `admin`, `authenticated`, `anon`, and
+      # `service_role` roles on first init so `role "X" does not exist`
+      # never blocks migrations. Idempotent; runs once per fresh volume.
+      - ./initdb:/docker-entrypoint-initdb.d:ro
     ports:
       - "127.0.0.1:5432:5432"
     healthcheck:
