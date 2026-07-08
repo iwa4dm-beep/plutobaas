@@ -1,184 +1,84 @@
-# Lovable.dev Frontend Project → Pluto BaaS Backend যুক্ত করার Guide
+# Database Import & Connect Suite — Pluto Admin
 
-দুঃখিত, আগে ভুল বুঝেছিলাম। এখন clear: আপনার **Lovable.dev-এ তৈরি frontend project** (GitHub-এ আছে) — এই Pluto BaaS-কে backend হিসেবে ব্যবহার করতে চান।
-
-আপনার ৩টা scenario আছে, সবগুলোর জন্য common concept + আলাদা ধাপ নিচে।
+আপনার সমস্যা: admin dashboard থেকে database add / import / connect করা যাচ্ছে না। সমাধানে দুই স্তরে কাজ হবে — **Backend (Pluto API on VPS)** এ নতুন endpoints, এবং **Frontend (Lovable admin dashboard)** এ নতুন UI।
 
 ---
 
-## 🎯 মূল ধারণা
+## 1. Backend — নতুন Endpoints (`pluto-backend/packages/api/src/routes/dbio.ts`)
 
-আপনার Pluto BaaS (`api.timescard.cloud`) = Supabase-এর মতো একটা backend। যেকোনো Lovable frontend project এটাকে HTTP API হিসেবে call করতে পারবে — শুধু ৩টা env var লাগবে:
+Superadmin-only, `/admin/v1/dbio/*` prefix।
 
-```env
-VITE_PLUTO_URL=https://api.timescard.cloud
-VITE_PLUTO_ANON_KEY=pk_anon_xxxxx
-# service_role key শুধু server function-এ, browser-এ কখনোই না
-PLUTO_SERVICE_ROLE_KEY=sk_svc_xxxxx
-```
+| Endpoint | কাজ |
+|---|---|
+| `POST /connections/test` | Host/port/user/pass/dbname/ssl দিয়ে MySQL/Postgres/SQLite connection test |
+| `POST /connections` | External DB connection save (encrypted, `admin.db_connections` table এ) |
+| `GET  /connections` | Saved connections list |
+| `DELETE /connections/:id` | Remove |
+| `POST /import/schema` | `.sql` schema file upload → target schema এ execute (DDL only, transactional) |
+| `POST /import/dump` | MySQL/Postgres dump file (`.sql`, `.sql.gz`) upload → auto-detect dialect → convert MySQL→PG syntax → execute |
+| `POST /import/csv` | CSV → new/existing table (header auto-detect, type inference) |
+| `POST /import/mysql-live` | Saved MySQL connection থেকে সরাসরি pull → convert → load |
+| `GET  /import/jobs/:id` | Streaming progress (SSE): parsed statements, applied, failed |
+| `POST /export/mysqldump` | Postgres schema → MySQL-compatible dump download |
 
-Frontend থেকে call হবে Pluto JS SDK (`@pluto/client` — `pluto-backend/packages/sdk-js/`) দিয়ে।
+**মূল bits:**
+- New migration `0031_dbio.sql` — `admin.db_connections` (encrypted creds via `pgcrypto`), `admin.import_jobs` (status, log, counts)।
+- MySQL→Postgres syntax bridge: `AUTO_INCREMENT`→`GENERATED ... IDENTITY`, backticks→double-quotes, `TINYINT(1)`→`boolean`, `ENGINE=…` strip, `DATETIME`→`timestamptz`, `LONGTEXT`→`text`, engine/charset options strip।
+- Multipart upload via `@fastify/multipart` (up to 500 MB, streamed to `/tmp`, not memory)।
+- `mysql2` + `pg` drivers for live pull; dumped via `pg_dump`/`mysqldump` shell wrappers already available in the container।
+- Audit-logged, dangerous-DDL flag required for DROP inside imports।
+
+## 2. Frontend — নতুন Route (`src/routes/dashboard.database-import.tsx`)
+
+Sidebar এ **"Database Import & Connect"** যোগ হবে। Tabs:
+
+1. **Connections** — Add new (dialect picker: PostgreSQL / MySQL / MariaDB / SQLite), Test button (green/red), Save। List of saved connections with quick "Pull schema" / "Pull data" actions।
+2. **Import File** — Drag-drop `.sql` / `.sql.gz` / `.csv` / `.json`। Dialect auto-detect + manual override। Target schema selector। "Dry-run (preview statements)" toggle। Progress bar via SSE, live log tail, error rows list।
+3. **Import from MySQL** — Pick saved connection → choose tables → map to target schema → Start। Progress + row counts।
+4. **Export** — Pick schema/tables → format (Postgres dump / MySQL-compatible dump / CSV zip) → download।
+5. **History** — Past import jobs, retry, download log।
+
+সব call `plutoApi()` দিয়ে existing `/admin/v1/*` pattern এ।
+
+## 3. Tests
+- `dbio-parser.test.ts` — MySQL→PG syntax converter (15+ cases)।
+- Integration: dump a small MySQL fixture, import, assert row counts।
 
 ---
 
-## 📋 Scenario 1: GitHub-এ থাকা Lovable project → সরাসরি Pluto backend যুক্ত
+## VPS-এ আপনাকে কী করতে হবে
 
-আপনার Lovable project GitHub-এ আছে, কোনো Cloud নেই। শুধু frontend।
+SSH login করে `cd ~/backend-joy/pluto-backend`, তারপর:
 
-### ধাপ ১: Pluto-তে API keys তৈরি
-1. `https://backend-joy.lovable.app/dashboard` → **Projects → New Project** (frontend app-এর জন্য একটা project)
-2. **Settings → API Keys** → `anon` key copy করুন
-3. **Dashboard → CORS** → frontend-এর domain add করুন (যেমন `https://myapp.lovable.app`, `http://localhost:8080`)
-
-### ধাপ ২: Frontend project-এ Pluto SDK install
-Lovable editor-এ chat-এ লিখুন:
-```
-bun add @pluto/client
-```
-অথবা local-এ:
 ```bash
-git clone https://github.com/<you>/<lovable-repo>.git
-cd <lovable-repo>
-bun add @pluto/client
+# 1. Latest code pull
+git pull
+
+# 2. New migration apply
+bash deploy/run-migrator.sh
+
+# 3. mysqldump/mysql client container-এ আছে কিনা নিশ্চিত করো
+docker exec $(docker ps --filter name=api -q) which mysqldump || \
+  echo "→ Dockerfile-এ mysql-client apt install করা লাগবে (আমি সেটাও আপডেট করবো)"
+
+# 4. API rebuild + restart
+docker compose -f docker/docker-compose.yml build api
+docker compose -f docker/docker-compose.yml up -d api
+
+# 5. Smoke test
+curl -s https://api.timescard.cloud/admin/v1/dbio/connections \
+  -H "Authorization: Bearer $SUPERADMIN_TOKEN" | jq
 ```
 
-### ধাপ ৩: Env vars যোগ
-Lovable project-এ `.env` ফাইলে (বা Lovable Cloud secrets-এ):
-```env
-VITE_PLUTO_URL=https://api.timescard.cloud
-VITE_PLUTO_ANON_KEY=pk_anon_xxxxx
-```
-
-### ধাপ ৪: Pluto client setup
-`src/lib/pluto.ts`:
-```ts
-import { createClient } from "@pluto/client";
-export const pluto = createClient({
-  baseUrl: import.meta.env.VITE_PLUTO_URL,
-  apikey:  import.meta.env.VITE_PLUTO_ANON_KEY,
-});
-```
-
-### ধাপ ৫: Auth + Data + Storage ব্যবহার
-```ts
-// Auth
-await pluto.auth.signUp(email, password);
-await pluto.auth.signIn(email, password);
-const user = pluto.auth.user();
-
-// Data
-const { rows } = await pluto.data.query({ table: "posts", limit: 20 });
-await pluto.data.insert("posts", { title: "hi" });
-
-// Storage
-await pluto.storage.upload("public", "cover.jpg", file);
-
-// Realtime
-pluto.realtime.channel("posts").on("INSERT", (row) => console.log(row));
-```
-
-### ধাপ ৬: Database schema তৈরি
-Pluto Dashboard → **SQL Editor**-এ:
-```sql
-CREATE TABLE public.posts (
-  id uuid primary key default gen_random_uuid(),
-  user_id uuid references auth.users(id),
-  title text, body text,
-  created_at timestamptz default now()
-);
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.posts TO authenticated;
-ALTER TABLE public.posts ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "own posts" ON public.posts FOR ALL TO authenticated
-  USING (user_id = auth.uid());
-```
+Frontend Lovable-এ auto-deploy হবে Publish বাটন চাপলে।
 
 ---
 
-## 📋 Scenario 2: **Lovable Cloud on করা** project → Pluto যুক্ত
+## Technical Details (দ্রুত reference)
 
-আপনার frontend project-এ Lovable Cloud (Supabase) ইতিমধ্যে enabled। এখন Pluto-ও যুক্ত করতে চান।
+- **Encrypted creds:** `pgp_sym_encrypt(password, current_setting('app.enc_key'))` — `ENC_KEY` env var লাগবে (আমি `generate_secret` দিয়ে তৈরি করবো)।
+- **Streaming import:** statement splitter respects `$$ … $$`, quoted strings, comments; batches of 100 statements per tx।
+- **Rollback safety:** whole import wrapped in savepoint per batch; on error → rollback batch, log statement, continue or abort based on user flag।
+- **Big files:** files > 50 MB use `COPY … FROM STDIN` for data sections; DDL executed inline।
 
-### গুরুত্বপূর্ণ সিদ্ধান্ত: কোনটা কীসের জন্য?
-| Feature | Lovable Cloud | Pluto BaaS |
-|---|---|---|
-| Auth | ✅ রাখুন | অথবা migrate |
-| DB | ✅ রাখুন | অথবা migrate |
-| Storage | ✅ রাখুন | অথবা migrate |
-
-**২টা approach:**
-
-**Approach A (Hybrid — সহজ, no migration):**
-- Lovable Cloud যা আছে থাক
-- Pluto যুক্ত করুন শুধু **নতুন feature**-এর জন্য (যেমন Realtime, Edge functions, Vector search)
-- ২টা client পাশাপাশি থাকবে: `supabase` (Cloud) + `pluto` (BaaS)
-
-**Approach B (Full migration to Pluto):**
-- Lovable Cloud থেকে data export → Pluto-তে import
-- সব `supabase.*` call → `pluto.*` call-এ replace
-- Lovable Cloud disable করুন Cloud tab থেকে
-
-### ধাপ (Approach A — recommended):
-1. Scenario 1-এর ধাপ ১-৪ follow করুন — Pluto SDK install + env + client setup
-2. Existing `src/integrations/supabase/client.ts` অপরিবর্তিত রাখুন
-3. নতুন `src/lib/pluto.ts` add করুন
-4. যে feature-এর জন্য Pluto চান শুধু সেখানে `pluto.*` call করুন
-5. Pluto Dashboard-এ CORS-এ আপনার Lovable published URL add করুন (যেমন `https://myapp.lovable.app`, preview URL-ও)
-
-### ধাপ (Approach B — full migration):
-1. Lovable Cloud → Advanced settings → **Export data** (SQL dump)
-2. Pluto Dashboard → SQL Editor-এ dump import করুন
-3. Users migrate: Supabase Auth → Pluto Auth (API দিয়ে script)
-4. Code refactor: সব `supabase.from(...).select()` → `pluto.data.query(...)`
-5. Lovable Cloud disable করুন
-
----
-
-## 📋 Scenario 3: **Lovable Cloud on করা নেই** এমন project → Pluto যুক্ত
-
-এটাই আসলে **Scenario 1**-এর মতো — কোনো backend নেই, Pluto add করলেই backend পেয়ে যাবেন।
-
-Scenario 1-এর সব ধাপ follow করুন। কোনো Cloud disable/migrate করতে হবে না।
-
-**অতিরিক্ত সুবিধা:** যেহেতু Cloud নেই, tokens/pricing conflict নেই — সবকিছু directly Pluto-তে যাবে।
-
----
-
-## 🛠️ GitHub থেকে project Lovable-এ import করা
-
-মনে রাখবেন: **Lovable এখনো existing GitHub repo সরাসরি import করে না।** ৩টা option:
-
-1. **নতুন project তৈরি → GitHub sync → code paste**
-   - Lovable-এ নতুন blank project
-   - **Plus (+) → GitHub → Connect project** → নতুন repo তৈরি
-   - GitHub-এ manually আপনার পুরানো code push করুন সেই নতুন repo-তে
-   - Lovable auto-sync করবে
-
-2. **Local clone → Lovable editor-এ chat-এ paste**
-   - GitHub থেকে repo clone
-   - Lovable-এ file-by-file paste (ছোট project-এর জন্য)
-
-3. **Remix + manual copy**
-   - পুরানো Lovable project থেকে থাকলে **Remix** করুন
-   - তারপর Pluto যুক্ত করুন
-
-তারপর উপরের Scenario 1/2/3 follow করে Pluto connect করুন।
-
----
-
-## 🎁 আমি এখন যা তৈরি করতে পারি
-
-আপনি চাইলে এই files তৈরি করে দেব:
-
-1. **`docs/CONNECT-LOVABLE-FRONTEND.md`** — এই পুরো guide markdown ফাইল
-2. **`examples/lovable-frontend/pluto-client.ts`** — ready copy-paste SDK setup
-3. **`examples/lovable-frontend/.env.example`** — env template
-4. **`examples/lovable-frontend/auth-example.tsx`** — sign in/up component
-5. **`examples/lovable-frontend/data-example.tsx`** — CRUD + realtime example
-6. **Dashboard-এ নতুন page** `/dashboard/integrations/lovable-frontend` — copy-paste ready keys, CORS UI, SDK snippets, tester button
-
-## ❓ পরের ধাপ কী?
-
-আপনি জানান:
-- **আপনার এখন কোন scenario?** (1 / 2 / 3)
-- **উপরের ৬টা file তৈরি করব?** (yes/select)
-- **আপনার GitHub repo-এর নাম কী?** (আমি সেটাকে target করে specific guide বানাতে পারব)
+Approve করলে আমি backend routes + migration + frontend page + tests সব এক ধাপে বানিয়ে দেব, তারপর VPS-এ শুধু উপরের ৫টা কমান্ড চালাতে হবে।

@@ -34,6 +34,7 @@ const groups: Group[] = [
     label: "Data",
     items: [
       { to: "/dashboard/database", label: "Database", icon: Database },
+      { to: "/dashboard/database-import", label: "Database Import & Connect", icon: Database },
       { to: "/dashboard/sql", label: "SQL runner", icon: Terminal },
       { to: "/dashboard/pluto-schema", label: "Schema", icon: Boxes },
       { to: "/dashboard/pluto-studio", label: "Data Studio", icon: Table2 },

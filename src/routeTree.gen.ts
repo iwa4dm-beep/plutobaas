@@ -71,6 +71,7 @@ import { Route as DashboardFunctionsRouteImport } from './routes/dashboard.funct
 import { Route as DashboardEnterpriseRouteImport } from './routes/dashboard.enterprise'
 import { Route as DashboardDomainsRouteImport } from './routes/dashboard.domains'
 import { Route as DashboardDevexRouteImport } from './routes/dashboard.devex'
+import { Route as DashboardDatabaseImportRouteImport } from './routes/dashboard.database-import'
 import { Route as DashboardDatabaseRouteImport } from './routes/dashboard.database'
 import { Route as DashboardCorsRouteImport } from './routes/dashboard.cors'
 import { Route as DashboardBranchingRouteImport } from './routes/dashboard.branching'
@@ -407,6 +408,11 @@ const DashboardDevexRoute = DashboardDevexRouteImport.update({
   path: '/devex',
   getParentRoute: () => DashboardRoute,
 } as any)
+const DashboardDatabaseImportRoute = DashboardDatabaseImportRouteImport.update({
+  id: '/database-import',
+  path: '/database-import',
+  getParentRoute: () => DashboardRoute,
+} as any)
 const DashboardDatabaseRoute = DashboardDatabaseRouteImport.update({
   id: '/database',
   path: '/database',
@@ -527,6 +533,7 @@ export interface FileRoutesByFullPath {
   '/dashboard/branching': typeof DashboardBranchingRoute
   '/dashboard/cors': typeof DashboardCorsRoute
   '/dashboard/database': typeof DashboardDatabaseRoute
+  '/dashboard/database-import': typeof DashboardDatabaseImportRoute
   '/dashboard/devex': typeof DashboardDevexRoute
   '/dashboard/domains': typeof DashboardDomainsRoute
   '/dashboard/enterprise': typeof DashboardEnterpriseRoute
@@ -609,6 +616,7 @@ export interface FileRoutesByTo {
   '/dashboard/branching': typeof DashboardBranchingRoute
   '/dashboard/cors': typeof DashboardCorsRoute
   '/dashboard/database': typeof DashboardDatabaseRoute
+  '/dashboard/database-import': typeof DashboardDatabaseImportRoute
   '/dashboard/devex': typeof DashboardDevexRoute
   '/dashboard/domains': typeof DashboardDomainsRoute
   '/dashboard/enterprise': typeof DashboardEnterpriseRoute
@@ -693,6 +701,7 @@ export interface FileRoutesById {
   '/dashboard/branching': typeof DashboardBranchingRoute
   '/dashboard/cors': typeof DashboardCorsRoute
   '/dashboard/database': typeof DashboardDatabaseRoute
+  '/dashboard/database-import': typeof DashboardDatabaseImportRoute
   '/dashboard/devex': typeof DashboardDevexRoute
   '/dashboard/domains': typeof DashboardDomainsRoute
   '/dashboard/enterprise': typeof DashboardEnterpriseRoute
@@ -778,6 +787,7 @@ export interface FileRouteTypes {
     | '/dashboard/branching'
     | '/dashboard/cors'
     | '/dashboard/database'
+    | '/dashboard/database-import'
     | '/dashboard/devex'
     | '/dashboard/domains'
     | '/dashboard/enterprise'
@@ -860,6 +870,7 @@ export interface FileRouteTypes {
     | '/dashboard/branching'
     | '/dashboard/cors'
     | '/dashboard/database'
+    | '/dashboard/database-import'
     | '/dashboard/devex'
     | '/dashboard/domains'
     | '/dashboard/enterprise'
@@ -943,6 +954,7 @@ export interface FileRouteTypes {
     | '/dashboard/branching'
     | '/dashboard/cors'
     | '/dashboard/database'
+    | '/dashboard/database-import'
     | '/dashboard/devex'
     | '/dashboard/domains'
     | '/dashboard/enterprise'
@@ -1456,6 +1468,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardDevexRouteImport
       parentRoute: typeof DashboardRoute
     }
+    '/dashboard/database-import': {
+      id: '/dashboard/database-import'
+      path: '/database-import'
+      fullPath: '/dashboard/database-import'
+      preLoaderRoute: typeof DashboardDatabaseImportRouteImport
+      parentRoute: typeof DashboardRoute
+    }
     '/dashboard/database': {
       id: '/dashboard/database'
       path: '/database'
@@ -1633,6 +1652,7 @@ interface DashboardRouteChildren {
   DashboardBranchingRoute: typeof DashboardBranchingRoute
   DashboardCorsRoute: typeof DashboardCorsRoute
   DashboardDatabaseRoute: typeof DashboardDatabaseRoute
+  DashboardDatabaseImportRoute: typeof DashboardDatabaseImportRoute
   DashboardDevexRoute: typeof DashboardDevexRoute
   DashboardDomainsRoute: typeof DashboardDomainsRoute
   DashboardEnterpriseRoute: typeof DashboardEnterpriseRoute
@@ -1699,6 +1719,7 @@ const DashboardRouteChildren: DashboardRouteChildren = {
   DashboardBranchingRoute: DashboardBranchingRoute,
   DashboardCorsRoute: DashboardCorsRoute,
   DashboardDatabaseRoute: DashboardDatabaseRoute,
+  DashboardDatabaseImportRoute: DashboardDatabaseImportRoute,
   DashboardDevexRoute: DashboardDevexRoute,
   DashboardDomainsRoute: DashboardDomainsRoute,
   DashboardEnterpriseRoute: DashboardEnterpriseRoute,
@@ -1776,3 +1797,13 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}

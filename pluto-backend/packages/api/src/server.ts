@@ -41,6 +41,7 @@ import { corsRoutes } from './routes/cors.js';
 import { onboardingRoutes } from './routes/onboarding.js';
 import { invitesRoutes } from './routes/invites.js';
 import { tokensRoutes } from './routes/tokens.js';
+import { dbioRoutes } from './routes/dbio.js';
 import { makeOriginCallback, primeCorsCache } from './cors/registry.js';
 import { startEmailWorker } from './email/queue.js';
 
@@ -199,6 +200,7 @@ async function main() {
   await onboardingRoutes(app, cfg);
   await invitesRoutes(app, cfg);
   await tokensRoutes(app, cfg);
+  await dbioRoutes(app, cfg);
 
 
 
