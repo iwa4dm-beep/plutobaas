@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/command";
 import { useAuth } from "@/lib/pluto/auth-context";
 import { pluto } from "@/lib/pluto/client";
+import { api } from "@/lib/pluto/live";
 
 type Entry = {
   group: string;
@@ -133,28 +134,42 @@ export function CommandPalette() {
     const t = setTimeout(async () => {
       setAdmissionsLoading(true);
       try {
-        const safe = q.replace(/'/g, "''");
-        const like = `%${safe}%`;
-        const sql = `
-          select id, student_name, mobile, class_applying_for, father_name
-          from public.admissions
-          where student_name ilike '${like}'
-             or mobile ilike '${like}'
-             or father_name ilike '${like}'
-             or mother_name ilike '${like}'
-             or class_applying_for ilike '${like}'
-             or id::text ilike '${like}'
-          order by created_at desc
-          limit 8
-        `;
-        const res = await pluto.db.runSql(sql);
+        // Prefer the dedicated backend endpoint (parameterized, safer,
+        // rate-limitable). If the API is old and doesn't have it yet,
+        // fall back to the SQL runner so search still works pre-deploy.
+        let rows: AdmissionHit[] = [];
+        try {
+          const res = await api<{ ok: boolean; results: AdmissionHit[] }>(
+            `/admissions/v1/search?q=${encodeURIComponent(q)}&limit=8`,
+          );
+          rows = res.results ?? [];
+        } catch (e: unknown) {
+          const status = (e as { status?: number } | null)?.status;
+          if (status !== 404 && status !== 405) throw e;
+          // Endpoint not deployed yet → SQL fallback (server-side ilike).
+          const safe = q.replace(/'/g, "''");
+          const like = `%${safe}%`;
+          const sql = `
+            select id, student_name, mobile, class_applying_for, father_name
+            from public.admissions
+            where student_name ilike '${like}'
+               or mobile ilike '${like}'
+               or father_name ilike '${like}'
+               or mother_name ilike '${like}'
+               or class_applying_for ilike '${like}'
+               or id::text ilike '${like}'
+            order by created_at desc
+            limit 8
+          `;
+          const sqlRes = await pluto.db.runSql(sql);
+          const cols = sqlRes.columns;
+          rows = sqlRes.rows.map((r) => {
+            const o: Record<string, unknown> = {};
+            cols.forEach((c, i) => { o[c] = r[i]; });
+            return o as unknown as AdmissionHit;
+          });
+        }
         if (controller.cancelled) return;
-        const cols = res.columns;
-        const rows: AdmissionHit[] = res.rows.map((r) => {
-          const o: Record<string, unknown> = {};
-          cols.forEach((c, i) => { o[c] = r[i]; });
-          return o as unknown as AdmissionHit;
-        });
         setAdmissions(rows);
       } catch {
         if (!controller.cancelled) setAdmissions([]);

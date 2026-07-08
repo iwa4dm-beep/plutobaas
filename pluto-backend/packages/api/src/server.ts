@@ -42,6 +42,7 @@ import { onboardingRoutes } from './routes/onboarding.js';
 import { invitesRoutes } from './routes/invites.js';
 import { tokensRoutes } from './routes/tokens.js';
 import { dbioRoutes } from './routes/dbio.js';
+import { admissionsRoutes } from './routes/admissions.js';
 import { makeOriginCallback, primeCorsCache } from './cors/registry.js';
 import { startEmailWorker } from './email/queue.js';
 import { runStartupRoleCheck } from './db/verify-roles.js';
@@ -202,6 +203,7 @@ async function main() {
   await invitesRoutes(app, cfg);
   await tokensRoutes(app, cfg);
   await dbioRoutes(app, cfg);
+  await admissionsRoutes(app, cfg);
 
 
 
