@@ -76,9 +76,14 @@ async function runAs(
   const { role, claims } = await resolveClaims(app, req);
   // Enforce role & JWT claims for RLS via transaction-scoped GUCs.
   return await sql.begin(async (tx: any) => {
-    // service_role should not be reachable via public bearer path; guard hard
-    const safeRole = role === 'service_role' ? 'authenticated' : role;
-    await tx.unsafe(`SET LOCAL ROLE ${safeIdent(safeRole).replace(/"/g, '')}`);
+    // Only three real Postgres roles are valid for SET ROLE on the Data API path.
+    // App-level roles (admin/user/super_admin) live in JWT claims and are enforced
+    // by RLS via request.jwt.claims — never as a Postgres role. Anything else
+    // (including 'admin', 'service_role') collapses to 'authenticated' so the
+    // signed-in user's RLS policies apply and Postgres doesn't error with
+    // `role "admin" does not exist`.
+    const pgRole = role === 'anon' ? 'anon' : 'authenticated';
+    await tx.unsafe(`SET LOCAL ROLE ${pgRole}`);
     await tx`SELECT set_config('request.jwt.claims', ${JSON.stringify(claims)}, true)`;
     return fn(tx);
   });
