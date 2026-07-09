@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Check, Copy, Database, Radio, Code2, FileText, LifeBuoy, Play, Zap, TerminalSquare } from "lucide-react";
+import { Check, Copy, Database, Radio, Code2, FileText, LifeBuoy, Play, Zap } from "lucide-react";
 import {
   SqlToolbar, MigrationRunner, RealtimeVerifier, ConnectionTester, E2ETestRunner,
 } from "./ConnectTools";
