@@ -188,23 +188,52 @@ export async function requireWorkspaceAdmin(
   reply.code(403).send({ error: "workspace_admin_required" });
 }
 
-// Returns the caller's effective role in the workspace context of the request.
-// Used by the dashboard to decide which controls to enable.
-export async function resolveWorkspaceRole(
-  req: FastifyRequest,
-): Promise<"owner" | "admin" | "member" | "viewer" | "global_admin" | "service_role" | "anon"> {
-  if (req.auth?.apiKey === "service_role") return "service_role";
+// Phase 65 — Domain-admin gate. Anyone allowed by requireWorkspaceAdmin,
+// PLUS users explicitly granted domain-admin for the target workspace via
+// public.workspace_domain_admins. Used for custom-domain mutations only.
+export async function requireDomainAdmin(
+  req: FastifyRequest, reply: FastifyReply,
+): Promise<void> {
+  if (req.auth?.apiKey === "service_role") return;
   const user = req.auth?.user;
-  if (!user) return "anon";
-  if (user.role === "admin") return "global_admin";
+  if (!user) { reply.code(401).send({ error: "auth_required" }); return; }
+  if (user.role === "admin") return;
   const raw = req.headers["x-workspace-id"];
   const ws = Array.isArray(raw) ? raw[0] : raw;
-  if (!ws) return "member";
-  const row = await db
+  if (!ws) { reply.code(400).send({ error: "workspace_required" }); return; }
+  const memberRow = await db
     .selectFrom("workspace_members as m" as never)
     .select(["m.role as role" as never])
     .where("m.workspace_id" as never, "=", ws as never)
     .where("m.user_id" as never, "=", user.sub as never)
     .executeTakeFirst() as { role: string } | undefined;
-  return (row?.role as "owner" | "admin" | "member" | "viewer") ?? "member";
+  if (memberRow && (memberRow.role === "owner" || memberRow.role === "admin")) return;
+  const grant = await db
+    .selectFrom("workspace_domain_admins as g" as never)
+    .select(["g.user_id as user_id" as never])
+    .where("g.workspace_id" as never, "=", ws as never)
+    .where("g.user_id" as never, "=", user.sub as never)
+    .executeTakeFirst() as { user_id: string } | undefined;
+  if (grant) return;
+  reply.code(403).send({ error: "domain_admin_required" });
 }
+
+// Returns true if the current caller is granted domain-admin on the request's
+// workspace (independent of workspace_members role). Used by /me endpoints.
+export async function isDomainAdmin(req: FastifyRequest): Promise<boolean> {
+  if (req.auth?.apiKey === "service_role") return true;
+  const user = req.auth?.user;
+  if (!user) return false;
+  if (user.role === "admin") return true;
+  const raw = req.headers["x-workspace-id"];
+  const ws = Array.isArray(raw) ? raw[0] : raw;
+  if (!ws) return false;
+  const grant = await db
+    .selectFrom("workspace_domain_admins as g" as never)
+    .select(["g.user_id as user_id" as never])
+    .where("g.workspace_id" as never, "=", ws as never)
+    .where("g.user_id" as never, "=", user.sub as never)
+    .executeTakeFirst() as { user_id: string } | undefined;
+  return Boolean(grant);
+}
+
