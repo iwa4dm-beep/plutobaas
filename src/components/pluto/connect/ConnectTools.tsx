@@ -1,9 +1,13 @@
 import { useCallback, useRef, useState } from "react";
 import {
   Check, Copy, Download, Loader2, Play, Radio, ShieldCheck,
-  Database as DBIcon, HardDrive, Save, AlertCircle,
+  Database as DBIcon, HardDrive, Save, AlertCircle, FileJson, FileCode,
 } from "lucide-react";
 import { CONSOLIDATED_SCHEMA_SQL, splitSqlStatements, summariseStatement } from "@/lib/pluto/connect-schema";
+import {
+  retryWithBackoff, buildReport, downloadReportJson, downloadReportHtml,
+  type ReportStep, type RetryConfig,
+} from "@/lib/pluto/connect-utils";
 
 /* -------------------------------------------------------------------------- */
 /* helpers                                                                    */
