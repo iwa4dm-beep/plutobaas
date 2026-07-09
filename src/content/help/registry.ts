@@ -51,6 +51,12 @@ import { dashboardPlutoComplianceHelp } from "./dashboard.pluto-compliance";
 import { dashboardPlutoVaultHelp } from "./dashboard.pluto-vault";
 import { dashboardEnterpriseHelp } from "./dashboard.enterprise";
 import { dashboardPlutoMarketplaceHelp } from "./dashboard.pluto-marketplace";
+import { dashboardPlutoBackupsHelp } from "./dashboard.pluto-backups";
+import { dashboardPlutoAiHelp } from "./dashboard.pluto-ai";
+import { dashboardPlutoSdkHelp } from "./dashboard.pluto-sdk";
+import { dashboardSdkDemoHelp } from "./dashboard.sdk-demo";
+import { dashboardDevexHelp } from "./dashboard.devex";
+import { dashboardSettingsHelp } from "./dashboard.settings";
 
 export type HelpEntry = {
   help: PageHelp;
@@ -114,6 +120,7 @@ export const HELP_REGISTRY: HelpEntry[] = [
   dashboardCorsHelp,
   dashboardCustomDomainsHelp,
   dashboardBackupsHelp,
+  dashboardPlutoBackupsHelp,
   dashboardBranchingHelp,
   dashboardPlutoBranchesHelp,
   dashboardPlutoReplicasHelp,
@@ -121,4 +128,11 @@ export const HELP_REGISTRY: HelpEntry[] = [
   dashboardPlutoVaultHelp,
   dashboardEnterpriseHelp,
   dashboardPlutoMarketplaceHelp,
+  // AI Gateway (separate from AI & Vector)
+  dashboardPlutoAiHelp,
+  // Developer
+  dashboardPlutoSdkHelp,
+  dashboardSdkDemoHelp,
+  dashboardDevexHelp,
+  dashboardSettingsHelp,
 ].map((help) => ({ help, route: slugToRoute(help.slug) }));
