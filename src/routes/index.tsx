@@ -248,6 +248,7 @@ function Landing() {
         <ModulesSection />
         <CodeShowcase />
         <DashboardSection />
+        <SaasBuildersSection />
         <PricingSection />
         <DeploySection />
         <FAQSection />
@@ -1637,6 +1638,61 @@ function DashboardSection() {
             Explore the dashboard <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
           </Link>
         </div>
+      </div>
+    </section>
+  );
+}
+
+function SaasBuildersSection() {
+  const audiences: { title: string; body: string; bullets: string[] }[] = [
+    {
+      title: "Indie founders",
+      body: "Ship a real backend on your side project without an egress-cost surprise or a rug-pull.",
+      bullets: ["Postgres + auth + storage from day 1", "Predictable $29/mo Pro tier", "Full data export any time"],
+    },
+    {
+      title: "Agencies",
+      body: "One backend you resell to every client. Per-workspace isolation, custom domains, no lock-in.",
+      bullets: ["Multi-workspace admin", "Bring-your-own-domain", "Self-host or managed — same SDK"],
+    },
+    {
+      title: "Bangladesh & South Asia",
+      body: "Local latency, local pricing, local support. Host in Dhaka or Singapore, invoice in BDT.",
+      bullets: ["BDT tier with bKash/Nagad (soon)", "Bangla + English docs in-app", "Community support in Messenger"],
+    },
+  ];
+  return (
+    <section id="for-saas-builders" aria-labelledby="saas-heading" className="border-b border-border">
+      <div className="mx-auto max-w-6xl px-6 py-20">
+        <SectionHeading
+          eyebrow="For SaaS builders"
+          id="saas-heading"
+          title="Built for teams shipping their own SaaS."
+          subtitle="Whether you're a solo founder, an agency, or a regional team — Pluto gives you a Supabase-grade backend without the lock-in."
+        />
+        <div className="mt-12 grid gap-4 md:grid-cols-3">
+          {audiences.map((a) => (
+            <article key={a.title} className="flex flex-col rounded-lg border border-border bg-card p-6">
+              <h3 className="text-lg font-semibold">{a.title}</h3>
+              <p className="mt-2 text-sm text-muted-foreground">{a.body}</p>
+              <ul className="mt-4 space-y-1.5 text-sm">
+                {a.bullets.map((b) => (
+                  <li key={b} className="flex gap-2">
+                    <span aria-hidden="true" className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-primary" />
+                    <span>{b}</span>
+                  </li>
+                ))}
+              </ul>
+            </article>
+          ))}
+        </div>
+        <p className="mt-8 text-center text-xs text-muted-foreground">
+          Read the full go-to-market playbook at{" "}
+          <a href="https://github.com/timescard/pluto/blob/main/docs/GO-TO-MARKET.md" className="underline underline-offset-4">
+            docs/GO-TO-MARKET.md
+          </a>
+          .
+        </p>
       </div>
     </section>
   );
