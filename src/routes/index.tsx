@@ -93,28 +93,39 @@ const stats = [
 // NOTE: These samples use the real published API surface. `@pluto/js` is the
 // package in `pluto-backend/packages/sdk-js` (name in its package.json).
 // Until published to npm, install it directly from source (see install block).
+export const SDK_VERSION = "0.1.0";
+export const SDK_TARBALL_URL =
+  `https://backend-joy.lovable.app/sdk/download/pluto-js-${SDK_VERSION}.tgz`;
+export const SDK_TARBALL_LATEST =
+  "https://backend-joy.lovable.app/sdk/download/pluto-js-latest.tgz";
+
 const codeSamples = {
   auth: `import { createClient } from "@pluto/js";
 
-// createClient(url, publishableKey) — Supabase-compatible signature
+// 1) Initialize once — createClient(url, publishableKey)
 const pluto = createClient(
   "https://api.timescard.cloud",
   import.meta.env.VITE_PLUTO_PUBLISHABLE_KEY!, // Dashboard → API keys
+  { auth: { persistSession: true, autoRefreshToken: true } },
 );
 
-// Email + password
+// 2) Sign in with email + password
 const { data, error } = await pluto.auth.signInWithPassword({
   email: "ada@example.com",
   password: "hunter2",
 });
+if (error) throw error;
 
-// Sign up (creates user + session)
+// 3) Grab tokens — send access_token as "Authorization: Bearer <token>"
+const accessToken  = data.session?.access_token;
+const refreshToken = data.session?.refresh_token;
+
+// 4) Any authenticated REST call the SDK makes now carries the Bearer token
+await pluto.from("posts").select("id,title");
+
+// Sign up + reset + listen
 await pluto.auth.signUp({ email: "ada@example.com", password: "hunter2" });
-
-// Password reset link
 await pluto.auth.resetPasswordForEmail("ada@example.com");
-
-// React to auth changes
 pluto.auth.onAuthStateChange((event, session) => {
   console.log(event, session?.user?.email);
 });`,
@@ -1507,13 +1518,21 @@ function CodeShowcase() {
         <div className="mx-auto mt-10 max-w-3xl overflow-hidden rounded-xl border border-border bg-card">
           <div className="flex items-center justify-between border-b border-border bg-muted/40 px-4 py-2 text-xs text-muted-foreground">
             <span className="font-mono">install</span>
-            <span>step 1 of 2 · takes ~10 seconds</span>
+            <span className="flex items-center gap-2">
+              <span className="rounded bg-primary/10 px-1.5 py-0.5 font-mono text-[10px] text-primary">
+                @pluto/js v{SDK_VERSION}
+              </span>
+              <span>step 1 of 2 · takes ~10 seconds</span>
+            </span>
           </div>
           <pre className="overflow-x-auto p-5 font-mono text-xs leading-relaxed sm:text-sm"><code>{`# JavaScript / TypeScript / React / Vue / React Native / Node
-# Installs the @pluto/js tarball served from this site (works local + VPS)
-npm  i https://backend-joy.lovable.app/downloads/pluto-js-latest.tgz
-# or: bun add https://backend-joy.lovable.app/downloads/pluto-js-latest.tgz
-# or: pnpm add https://backend-joy.lovable.app/downloads/pluto-js-latest.tgz
+# Pinned version (recommended for production — immutable, 1-year CDN cache):
+npm  i ${SDK_TARBALL_URL}
+# or: bun add ${SDK_TARBALL_URL}
+# or: pnpm add ${SDK_TARBALL_URL}
+
+# Always-latest (short cache + ETag revalidation):
+npm  i ${SDK_TARBALL_LATEST}
 
 # Python
 pip install pluto-sdk

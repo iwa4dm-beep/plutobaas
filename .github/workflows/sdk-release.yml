@@ -1,0 +1,71 @@
+name: Build @pluto/js SDK tarball
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "pluto-backend/packages/sdk-js/**"
+      - ".github/workflows/sdk-release.yml"
+  workflow_dispatch:
+  release:
+    types: [published]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Read SDK version
+        id: v
+        working-directory: pluto-backend/packages/sdk-js
+        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Build SDK
+        working-directory: pluto-backend/packages/sdk-js
+        run: |
+          bun install --no-save
+          bunx tsup src/index.ts --format esm,cjs --dts --clean --minify
+
+      - name: Pack tarball
+        working-directory: pluto-backend/packages/sdk-js
+        run: npm pack
+
+      - name: Move to public/downloads
+        env:
+          VERSION: ${{ steps.v.outputs.version }}
+        run: |
+          mkdir -p public/downloads
+          SRC=$(ls pluto-backend/packages/sdk-js/pluto-js-*.tgz | head -1)
+          cp "$SRC" "public/downloads/pluto-js-${VERSION}.tgz"
+          cp "$SRC" "public/downloads/pluto-js-latest.tgz"
+          cat > public/downloads/manifest.json <<EOF
+          {
+            "name": "@pluto/js",
+            "version": "${VERSION}",
+            "latest": "/sdk/download/pluto-js-latest.tgz",
+            "versioned": "/sdk/download/pluto-js-${VERSION}.tgz",
+            "files": [
+              { "version": "${VERSION}", "file": "pluto-js-${VERSION}.tgz" },
+              { "version": "latest",    "file": "pluto-js-latest.tgz" }
+            ]
+          }
+          EOF
+
+      - name: Commit refreshed tarball
+        run: |
+          git config user.name  "lovable-bot"
+          git config user.email "bot@lovable.dev"
+          git add public/downloads/
+          if git diff --staged --quiet; then
+            echo "No SDK changes to commit."
+          else
+            git commit -m "chore(sdk): rebuild @pluto/js ${{ steps.v.outputs.version }}"
+            git push
+          fi

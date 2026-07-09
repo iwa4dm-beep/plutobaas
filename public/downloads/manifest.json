@@ -1,0 +1,10 @@
+{
+  "name": "@pluto/js",
+  "version": "0.1.0",
+  "latest": "/sdk/download/pluto-js-latest.tgz",
+  "versioned": "/sdk/download/pluto-js-0.1.0.tgz",
+  "files": [
+    { "version": "0.1.0", "file": "pluto-js-0.1.0.tgz" },
+    { "version": "latest", "file": "pluto-js-latest.tgz" }
+  ]
+}
