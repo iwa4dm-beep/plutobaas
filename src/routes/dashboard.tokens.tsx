@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { KeyRound, Plus, Trash2, Copy, Check, RefreshCw, ShieldCheck, ChevronDown, ChevronRight, Zap, Download } from "lucide-react";
 import { toast } from "sonner";
 import { isLive, tokens, type WorkspaceToken, type WorkspaceTokenMint, type ScopeCoverage, type BulkRevokeResult } from "@/lib/pluto/live";
+import { AutoHelpPanel } from "@/components/help/AutoHelpPanel";
 
 export const Route = createFileRoute("/dashboard/tokens")({ component: TokensPage });
 
@@ -163,6 +164,7 @@ function TokensPage() {
     <div className="p-6 space-y-6">
       <div>
         <h1 className="text-2xl font-semibold flex items-center gap-2"><KeyRound className="h-5 w-5" /> API Tokens</h1>
+      <AutoHelpPanel slug={'dashboard.tokens'} title={'API Tokens'} description={''} />
         <p className="text-sm text-muted-foreground">Workspace-scoped bearer tokens with granular scopes. Use for CI, scripts, and external integrations.</p>
       </div>
 

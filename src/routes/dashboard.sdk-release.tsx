@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
+import { AutoHelpPanel } from "@/components/help/AutoHelpPanel";
 
 // Admin dashboard: shows the latest npm publish status for @timescard/pluto-js.
 // Data comes from /downloads/release-status.json which the GitHub Actions
@@ -82,6 +83,7 @@ git push --tags`, [manifest.data?.version]);
     <div className="mx-auto max-w-4xl space-y-6 p-6">
       <header className="space-y-1">
         <h1 className="text-2xl font-semibold">SDK Release</h1>
+      <AutoHelpPanel slug={'dashboard.sdk-release'} title={'SDK Release'} description={''} />
         <p className="text-sm text-muted-foreground">
           Publish status for <code>@timescard/pluto-js</code>. CI runs on git tags
           (<code>v*</code>) or manual dispatch.

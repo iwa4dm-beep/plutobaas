@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Trash2, ShieldAlert, CheckCircle2, Clock, Search, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/pluto/PageHeader";
+import { AutoHelpPanel } from "@/components/help/AutoHelpPanel";
 import { pluto, type PlutoUser } from "@/lib/pluto/client";
 import { isLive, live, type AdminUser } from "@/lib/pluto/live";
 import { useAuth } from "@/lib/pluto/auth-context";
@@ -200,6 +201,7 @@ function UsersPage() {
         title="Auth & Users"
         description="Sign-up, email verification, এবং role management (super_admin / admin / user)।"
       />
+      <AutoHelpPanel slug={'dashboard.users'} title={'Auth & Users'} description={'Sign-up, email verification, এবং role management (super_admin / admin / user)।'} />
 
       {err && (
         <div className="mb-4 flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">

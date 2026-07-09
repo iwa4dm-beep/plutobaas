@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { plutoApi, pushUiHistory } from "@/lib/pluto/upstream";
+import { AutoHelpPanel } from "@/components/help/AutoHelpPanel";
 
 export const Route = createFileRoute("/dashboard/pluto-compliance")({
   component: CompliancePage,
@@ -43,6 +44,7 @@ function CompliancePage() {
   return (
     <div className="p-6 space-y-6">
       <h1 className="text-2xl font-semibold">Compliance — PII, DSAR, Retention, Audit sealing</h1>
+      <AutoHelpPanel slug={'dashboard.pluto-compliance'} title={'Compliance — PII, DSAR, Retention, Audit sealing'} description={''} />
       {err && <div className="rounded-md bg-destructive/10 text-destructive p-3 text-sm">{err}</div>}
       <input className="border rounded px-2 py-1 bg-background w-full" placeholder="Project ID" value={projectId} onChange={(e) => setProjectId(e.target.value)} />
 

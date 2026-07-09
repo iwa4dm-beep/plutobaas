@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
 import { Copy, KeyRound, Plus, ShieldCheck, Trash2, Users2 } from "lucide-react";
 import { PageHeader } from "@/components/pluto/PageHeader";
+import { AutoHelpPanel } from "@/components/help/AutoHelpPanel";
 import { ErrorBanner } from "@/components/pluto/ErrorBanner";
 import { isLive, live, type Workspace, type WorkspaceKey, type WorkspaceMember } from "@/lib/pluto/live";
 
@@ -35,6 +36,7 @@ function WorkspacesPage() {
         title="Workspaces"
         description="Each workspace has its own users, API keys, and RLS-scoped data. The 'root' workspace is served by the env-configured keys."
       />
+      <AutoHelpPanel slug={'dashboard.workspaces'} title={'Workspaces'} description={"Each workspace has its own users, API keys, and RLS-scoped data. The 'root' workspace is served by the env-configured keys."} />
 
       <ErrorBanner error={err} onRetry={() => void load()} onDismiss={() => setErr(null)} />
 

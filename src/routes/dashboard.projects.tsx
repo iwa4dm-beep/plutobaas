@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
 import { Copy, FolderKanban, KeyRound, Plus, Trash2 } from "lucide-react";
 import { PageHeader } from "@/components/pluto/PageHeader";
+import { AutoHelpPanel } from "@/components/help/AutoHelpPanel";
 import { ErrorBanner } from "@/components/pluto/ErrorBanner";
 import { isLive, live, type Workspace, type WorkspaceKey } from "@/lib/pluto/live";
 
@@ -91,6 +92,7 @@ function ProjectsPage() {
     return (
       <div>
         <PageHeader title="Projects & API Keys" description="Backend not configured." />
+      <AutoHelpPanel slug={'dashboard.projects'} title={'Projects & API Keys'} description={'Backend not configured.'} />
         <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-6 text-sm text-destructive">
           Pluto backend URL এবং anon key configure করা নেই। Environment variables set করে reload করুন।
         </div>

@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { Plus, Trash2, Globe } from "lucide-react";
 import { PageHeader } from "@/components/pluto/PageHeader";
+import { AutoHelpPanel } from "@/components/help/AutoHelpPanel";
 import { isLive, live, type AllowedOrigin } from "@/lib/pluto/live";
 
 export const Route = createFileRoute("/dashboard/domains")({
@@ -80,6 +81,7 @@ function DomainsPage() {
         title="Domains"
         description="Add every website that will call your API from a browser. Changes apply within seconds — no restart."
       />
+      <AutoHelpPanel slug={'dashboard.domains'} title={'Domains'} description={'Add every website that will call your API from a browser. Changes apply within seconds — no restart.'} />
 
       {!isLive() && (
         <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">

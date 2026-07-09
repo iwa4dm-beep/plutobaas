@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { plutoApi, getUpstream } from "@/lib/pluto/upstream";
+import { AutoHelpPanel } from "@/components/help/AutoHelpPanel";
 
 export const Route = createFileRoute("/dashboard/database-import")({
   component: DbImportPage,
@@ -181,6 +182,7 @@ function DbImportPage() {
     <div className="p-6 space-y-4">
       <div>
         <h1 className="text-2xl font-semibold">Database Import & Connect</h1>
+      <AutoHelpPanel slug={'dashboard.database-import'} title={'Database Import & Connect'} description={''} />
         <p className="text-sm text-muted-foreground">
           Save external MySQL / Postgres connections, upload .sql / .csv dumps, and pipe them into your Pluto database.
           MySQL dumps are auto-converted to Postgres syntax on import.

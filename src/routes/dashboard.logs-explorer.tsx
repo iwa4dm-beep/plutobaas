@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { ScrollText, Radio, Search, RefreshCw, Save, Download, FileJson, FileText } from "lucide-react";
 import { toast } from "sonner";
 import { isLive, logsV2, type LogRow } from "@/lib/pluto/live";
+import { AutoHelpPanel } from "@/components/help/AutoHelpPanel";
 
 export const Route = createFileRoute("/dashboard/logs-explorer")({ component: LogsExplorer });
 
@@ -141,6 +142,7 @@ function LogsExplorer() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold flex items-center gap-2"><ScrollText className="h-5 w-5" /> Logs Explorer</h1>
+      <AutoHelpPanel slug={'dashboard.logs-explorer'} title={'Logs Explorer'} description={''} />
           <p className="text-sm text-muted-foreground">Search structured request logs, tail live traffic with automatic resume, and export filtered slices.</p>
         </div>
         <div className="flex items-center gap-2">

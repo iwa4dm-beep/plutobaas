@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Loader2, Plus, Trash2, Play, RefreshCw, GitBranch, Wand2, Camera, Undo2, Lock } from "lucide-react";
 import { PageHeader } from "@/components/pluto/PageHeader";
+import { AutoHelpPanel } from "@/components/help/AutoHelpPanel";
 import { isLive, branching, studio, me, type DbBranch, type BranchChange, type BranchSnapshot, type SchemaOp, type WorkspaceRole } from "@/lib/pluto/live";
 
 // Phase 22b — Workspace-role RBAC gates schema apply / branch apply. Non-admins can still browse.
@@ -33,6 +34,7 @@ function BranchingPage() {
         title="Branching & Studio"
         description="Isolate schema changes per branch and build tables/columns/indexes/relations with a guided editor."
       />
+      <AutoHelpPanel slug={'dashboard.branching'} title={'Branching & Studio'} description={'Isolate schema changes per branch and build tables/columns/indexes/relations with a guided editor.'} />
       {!isLive() && (
         <div className="rounded-md border border-yellow-500/40 bg-yellow-500/10 p-3 text-xs">
           Set <code>VITE_PLUTO_URL</code> to a running Pluto instance to use branching &amp; studio.

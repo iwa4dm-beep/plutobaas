@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { Send, Copy, Check } from "lucide-react";
 import { PageHeader } from "@/components/pluto/PageHeader";
+import { AutoHelpPanel } from "@/components/help/AutoHelpPanel";
 import { AdminGate } from "@/components/AdminGate";
 import { isLive, live, type InviteResult } from "@/lib/pluto/live";
 
@@ -41,6 +42,7 @@ function InvitePage() {
         title="Invite a customer"
         description="We will create a workspace + project + API keys and email the customer an invite link they can use to set their password."
       />
+      <AutoHelpPanel slug={'dashboard.admin.invite'} title={'Invite a customer'} description={'We will create a workspace + project + API keys and email the customer an invite link they can use to set their password.'} />
 
       {!isLive() && (
         <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">

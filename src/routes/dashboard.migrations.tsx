@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
 import { AlertTriangle, CheckCircle2, Clock, Download, Eye, Play, RotateCcw, ShieldAlert, XCircle } from "lucide-react";
 import { PageHeader } from "@/components/pluto/PageHeader";
+import { AutoHelpPanel } from "@/components/help/AutoHelpPanel";
 import {
   isLive, live, subscribe,
   type BootRun, type DryRunEntry, type MigrationEntry,
@@ -172,6 +173,7 @@ function MigrationsPage() {
         title="Database migrations"
         description="Version history, pending runs, rollback, and live progress for the Pluto schema."
       />
+      <AutoHelpPanel slug={'dashboard.migrations'} title={'Database migrations'} description={'Version history, pending runs, rollback, and live progress for the Pluto schema.'} />
 
       <div className="flex flex-wrap items-center gap-3 mb-4">
         <button

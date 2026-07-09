@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { plutoApi, pushUiHistory } from "@/lib/pluto/upstream";
+import { AutoHelpPanel } from "@/components/help/AutoHelpPanel";
 
 export const Route = createFileRoute("/dashboard/pluto-branches")({
   component: BranchesPage,
@@ -50,6 +51,7 @@ function BranchesPage() {
   return (
     <div className="p-6 space-y-6">
       <h1 className="text-2xl font-semibold">Database Branches</h1>
+      <AutoHelpPanel slug={'dashboard.pluto-branches'} title={'Database Branches'} description={''} />
       {err && <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm">{err}</div>}
       <div className="flex flex-wrap gap-2 items-end">
         <label className="flex flex-col text-xs">Project ID

@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { PageHeader } from "@/components/pluto/PageHeader";
+import { AutoHelpPanel } from "@/components/help/AutoHelpPanel";
 import { pluto, type PlutoLog } from "@/lib/pluto/client";
 import { isLive, live } from "@/lib/pluto/live";
 
@@ -53,6 +54,7 @@ function LogsPage() {
           </select>
         }
       />
+      <AutoHelpPanel slug={'dashboard.logs'} title={'Logs'} description={'Auth, REST, Storage, এবং Admin API request log।'} />
       {err && <div className="mb-4 rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">{err}</div>}
 
 

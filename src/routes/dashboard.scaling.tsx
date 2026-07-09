@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
 import { Loader2, RefreshCw, Trash2, Send, PlayCircle } from "lucide-react";
 import { PageHeader } from "@/components/pluto/PageHeader";
+import { AutoHelpPanel } from "@/components/help/AutoHelpPanel";
 import { isLive, scaling, type QueueJob, type QueueStat, type RateLimitPolicy, type RateLimitBucket } from "@/lib/pluto/live";
 
 export const Route = createFileRoute("/dashboard/scaling")({
@@ -71,6 +72,7 @@ function ScalingPage() {
           className="inline-flex items-center gap-2 rounded-md border border-border bg-card px-3 py-1.5 text-sm hover:bg-accent">
           {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />} Refresh
         </button>} />
+      <AutoHelpPanel slug={'dashboard.scaling'} title={'Scaling & Performance'} description={'Job queues, cache, and rate-limit policies'} />
 
       {err && <div className="rounded-md border border-rose-500/40 bg-rose-500/5 px-4 py-3 text-sm text-rose-500">{err}</div>}
       {msg && <div className="rounded-md border border-emerald-500/40 bg-emerald-500/5 px-4 py-3 text-sm text-emerald-500">{msg}</div>}

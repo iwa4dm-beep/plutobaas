@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { plutoApi, pushUiHistory } from "@/lib/pluto/upstream";
+import { AutoHelpPanel } from "@/components/help/AutoHelpPanel";
 
 export const Route = createFileRoute("/dashboard/pluto-storage-plus")({
   component: StoragePlus,
@@ -63,6 +64,7 @@ function StoragePlus() {
   return (
     <div className="p-6 space-y-6">
       <h1 className="text-2xl font-semibold">Storage v2 (policies, resumable, transforms)</h1>
+      <AutoHelpPanel slug={'dashboard.pluto-storage-plus'} title={'Storage v2 (policies, resumable, transforms)'} description={''} />
       {err && <div className="rounded-md bg-destructive/10 text-destructive p-3 text-sm">{err}</div>}
       <div className="flex gap-2">
         <input className="border rounded px-2 py-1 bg-background flex-1" placeholder="Project ID" value={projectId} onChange={(e) => setProjectId(e.target.value)} />

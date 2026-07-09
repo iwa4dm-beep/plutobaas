@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { ShieldAlert, RefreshCw, ChevronDown, ChevronRight } from "lucide-react";
 import { toast } from "sonner";
+import { AutoHelpPanel } from "@/components/help/AutoHelpPanel";
 
 export const Route = createFileRoute("/dashboard/audit-log")({ component: AuditLogPage });
 
@@ -58,6 +59,7 @@ function AuditLogPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold flex items-center gap-2"><ShieldAlert className="h-5 w-5" /> Audit Log</h1>
+      <AutoHelpPanel slug={'dashboard.audit-log'} title={'Audit Log'} description={''} />
           <p className="text-sm text-muted-foreground">Restore runs, quota edits, function changes, tokens, and webhooks — with actor, timing, and dry-run vs confirmed outcomes.</p>
         </div>
         <Button size="sm" variant="outline" onClick={() => { setOffset(0); void load(); }}>

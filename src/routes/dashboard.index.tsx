@@ -4,6 +4,7 @@ import {
   Activity, ArrowUpRight, CheckCircle2, Database, Files, Heart, KeyRound, Radio,
   ScrollText, ShieldCheck, Sparkles, Terminal, Users, Waves, XCircle,
 } from "lucide-react";
+import { AutoHelpPanel } from "@/components/help/AutoHelpPanel";
 
 import { pluto } from "@/lib/pluto/client";
 import { isLive, live } from "@/lib/pluto/live";
@@ -195,6 +196,7 @@ function Overview() {
             <h1 className="mt-3 text-2xl font-semibold tracking-tight sm:text-3xl">
               স্বাগতম <span className="text-muted-foreground">— এক নজরে আপনার backend</span>
             </h1>
+      <AutoHelpPanel slug={'dashboard.index'} title={'স্বাগতম — এক নজরে আপনার backend'} description={''} />
             <p className="mt-1.5 max-w-xl text-sm text-muted-foreground">
               Users, tables, storage buckets এবং সাম্প্রতিক request logs — সব এক স্ক্রিনে। যেকোনো কার্ডে ক্লিক করে detail ভিউতে যান।
             </p>

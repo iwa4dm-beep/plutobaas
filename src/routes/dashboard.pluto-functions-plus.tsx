@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { plutoApi, pushUiHistory } from "@/lib/pluto/upstream";
+import { AutoHelpPanel } from "@/components/help/AutoHelpPanel";
 
 export const Route = createFileRoute("/dashboard/pluto-functions-plus")({
   component: FunctionsPlus,
@@ -66,6 +67,7 @@ function FunctionsPlus() {
   return (
     <div className="p-6 space-y-6">
       <h1 className="text-2xl font-semibold">Edge Functions — Cron, Secrets, Logs</h1>
+      <AutoHelpPanel slug={'dashboard.pluto-functions-plus'} title={'Edge Functions — Cron, Secrets, Logs'} description={''} />
       {err && <div className="rounded-md bg-destructive/10 text-destructive p-3 text-sm">{err}</div>}
 
       <div className="flex gap-2">

@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/pluto/PageHeader";
+import { AutoHelpPanel } from "@/components/help/AutoHelpPanel";
 import { api } from "@/lib/pluto/live";
 import { useWorkspace } from "@/lib/pluto/workspace-context";
 
@@ -71,6 +72,7 @@ function RbacPage() {
   return (
     <div className="space-y-6">
       <PageHeader title="Team & access" description="Invite members and set their workspace role." />
+      <AutoHelpPanel slug={'dashboard.rbac'} title={'Team & access'} description={'Invite members and set their workspace role.'} />
       {err && <div className="rounded border border-destructive/40 bg-destructive/10 p-3 text-sm">{err}</div>}
 
       <div className="rounded-lg border p-4 space-y-3">

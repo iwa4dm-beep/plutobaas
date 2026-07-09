@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { Copy, Check, ExternalLink, Github, Zap } from "lucide-react";
+import { AutoHelpPanel } from "@/components/help/AutoHelpPanel";
 
 export const Route = createFileRoute("/dashboard/integrations/lovable-frontend")({
   head: () => ({
@@ -68,6 +69,7 @@ function LovableFrontendIntegrationPage() {
           <span className="text-xs font-medium uppercase tracking-wider">Integration guide</span>
         </div>
         <h1 className="text-2xl font-bold">Connect Lovable.dev Frontend → Pluto BaaS</h1>
+      <AutoHelpPanel slug={'dashboard.integrations.lovable-frontend'} title={'Connect Lovable.dev Frontend → Pluto BaaS'} description={''} />
         <p className="text-muted-foreground">
           Your Lovable.dev frontend project (from GitHub) can use this Pluto instance as its
           backend for auth, database, storage, and realtime.

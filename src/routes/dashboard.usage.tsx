@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Loader2, RefreshCw, Save, Activity, ShieldAlert, Radio, Lock, Bell, Webhook, Trash2, ChevronDown, ChevronRight, Repeat } from "lucide-react";
 import { PageHeader } from "@/components/pluto/PageHeader";
+import { AutoHelpPanel } from "@/components/help/AutoHelpPanel";
 import { toast } from "sonner";
 import {
   isLive, usage, me,
@@ -184,6 +185,7 @@ function UsagePage() {
     <div className="p-6 space-y-6">
       <PageHeader title="Usage & Quotas"
         description="Track metered usage per workspace and enforce soft/hard quotas with environment-aware billing labels." />
+      <AutoHelpPanel slug={'dashboard.usage'} title={'Usage & Quotas'} description={'Track metered usage per workspace and enforce soft/hard quotas with environment-aware billing labels.'} />
       {!isLive() && (
         <div className="rounded-md border border-yellow-500/40 bg-yellow-500/10 p-3 text-xs">
           Set <code>VITE_PLUTO_URL</code> to a running Pluto instance to see live usage.

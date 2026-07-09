@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { KeyRound, Shield, ShieldCheck, Smartphone, Trash2 } from "lucide-react";
 import { PageHeader } from "@/components/pluto/PageHeader";
+import { AutoHelpPanel } from "@/components/help/AutoHelpPanel";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -82,6 +83,7 @@ function MfaPage() {
         description="Time-based one-time passwords (TOTP) and single-use recovery codes. Phase 15 — handlers land in 15.1."
 
       />
+      <AutoHelpPanel slug={'dashboard.mfa'} title={'Multi-factor authentication'} description={'Time-based one-time passwords (TOTP) and single-use recovery codes. Phase 15 — handlers land in 15.1.'} />
 
       {!live && (
         <Card>

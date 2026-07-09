@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, Clock, History, Lock, Play, RotateCcw, ShieldAlert, Unlock } from "lucide-react";
 import { PageHeader } from "@/components/pluto/PageHeader";
+import { AutoHelpPanel } from "@/components/help/AutoHelpPanel";
 import { RequireWorkspace } from "@/components/pluto/RequireWorkspace";
 import { useWorkspace } from "@/lib/pluto/workspace-context";
 import { isLive, live, type SqlHistoryEntry, type SqlResult, type SqlRunResponse } from "@/lib/pluto/live";
@@ -104,6 +105,7 @@ function SqlRunnerPage() {
         title="SQL runner"
         description="Read-only mode wraps every run in a rolled-back transaction. Write mode requires explicit confirmation and admin credentials."
       />
+      <AutoHelpPanel slug={'dashboard.sql'} title={'SQL runner'} description={'Read-only mode wraps every run in a rolled-back transaction. Write mode requires explicit confirmation and admin credentials.'} />
 
       {!backendOk && (
         <div className="mb-4 rounded-md border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200 flex items-start gap-2">

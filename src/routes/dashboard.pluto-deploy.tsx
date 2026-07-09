@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { PageHeader } from "@/components/pluto/PageHeader";
+import { AutoHelpPanel } from "@/components/help/AutoHelpPanel";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
@@ -89,6 +90,7 @@ function DeployPage() {
         title="Deploy & Migrations"
         description="Migration ledger status and a manual runner for /admin/v1/sql/run (superadmin only)."
       />
+      <AutoHelpPanel slug={'dashboard.pluto-deploy'} title={'Deploy & Migrations'} description={'Migration ledger status and a manual runner for /admin/v1/sql/run (superadmin only).'} />
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">

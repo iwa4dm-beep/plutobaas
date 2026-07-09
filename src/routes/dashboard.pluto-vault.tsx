@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { plutoApi, pushUiHistory } from "@/lib/pluto/upstream";
+import { AutoHelpPanel } from "@/components/help/AutoHelpPanel";
 
 export const Route = createFileRoute("/dashboard/pluto-vault")({
   component: VaultPage,
@@ -68,6 +69,7 @@ function VaultPage() {
     <div className="p-6 space-y-6">
       <div>
         <h1 className="text-2xl font-semibold">Vault & Secrets</h1>
+      <AutoHelpPanel slug={'dashboard.pluto-vault'} title={'Vault & Secrets'} description={''} />
         <p className="text-sm text-muted-foreground">KMS-style envelope encryption, versioning, rotation, audit trail, dynamic DB credentials.</p>
       </div>
 

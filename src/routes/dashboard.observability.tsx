@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
 import { Loader2, RefreshCw, Play, Download, ExternalLink } from "lucide-react";
 import { PageHeader } from "@/components/pluto/PageHeader";
+import { AutoHelpPanel } from "@/components/help/AutoHelpPanel";
 import { isLive, observability, type GdprRequest, type MetricPoint, type TraceSpan, type TraceSummary } from "@/lib/pluto/live";
 
 export const Route = createFileRoute("/dashboard/observability")({
@@ -61,6 +62,7 @@ function ObservabilityPage() {
           className="inline-flex items-center gap-2 rounded-md border border-border bg-card px-3 py-1.5 text-sm hover:bg-accent">
           {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />} Refresh
         </button>} />
+      <AutoHelpPanel slug={'dashboard.observability'} title={'Observability & Compliance'} description={'Metrics, traces, and GDPR data-subject requests'} />
 
       {err && <div className="rounded-md border border-rose-500/40 bg-rose-500/5 px-4 py-3 text-sm text-rose-500">{err}</div>}
 
