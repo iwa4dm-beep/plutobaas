@@ -152,9 +152,8 @@ export function BackendAuditPanel() {
                   const isOpen = expanded.has(r.path);
                   const hasDetails = (r.attempts && r.attempts.length > 0) || r.bodySnippet || r.error;
                   return (
-                    <>
+                    <Fragment key={r.path}>
                       <tr
-                        key={r.path}
                         className={`${r.ok ? "" : "bg-red-500/5"} ${hasDetails ? "cursor-pointer hover:bg-accent/40" : ""}`}
                         onClick={() => hasDetails && toggle(r.path)}
                         data-testid={`audit-row-${r.path}`}
