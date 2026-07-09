@@ -12,6 +12,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef } from "react";
 import { ExternalLink, FileJson } from "lucide-react";
+import { AutoHelpPanel } from "@/components/help/AutoHelpPanel";
 
 export const Route = createFileRoute("/docs/api")({
   head: () => ({
@@ -58,6 +59,7 @@ function ApiDocsPage() {
           <FileJson className="h-5 w-5 text-primary" />
           <div>
             <h1 className="text-sm font-semibold">API Reference</h1>
+      <AutoHelpPanel slug={'docs.api'} title={'API Reference'} description={""} />
             <p className="text-[11px] text-muted-foreground">
               Auto-generated from your schema. Try requests inline; scopes come from the tokens dashboard.
             </p>
