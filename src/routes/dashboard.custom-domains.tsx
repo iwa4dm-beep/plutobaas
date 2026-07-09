@@ -30,12 +30,7 @@ import {
   setWorkspaceBaseUrl,
 } from "@/lib/pluto/base-url";
 import { recordDomainAudit } from "@/lib/pluto/domain-audit";
-import {
-  isWildcardHostname,
-  testDomainEndpoint,
-  verifyTxtRecordName,
-  type DomainTestResult,
-} from "@/lib/pluto/domain-test";
+import { retryWithBackoff, type RetryAttempt } from "@/lib/pluto/retry-backoff";
 
 export const Route = createFileRoute("/dashboard/custom-domains")({
   head: () => ({
