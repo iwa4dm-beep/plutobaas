@@ -1,10 +1,10 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import {
-import { AutoHelpPanel } from "@/components/help/AutoHelpPanel";
   Activity, CheckCircle2, XCircle, RefreshCw, Database, ShieldCheck, GitCommit,
   Lock, Plug, Clock, TrendingUp,
 } from "lucide-react";
+import { AutoHelpPanel } from "@/components/help/AutoHelpPanel";
 import { useAuth } from "@/lib/pluto/auth-context";
 import { AdminGate } from "@/components/AdminGate";
 

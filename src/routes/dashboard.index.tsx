@@ -1,10 +1,10 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import {
-import { AutoHelpPanel } from "@/components/help/AutoHelpPanel";
   Activity, ArrowUpRight, CheckCircle2, Database, Files, Heart, KeyRound, Radio,
   ScrollText, ShieldCheck, Sparkles, Terminal, Users, Waves, XCircle,
 } from "lucide-react";
+import { AutoHelpPanel } from "@/components/help/AutoHelpPanel";
 
 import { pluto } from "@/lib/pluto/client";
 import { isLive, live } from "@/lib/pluto/live";
