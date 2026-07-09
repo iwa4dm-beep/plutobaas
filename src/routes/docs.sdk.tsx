@@ -1,4 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { AutoHelpPanel } from "@/components/help/AutoHelpPanel";
 
 export const Route = createFileRoute("/docs/sdk")({
   head: () => ({
@@ -37,6 +38,7 @@ function DocsSdk() {
       <header className="mb-8">
         <p className="text-sm text-muted-foreground mb-1">Documentation</p>
         <h1 className="text-4xl font-bold mb-2">Pluto SDK</h1>
+      <AutoHelpPanel slug={'docs.sdk'} title={'Pluto SDK'} description={""} />
         <p className="text-lg text-muted-foreground">
           Supabase-compatible client. Same API surface — auth, database, storage, realtime — plus native onboarding &amp; multi-tenant helpers.
         </p>

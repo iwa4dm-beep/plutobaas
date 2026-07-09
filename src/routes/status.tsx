@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
+import { AutoHelpPanel } from "@/components/help/AutoHelpPanel";
 
 type Check = { ok: boolean; error?: string; latency_ms?: number };
 type Ready = { ok: boolean; uptime_s: number; checks: Record<string, Check> };
@@ -40,6 +41,7 @@ function StatusPage() {
   return (
     <main className="mx-auto max-w-3xl p-8">
       <h1 className="text-3xl font-semibold mb-2">Service status</h1>
+      <AutoHelpPanel slug={'status'} title={'Service status'} description={""} />
       <p className="text-muted-foreground mb-6">Live health of the Pluto API in this region.</p>
       {err && <div className="rounded border border-destructive/40 bg-destructive/10 p-3 text-sm">Health probe failed: {err}</div>}
       {ready && (

@@ -12,6 +12,8 @@ import { useEffect, type ReactNode } from "react";
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
 import { AuthProvider } from "../lib/pluto/auth-context";
+import { HelpSearchPalette } from "../components/help/HelpSearchPalette";
+import { OnboardingTour } from "../components/help/OnboardingTour";
 
 function NotFoundComponent() {
   return (
@@ -127,6 +129,8 @@ function RootComponent() {
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
         <Outlet />
+        <HelpSearchPalette />
+        <OnboardingTour />
       </AuthProvider>
     </QueryClientProvider>
   );
