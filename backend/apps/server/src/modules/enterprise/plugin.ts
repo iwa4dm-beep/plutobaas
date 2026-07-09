@@ -144,7 +144,7 @@ export const enterprisePlugin: FastifyPluginAsync = async (app) => {
        from public.custom_domains where workspace_id=$1::uuid order by created_at desc`, [ws]) };
   });
 
-  app.post("/enterprise/v1/domains", { preHandler: requireWorkspaceAdmin }, async (req, reply) => {
+  app.post("/enterprise/v1/domains", { preHandler: requireDomainAdmin }, async (req, reply) => {
     const ws = workspaceOf(req);
     if (!ws) { reply.code(400); return { error: "workspace_required" }; }
     const b = z.object({
