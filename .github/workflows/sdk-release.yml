@@ -1,4 +1,4 @@
-name: Build @pluto/js SDK tarball
+name: Build & release @timescard/pluto-js SDK
 
 on:
   push:
@@ -7,6 +7,11 @@ on:
       - "pluto-backend/packages/sdk-js/**"
       - ".github/workflows/sdk-release.yml"
   workflow_dispatch:
+    inputs:
+      publish_npm:
+        description: "Also publish to npm registry"
+        required: false
+        default: "false"
   release:
     types: [published]
 
@@ -22,41 +27,73 @@ jobs:
         with:
           bun-version: latest
 
-      - name: Read SDK version
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: "https://registry.npmjs.org/"
+
+      - name: Read SDK metadata
         id: v
         working-directory: pluto-backend/packages/sdk-js
-        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
-
-      - name: Build SDK
-        working-directory: pluto-backend/packages/sdk-js
         run: |
-          bun install --no-save
-          bunx tsup src/index.ts --format esm,cjs --dts --clean --minify
+          echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+          echo "name=$(node -p "require('./package.json').name")"       >> "$GITHUB_OUTPUT"
 
-      - name: Pack tarball
-        working-directory: pluto-backend/packages/sdk-js
-        run: npm pack
-
-      - name: Move to public/downloads
+      - name: Build + pack + hash
         env:
           VERSION: ${{ steps.v.outputs.version }}
+          NAME: ${{ steps.v.outputs.name }}
         run: |
+          cd pluto-backend/packages/sdk-js
+          bun install --no-save
+          bunx tsup src/index.ts --format esm,cjs --dts --clean --minify
+          npm pack
+          cd -
+
           mkdir -p public/downloads
-          SRC=$(ls pluto-backend/packages/sdk-js/pluto-js-*.tgz | head -1)
+          SRC=$(ls pluto-backend/packages/sdk-js/*.tgz | head -1)
           cp "$SRC" "public/downloads/pluto-js-${VERSION}.tgz"
           cp "$SRC" "public/downloads/pluto-js-latest.tgz"
+
+          HASH_V=$(sha256sum "public/downloads/pluto-js-${VERSION}.tgz" | awk '{print $1}')
+          HASH_L=$(sha256sum "public/downloads/pluto-js-latest.tgz"   | awk '{print $1}')
+
           cat > public/downloads/manifest.json <<EOF
           {
-            "name": "@pluto/js",
+            "name": "${NAME}",
+            "npm": "https://www.npmjs.com/package/${NAME}",
             "version": "${VERSION}",
             "latest": "/sdk/download/pluto-js-latest.tgz",
             "versioned": "/sdk/download/pluto-js-${VERSION}.tgz",
+            "algorithm": "sha256",
             "files": [
-              { "version": "${VERSION}", "file": "pluto-js-${VERSION}.tgz" },
-              { "version": "latest",    "file": "pluto-js-latest.tgz" }
+              {
+                "version": "${VERSION}",
+                "file": "pluto-js-${VERSION}.tgz",
+                "url": "/sdk/download/pluto-js-${VERSION}.tgz",
+                "sha256": "${HASH_V}"
+              },
+              {
+                "version": "latest",
+                "file": "pluto-js-latest.tgz",
+                "url": "/sdk/download/pluto-js-latest.tgz",
+                "sha256": "${HASH_L}"
+              }
             ]
           }
           EOF
+
+      - name: Publish to npm
+        if: ${{ github.event_name == 'release' || github.event.inputs.publish_npm == 'true' }}
+        working-directory: pluto-backend/packages/sdk-js
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -z "${NODE_AUTH_TOKEN:-}" ]; then
+            echo "::warning::NPM_TOKEN secret not set — skipping npm publish."
+            exit 0
+          fi
+          npm publish --access public --provenance || echo "::warning::npm publish failed (already published?)"
 
       - name: Commit refreshed tarball
         run: |
@@ -66,6 +103,6 @@ jobs:
           if git diff --staged --quiet; then
             echo "No SDK changes to commit."
           else
-            git commit -m "chore(sdk): rebuild @pluto/js ${{ steps.v.outputs.version }}"
+            git commit -m "chore(sdk): rebuild ${{ steps.v.outputs.name }} ${{ steps.v.outputs.version }}"
             git push
           fi
