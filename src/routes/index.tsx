@@ -1698,6 +1698,7 @@ function SaasBuildersSection() {
   );
 }
 
+function PricingSection() {
   return (
     <section id="pricing" aria-labelledby="pricing-heading" className="border-b border-border bg-muted/10">
       <div className="mx-auto max-w-6xl px-6 py-20">
