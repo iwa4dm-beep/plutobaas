@@ -29,6 +29,7 @@ import { Route as DashboardTokensRouteImport } from './routes/dashboard.tokens'
 import { Route as DashboardStorageRouteImport } from './routes/dashboard.storage'
 import { Route as DashboardSqlRouteImport } from './routes/dashboard.sql'
 import { Route as DashboardSettingsRouteImport } from './routes/dashboard.settings'
+import { Route as DashboardSdkReleaseRouteImport } from './routes/dashboard.sdk-release'
 import { Route as DashboardSdkDemoRouteImport } from './routes/dashboard.sdk-demo'
 import { Route as DashboardScalingRouteImport } from './routes/dashboard.scaling'
 import { Route as DashboardRealtimeRouteImport } from './routes/dashboard.realtime'
@@ -190,6 +191,11 @@ const DashboardSqlRoute = DashboardSqlRouteImport.update({
 const DashboardSettingsRoute = DashboardSettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
+  getParentRoute: () => DashboardRoute,
+} as any)
+const DashboardSdkReleaseRoute = DashboardSdkReleaseRouteImport.update({
+  id: '/sdk-release',
+  path: '/sdk-release',
   getParentRoute: () => DashboardRoute,
 } as any)
 const DashboardSdkDemoRoute = DashboardSdkDemoRouteImport.update({
@@ -575,6 +581,7 @@ export interface FileRoutesByFullPath {
   '/dashboard/realtime': typeof DashboardRealtimeRoute
   '/dashboard/scaling': typeof DashboardScalingRoute
   '/dashboard/sdk-demo': typeof DashboardSdkDemoRoute
+  '/dashboard/sdk-release': typeof DashboardSdkReleaseRoute
   '/dashboard/settings': typeof DashboardSettingsRoute
   '/dashboard/sql': typeof DashboardSqlRoute
   '/dashboard/storage': typeof DashboardStorageRoute
@@ -658,6 +665,7 @@ export interface FileRoutesByTo {
   '/dashboard/realtime': typeof DashboardRealtimeRoute
   '/dashboard/scaling': typeof DashboardScalingRoute
   '/dashboard/sdk-demo': typeof DashboardSdkDemoRoute
+  '/dashboard/sdk-release': typeof DashboardSdkReleaseRoute
   '/dashboard/settings': typeof DashboardSettingsRoute
   '/dashboard/sql': typeof DashboardSqlRoute
   '/dashboard/storage': typeof DashboardStorageRoute
@@ -743,6 +751,7 @@ export interface FileRoutesById {
   '/dashboard/realtime': typeof DashboardRealtimeRoute
   '/dashboard/scaling': typeof DashboardScalingRoute
   '/dashboard/sdk-demo': typeof DashboardSdkDemoRoute
+  '/dashboard/sdk-release': typeof DashboardSdkReleaseRoute
   '/dashboard/settings': typeof DashboardSettingsRoute
   '/dashboard/sql': typeof DashboardSqlRoute
   '/dashboard/storage': typeof DashboardStorageRoute
@@ -829,6 +838,7 @@ export interface FileRouteTypes {
     | '/dashboard/realtime'
     | '/dashboard/scaling'
     | '/dashboard/sdk-demo'
+    | '/dashboard/sdk-release'
     | '/dashboard/settings'
     | '/dashboard/sql'
     | '/dashboard/storage'
@@ -912,6 +922,7 @@ export interface FileRouteTypes {
     | '/dashboard/realtime'
     | '/dashboard/scaling'
     | '/dashboard/sdk-demo'
+    | '/dashboard/sdk-release'
     | '/dashboard/settings'
     | '/dashboard/sql'
     | '/dashboard/storage'
@@ -996,6 +1007,7 @@ export interface FileRouteTypes {
     | '/dashboard/realtime'
     | '/dashboard/scaling'
     | '/dashboard/sdk-demo'
+    | '/dashboard/sdk-release'
     | '/dashboard/settings'
     | '/dashboard/sql'
     | '/dashboard/storage'
@@ -1173,6 +1185,13 @@ declare module '@tanstack/react-router' {
       path: '/settings'
       fullPath: '/dashboard/settings'
       preLoaderRoute: typeof DashboardSettingsRouteImport
+      parentRoute: typeof DashboardRoute
+    }
+    '/dashboard/sdk-release': {
+      id: '/dashboard/sdk-release'
+      path: '/sdk-release'
+      fullPath: '/dashboard/sdk-release'
+      preLoaderRoute: typeof DashboardSdkReleaseRouteImport
       parentRoute: typeof DashboardRoute
     }
     '/dashboard/sdk-demo': {
@@ -1695,6 +1714,7 @@ interface DashboardRouteChildren {
   DashboardRealtimeRoute: typeof DashboardRealtimeRoute
   DashboardScalingRoute: typeof DashboardScalingRoute
   DashboardSdkDemoRoute: typeof DashboardSdkDemoRoute
+  DashboardSdkReleaseRoute: typeof DashboardSdkReleaseRoute
   DashboardSettingsRoute: typeof DashboardSettingsRoute
   DashboardSqlRoute: typeof DashboardSqlRoute
   DashboardStorageRoute: typeof DashboardStorageRoute
@@ -1761,6 +1781,7 @@ const DashboardRouteChildren: DashboardRouteChildren = {
   DashboardRealtimeRoute: DashboardRealtimeRoute,
   DashboardScalingRoute: DashboardScalingRoute,
   DashboardSdkDemoRoute: DashboardSdkDemoRoute,
+  DashboardSdkReleaseRoute: DashboardSdkReleaseRoute,
   DashboardSettingsRoute: DashboardSettingsRoute,
   DashboardSqlRoute: DashboardSqlRoute,
   DashboardStorageRoute: DashboardStorageRoute,
