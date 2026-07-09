@@ -21,7 +21,7 @@ const CORS_HEADERS: Record<string, string> = {
   "access-control-max-age": "86400",
 };
 
-const GATEWAY_FAILURE_STATUSES = new Set([502, 503, 504, 521, 522, 523, 524]);
+const GATEWAY_FAILURE_STATUSES = new Set([500, 502, 503, 504, 521, 522, 523, 524]);
 
 function offlineJson(payload: Record<string, unknown>) {
   return new Response(JSON.stringify({ ok: false, offline: true, ...payload }), {
