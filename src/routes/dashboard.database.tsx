@@ -7,7 +7,8 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/pluto/PageHeader";
-import { AutoHelpPanel } from "@/components/help/AutoHelpPanel";
+import { HelpPanel } from "@/components/help/HelpPanel";
+import { dashboardDatabaseHelp } from "@/content/help/dashboard.database";
 import { pluto, type PlutoTable } from "@/lib/pluto/client";
 import { rowsToCsv, downloadCsv, parseCsv } from "@/lib/pluto/csv";
 import {
@@ -142,7 +143,7 @@ function DatabasePage() {
         title="Database"
         description="Tables, rows, schema, SQL editor, import/export।"
       />
-      <AutoHelpPanel slug={'dashboard.database'} title={'Database'} description={'Tables, rows, schema, SQL editor, import/export।'} />
+      <HelpPanel help={dashboardDatabaseHelp} />
 
       <div className="grid lg:grid-cols-[240px_minmax(0,1fr)] gap-6">
         {/* ── Sidebar ────────────────────────────────────────────── */}

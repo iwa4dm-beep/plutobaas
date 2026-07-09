@@ -1,7 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { plutoApi } from "@/lib/pluto/upstream";
-import { AutoHelpPanel } from "@/components/help/AutoHelpPanel";
+import { HelpPanel } from "@/components/help/HelpPanel";
+import { dashboardPlutoStudioHelp } from "@/content/help/dashboard.pluto-studio";
 
 export const Route = createFileRoute("/dashboard/pluto-studio")({
   component: StudioPage,
@@ -79,7 +80,7 @@ function StudioPage() {
     <div className="p-6 space-y-4">
       <div>
         <h1 className="text-2xl font-semibold">Data Studio</h1>
-      <AutoHelpPanel slug={'dashboard.pluto-studio'} title={'Data Studio'} description={''} />
+      <HelpPanel help={dashboardPlutoStudioHelp} />
         <p className="text-sm text-muted-foreground">Spreadsheet-style editor, FK navigation, SQL snippets, saved queries, CSV, ERD.</p>
       </div>
       <div className="flex flex-wrap gap-2">

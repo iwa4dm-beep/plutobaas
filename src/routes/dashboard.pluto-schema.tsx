@@ -1,7 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { PageHeader } from "@/components/pluto/PageHeader";
-import { AutoHelpPanel } from "@/components/help/AutoHelpPanel";
+import { HelpPanel } from "@/components/help/HelpPanel";
+import { dashboardPlutoSchemaHelp } from "@/content/help/dashboard.pluto-schema";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -137,7 +138,7 @@ function PlutoSchemaPage() {
   return (
     <div className="space-y-6">
       <PageHeader title="Pluto Schema" description="Manage indexes and constraints (btree/gin/gist/hash/brin, unique/check/not-null/foreign-key)." />
-      <AutoHelpPanel slug={'dashboard.pluto-schema'} title={'Pluto Schema'} description={'Manage indexes and constraints (btree/gin/gist/hash/brin, unique/check/not-null/foreign-key).'} />
+      <HelpPanel help={dashboardPlutoSchemaHelp} />
       {!configured && <Alert><AlertDescription>Set upstream on the Pluto Admin page first.</AlertDescription></Alert>}
       {err && <Alert variant="destructive"><AlertDescription>{err}</AlertDescription></Alert>}
 
