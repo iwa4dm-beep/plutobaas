@@ -194,17 +194,44 @@ function CustomDomainsPage() {
     }
   }
 
-  async function verify(d: CustomDomain) {
+  function cancelRetry(key: string) {
+    const c = abortersRef.current[key];
+    if (c) { c.abort(); delete abortersRef.current[key]; }
+    setRetryState((s) => { const next = { ...s }; delete next[key]; return next; });
+  }
+
+  async function verify(d: CustomDomain, opts: { retry?: boolean } = {}) {
+    const key = `verify:${d.id}`;
+    cancelRetry(key);
+    const ctrl = new AbortController();
+    abortersRef.current[key] = ctrl;
     setVerifyingId(d.id);
     try {
-      await enterprise.verifyDomain(d.id);
-      recordDomainAudit(workspaceId, actor, "domain.verify", d.hostname, "ok");
+      const runOnce = () => enterprise.verifyDomain(d.id).then((r) => {
+        // The backend returns `{ ok, verified }`; treat "not yet verified" as retryable.
+        if (opts.retry && r && r.verified === false) throw new Error("txt_not_yet_visible");
+        return r;
+      });
+      const res = opts.retry
+        ? await retryWithBackoff(runOnce, {
+            maxAttempts: 5,
+            signal: ctrl.signal,
+            onAttempt: (a) => setRetryState((s) => ({ ...s, [key]: a })),
+            shouldRetry: (e) => (e as Error).name !== "AbortError",
+          })
+        : await runOnce();
+      recordDomainAudit(workspaceId, actor, "domain.verify", d.hostname, "ok", opts.retry ? { retry: true } : {});
       await load();
+      return res;
     } catch (e) {
-      recordDomainAudit(workspaceId, actor, "domain.verify", d.hostname, "error", { message: (e as Error).message });
+      if ((e as Error).name === "AbortError") return;
+      recordDomainAudit(workspaceId, actor, "domain.verify", d.hostname, "error",
+        { message: (e as Error).message, retry: opts.retry ?? false });
       setErr(e);
     } finally {
-      setVerifyingId(null);
+      setVerifyingId((cur) => (cur === d.id ? null : cur));
+      delete abortersRef.current[key];
+      setRetryState((s) => { const next = { ...s }; delete next[key]; return next; });
     }
   }
 
