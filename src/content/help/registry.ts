@@ -7,6 +7,9 @@ import { dashboardApiHelp } from "./dashboard.api";
 import { dashboardCorsHelp } from "./dashboard.cors";
 import { dashboardAuditHelp } from "./dashboard.audit";
 import { dashboardAiHelp } from "./dashboard.ai";
+import { dashboardIndexHelp } from "./dashboard.index";
+import { dashboardPlutoAdminHelp } from "./dashboard.pluto-admin";
+import { dashboardIntegrationsHelp } from "./dashboard.integrations";
 
 export type HelpEntry = {
   help: PageHelp;
@@ -20,7 +23,10 @@ function slugToRoute(slug: string): string {
 }
 
 export const HELP_REGISTRY: HelpEntry[] = [
+  dashboardIndexHelp,
+  dashboardPlutoAdminHelp,
   dashboardVerifyHelp,
+  dashboardIntegrationsHelp,
   dashboardApiHelp,
   dashboardCorsHelp,
   dashboardAuditHelp,

@@ -2,7 +2,8 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
 import { CheckCircle2, Loader2, RefreshCw, XCircle } from "lucide-react";
 import { PageHeader } from "@/components/pluto/PageHeader";
-import { AutoHelpPanel } from "@/components/help/AutoHelpPanel";
+import { HelpPanel } from "@/components/help/HelpPanel";
+import { dashboardIntegrationsHelp } from "@/content/help/dashboard.integrations";
 import { integrations, isLive, type IntegrationHealth } from "@/lib/pluto/live";
 
 export const Route = createFileRoute("/dashboard/integrations")({
@@ -51,7 +52,7 @@ function IntegrationsPage() {
           </button>
         }
       />
-      <AutoHelpPanel slug={'dashboard.integrations'} title={'Integration health'} description={'Live readiness for Phase 15 & 16 modules (MFA, SSO, Push, Templates, AI & Vector)'} />
+      <HelpPanel help={dashboardIntegrationsHelp} />
 
       {err && (
         <div className="rounded-md border border-rose-500/40 bg-rose-500/5 px-4 py-3 text-sm text-rose-500">

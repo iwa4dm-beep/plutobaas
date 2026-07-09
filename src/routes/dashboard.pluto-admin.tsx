@@ -1,7 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { PageHeader } from "@/components/pluto/PageHeader";
-import { AutoHelpPanel } from "@/components/help/AutoHelpPanel";
+import { HelpPanel } from "@/components/help/HelpPanel";
+import { dashboardPlutoAdminHelp } from "@/content/help/dashboard.pluto-admin";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -155,7 +156,7 @@ function PlutoAdminPage() {
         title="Pluto Admin"
         description="Manage your self-hosted Pluto BaaS on your VPS"
       />
-      <AutoHelpPanel slug={'dashboard.pluto-admin'} title={'Pluto Admin'} description={'Manage your self-hosted Pluto BaaS on your VPS'} />
+      <HelpPanel help={dashboardPlutoAdminHelp} />
 
 
       {/* Connection */}
