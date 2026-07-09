@@ -2,6 +2,8 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
 import { PageHeader } from "@/components/pluto/PageHeader";
+import { HelpPanel } from "@/components/help/HelpPanel";
+import { dashboardCorsHelp } from "@/content/help/dashboard.cors";
 import { isLive, live, type AllowedOrigin } from "@/lib/pluto/live";
 
 export const Route = createFileRoute("/dashboard/cors")({
@@ -58,6 +60,7 @@ function CorsPage() {
         title="CORS whitelist"
         description="Only these origins can call the API from a browser. localhost is auto-allowed in dev."
       />
+      <HelpPanel help={dashboardCorsHelp} />
 
 
       {!isLive() && (
