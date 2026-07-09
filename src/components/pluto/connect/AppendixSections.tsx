@@ -435,6 +435,16 @@ export function AppendixSections() {
       </Section>
 
       <Section
+        icon={ShieldCheck}
+        title_en="C3. Permission check — RLS/policies for storage, auth, backups"
+        title_bn="গ৩. পারমিশন চেক — storage/auth/backups টেবিলের RLS/policy"
+        intro_en="Probes each (role × resource × action) combination and reports whether the call was allowed, blocked by RLS/policy (401/403/404/406), or hit a server error. Use this to spot which role is missing a policy for read/write/delete."
+        intro_bn="প্রতিটি (role × resource × action)-এর জন্য probe চালিয়ে দেখায় কোনটা allowed, কোনটা RLS/policy দ্বারা blocked, আর কোথায় server error হচ্ছে। কোন role-এ পড়া/লেখা block হচ্ছে সহজেই ধরতে পারবেন।"
+      >
+        <PermissionChecker apiBase={apiBase} />
+      </Section>
+
+      <Section
         icon={FileText}
         title_en="D. .env.example (Postgres, auth, realtime, storage)"
         title_bn="ঘ. .env.example (Postgres, auth, realtime, storage)"
