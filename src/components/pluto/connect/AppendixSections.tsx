@@ -353,12 +353,13 @@ const TROUBLE: { code: string; en: string; bn: string; fix_en: string; fix_bn: s
 ];
 
 export function AppendixSections() {
+  const apiBase = resolveApiUrl();
   return (
     <div className="mt-10 space-y-6">
       <div className="border-t border-border/60 pt-6">
-        <h2 className="text-lg font-semibold">Reference · রেফারেন্স</h2>
+        <h2 className="text-lg font-semibold">Reference &amp; live tools · রেফারেন্স ও লাইভ টুল</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          Schema, realtime, .env, working example, and troubleshooting — সব একসাথে।
+          Schema, migrations, realtime verifier, connection tester, end-to-end flow, .env, troubleshooting — সব একসাথে।
         </p>
       </div>
 
@@ -366,21 +367,34 @@ export function AppendixSections() {
         icon={Database}
         title_en="A. Database schema & migrations"
         title_bn="ক. ডাটাবেস স্কিমা ও মাইগ্রেশন"
-        intro_en="Baseline SQL for auth-linked profiles, roles (via user_roles + has_role), storage buckets with RLS, realtime, and backups. Run inside your Pluto-managed Postgres."
-        intro_bn="auth.users-এর সাথে profiles, user_roles + has_role দিয়ে role system, RLS সহ storage buckets, realtime enable, এবং backups — সবকিছুর baseline SQL।"
+        intro_en="Baseline SQL for auth-linked profiles, roles (user_roles + has_role), storage buckets with RLS, realtime, and a sample todos table. Copy the whole file, download it, or apply it live from the dashboard below."
+        intro_bn="auth-linked profiles, user_roles + has_role role system, RLS সহ storage buckets, realtime, এবং একটি sample todos table — সবকিছুর baseline SQL। Copy/download অথবা নিচের dashboard runner দিয়ে সরাসরি apply করুন।"
       >
         <CodeBlock lang="sql" caption="migrations/0001_project_baseline.sql" content={SCHEMA_SQL} />
+        <SqlToolbar />
+        <div className="mt-4">
+          <div className="mb-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            Live migration runner · লাইভ মাইগ্রেশন রানার
+          </div>
+          <MigrationRunner apiBase={apiBase} />
+        </div>
       </Section>
 
       <Section
         icon={Radio}
         title_en="B. Realtime setup (channels & WebSocket)"
         title_bn="খ. রিয়েলটাইম সেটআপ (চ্যানেল ও WebSocket)"
-        intro_en="Three modes: Postgres CDC (row changes), Broadcast (pub/sub), and Presence (who's online). WebSocket URL is auto-derived from VITE_PLUTO_URL — override only if you terminate WS on a different host."
-        intro_bn="তিনটি মোড: Postgres CDC (row পরিবর্তন), Broadcast (pub/sub), এবং Presence (কে অনলাইনে)। WebSocket URL VITE_PLUTO_URL থেকে auto derive হয় — আলাদা host হলে override করুন।"
+        intro_en="Three modes: Postgres CDC (row changes), Broadcast (pub/sub), and Presence (who's online). Use the verifier below to check WebSocket connectivity and confirm subscriptions to the expected channels."
+        intro_bn="তিনটি মোড: Postgres CDC (row পরিবর্তন), Broadcast (pub/sub), এবং Presence (কে অনলাইনে)। WebSocket connectivity ও channel subscription যাচাই করতে নিচের verifier ব্যবহার করুন।"
       >
         <CodeBlock lang="env" caption="Realtime config" content={REALTIME_CFG} />
         <CodeBlock lang="ts" caption="Subscribe from the frontend" content={REALTIME_CODE} />
+        <div className="mt-4">
+          <div className="mb-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            Realtime verifier · WebSocket + channel check
+          </div>
+          <RealtimeVerifier apiBase={apiBase} />
+        </div>
       </Section>
 
       <Section
