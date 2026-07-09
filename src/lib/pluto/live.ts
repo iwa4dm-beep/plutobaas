@@ -1415,6 +1415,12 @@ export type DomainWebhookInfo = {
   hmac_algo: string;
   payload_shape: Record<string, string>;
 };
+export type DomainAdminGrant = {
+  user_id: string;
+  granted_by: string | null;
+  granted_at: string;
+  note: string | null;
+};
 export type RegionConfig = { primary_region: string; read_regions: string[]; pin_writes: boolean; updated_at?: string };
 export type StatusComponent = { id: string; name: string; status: string; updated_at: string };
 export type StatusIncident = { id: string; title: string; body: string; severity: string; component_id: string | null; started_at: string; resolved_at: string | null };
