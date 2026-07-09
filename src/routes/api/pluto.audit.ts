@@ -59,7 +59,15 @@ async function runOnce(base: string, p: Probe, timeoutMs: number, captureBody: b
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
-    const res = await fetch(url, { method: p.method, signal: ctrl.signal });
+    const headers: Record<string, string> = {};
+    if (p.method === "OPTIONS") {
+      // Send a valid CORS preflight so the upstream doesn't reject with 400
+      // "Invalid Preflight Request".
+      headers["Origin"] = new URL(base).origin;
+      headers["Access-Control-Request-Method"] = "GET";
+      headers["Access-Control-Request-Headers"] = "authorization,content-type";
+    }
+    const res = await fetch(url, { method: p.method, headers, signal: ctrl.signal });
     const ok = p.expectStatuses.includes(res.status);
     let snippet: string | null = null;
     if (!ok && captureBody) {
