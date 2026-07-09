@@ -511,7 +511,9 @@ export const usagePlugin: FastifyPluginAsync = async (app) => {
     const role = await resolveWorkspaceRole(req);
     const canAdmin = role === "owner" || role === "admin" ||
                      role === "global_admin" || role === "service_role";
-    return { role, can_admin: canAdmin };
+    const { isDomainAdmin } = await import("../../lib/apikey.js");
+    const domainAdmin = canAdmin ? true : await isDomainAdmin(req);
+    return { role, can_admin: canAdmin, is_domain_admin: domainAdmin };
   });
 
   // ---- SSE: live usage + quota stream (replaces 15s dashboard polling) ----
