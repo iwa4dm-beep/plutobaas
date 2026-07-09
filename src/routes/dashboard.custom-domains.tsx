@@ -109,8 +109,9 @@ function CustomDomainsPage() {
         {
           onStatus: (s) => {
             if (cancelled) return;
-            if (s === "open") { stopPolling(); setRtStatus("open"); }
-            else if (s === "closed" || s === "error") { setRtStatus("closed"); startPolling(); }
+            if (s.kind === "open") { stopPolling(); setRtStatus("open"); }
+            else if (s.kind === "closed" || s.kind === "auth_error") { setRtStatus("closed"); startPolling(); }
+            else if (s.kind === "connecting") { setRtStatus("connecting"); }
           },
         },
       );
