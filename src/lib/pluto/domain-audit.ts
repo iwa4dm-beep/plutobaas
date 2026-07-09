@@ -13,7 +13,9 @@ export type DomainAuditAction =
   | "domain.remove"
   | "domain.make_primary"
   | "domain.clear_primary"
-  | "domain.test_endpoint";
+  | "domain.test_endpoint"
+  | "domain.admin_grant"
+  | "domain.admin_revoke";
 
 export type DomainAuditEntry = {
   id: string;
