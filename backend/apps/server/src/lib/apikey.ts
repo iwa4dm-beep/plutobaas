@@ -207,6 +207,9 @@ export async function resolveWorkspaceRole(
     .where("m.user_id" as never, "=", user.sub as never)
     .executeTakeFirst() as { role: string } | undefined;
   return (row?.role as "owner" | "admin" | "member" | "viewer") ?? "member";
+}
+
+
 
 // Phase 65 — Domain-admin gate. Anyone allowed by requireWorkspaceAdmin,
 // PLUS users explicitly granted domain-admin for the target workspace via
