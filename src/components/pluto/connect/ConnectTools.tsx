@@ -87,6 +87,8 @@ export function SqlToolbar() {
 
 type StmtState = { sql: string; status: Status; ms?: number; error?: string };
 
+type LogLine = { at: string; level: "info" | "ok" | "warn" | "error"; message: string };
+
 export function MigrationRunner({ apiBase }: { apiBase: string }) {
   const [serviceKey, setServiceKey] = useState("");
   const [items, setItems] = useState<StmtState[]>(() =>
@@ -94,7 +96,26 @@ export function MigrationRunner({ apiBase }: { apiBase: string }) {
   );
   const [running, setRunning] = useState(false);
   const [summary, setSummary] = useState<string | null>(null);
+  const [currentIdx, setCurrentIdx] = useState<number>(-1);
+  const [logs, setLogs] = useState<LogLine[]>([]);
+  const [startedAt, setStartedAt] = useState<number | null>(null);
+  const [elapsed, setElapsed] = useState(0);
   const abortRef = useRef(false);
+  const logsRef = useRef<HTMLDivElement | null>(null);
+
+  const pushLog = useCallback((level: LogLine["level"], message: string) => {
+    setLogs((prev) => [...prev, { at: new Date().toISOString().slice(11, 23), level, message }]);
+  }, []);
+
+  useEffect(() => {
+    if (!running || startedAt == null) return;
+    const t = setInterval(() => setElapsed(Date.now() - startedAt), 200);
+    return () => clearInterval(t);
+  }, [running, startedAt]);
+
+  useEffect(() => {
+    if (logsRef.current) logsRef.current.scrollTop = logsRef.current.scrollHeight;
+  }, [logs]);
 
   const run = useCallback(async () => {
     if (!serviceKey.startsWith("sk_service_")) {
@@ -102,14 +123,22 @@ export function MigrationRunner({ apiBase }: { apiBase: string }) {
       return;
     }
     setRunning(true); setSummary(null); abortRef.current = false;
+    setLogs([]); setStartedAt(Date.now()); setElapsed(0);
     const next: StmtState[] = items.map((it) => ({ sql: it.sql, status: "idle" }));
     setItems(next);
+    pushLog("info", `Starting migration — ${next.length} statements`);
 
     let ok = 0, fail = 0;
     for (let i = 0; i < next.length; i++) {
-      if (abortRef.current) { next[i].status = "skipped"; continue; }
+      if (abortRef.current) {
+        next[i].status = "skipped";
+        pushLog("warn", `#${i + 1} skipped (stopped by user)`);
+        continue;
+      }
       next[i] = { ...next[i], status: "running" };
-      setItems([...next]);
+      setItems([...next]); setCurrentIdx(i);
+      const label = summariseStatement(next[i].sql);
+      pushLog("info", `#${i + 1}/${next.length} → ${label}`);
       const res = await jsonFetch(`${apiBase}/v1/admin/sql`, {
         method: "POST",
         headers: {
@@ -119,25 +148,32 @@ export function MigrationRunner({ apiBase }: { apiBase: string }) {
         },
         body: JSON.stringify({ sql: next[i].sql }),
       });
-      if (res.ok) { next[i] = { ...next[i], status: "ok", ms: res.ms }; ok++; }
-      else {
+      if (res.ok) {
+        next[i] = { ...next[i], status: "ok", ms: res.ms }; ok++;
+        pushLog("ok", `#${i + 1} ok · ${res.ms}ms`);
+      } else {
         const msg = typeof res.body === "string" ? res.body
           : (res.body as { error?: string; message?: string })?.error
           ?? (res.body as { message?: string })?.message
           ?? JSON.stringify(res.body);
         next[i] = { ...next[i], status: "fail", ms: res.ms, error: `HTTP ${res.status} — ${String(msg).slice(0, 240)}` };
         fail++;
+        pushLog("error", `#${i + 1} failed · HTTP ${res.status} — ${String(msg).slice(0, 200)}`);
       }
       setItems([...next]);
     }
-    setRunning(false);
-    setSummary(`Applied ${ok} / ${next.length} statements${fail ? ` · ${fail} failed` : ""}`);
-  }, [apiBase, items, serviceKey]);
+    setRunning(false); setCurrentIdx(-1);
+    const done = `Applied ${ok} / ${next.length} statements${fail ? ` · ${fail} failed` : ""}`;
+    setSummary(done);
+    pushLog(fail ? "warn" : "ok", done);
+  }, [apiBase, items, serviceKey, pushLog]);
 
-  const stop = () => { abortRef.current = true; };
+  const stop = () => { abortRef.current = true; pushLog("warn", "Stop requested — will halt after current statement"); };
 
   const okCount = items.filter((i) => i.status === "ok").length;
   const failCount = items.filter((i) => i.status === "fail").length;
+  const doneCount = items.filter((i) => i.status === "ok" || i.status === "fail" || i.status === "skipped").length;
+  const pct = items.length ? Math.round((doneCount / items.length) * 100) : 0;
 
   return (
     <div className="mt-3 rounded-md border border-border/60 bg-muted/30 p-3">
@@ -165,15 +201,33 @@ export function MigrationRunner({ apiBase }: { apiBase: string }) {
         Service key শুধু browser memory-তে থাকে — কোথাও persist হয় না। Idempotent: বারবার run নিরাপদ।
       </p>
 
+      {/* Live progress bar */}
+      <div className="mt-3">
+        <div className="mb-1 flex items-center justify-between text-[11px] text-muted-foreground">
+          <span>
+            {running && currentIdx >= 0
+              ? <>Running #{currentIdx + 1} / {items.length} · <span className="font-mono">{summariseStatement(items[currentIdx]?.sql ?? "")}</span></>
+              : <>Progress: {doneCount} / {items.length}</>}
+          </span>
+          <span className="tabular-nums">{pct}%{elapsed ? ` · ${(elapsed / 1000).toFixed(1)}s` : ""}</span>
+        </div>
+        <div className="h-2 w-full overflow-hidden rounded-full bg-border/50">
+          <div
+            className={`h-full transition-all duration-200 ${failCount ? "bg-red-500" : "bg-primary"}`}
+            style={{ width: `${pct}%` }}
+          />
+        </div>
+      </div>
+
       <div className="mt-3 flex items-center gap-3 text-xs">
         <span className="inline-flex items-center gap-1.5"><StatusDot s="ok" /> {okCount} ok</span>
         <span className="inline-flex items-center gap-1.5"><StatusDot s="fail" /> {failCount} failed</span>
         <span className="text-muted-foreground">{items.length} statements</span>
       </div>
 
-      <ol className="mt-3 max-h-72 space-y-1 overflow-auto pr-1">
+      <ol className="mt-3 max-h-60 space-y-1 overflow-auto pr-1">
         {items.map((it, idx) => (
-          <li key={idx} className="rounded border border-border/50 bg-background/60 p-2 text-[11px]">
+          <li key={idx} className={`rounded border p-2 text-[11px] ${idx === currentIdx ? "border-primary/60 bg-primary/5" : "border-border/50 bg-background/60"}`}>
             <div className="flex items-center gap-2">
               <StatusDot s={it.status} />
               <span className="font-mono text-muted-foreground">#{idx + 1}</span>
@@ -185,6 +239,27 @@ export function MigrationRunner({ apiBase }: { apiBase: string }) {
         ))}
       </ol>
 
+      {/* Streaming log console */}
+      {logs.length > 0 && (
+        <div className="mt-3">
+          <div className="mb-1 text-[11px] text-muted-foreground">Streaming log</div>
+          <div ref={logsRef} className="max-h-48 overflow-auto rounded-md border border-border/60 bg-black/70 p-2 font-mono text-[11px] leading-relaxed text-green-200">
+            {logs.map((l, i) => (
+              <div key={i} className="whitespace-pre-wrap break-all">
+                <span className="text-muted-foreground">[{l.at}]</span>{" "}
+                <span className={
+                  l.level === "error" ? "text-red-400"
+                  : l.level === "warn" ? "text-yellow-300"
+                  : l.level === "ok" ? "text-green-300"
+                  : "text-sky-300"
+                }>{l.level.toUpperCase()}</span>{" "}
+                <span className="text-green-100">{l.message}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {summary && (
         <div className={`mt-2 rounded-md border p-2 text-xs ${failCount ? "border-red-500/40 bg-red-500/5" : "border-green-500/40 bg-green-500/5"}`}>
           {summary}
@@ -193,6 +268,7 @@ export function MigrationRunner({ apiBase }: { apiBase: string }) {
     </div>
   );
 }
+
 
 /* -------------------------------------------------------------------------- */
 /* Realtime channel verifier — WS connectivity + subscription confirmation    */
