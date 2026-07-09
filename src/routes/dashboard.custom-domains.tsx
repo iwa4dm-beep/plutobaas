@@ -50,9 +50,9 @@ type AddedRecord = { dns_txt_record: string; dns_txt_value: string; hostname: st
 
 function CustomDomainsPage() {
   const { active } = useWorkspace();
-  const { user } = useAuth();
+  const { session } = useAuth();
   const workspaceId = active?.id ?? "root";
-  const actor = user?.email ?? user?.id ?? "anonymous";
+  const actor = session?.user?.email ?? session?.user?.id ?? "anonymous";
 
   const [items, setItems] = useState<CustomDomain[] | null>(null);
   const [err, setErr] = useState<unknown>(null);
