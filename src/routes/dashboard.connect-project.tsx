@@ -448,6 +448,8 @@ function ConnectProjectPage() {
           );
         })}
       </ol>
+
+      <AppendixSections />
     </div>
   );
 }
