@@ -40,6 +40,17 @@ import { dashboardAuditLogHelp } from "./dashboard.audit-log";
 import { dashboardScalingHelp } from "./dashboard.scaling";
 import { dashboardUsageHelp } from "./dashboard.usage";
 import { dashboardPlutoBillingHelp } from "./dashboard.pluto-billing";
+import { dashboardProjectsHelp } from "./dashboard.projects";
+import { dashboardWorkspacesHelp } from "./dashboard.workspaces";
+import { dashboardCustomDomainsHelp } from "./dashboard.custom-domains";
+import { dashboardBackupsHelp } from "./dashboard.backups";
+import { dashboardBranchingHelp } from "./dashboard.branching";
+import { dashboardPlutoBranchesHelp } from "./dashboard.pluto-branches";
+import { dashboardPlutoReplicasHelp } from "./dashboard.pluto-replicas";
+import { dashboardPlutoComplianceHelp } from "./dashboard.pluto-compliance";
+import { dashboardPlutoVaultHelp } from "./dashboard.pluto-vault";
+import { dashboardEnterpriseHelp } from "./dashboard.enterprise";
+import { dashboardPlutoMarketplaceHelp } from "./dashboard.pluto-marketplace";
 
 export type HelpEntry = {
   help: PageHelp;
