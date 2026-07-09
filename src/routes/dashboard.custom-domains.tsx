@@ -26,8 +26,8 @@ export const Route = createFileRoute("/dashboard/custom-domains")({
 type AddedRecord = { dns_txt_record: string; dns_txt_value: string; hostname: string };
 
 function CustomDomainsPage() {
-  const { activeWorkspaceId } = useWorkspace();
-  const workspaceId = activeWorkspaceId ?? "root";
+  const { active } = useWorkspace();
+  const workspaceId = active?.id ?? "root";
 
   const [items, setItems] = useState<CustomDomain[] | null>(null);
   const [err, setErr] = useState<unknown>(null);
