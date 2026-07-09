@@ -1493,14 +1493,17 @@ function CodeShowcase() {
             <span>step 1 of 2 · takes ~10 seconds</span>
           </div>
           <pre className="overflow-x-auto p-5 font-mono text-xs leading-relaxed sm:text-sm"><code>{`# JavaScript / TypeScript / React / Vue / React Native / Node
-bun add @pluto/js
-# or:  npm i @pluto/js   |   pnpm add @pluto/js   |   yarn add @pluto/js
+# Installs the @pluto/js tarball served from this site (works local + VPS)
+npm  i https://backend-joy.lovable.app/downloads/pluto-js-latest.tgz
+# or: bun add https://backend-joy.lovable.app/downloads/pluto-js-latest.tgz
+# or: pnpm add https://backend-joy.lovable.app/downloads/pluto-js-latest.tgz
 
 # Python
 pip install pluto-sdk
 
 # Go
 go get github.com/pluto-baas/pluto/sdks/go/pluto`}</code></pre>
+
         </div>
 
         <div className="mt-6 grid gap-6 lg:grid-cols-[220px_1fr]">
