@@ -17,6 +17,8 @@ jobs:
         run: bun install --frozen-lockfile
       - name: Typecheck
         run: bun run typecheck
+      - name: Help registry tests
+        run: bunx vitest run src/content/help/registry.spec.ts
       - name: Unit tests
         run: bun run test
       - name: Build
