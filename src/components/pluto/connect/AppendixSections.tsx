@@ -414,6 +414,26 @@ export function AppendixSections() {
       </Section>
 
       <Section
+        icon={Play}
+        title_en="C1. 'Test connection' — real backend checks"
+        title_bn="গ১. 'Test connection' — সত্যিকারের backend check"
+        intro_en="Runs live checks against your selected apiBase: HTTP health, auth service, WebSocket upgrade, and storage buckets. Optionally paste your anon key to exercise authenticated endpoints."
+        intro_bn="আপনার selected apiBase-এ live check চালায়: HTTP health, auth service, WebSocket upgrade, এবং storage buckets। Authenticated endpoint check-এর জন্য anon key দিন।"
+      >
+        <ConnectionTester apiBase={apiBase} />
+      </Section>
+
+      <Section
+        icon={Zap}
+        title_en="C2. End-to-end test flow"
+        title_bn="গ২. End-to-end টেস্ট ফ্লো"
+        intro_en="Verifies the full stack with real API calls: sign-in → upload → download → list backups → subscribe to realtime → insert a row and receive the event → cleanup."
+        intro_bn="সত্যিকারের API call দিয়ে full stack যাচাই: sign-in → upload → download → backups list → realtime subscribe → row insert করে event receive → cleanup।"
+      >
+        <E2ETestRunner apiBase={apiBase} />
+      </Section>
+
+      <Section
         icon={FileText}
         title_en="D. .env.example (Postgres, auth, realtime, storage)"
         title_bn="ঘ. .env.example (Postgres, auth, realtime, storage)"
