@@ -71,6 +71,8 @@ function slugToRoute(slug: string): string {
 }
 
 export const HELP_REGISTRY: HelpEntry[] = [
+  // Getting Started
+  dashboardConnectProjectHelp,
   // Overview
   dashboardIndexHelp,
   dashboardPlutoAdminHelp,
