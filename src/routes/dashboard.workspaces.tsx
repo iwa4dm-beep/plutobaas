@@ -1,11 +1,14 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useCallback, useEffect, useState } from "react";
-import { Copy, KeyRound, Plus, ShieldCheck, Trash2, Users2 } from "lucide-react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { ChevronDown, ChevronRight, Copy, Database, KeyRound, Plus, ShieldCheck, Trash2, Users2 } from "lucide-react";
 import { PageHeader } from "@/components/pluto/PageHeader";
 import { HelpPanel } from "@/components/help/HelpPanel";
 import { dashboardWorkspacesHelp } from "@/content/help/dashboard.workspaces";
 import { ErrorBanner } from "@/components/pluto/ErrorBanner";
+import { BackendAuditPanel } from "@/components/pluto/BackendAuditPanel";
+import { MigrationRunner } from "@/components/pluto/connect/ConnectTools";
 import { isLive, live, type Workspace, type WorkspaceKey, type WorkspaceMember } from "@/lib/pluto/live";
+
 
 
 export const Route = createFileRoute("/dashboard/workspaces")({
@@ -40,6 +43,21 @@ function WorkspacesPage() {
       <HelpPanel help={dashboardWorkspacesHelp} />
 
       <ErrorBanner error={err} onRetry={() => void load()} onDismiss={() => setErr(null)} />
+
+      <div className="mb-4">
+        <BackendAuditPanel />
+      </div>
+      <div className="mb-4">
+        <CollapsibleCard
+          icon={<Database className="h-4 w-4" />}
+          title="Database migration runner"
+          subtitle="Apply the consolidated schema (tables, RLS, triggers) with a live progress bar and streaming log."
+        >
+          <MigrationRunner apiBase="/api/pluto" />
+        </CollapsibleCard>
+      </div>
+
+
 
 
       <div className="grid lg:grid-cols-[280px_1fr] gap-4">
@@ -286,3 +304,29 @@ function NewKeysDialog({ data, onClose }: { kind: string; data: { slug: string; 
     </div>
   );
 }
+
+function CollapsibleCard({
+  icon, title, subtitle, defaultOpen = false, children,
+}: {
+  icon: ReactNode; title: string; subtitle?: string;
+  defaultOpen?: boolean; children: ReactNode;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <section className="rounded-lg border border-border bg-card">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center gap-2 px-4 py-3 text-left hover:bg-accent/40"
+      >
+        {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+        {icon}
+        <div className="flex-1">
+          <div className="text-sm font-semibold">{title}</div>
+          {subtitle && <div className="text-[11px] text-muted-foreground">{subtitle}</div>}
+        </div>
+      </button>
+      {open && <div className="border-t border-border px-4 py-3">{children}</div>}
+    </section>
+  );
+}
+
