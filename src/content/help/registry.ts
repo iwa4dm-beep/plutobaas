@@ -23,6 +23,14 @@ import { dashboardPlutoAuthAdvancedHelp } from "./dashboard.pluto-auth-advanced"
 import { dashboardPlutoOrgsHelp } from "./dashboard.pluto-orgs";
 import { dashboardRbacHelp } from "./dashboard.rbac";
 import { dashboardTokensHelp } from "./dashboard.tokens";
+import { dashboardStorageHelp } from "./dashboard.storage";
+import { dashboardPlutoStoragePlusHelp } from "./dashboard.pluto-storage-plus";
+import { dashboardRealtimeHelp } from "./dashboard.realtime";
+import { dashboardFunctionsHelp } from "./dashboard.functions";
+import { dashboardPlutoFunctionsPlusHelp } from "./dashboard.pluto-functions-plus";
+import { dashboardJobsHelp } from "./dashboard.jobs";
+import { dashboardPlutoQueuesHelp } from "./dashboard.pluto-queues";
+import { dashboardPlutoWebhooksHelp } from "./dashboard.pluto-webhooks";
 
 export type HelpEntry = {
   help: PageHelp;
