@@ -96,38 +96,55 @@ const stats = [
 const codeSamples = {
   auth: `import { createClient } from "@pluto/js";
 
-const pluto = createClient({
-  url: "https://api.timescard.cloud",
-  anonKey: import.meta.env.VITE_PLUTO_ANON_KEY, // Dashboard → API keys
-});
+// createClient(url, publishableKey) — Supabase-compatible signature
+const pluto = createClient(
+  "https://api.timescard.cloud",
+  import.meta.env.VITE_PLUTO_PUBLISHABLE_KEY!, // Dashboard → API keys
+);
 
 // Email + password
-await pluto.auth.signIn("ada@example.com", "hunter2");
+const { data, error } = await pluto.auth.signInWithPassword({
+  email: "ada@example.com",
+  password: "hunter2",
+});
 
-// Magic link — passwordless
-await pluto.auth.signInWithMagicLink("ada@example.com");
+// Sign up (creates user + session)
+await pluto.auth.signUp({ email: "ada@example.com", password: "hunter2" });
 
-// OAuth (Google, GitHub) — configured in Dashboard → Auth
-pluto.auth.signInWithOAuth("google");`,
-  data: `// Instant CRUD — no backend code, RLS enforced per JWT
+// Password reset link
+await pluto.auth.resetPasswordForEmail("ada@example.com");
+
+// React to auth changes
+pluto.auth.onAuthStateChange((event, session) => {
+  console.log(event, session?.user?.email);
+});`,
+  data: `// PostgREST-style querying — RLS enforced per JWT
 const { data, error } = await pluto
   .from("posts")
-  .select("id, title, author:users(name)")
+  .select("id,title,created_at")
   .eq("published", true)
   .order("created_at", { ascending: false })
   .limit(20);
 
-// Insert — server checks RLS ("posts.owner = auth.uid()")
-await pluto.from("posts").insert({ title: "Hello Pluto" });`,
-  realtime: `// Subscribe to row changes over WebSocket
-const channel = pluto.realtime
-  .subscribeTable("public:messages", (change) => {
-    console.log(change.eventType, change.new);
-  });
+// Insert / update / upsert / delete
+await pluto.from("posts").insert({ title: "Hello Pluto" });
+await pluto.from("posts").update({ title: "Edited" }).eq("id", 1);
+await pluto.from("posts").upsert([{ id: 1, title: "x" }], { onConflict: "id" });
+await pluto.from("posts").delete().eq("id", 1);
 
-// Broadcast + presence
-channel.presence.track({ user_id: me.id, status: "typing" });
-channel.send({ type: "cursor", x: 120, y: 80 });`,
+// Call a Postgres function
+await pluto.rpc("increment_view", { post_id: 1 });`,
+  realtime: `// WebSocket channel — realtime row changes + broadcast
+const channel = pluto
+  .channel("public:messages")
+  .on("postgres_changes", { event: "*" }, (payload) => {
+    console.log(payload.event, payload);
+  })
+  .subscribe((status) => console.log("channel:", status));
+
+// Stop listening
+channel.unsubscribe();`,
+
 };
 
 
