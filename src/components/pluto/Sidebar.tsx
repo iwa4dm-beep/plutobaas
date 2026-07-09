@@ -2,11 +2,10 @@ import { useEffect, useState } from "react";
 import { Link, useRouterState } from "@tanstack/react-router";
 import {
   Activity, Archive, Boxes, Building2, ChevronDown, Cloud, Database, Files,
-  Gauge, GitBranch, Globe, HeartPulse, History, KeyRound, LineChart,
-  LockKeyhole, LogOut, Package, Radio, Rocket, ScrollText, Search, Server,
+  Gauge, GitBranch, Globe, HeartPulse, KeyRound, LineChart,
+  LockKeyhole, LogOut, Package, Radio, ScrollText, Search, Server,
   Settings, Shield, ShieldAlert, ShieldCheck, ShoppingBag, Sparkles, Table2,
   Terminal, Users, Waves, X, Zap,
-
 } from "lucide-react";
 import { useAuth } from "@/lib/pluto/auth-context";
 import { WorkspaceSwitcher } from "@/components/pluto/WorkspaceSwitcher";
