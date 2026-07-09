@@ -1550,10 +1550,7 @@ go get github.com/pluto-baas/pluto/sdks/go/pluto`}</code></pre>
   );
 }
 
-      </div>
-    </section>
-  );
-}
+
 
 function DashboardSection() {
   return (
