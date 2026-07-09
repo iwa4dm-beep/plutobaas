@@ -21,9 +21,13 @@ type Probe = {
 const PROBES: Probe[] = [
   { path: "/readyz",              label: "Liveness (readyz)",  method: "GET",     expectStatuses: [200, 204] },
   { path: "/healthz",             label: "Health (healthz)",   method: "GET",     expectStatuses: [200, 204, 404] },
+  // Preflight — sent with proper CORS headers below; backend also accepts a plain
+  // 401/403/404 as "reachable" for unauthenticated callers.
   { path: "/admin/v1/workspaces", label: "Admin · workspaces", method: "OPTIONS", expectStatuses: [200, 204, 401, 403, 404] },
   { path: "/auth/v1/settings",    label: "Auth · settings",    method: "GET",     expectStatuses: [200, 401, 404] },
-  { path: "/rest/v1/",            label: "REST · root",        method: "GET",     expectStatuses: [200, 401, 404] },
+  // PostgREST-style root returns 400 "invalid_identifier" without a table segment
+  // — that still proves the REST service is up and routing.
+  { path: "/rest/v1/",            label: "REST · root",        method: "GET",     expectStatuses: [200, 400, 401, 404] },
   { path: "/storage/v1/bucket",   label: "Storage · buckets",  method: "GET",     expectStatuses: [200, 401, 403, 404] },
 ];
 
