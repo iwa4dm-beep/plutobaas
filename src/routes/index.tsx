@@ -1483,9 +1483,27 @@ function CodeShowcase() {
           eyebrow="Typed SDK"
           id="code-heading"
           title={<>Two lines of setup. <span className="text-muted-foreground">Then you're shipping.</span></>}
-          subtitle="One @pluto/client works from React, Vue, React Native and Node — plus first-party Python and Go SDKs."
+          subtitle="One @pluto/js works from React, Vue, React Native and Node — plus first-party Python, Go and CLI SDKs. Same surface as Supabase-JS."
         />
-        <div className="mt-12 grid gap-6 lg:grid-cols-[220px_1fr]">
+
+        {/* Install / setup — real, copy-pasteable */}
+        <div className="mx-auto mt-10 max-w-3xl overflow-hidden rounded-xl border border-border bg-card">
+          <div className="flex items-center justify-between border-b border-border bg-muted/40 px-4 py-2 text-xs text-muted-foreground">
+            <span className="font-mono">install</span>
+            <span>step 1 of 2 · takes ~10 seconds</span>
+          </div>
+          <pre className="overflow-x-auto p-5 font-mono text-xs leading-relaxed sm:text-sm"><code>{`# JavaScript / TypeScript / React / Vue / React Native / Node
+bun add @pluto/js
+# or:  npm i @pluto/js   |   pnpm add @pluto/js   |   yarn add @pluto/js
+
+# Python
+pip install pluto-sdk
+
+# Go
+go get github.com/pluto-baas/pluto/sdks/go/pluto`}</code></pre>
+        </div>
+
+        <div className="mt-6 grid gap-6 lg:grid-cols-[220px_1fr]">
           <div role="tablist" aria-label="SDK examples" className="flex flex-row gap-2 lg:flex-col">
             {tabs.map(({ id, label, icon: Icon }) => (
               <button
@@ -1515,13 +1533,23 @@ function CodeShowcase() {
           >
             <div className="flex items-center justify-between border-b border-border bg-muted/40 px-4 py-2 text-xs text-muted-foreground">
               <span className="font-mono">app.ts</span>
-              <span>@pluto/client</span>
+              <span>@pluto/js · step 2 of 2</span>
             </div>
             <pre className="overflow-x-auto p-5 font-mono text-xs leading-relaxed sm:text-sm">
               <code>{codeSamples[tab]}</code>
             </pre>
           </div>
         </div>
+
+        <p className="mx-auto mt-6 max-w-3xl text-center text-xs text-muted-foreground">
+          Anon key + service-role key: Dashboard → <Link to="/dashboard/api" className="underline hover:text-foreground">API</Link>.
+          CORS whitelist your frontend origin at <Link to="/dashboard/cors" className="underline hover:text-foreground">Dashboard → CORS</Link> before going live.
+        </p>
+      </div>
+    </section>
+  );
+}
+
       </div>
     </section>
   );
