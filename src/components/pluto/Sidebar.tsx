@@ -2,11 +2,10 @@ import { useEffect, useState } from "react";
 import { Link, useRouterState } from "@tanstack/react-router";
 import {
   Activity, Archive, Boxes, Building2, ChevronDown, Cloud, Database, Files,
-  Gauge, GitBranch, Globe, HeartPulse, History, KeyRound, LineChart,
-  LockKeyhole, LogOut, Package, Radio, Rocket, ScrollText, Search, Server,
+  Gauge, GitBranch, Globe, HeartPulse, KeyRound, LineChart,
+  LockKeyhole, LogOut, Package, Radio, ScrollText, Search, Server,
   Settings, Shield, ShieldAlert, ShieldCheck, ShoppingBag, Sparkles, Table2,
   Terminal, Users, Waves, X, Zap,
-
 } from "lucide-react";
 import { useAuth } from "@/lib/pluto/auth-context";
 import { WorkspaceSwitcher } from "@/components/pluto/WorkspaceSwitcher";
@@ -25,7 +24,6 @@ const groups: Group[] = [
     ],
   },
   {
-
     label: "Data",
     items: [
       { to: "/dashboard/database", label: "Database", icon: Database },
@@ -34,7 +32,7 @@ const groups: Group[] = [
       { to: "/dashboard/pluto-schema", label: "Schema", icon: Boxes },
       { to: "/dashboard/pluto-studio", label: "Data Studio", icon: Table2 },
       { to: "/dashboard/migrations", label: "Migrations", icon: GitBranch },
-      { to: "/dashboard/pluto-graphql", label: "GraphQL", icon: Sparkles },
+      { to: "/dashboard/graphql", label: "GraphQL", icon: Sparkles },
       { to: "/dashboard/api", label: "REST endpoints", icon: Radio },
     ],
   },
@@ -43,7 +41,6 @@ const groups: Group[] = [
     label: "Auth & Users",
     items: [
       { to: "/dashboard/users", label: "Users", icon: Users },
-      { to: "/dashboard/mfa", label: "MFA & SSO", icon: Shield },
       { to: "/dashboard/pluto-auth-advanced", label: "OAuth / MFA / SSO", icon: Shield },
       { to: "/dashboard/pluto-orgs", label: "Orgs & Teams", icon: Building2 },
       { to: "/dashboard/rbac", label: "RBAC", icon: ShieldCheck },
@@ -54,18 +51,15 @@ const groups: Group[] = [
     label: "Storage & Files",
     items: [
       { to: "/dashboard/storage", label: "Storage", icon: Files },
-      { to: "/dashboard/pluto-storage-plus", label: "Storage v2", icon: Files },
+      { to: "/dashboard/pluto-storage-plus", label: "Storage (advanced)", icon: Files },
     ],
   },
   {
     label: "Realtime & Functions",
     items: [
       { to: "/dashboard/realtime", label: "Realtime channels", icon: Radio },
-      { to: "/dashboard/pluto-realtime", label: "Realtime & Presence", icon: Radio },
       { to: "/dashboard/functions", label: "Edge Functions", icon: Cloud },
-      { to: "/dashboard/pluto-functions", label: "Functions", icon: Rocket },
       { to: "/dashboard/pluto-functions-plus", label: "Cron & Logs", icon: Cloud },
-      { to: "/dashboard/jobs", label: "Jobs", icon: ShieldCheck },
       { to: "/dashboard/pluto-queues", label: "Queues & Jobs", icon: Waves },
       { to: "/dashboard/pluto-webhooks", label: "Webhooks", icon: Package },
     ],
@@ -75,7 +69,6 @@ const groups: Group[] = [
     items: [
       { to: "/dashboard/ai", label: "AI & Vector", icon: Sparkles },
       { to: "/dashboard/pluto-ai", label: "AI Gateway", icon: Sparkles },
-      { to: "/dashboard/vector", label: "Vector search", icon: Search },
       { to: "/dashboard/pluto-search", label: "Search & Vector", icon: Search },
     ],
   },
@@ -86,8 +79,7 @@ const groups: Group[] = [
       { to: "/dashboard/logs", label: "Logs", icon: ScrollText },
       { to: "/dashboard/logs-explorer", label: "Logs Explorer", icon: Search },
       { to: "/dashboard/audit", label: "Audit trail", icon: ShieldAlert },
-      { to: "/dashboard/audit-log", label: "Audit log", icon: ShieldAlert },
-      { to: "/dashboard/pluto-audit", label: "Pluto Audit", icon: History },
+      { to: "/dashboard/audit-log", label: "Audit log (raw)", icon: ShieldAlert },
       { to: "/dashboard/scaling", label: "Scaling", icon: Waves },
       { to: "/dashboard/usage", label: "Usage & Quotas", icon: Gauge },
       { to: "/dashboard/pluto-billing", label: "Billing & Alerts", icon: Gauge },
@@ -101,9 +93,8 @@ const groups: Group[] = [
       { to: "/dashboard/cors", label: "CORS whitelist", icon: Globe },
       { to: "/dashboard/custom-domains", label: "Custom domains", icon: Globe },
       { to: "/dashboard/backups", label: "Backups", icon: Archive },
-      { to: "/dashboard/pluto-backups", label: "Pluto Backups", icon: Archive },
       { to: "/dashboard/branching", label: "Branching & Studio", icon: GitBranch },
-      { to: "/dashboard/pluto-branches", label: "Branches", icon: GitBranch },
+      { to: "/dashboard/pluto-branches", label: "Branches (advanced)", icon: GitBranch },
       { to: "/dashboard/pluto-replicas", label: "Read Replicas", icon: Globe },
       { to: "/dashboard/pluto-compliance", label: "Compliance (GDPR)", icon: ShieldCheck },
       { to: "/dashboard/pluto-vault", label: "Vault & Secrets", icon: LockKeyhole },
