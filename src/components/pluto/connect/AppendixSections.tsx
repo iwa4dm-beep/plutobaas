@@ -1,5 +1,9 @@
 import { useState } from "react";
-import { Check, Copy, Database, Radio, Code2, FileText, LifeBuoy } from "lucide-react";
+import { Check, Copy, Database, Radio, Code2, FileText, LifeBuoy, Play, Zap, TerminalSquare } from "lucide-react";
+import {
+  SqlToolbar, MigrationRunner, RealtimeVerifier, ConnectionTester, E2ETestRunner,
+} from "./ConnectTools";
+import { resolveApiUrl } from "@/lib/pluto/base-url";
 
 function CodeBlock({ lang, content, caption }: { lang: string; content: string; caption?: string }) {
   const [copied, setCopied] = useState(false);
