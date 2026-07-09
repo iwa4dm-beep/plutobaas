@@ -215,7 +215,7 @@ export function BackendAuditPanel() {
                           </td>
                         </tr>
                       )}
-                    </>
+                    </Fragment>
                   );
                 })}
                 {data.results.length === 0 && (
