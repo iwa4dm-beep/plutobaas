@@ -26,6 +26,7 @@ export const dashboardStorageHelp: PageHelp = {
     {
       id: "create-bucket",
       title: { bn: "Bucket তৈরি", en: "Creating a bucket" },
+      whatItDoes: { bn: "Bucket তৈরি", en: "Creating a bucket" },
       howToUse: [
         { bn: "ধাপ ১: '+ New bucket' চাপুন।", en: "Step 1: click '+ New bucket'." },
         { bn: "ধাপ ২: unique নাম দিন (lowercase, hyphen; যেমন `user-avatars`)।", en: "Step 2: pick a unique name (lowercase, hyphens — e.g. `user-avatars`)." },
@@ -37,6 +38,7 @@ export const dashboardStorageHelp: PageHelp = {
     {
       id: "upload",
       title: { bn: "ফাইল আপলোড ও signed URL", en: "Upload & signed URLs" },
+      whatItDoes: { bn: "ফাইল আপলোড ও signed URL", en: "Upload & signed URLs" },
       howToUse: [
         { bn: "ধাপ ১: bucket বাছাই → 'Upload' চাপুন → ফাইল drop/select।", en: "Step 1: pick a bucket → 'Upload' → drop or select the file." },
         { bn: "ধাপ ২: আপলোড হলে row থেকে 'Copy URL' (public) বা 'Signed URL' (private) নিন।", en: "Step 2: after upload, use 'Copy URL' (public) or 'Signed URL' (private) from the row." },

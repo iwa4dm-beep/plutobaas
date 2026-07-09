@@ -26,6 +26,7 @@ export const dashboardPlutoQueuesHelp: PageHelp = {
     {
       id: "queue",
       title: { bn: "Queue তৈরি", en: "Creating a queue" },
+      whatItDoes: { bn: "Queue তৈরি", en: "Creating a queue" },
       howToUse: [
         { bn: "ধাপ ১: '+ New queue' → নাম (`emails`, `pdf-render`)।", en: "Step 1: '+ New queue' → name (`emails`, `pdf-render`)." },
         { bn: "ধাপ ২: max attempts (3-5 recommend), backoff (exponential, base 30s)।", en: "Step 2: max attempts (3-5 recommended), backoff (exponential, base 30s)." },
@@ -36,6 +37,7 @@ export const dashboardPlutoQueuesHelp: PageHelp = {
     {
       id: "jobs",
       title: { bn: "Job inspect ও replay", en: "Inspecting & replaying jobs" },
+      whatItDoes: { bn: "Job inspect ও replay", en: "Inspecting & replaying jobs" },
       howToUse: [
         { bn: "ধাপ ১: 'Jobs' tab → filter status (queued/running/succeeded/failed)।", en: "Step 1: 'Jobs' tab → filter by status (queued/running/succeeded/failed)." },
         { bn: "ধাপ ২: row expand → payload, attempts, last error stack।", en: "Step 2: expand a row for payload, attempts, last error stack." },

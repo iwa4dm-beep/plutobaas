@@ -26,6 +26,7 @@ export const dashboardPlutoWebhooksHelp: PageHelp = {
     {
       id: "subscribe",
       title: { bn: "Subscription তৈরি", en: "Create a subscription" },
+      whatItDoes: { bn: "Subscription তৈরি", en: "Create a subscription" },
       howToUse: [
         { bn: "ধাপ ১: '+ New webhook' → target URL (HTTPS)।", en: "Step 1: '+ New webhook' → target URL (HTTPS)." },
         { bn: "ধাপ ২: event source — table (schema.table + INSERT/UPDATE/DELETE) বা custom event name।", en: "Step 2: event source — table (schema.table + INSERT/UPDATE/DELETE) or custom event name." },
@@ -49,6 +50,7 @@ export const dashboardPlutoWebhooksHelp: PageHelp = {
     {
       id: "delivery",
       title: { bn: "Delivery log ও retry", en: "Delivery log & retry" },
+      whatItDoes: { bn: "Delivery log ও retry", en: "Delivery log & retry" },
       howToUse: [
         { bn: "ধাপ ১: 'Delivery log' → filter subscription/status/time।", en: "Step 1: 'Delivery log' → filter by subscription/status/time." },
         { bn: "ধাপ ২: failed row expand → response code, body, next retry time।", en: "Step 2: expand a failed row → response code, body, next retry ETA." },

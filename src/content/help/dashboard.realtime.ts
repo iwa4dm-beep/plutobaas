@@ -27,6 +27,7 @@ export const dashboardRealtimeHelp: PageHelp = {
     {
       id: "channel",
       title: { bn: "Channel তৈরি ও broadcast", en: "Creating channels & broadcasting" },
+      whatItDoes: { bn: "Channel তৈরি ও broadcast", en: "Creating channels & broadcasting" },
       howToUse: [
         { bn: "ধাপ ১: '+ New channel' → নাম দিন (`room:123`, `orders:live` ইত্যাদি)।", en: "Step 1: '+ New channel' → name it (`room:123`, `orders:live` …)." },
         { bn: "ধাপ ২: channel বাছাই → 'Send test message' → payload JSON দিয়ে Send।", en: "Step 2: pick channel → 'Send test message' → JSON payload → Send." },

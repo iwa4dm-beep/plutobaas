@@ -26,6 +26,7 @@ export const dashboardFunctionsHelp: PageHelp = {
     {
       id: "secret",
       title: { bn: "Secret manage", en: "Managing secrets" },
+      whatItDoes: { bn: "Secret manage", en: "Managing secrets" },
       howToUse: [
         { bn: "ধাপ ১: function row → 'Secrets'।", en: "Step 1: row → 'Secrets'." },
         { bn: "ধাপ ২: key/value যোগ করুন → Save (encrypted-at-rest)।", en: "Step 2: add key/value → Save (encrypted at rest)." },
@@ -36,6 +37,7 @@ export const dashboardFunctionsHelp: PageHelp = {
     {
       id: "schedule",
       title: { bn: "Cron schedule", en: "Cron schedules" },
+      whatItDoes: { bn: "Cron schedule", en: "Cron schedules" },
       howToUse: [
         { bn: "ধাপ ১: 'Schedule' → cron expression দিন (`*/5 * * * *`)।", en: "Step 1: 'Schedule' → cron expression (`*/5 * * * *`)." },
         { bn: "ধাপ ২: payload JSON (optional) → Save।", en: "Step 2: optional payload JSON → Save." },
@@ -45,6 +47,7 @@ export const dashboardFunctionsHelp: PageHelp = {
     {
       id: "invoke",
       title: { bn: "Manual invoke ও log", en: "Manual invoke & logs" },
+      whatItDoes: { bn: "Manual invoke ও log", en: "Manual invoke & logs" },
       howToUse: [
         { bn: "ধাপ ১: 'Invoke' → method + JSON body → Run।", en: "Step 1: 'Invoke' → method + JSON body → Run." },
         { bn: "ধাপ ২: response body, status code, execution time দেখা যাবে।", en: "Step 2: response body, status, and execution time appear inline." },

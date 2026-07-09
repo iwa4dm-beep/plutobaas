@@ -26,6 +26,7 @@ export const dashboardPlutoFunctionsPlusHelp: PageHelp = {
     {
       id: "cron",
       title: { bn: "Cron overview", en: "Cron overview" },
+      whatItDoes: { bn: "Cron overview", en: "Cron overview" },
       howToUse: [
         { bn: "ধাপ ১: 'Cron' tab → সব function-এর active schedule।", en: "Step 1: 'Cron' tab → every active schedule across functions." },
         { bn: "ধাপ ২: row-এ 'Next run' এবং 'Last status' দেখুন।", en: "Step 2: check 'Next run' and 'Last status' per row." },
@@ -47,6 +48,7 @@ export const dashboardPlutoFunctionsPlusHelp: PageHelp = {
     {
       id: "logs",
       title: { bn: "Log explorer", en: "Log explorer" },
+      whatItDoes: { bn: "Log explorer", en: "Log explorer" },
       howToUse: [
         { bn: "ধাপ ১: filter set — function, status (2xx/4xx/5xx), latency threshold, time range।", en: "Step 1: set filters — function, status (2xx/4xx/5xx), latency threshold, time range." },
         { bn: "ধাপ ২: row expand → full request headers, response body, execution trace।", en: "Step 2: expand a row for full request headers, response body, execution trace." },

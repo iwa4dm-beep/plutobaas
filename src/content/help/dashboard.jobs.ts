@@ -26,6 +26,7 @@ export const dashboardJobsHelp: PageHelp = {
     {
       id: "mint",
       title: { bn: "Job token mint", en: "Mint a job token" },
+      whatItDoes: { bn: "Job token mint", en: "Mint a job token" },
       howToUse: [
         { bn: "ধাপ ১: '+ Mint job token' → worker-এর নাম (`queue-consumer-prod`)।", en: "Step 1: '+ Mint job token' → worker name (`queue-consumer-prod`)." },
         { bn: "ধাপ ২: scope বাছাই (schema/table subset যেখানে বৈধ)।", en: "Step 2: pick scope (schema/table subset it's valid on)." },
@@ -36,6 +37,7 @@ export const dashboardJobsHelp: PageHelp = {
     {
       id: "rotate-revoke",
       title: { bn: "Rotate ও Revoke", en: "Rotate & Revoke" },
+      whatItDoes: { bn: "Rotate ও Revoke", en: "Rotate & Revoke" },
       howToUse: [
         { bn: "ধাপ ১: rotate → নতুন token, পুরনোটা expire; deploy pipeline update করুন।", en: "Step 1: rotate → mints a new token and expires the old one; update the deploy pipeline." },
         { bn: "ধাপ ২: leak সন্দেহ → সাথে সাথে Revoke (irreversible)।", en: "Step 2: suspected leak → Revoke immediately (irreversible)." },

@@ -26,6 +26,7 @@ export const dashboardPlutoStoragePlusHelp: PageHelp = {
     {
       id: "policies",
       title: { bn: "Bucket policy", en: "Bucket policies" },
+      whatItDoes: { bn: "Bucket policy", en: "Bucket policies" },
       howToUse: [
         { bn: "ধাপ ১: bucket বাছাই → 'Add policy'।", en: "Step 1: pick a bucket → 'Add policy'." },
         { bn: "ধাপ ২: role (anon/authenticated/service_role), action (read/write/delete), path prefix দিন।", en: "Step 2: enter role (anon/authenticated/service_role), action (read/write/delete), and path prefix." },
