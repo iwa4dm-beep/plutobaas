@@ -1,7 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { PageHeader } from "@/components/pluto/PageHeader";
-import { AutoHelpPanel } from "@/components/help/AutoHelpPanel";
+import { HelpPanel } from "@/components/help/HelpPanel";
+import { dashboardSdkDemoHelp } from "@/content/help/dashboard.sdk-demo";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -74,7 +75,7 @@ function SdkDemo() {
   return (
     <div className="space-y-6">
       <PageHeader title="SDK Demo" description="Login → list → realtime, via the typed @pluto/client SDK." />
-      <AutoHelpPanel slug={'dashboard.sdk-demo'} title={'SDK Demo'} description={'Login → list → realtime, via the typed @pluto/client SDK.'} />
+      <HelpPanel help={dashboardSdkDemoHelp} />
 
       <section className="rounded-lg border p-4 space-y-3">
         <h2 className="text-sm font-semibold">1. Connection</h2>

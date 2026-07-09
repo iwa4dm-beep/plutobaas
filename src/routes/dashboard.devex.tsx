@@ -2,7 +2,8 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
 import { Loader2, RefreshCw, Trash2, Send, Copy, RotateCw, ChevronDown, ChevronRight } from "lucide-react";
 import { PageHeader } from "@/components/pluto/PageHeader";
-import { AutoHelpPanel } from "@/components/help/AutoHelpPanel";
+import { HelpPanel } from "@/components/help/HelpPanel";
+import { dashboardDevexHelp } from "@/content/help/dashboard.devex";
 import {
   isLive, devex, DEVEX_TOKEN_SCOPES,
   type DevexTokenScope, type PersonalToken, type ProjectTemplate,
@@ -128,7 +129,7 @@ function DevexPage() {
     <div className="space-y-6">
       <PageHeader title="Developer Experience"
         description="Project templates, personal access tokens, outbound webhooks and installed plugins (Phase 19)" />
-      <AutoHelpPanel slug={'dashboard.devex'} title={'Developer Experience'} description={'Project templates, personal access tokens, outbound webhooks and installed plugins (Phase 19)'} />
+      <HelpPanel help={dashboardDevexHelp} />
       <div className="flex justify-end">
         <button onClick={() => void load()}
           className="inline-flex items-center gap-2 text-sm rounded-md border border-border px-3 py-1.5 hover:bg-accent">

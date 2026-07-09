@@ -1,7 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { PageHeader } from "@/components/pluto/PageHeader";
-import { AutoHelpPanel } from "@/components/help/AutoHelpPanel";
+import { HelpPanel } from "@/components/help/HelpPanel";
+import { dashboardSettingsHelp } from "@/content/help/dashboard.settings";
 import { pluto, type PlutoSettings } from "@/lib/pluto/client";
 import { isLive, live } from "@/lib/pluto/live";
 
@@ -87,7 +88,7 @@ function SettingsPage() {
   return (
     <div>
       <PageHeader title="Settings" description="Backend URL, SMTP, storage driver, এবং JWT secret।" />
-      <AutoHelpPanel slug={'dashboard.settings'} title={'Settings'} description={'Backend URL, SMTP, storage driver, এবং JWT secret।'} />
+      <HelpPanel help={dashboardSettingsHelp} />
 
       <div className="space-y-6">
         <Card title="Backend">
