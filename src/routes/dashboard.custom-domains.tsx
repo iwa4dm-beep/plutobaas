@@ -19,7 +19,7 @@ import {
 import { PageHeader } from "@/components/pluto/PageHeader";
 import { AutoHelpPanel } from "@/components/help/AutoHelpPanel";
 import { ErrorBanner } from "@/components/pluto/ErrorBanner";
-import { enterprise, isLive, live, type CustomDomain } from "@/lib/pluto/live";
+import { enterprise, isLive, live, me, type CustomDomain } from "@/lib/pluto/live";
 import { useWorkspace } from "@/lib/pluto/workspace-context";
 import { useAuth } from "@/lib/pluto/auth-context";
 import {
@@ -59,6 +59,7 @@ function CustomDomainsPage() {
   const [hostname, setHostname] = useState("");
   const [busy, setBusy] = useState(false);
   const [verifyingId, setVerifyingId] = useState<string | null>(null);
+  const [primaryPending, setPrimaryPending] = useState<string | null>(null);
   const [testingId, setTestingId] = useState<string | null>(null);
   const [testResult, setTestResult] = useState<DomainTestResult | null>(null);
   const [added, setAdded] = useState<AddedRecord | null>(null);
@@ -66,6 +67,8 @@ function CustomDomainsPage() {
     getWorkspaceBaseUrl(workspaceId),
   );
   const [rtStatus, setRtStatus] = useState<"idle" | "connecting" | "open" | "closed" | "polling">("idle");
+  const [role, setRole] = useState<"loading" | "admin" | "member">("loading");
+  const canAdmin = role === "admin";
 
   const load = useCallback(async () => {
     setErr(null);
@@ -77,11 +80,39 @@ function CustomDomainsPage() {
     try {
       const { domains } = await enterprise.domains();
       setItems(domains);
+      // Sync base-url override with backend's authoritative is_primary flag
+      // so SDK snippets always reflect the workspace's current primary.
+      const backendPrimary = domains.find((d) => d.is_primary);
+      if (backendPrimary) {
+        const url = `https://${backendPrimary.hostname}`;
+        setWorkspaceBaseUrl(workspaceId, url);
+        setPrimaryState(url);
+      } else if (primary && !domains.some((d) => `https://${d.hostname}` === primary)) {
+        // Stored primary no longer maps to any registered domain — clear it.
+        setWorkspaceBaseUrl(workspaceId, null);
+        setPrimaryState(null);
+      }
     } catch (e) {
       setErr(e);
       setItems([]);
     }
-  }, []);
+  }, [workspaceId, primary]);
+
+  // Resolve caller's effective role in this workspace.
+  useEffect(() => {
+    if (!isLive()) { setRole("member"); return; }
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await me.workspaceRole();
+        if (cancelled) return;
+        setRole(r.can_admin ? "admin" : "member");
+      } catch {
+        if (!cancelled) setRole("member");
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [workspaceId]);
 
   useEffect(() => { void load(); }, [load]);
 
@@ -206,23 +237,43 @@ function CustomDomainsPage() {
     }
   }
 
-  function makePrimary(d: CustomDomain) {
+  async function makePrimary(d: CustomDomain) {
     if (!d.verified) return;
     if (isWildcardHostname(d.hostname)) {
       setErr(new Error("Wildcard domains cannot be the primary API URL — pick a concrete hostname."));
       return;
     }
-    const url = `https://${d.hostname}`;
-    setWorkspaceBaseUrl(workspaceId, url);
-    setPrimaryState(url);
-    recordDomainAudit(workspaceId, actor, "domain.make_primary", d.hostname, "ok");
+    setPrimaryPending(d.id);
+    try {
+      await enterprise.setPrimaryDomain(d.id);
+      const url = `https://${d.hostname}`;
+      setWorkspaceBaseUrl(workspaceId, url);
+      setPrimaryState(url);
+      recordDomainAudit(workspaceId, actor, "domain.make_primary", d.hostname, "ok");
+      await load();
+    } catch (e) {
+      recordDomainAudit(workspaceId, actor, "domain.make_primary", d.hostname, "error", { message: (e as Error).message });
+      setErr(e);
+    } finally {
+      setPrimaryPending(null);
+    }
   }
 
-  function clearPrimary() {
-    const prev = primary;
-    setWorkspaceBaseUrl(workspaceId, null);
-    setPrimaryState(null);
-    recordDomainAudit(workspaceId, actor, "domain.clear_primary", prev ?? "", "ok");
+  async function clearPrimary() {
+    const current = items?.find((d) => d.is_primary);
+    setPrimaryPending(current?.id ?? "clear");
+    try {
+      if (current) await enterprise.clearPrimaryDomain(current.id);
+      const prev = primary;
+      setWorkspaceBaseUrl(workspaceId, null);
+      setPrimaryState(null);
+      recordDomainAudit(workspaceId, actor, "domain.clear_primary", current?.hostname ?? prev ?? "", "ok");
+      await load();
+    } catch (e) {
+      setErr(e);
+    } finally {
+      setPrimaryPending(null);
+    }
   }
 
   const effectiveUrl = useMemo(() => resolveApiUrl(workspaceId), [workspaceId, primary]);
@@ -259,6 +310,13 @@ function CustomDomainsPage() {
 
       <ErrorBanner error={err} onRetry={() => void load()} onDismiss={() => setErr(null)} />
 
+      {!canAdmin && role !== "loading" && (
+        <div className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-3 text-xs text-amber-200">
+          You are signed in as a workspace <b>member</b>. Only workspace <b>owners/admins</b> can add, verify,
+          make primary, or remove custom domains. Read-only view enabled.
+        </div>
+      )}
+
       <section className="rounded-lg border border-border bg-card p-4">
         <div className="flex items-center gap-2 mb-3 text-sm font-medium">
           <ShieldCheck className="h-4 w-4" /> Effective public endpoint for this workspace
@@ -284,12 +342,14 @@ function CustomDomainsPage() {
             value={hostname}
             onChange={(e) => setHostname(e.target.value)}
             placeholder="api.yourbrand.com  ·  or  *.tenants.yourbrand.com"
-            className="rounded-md border border-input bg-background px-3 py-2 text-sm font-mono"
-            onKeyDown={(e) => { if (e.key === "Enter") void add(); }}
+            disabled={!canAdmin}
+            className="rounded-md border border-input bg-background px-3 py-2 text-sm font-mono disabled:opacity-50"
+            onKeyDown={(e) => { if (e.key === "Enter" && canAdmin) void add(); }}
           />
           <button
             onClick={() => void add()}
-            disabled={busy || !hostname.trim()}
+            disabled={!canAdmin || busy || !hostname.trim()}
+            title={!canAdmin ? "Workspace admin role required" : undefined}
             className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-2 text-xs text-primary-foreground disabled:opacity-50"
           >
             {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
@@ -336,7 +396,7 @@ function CustomDomainsPage() {
             )}
             {items?.map((d) => {
               const wildcard = isWildcardHostname(d.hostname);
-              const isPrimary = primary === `https://${d.hostname}`;
+              const isPrimary = Boolean(d.is_primary) || primary === `https://${d.hostname}`;
               return (
                 <tr key={d.id} className="border-t border-border align-middle">
                   <td className="px-4 py-2 font-mono text-xs">
@@ -383,7 +443,8 @@ function CustomDomainsPage() {
                       {!d.verified && (
                         <button
                           onClick={() => void verify(d)}
-                          disabled={verifyingId === d.id}
+                          disabled={!canAdmin || verifyingId === d.id}
+                          title={!canAdmin ? "Workspace admin role required" : undefined}
                           className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs hover:bg-accent disabled:opacity-50"
                         >
                           {verifyingId === d.id
@@ -394,10 +455,15 @@ function CustomDomainsPage() {
                       )}
                       {d.verified && !isPrimary && !wildcard && (
                         <button
-                          onClick={() => makePrimary(d)}
-                          className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs hover:bg-accent"
+                          onClick={() => void makePrimary(d)}
+                          disabled={!canAdmin || primaryPending === d.id}
+                          title={!canAdmin ? "Workspace admin role required" : undefined}
+                          className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs hover:bg-accent disabled:opacity-50"
                         >
-                          <Star className="h-3.5 w-3.5" /> Make primary
+                          {primaryPending === d.id
+                            ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            : <Star className="h-3.5 w-3.5" />}
+                          Make primary
                         </button>
                       )}
                       {!d.verified && (
@@ -414,7 +480,9 @@ function CustomDomainsPage() {
                       )}
                       <button
                         onClick={() => void remove(d)}
-                        className="inline-flex items-center gap-1 rounded-md border border-destructive/40 px-2 py-1 text-xs text-destructive hover:bg-destructive/10"
+                        disabled={!canAdmin}
+                        title={!canAdmin ? "Workspace admin role required" : undefined}
+                        className="inline-flex items-center gap-1 rounded-md border border-destructive/40 px-2 py-1 text-xs text-destructive hover:bg-destructive/10 disabled:opacity-40"
                       >
                         <Trash2 className="h-3.5 w-3.5" />
                       </button>

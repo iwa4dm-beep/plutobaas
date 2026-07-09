@@ -1395,7 +1395,26 @@ export const devex = {
 
 // ---------------- Phase 20 — Enterprise & Multi-region ------------------
 export type IpRule = { id: string; cidr: string; action: "allow" | "deny"; note: string | null; created_at: string };
-export type CustomDomain = { id: string; hostname: string; verified: boolean; verify_token: string; cert_status: string; created_at: string; verified_at: string | null };
+export type CustomDomain = {
+  id: string;
+  hostname: string;
+  verified: boolean;
+  verify_token: string;
+  cert_status: string;
+  created_at: string;
+  verified_at: string | null;
+  is_wildcard?: boolean;
+  is_primary?: boolean;
+  last_error?: string | null;
+  updated_at?: string;
+};
+export type DomainWebhookInfo = {
+  secret: string;
+  endpoint: string;
+  hmac_header: string;
+  hmac_algo: string;
+  payload_shape: Record<string, string>;
+};
 export type RegionConfig = { primary_region: string; read_regions: string[]; pin_writes: boolean; updated_at?: string };
 export type StatusComponent = { id: string; name: string; status: string; updated_at: string };
 export type StatusIncident = { id: string; title: string; body: string; severity: string; component_id: string | null; started_at: string; resolved_at: string | null };
@@ -1414,7 +1433,11 @@ export const enterprise = {
     api<CustomDomain & { dns_txt_record: string; dns_txt_value: string }>("/enterprise/v1/domains",
       { method: "POST", body: JSON.stringify({ hostname }) }),
   verifyDomain: (id: string) => api<{ ok: boolean; verified: boolean }>(`/enterprise/v1/domains/${id}/verify`, { method: "POST" }),
+  setPrimaryDomain: (id: string) => api<{ ok: boolean; primary: boolean }>(`/enterprise/v1/domains/${id}/primary`, { method: "POST" }),
+  clearPrimaryDomain: (id: string) => api<{ ok: boolean }>(`/enterprise/v1/domains/${id}/primary`, { method: "DELETE" }),
   removeDomain: (id: string) => api<{ ok: boolean }>(`/enterprise/v1/domains/${id}`, { method: "DELETE" }),
+  domainWebhookSecret: () => api<DomainWebhookInfo>("/enterprise/v1/domains/webhook-secret"),
+  rotateDomainWebhookSecret: () => api<{ secret: string; rotated: boolean }>("/enterprise/v1/domains/webhook-secret/rotate", { method: "POST" }),
   regions: () => api<RegionConfig>("/enterprise/v1/regions"),
   updateRegions: (body: RegionConfig) => api<RegionConfig>("/enterprise/v1/regions", { method: "PUT", body: JSON.stringify(body) }),
   status: () => api<{ overall: string; components: StatusComponent[]; incidents: StatusIncident[] }>("/enterprise/v1/status"),
