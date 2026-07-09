@@ -25,7 +25,7 @@ import type { FastifyPluginAsync, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { q } from "../../lib/pgraw.js";
-import { requireApiKey, requireAdmin, requireWorkspaceAdmin } from "../../lib/apikey.js";
+import { requireApiKey, requireAdmin, requireDomainAdmin, requireWorkspaceAdmin } from "../../lib/apikey.js";
 import { audit } from "../../lib/audit.js";
 import pg from "pg";
 import { env } from "../../config.js";
