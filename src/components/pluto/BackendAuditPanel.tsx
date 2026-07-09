@@ -1,7 +1,7 @@
 // Backend audit panel — surfaces per-route health of the proxy → API pipeline
 // with per-route expandable details (status, latency, retry attempts, error
 // body snippet) and the last observed failure reason.
-import { useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useState } from "react";
 import { Activity, AlertCircle, CheckCircle2, ChevronDown, ChevronRight, Loader2, RefreshCw } from "lucide-react";
 
 type Attempt = {
