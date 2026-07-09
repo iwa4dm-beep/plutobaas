@@ -2,6 +2,8 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { CheckCircle2, Circle, Loader2, MinusCircle, PlayCircle, RefreshCw, XCircle } from "lucide-react";
 import { PageHeader } from "@/components/pluto/PageHeader";
+import { HelpPanel } from "@/components/help/HelpPanel";
+import { dashboardVerifyHelp } from "@/content/help/dashboard.verify";
 import { isLive, live, liveConfig, subscribe, type RealtimeStatus } from "@/lib/pluto/live";
 
 export const Route = createFileRoute("/dashboard/verify")({
@@ -158,6 +160,7 @@ function VerifyPage() {
         title="Live integration checklist"
         description="End-to-end probe against the configured Pluto instance. Every row makes a real HTTP or WebSocket call — no mocks. Run this after wiring a new backend or when the dashboard looks empty to prove where the break is."
       />
+      <HelpPanel help={dashboardVerifyHelp} />
 
       <div className="flex items-center gap-2 mb-4">
         <button

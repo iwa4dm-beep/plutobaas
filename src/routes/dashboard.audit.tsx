@@ -2,6 +2,8 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { CheckCircle2, ChevronLeft, ChevronRight, Circle, Eye, RefreshCw, Search, ShieldAlert, XCircle } from "lucide-react";
 import { PageHeader } from "@/components/pluto/PageHeader";
+import { HelpPanel } from "@/components/help/HelpPanel";
+import { dashboardAuditHelp } from "@/content/help/dashboard.audit";
 import {
   isLive, live, subscribe,
   type AuditEvent, type AuditPage, type AuditQuery,
@@ -142,6 +144,7 @@ function AuditPage() {
         title="Audit trail"
         description="Every privileged dashboard action — migration runs, rollbacks, storage grants, and SQL runner executions — filterable by workspace, actor, or event class and streamed live."
       />
+      <HelpPanel help={dashboardAuditHelp} />
 
       <div className="flex flex-wrap items-center gap-2 mb-4">
         <select value={action} onChange={(e) => setAction(e.target.value)}

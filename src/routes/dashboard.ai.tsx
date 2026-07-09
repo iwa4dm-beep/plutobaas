@@ -2,6 +2,8 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { Sparkles, Send, Database, Activity } from "lucide-react";
 import { PageHeader } from "@/components/pluto/PageHeader";
+import { HelpPanel } from "@/components/help/HelpPanel";
+import { dashboardAiHelp } from "@/content/help/dashboard.ai";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
@@ -58,6 +60,7 @@ function AiPage() {
         description="Embeddings, streaming chat, and vector search — proxied through Pluto so your frontend never sees a provider key."
 
       />
+      <HelpPanel help={dashboardAiHelp} />
 
       <Card>
         <CardHeader>
