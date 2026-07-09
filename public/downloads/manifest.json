@@ -5,6 +5,6 @@
   "versioned": "/sdk/download/pluto-js-0.1.0.tgz",
   "files": [
     { "version": "0.1.0", "file": "pluto-js-0.1.0.tgz" },
-    { "version": "latest", "file": "pluto-js-latest.tgz" }
+    { "version": "latest",    "file": "pluto-js-latest.tgz" }
   ]
 }
