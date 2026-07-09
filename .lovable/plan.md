@@ -1,65 +1,84 @@
-## Goal
 
-Auth & Users page-এ admin এখন থেকে dashboard থেকেই যেকোনো user-কে এক ক্লিকে verified করতে পারবে (এমনকি user নিজে email confirm না করলেও)। Super Admin / Admin / User — তিন role-ই যাতে সঠিকভাবে কাজ করে সেটাও এই পাশে ঠিক করা হবে।
+# Homepage-কে "Real & Accurate" করার Plan
 
-## Scope (কী পরিবর্তন হবে)
+আপনার BaaS software-এর homepage (`src/routes/index.tsx`, ~1800 lines) এ এখন অনেকগুলো **placeholder / বানানো তথ্য** আছে যেগুলো real project data দিয়ে replace করতে হবে। শুধু frontend-এর কাজ — backend logic-এ হাত দিব না।
 
-**Frontend only** — backend-এ `PATCH /admin/v1/users/:id` ইতিমধ্যেই `email_verified` accept করে (`admin.ts:513`, `live.ts:699`), তাই নতুন migration/endpoint লাগবে না।
+---
 
-## Changes
+## যা যা এখন "ভুল / বানানো" আছে
 
-### 1. `src/routes/dashboard.users.tsx` — Approve/Verify workflow
+### 1. Hero section
+- **"Source" বাটন** → `href="https://github.com"` (fake, generic GitHub homepage)।
+- **"Launch Admin Console"** → ঠিক আছে, `/dashboard` এ যায়।
 
-- প্রতিটি **pending** row-এর পাশে একটি "Approve" button (green, checkmark icon)। Click → `live.admin.users.update(id, { email_verified: true })` → toast + refresh।
-- Verified row-এর পাশে ছোট "Revoke" (unverify) link — শুধু super_admin দেখতে পাবে।
-- **Bulk approve**: checkbox column + top toolbar-এ "Approve selected (N)" button।
-- **Filter bar**: `All / Pending / Verified` tabs + email search box (client-side filter)।
-- **Status pill** clearer: pending = amber with clock icon; verified = emerald with check + tooltip showing `email_confirmed_at`।
-- সব mutation optimistic + error হলে rollback + inline `ErrorBanner`।
-- Confirm dialog শুধু destructive action-এ (delete, revoke verification, super_admin promote/demote) — approve-এ নয় (friction কমাতে)।
+### 2. SDK / Code showcase ("Two lines of setup")
+- Code samples-এ `import { createClient } from "@pluto/client"` লেখা — কিন্তু **`@pluto/client` npm package টা এখনো publish হয়নি** (আপনার real package name আলাদা: `pluto-backend/packages/sdk-js`)।
+- Anon key example: `import.meta.env.VITE_PLUTO_ANON_KEY` — কিন্তু real endpoint URL (`https://api.timescard.cloud`) কোথাও দেখানো নাই।
+- "install" / setup step (npm/bun/yarn install command) কোথাও নেই — মানুষ কীভাবে connect করবে বুঝবে না।
 
-### 2. Role management hardening
+### 3. Stats bar (বানানো সংখ্যা)
+- `"8 canonical modules"`, `"60+ phases shipped"`, `"15+ endpoint smoke tests"`, `"4 official SDKs"` — এগুলো accurate কিনা repo থেকে verify করে সঠিক করব।
 
-- Role dropdown disable হবে যদি:
-  - target user নিজেই current signed-in user (self-demotion রোধ), অথবা
-  - current user super_admin না হয়ে super_admin কে edit করছে।
-- `super_admin` select করলে confirm dialog: "Grant full backend access to X?"।
-- Non-super_admin admin শুধু `user ↔ admin` toggle করতে পারবে; super_admin select option তার UI-তেই hidden।
-- Current actor-এর role/superadmin flag `useAuth()` থেকে পড়া হবে (already exposed via auth-context)।
+### 4. Deploy targets
+- Docker Compose / Fly / Railway / Render / VPS — repo-তে configs আছে (`backend/deploy/`), কিন্তু এখানে "1-click" claim গুলো verify করা দরকার।
 
-### 3. Small UX / correctness fixes
+### 5. Pricing section (**সবচেয়ে risky**)
+- `Self-Hosted Free` / `Cloud Starter $19` / `Business $99` — এই cloud tiers **আপনি actually offer করেন কি না** জানা নেই। ভুল দাম দেখালে legal/UX সমস্যা।
 
-- Toast notifications (`sonner`) — সব success/error-এ।
-- Loading spinner per-row (busy state ইতিমধ্যে আছে, শুধু visible করা)।
-- Empty states আলাদা: "No pending users" vs "No users yet"।
-- Table responsive — mobile-এ role/verified column stack।
-- `refresh()` কে `useCallback` করে dependency ঠিক রাখা; polling নয়।
+### 6. FAQ
+- CORS, RLS, deploy, migration answers — content ঠিক আছে, শুধু link/domain references (`https://backend-joy.lovable.app`) real production domain হলে verify করব।
 
-### 4. Guard rails
+### 7. Footer + Header nav
+- Product / Resources / Platform link গুলোর কিছু route valid, কিছু placeholder — সব verify করব।
 
-- Frontend-এ super_admin action gate থাকলেও backend ইতিমধ্যেই `requireSuperadmin` enforce করে (`admin.ts`) — শুধু UI polish।
-- একজন admin নিজেকে delete/demote করলে সাথে সাথে sign-out + redirect `/auth`।
+---
 
-## Out of scope
+## যা করব (frontend only)
 
-- Backend schema change nei.
-- Email template বা confirmation flow-এ কোনো পরিবর্তন নেই — user-facing verification email আগের মতোই কাজ করবে; manual approve শুধু সেটার bypass।
+1. **Hero "Source" বাটন** — real GitHub repo URL বসাব, না থাকলে বাটনটা সরিয়ে দেব।
+2. **SDK section rewrite** — real install command + real API base URL + real SDK package name দিয়ে ৩টা tab (Auth / Data / Realtime) rewrite:
+   ```bash
+   # tab-এর উপরে দেখানো হবে
+   bun add @your-scope/pluto-sdk
+   # অথবা npm i @your-scope/pluto-sdk
+   ```
+   ```ts
+   const pluto = createClient({
+     url: "https://api.timescard.cloud",
+     anonKey: "eyJhbGciOi...", // Dashboard → API keys থেকে
+   });
+   ```
+3. **Stats bar** — repo scan করে actual numbers বসাব (modules, migrations count, SDK count, endpoints)।
+4. **Deploy targets** — শুধু যেগুলো repo-তে সত্যিই config-file আছে সেগুলো রাখব।
+5. **Pricing section** — আপনি cloud offer করলে real দাম, না করলে পুরো section সরিয়ে "Self-hosted" এবং "Contact for managed hosting" এই দুটো card রাখব।
+6. **Footer + Header links** — শুধু existing route-এর link রাখব, dead link সরাব।
+7. **Meta / OG tags** — production domain + description accurate করব।
 
-## Files
+---
 
-- Edit: `src/routes/dashboard.users.tsx` (মূল কাজ)
-- সম্ভবত edit: `src/components/pluto/PageHeader.tsx` (যদি action slot না থাকে — check করে decide)
-- কোনো নতুন route/migration নেই।
+## Deployment (frontend rebuild only)
 
-## VPS-এ কী করতে হবে
-
-**কিছুই না।** এটা pure frontend change — শুধু frontend redeploy হলেই feature live। Backend `email_verified` update আগে থেকেই deploy করা আছে (migration `0015_admin_user_mutations.sql`)।
-
-Verify করতে (optional):
 ```bash
-curl -s -X PATCH https://api.timescard.cloud/admin/v1/users/<uuid> \
-  -H "Authorization: Bearer <super_admin_jwt>" \
-  -H "Content-Type: application/json" \
-  -d '{"email_verified": true}'
+cd ~/backend-joy && git pull
+sudo APP_DIR=/root/backend-joy bash deploy-frontend.sh
 ```
-`200` + updated row return করলেই দাশবোর্ডে Approve button কাজ করবে।
+Backend / API restart লাগবে না।
+
+---
+
+## Plan finalize করার আগে ৪টা তথ্য দরকার
+
+আপনি answer দিলে সাথে সাথে implement শুরু করব:
+
+1. **GitHub repo URL** — public কি? থাকলে exact URL দিন (যেমন `https://github.com/yourname/pluto-backend`)। না থাকলে "Source" বাটনটা সরিয়ে দেব।
+
+2. **SDK npm package name** — `pluto-backend/packages/sdk-js` কি npm-এ publish করা আছে? থাকলে exact name (e.g. `@timescard/pluto-sdk`)। না থাকলে temporary local install instruction দেব।
+
+3. **Real API base URL** — homepage-এর code sample-এ `https://api.timescard.cloud` বসাব, নাকি অন্য URL?
+
+4. **Pricing section কী করব?**
+   - (a) পুরো section সরিয়ে দিন — শুধু "Self-hosted / MIT free" রাখব
+   - (b) real দাম দিয়ে রাখব (তাহলে দাম + quotas দিন)
+   - (c) "Contact us" বানিয়ে দিব — কোনো hardcoded দাম থাকবে না
+
+উত্তর দিলে আমি এই plan অনুযায়ী পুরো homepage `real` করে দিচ্ছি।
