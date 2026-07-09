@@ -1616,7 +1616,7 @@ function PricingSection() {
           ))}
         </div>
         <p className="mt-6 text-center text-xs text-muted-foreground">
-          All cloud plans include TLS, daily backups, and access to the admin dashboard. Need on-premise or enterprise SLA? <Link to="/dashboard" className="underline hover:text-foreground">Talk to us</Link>.
+          Self-hosted বাসাতেই সব features free — MIT license। Managed hosting চাইলে <Link to="/dashboard" className="underline hover:text-foreground">যোগাযোগ করুন</Link> — আমরা আপনার workload অনুযায়ী quote দেব।
         </p>
       </div>
     </section>
