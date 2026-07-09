@@ -93,11 +93,18 @@ const stats = [
 // NOTE: These samples use the real published API surface. `@pluto/js` is the
 // package in `pluto-backend/packages/sdk-js` (name in its package.json).
 // Until published to npm, install it directly from source (see install block).
+export const SDK_NPM_NAME = "@timescard/pluto-js";
 export const SDK_VERSION = "0.1.0";
 export const SDK_TARBALL_URL =
   `https://backend-joy.lovable.app/sdk/download/pluto-js-${SDK_VERSION}.tgz`;
 export const SDK_TARBALL_LATEST =
   "https://backend-joy.lovable.app/sdk/download/pluto-js-latest.tgz";
+// SHA-256 of the versioned tarball — verify before install. Refreshed by
+// scripts/build-sdk-tarball.sh and mirrored in /downloads/manifest.json.
+export const SDK_TARBALL_SHA256 =
+  "789097fdbc4d5d081e5599b9171c0d7eb396cd2558ec1364ce292be238a88c2a";
+export const SDK_MANIFEST_URL =
+  "https://backend-joy.lovable.app/sdk/download/manifest.json";
 
 const codeSamples = {
   auth: `import { createClient } from "@pluto/js";
@@ -1526,13 +1533,26 @@ function CodeShowcase() {
             </span>
           </div>
           <pre className="overflow-x-auto p-5 font-mono text-xs leading-relaxed sm:text-sm"><code>{`# JavaScript / TypeScript / React / Vue / React Native / Node
-# Pinned version (recommended for production — immutable, 1-year CDN cache):
-npm  i ${SDK_TARBALL_URL}
-# or: bun add ${SDK_TARBALL_URL}
-# or: pnpm add ${SDK_TARBALL_URL}
 
+# ── Option A · npm registry (recommended, works everywhere) ──────────
+npm  i ${SDK_NPM_NAME}
+bun  add ${SDK_NPM_NAME}
+pnpm add ${SDK_NPM_NAME}
+
+# ── Option B · Direct tarball (no npm account needed) ────────────────
+# Pinned + immutable (1-year CDN cache):
+npm  i ${SDK_TARBALL_URL}
 # Always-latest (short cache + ETag revalidation):
 npm  i ${SDK_TARBALL_LATEST}
+
+# ── Verify the tarball before installing (SHA-256) ───────────────────
+curl -fLO ${SDK_TARBALL_URL}
+echo "${SDK_TARBALL_SHA256}  pluto-js-${SDK_VERSION}.tgz" | sha256sum -c -
+#   pluto-js-${SDK_VERSION}.tgz: OK        ← must print OK
+npm i ./pluto-js-${SDK_VERSION}.tgz
+
+# Machine-readable hashes for every release:
+#   ${SDK_MANIFEST_URL}
 
 # Python
 pip install pluto-sdk

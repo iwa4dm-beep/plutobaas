@@ -1,5 +1,5 @@
 {
-  "name": "@pluto/js",
+  "name": "@timescard/pluto-js",
   "version": "0.1.0",
   "description": "Official JavaScript/TypeScript client for Pluto BaaS — Supabase-compatible surface.",
   "type": "module",
@@ -16,10 +16,25 @@
   "files": ["dist", "README.md"],
   "scripts": {
     "build": "tsup src/index.ts --format esm,cjs --dts --clean --minify",
-    "dev": "tsup src/index.ts --format esm,cjs --dts --watch"
+    "dev": "tsup src/index.ts --format esm,cjs --dts --watch",
+    "prepublishOnly": "npm run build",
+    "release": "npm run build && npm publish --access public"
   },
   "keywords": ["pluto", "baas", "supabase-alternative", "postgres", "auth", "sdk"],
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/timescard/pluto.git",
+    "directory": "pluto-backend/packages/sdk-js"
+  },
+  "homepage": "https://backend-joy.lovable.app/docs/sdk",
+  "bugs": {
+    "url": "https://github.com/timescard/pluto/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
   "devDependencies": {
     "tsup": "^8.3.0",
     "typescript": "^5.6.0"

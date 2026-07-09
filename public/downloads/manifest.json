@@ -1,10 +1,22 @@
 {
-  "name": "@pluto/js",
+  "name": "@timescard/pluto-js",
+  "npm": "https://www.npmjs.com/package/@timescard/pluto-js",
   "version": "0.1.0",
   "latest": "/sdk/download/pluto-js-latest.tgz",
   "versioned": "/sdk/download/pluto-js-0.1.0.tgz",
+  "algorithm": "sha256",
   "files": [
-    { "version": "0.1.0", "file": "pluto-js-0.1.0.tgz" },
-    { "version": "latest",    "file": "pluto-js-latest.tgz" }
+    {
+      "version": "0.1.0",
+      "file": "pluto-js-0.1.0.tgz",
+      "url": "/sdk/download/pluto-js-0.1.0.tgz",
+      "sha256": "789097fdbc4d5d081e5599b9171c0d7eb396cd2558ec1364ce292be238a88c2a"
+    },
+    {
+      "version": "latest",
+      "file": "pluto-js-latest.tgz",
+      "url": "/sdk/download/pluto-js-latest.tgz",
+      "sha256": "789097fdbc4d5d081e5599b9171c0d7eb396cd2558ec1364ce292be238a88c2a"
+    }
   ]
 }
