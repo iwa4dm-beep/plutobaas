@@ -35,7 +35,7 @@ function MfaPage() {
     if (!live) return;
     try {
       const r = await mfa.list();
-      setFactors(r.factors);
+      setFactors(Array.isArray(r?.factors) ? r.factors : []);
       setErr(null);
     } catch (e) {
       setErr((e as Error).message);
