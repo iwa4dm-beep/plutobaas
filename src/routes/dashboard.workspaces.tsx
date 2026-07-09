@@ -1,11 +1,14 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
-import { Copy, KeyRound, Plus, ShieldCheck, Trash2, Users2 } from "lucide-react";
+import { ChevronDown, ChevronRight, Copy, Database, KeyRound, Plus, ShieldCheck, Trash2, Users2 } from "lucide-react";
 import { PageHeader } from "@/components/pluto/PageHeader";
 import { HelpPanel } from "@/components/help/HelpPanel";
 import { dashboardWorkspacesHelp } from "@/content/help/dashboard.workspaces";
 import { ErrorBanner } from "@/components/pluto/ErrorBanner";
+import { BackendAuditPanel } from "@/components/pluto/BackendAuditPanel";
+import { MigrationRunner } from "@/components/pluto/connect/ConnectTools";
 import { isLive, live, type Workspace, type WorkspaceKey, type WorkspaceMember } from "@/lib/pluto/live";
+
 
 
 export const Route = createFileRoute("/dashboard/workspaces")({
