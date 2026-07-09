@@ -740,6 +740,29 @@ function DomainAdminsSection({
   );
 }
 
+function RetryStatus({
+  attempt, label, onCancel,
+}: { attempt: RetryAttempt | undefined; label: string; onCancel: () => void }) {
+  if (!attempt) return null;
+  const waiting = attempt.waitingMs > 0;
+  return (
+    <div className="inline-flex items-center gap-1.5 text-[10px] text-muted-foreground">
+      <Loader2 className="h-3 w-3 animate-spin text-amber-400" />
+      <span>
+        {label} · attempt {attempt.attempt}/{attempt.maxAttempts}
+        {waiting && <> · retrying in {Math.round(attempt.waitingMs / 1000)}s</>}
+      </span>
+      <button
+        onClick={onCancel}
+        className="inline-flex items-center gap-0.5 rounded border border-border px-1 py-0.5 hover:bg-accent"
+        title="Cancel retry loop"
+      >
+        <StopCircle className="h-3 w-3" /> Cancel
+      </button>
+    </div>
+  );
+}
+
 function CertBadge({ status }: { status: string | null | undefined }) {
   const s = (status ?? "pending").toLowerCase();
   const tone =
