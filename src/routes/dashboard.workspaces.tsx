@@ -44,6 +44,21 @@ function WorkspacesPage() {
 
       <ErrorBanner error={err} onRetry={() => void load()} onDismiss={() => setErr(null)} />
 
+      <div className="mb-4">
+        <BackendAuditPanel />
+      </div>
+      <div className="mb-4">
+        <CollapsibleCard
+          icon={<Database className="h-4 w-4" />}
+          title="Database migration runner"
+          subtitle="Apply the consolidated schema (tables, RLS, triggers) with a live progress bar and streaming log."
+        >
+          <MigrationRunner apiBase="/api/pluto" />
+        </CollapsibleCard>
+      </div>
+
+
+
 
       <div className="grid lg:grid-cols-[280px_1fr] gap-4">
         <aside className="rounded-lg border border-border bg-card">
