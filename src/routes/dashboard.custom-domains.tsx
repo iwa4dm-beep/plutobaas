@@ -251,24 +251,52 @@ function CustomDomainsPage() {
     }
   }
 
-  async function runTest(d: CustomDomain) {
+  async function runTest(d: CustomDomain, opts: { retry?: boolean } = {}) {
+    const key = `test:${d.id}`;
+    cancelRetry(key);
+    const ctrl = new AbortController();
+    abortersRef.current[key] = ctrl;
     setTestingId(d.id);
     setTestResult(null);
     try {
-      const r = await testDomainEndpoint(d.hostname, d.verify_token);
+      const runOnce = async () => {
+        const r = await testDomainEndpoint(d.hostname, d.verify_token);
+        // Treat "DNS not yet propagated OR health failing" as retryable when retry mode is on.
+        if (opts.retry && !(r.health.ok && r.verifyTxt.found)) {
+          throw Object.assign(new Error("endpoint_not_ready"), { partial: r });
+        }
+        return r;
+      };
+      const r = opts.retry
+        ? await retryWithBackoff(runOnce, {
+            maxAttempts: 5,
+            signal: ctrl.signal,
+            onAttempt: (a) => setRetryState((s) => ({ ...s, [key]: a })),
+            shouldRetry: (e) => (e as Error).name !== "AbortError",
+          })
+        : await runOnce();
       setTestResult(r);
-      recordDomainAudit(workspaceId, actor, "domain.test_endpoint", d.hostname, r.health.ok && r.verifyTxt.found ? "ok" : "error", {
-        health_status: r.health.status,
-        health_ok: r.health.ok,
-        dns_a: r.dns.a.length,
-        dns_cname: r.dns.cname.length,
-        verify_txt_found: r.verifyTxt.found,
-      });
+      recordDomainAudit(workspaceId, actor, "domain.test_endpoint", d.hostname,
+        r.health.ok && r.verifyTxt.found ? "ok" : "error", {
+          health_status: r.health.status,
+          health_ok: r.health.ok,
+          dns_a: r.dns.a.length,
+          dns_cname: r.dns.cname.length,
+          verify_txt_found: r.verifyTxt.found,
+          retry: opts.retry ?? false,
+        });
     } catch (e) {
-      recordDomainAudit(workspaceId, actor, "domain.test_endpoint", d.hostname, "error", { message: (e as Error).message });
+      if ((e as Error).name === "AbortError") return;
+      // Surface last partial result if the retry loop gave up.
+      const partial = (e as { partial?: DomainTestResult }).partial;
+      if (partial) setTestResult(partial);
+      recordDomainAudit(workspaceId, actor, "domain.test_endpoint", d.hostname, "error",
+        { message: (e as Error).message, retry: opts.retry ?? false });
       setErr(e);
     } finally {
-      setTestingId(null);
+      setTestingId((cur) => (cur === d.id ? null : cur));
+      delete abortersRef.current[key];
+      setRetryState((s) => { const next = { ...s }; delete next[key]; return next; });
     }
   }
 
