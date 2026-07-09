@@ -221,19 +221,23 @@ function CreateWorkspaceDialog({ onClose, onCreated }: {
         <h3 className="text-base font-semibold mb-3 inline-flex items-center gap-2">
           <ShieldCheck className="h-4 w-4" /> New workspace
         </h3>
-        <label className="block text-xs mb-1 text-muted-foreground">Slug (a-z0-9-_)</label>
-        <input value={slug} onChange={(e) => setSlug(e.target.value)}
-          className="w-full mb-3 rounded-md border border-border bg-background px-2 py-1.5 text-sm font-mono"
+        <label className="block text-xs mb-1 text-muted-foreground">Slug (lowercase a-z, 0-9, -, _; 2-63 chars)</label>
+        <input value={slug}
+          onChange={(e) => setSlug(e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, "-").slice(0, 63))}
+          className="w-full mb-1 rounded-md border border-border bg-background px-2 py-1.5 text-sm font-mono"
           placeholder="acme-prod" />
+        <p className="mb-3 text-[11px] text-muted-foreground">
+          Backend requires lowercase slug (2-63 chars). Capitals are auto-lowercased.
+        </p>
         <label className="block text-xs mb-1 text-muted-foreground">Display name</label>
         <input value={name} onChange={(e) => setName(e.target.value)}
           className="w-full mb-4 rounded-md border border-border bg-background px-2 py-1.5 text-sm"
           placeholder="Acme production" />
-        {err && <div className="mb-3 text-xs text-red-300">{err}</div>}
+        {err && <div className="mb-3 whitespace-pre-wrap break-words rounded-md border border-red-500/40 bg-red-500/10 p-2 text-xs text-red-300">{err}</div>}
         <div className="flex justify-end gap-2">
           <button onClick={onClose} className="px-3 py-1.5 rounded-md text-sm hover:bg-accent">Cancel</button>
           <button
-            disabled={busy || !slug || !name}
+            disabled={busy || slug.length < 2 || !name || !/^[a-z0-9_-]{2,63}$/.test(slug)}
             onClick={async () => {
               setBusy(true); setErr(null);
               try { onCreated(await live.workspaces.create(slug, name)); }
@@ -244,6 +248,7 @@ function CreateWorkspaceDialog({ onClose, onCreated }: {
           >
             {busy ? "Creating…" : "Create"}
           </button>
+
         </div>
       </div>
     </div>
