@@ -85,6 +85,7 @@ import { Route as AuthResetPasswordRouteImport } from './routes/auth.reset-passw
 import { Route as AuthPhoneRouteImport } from './routes/auth.phone'
 import { Route as AuthForgotRouteImport } from './routes/auth.forgot'
 import { Route as AuthConfirmEmailRouteImport } from './routes/auth.confirm-email'
+import { Route as SdkDownloadFileRouteImport } from './routes/sdk.download.$file'
 import { Route as DashboardIntegrationsLovableFrontendRouteImport } from './routes/dashboard.integrations.lovable-frontend'
 import { Route as DashboardAdminInviteRouteImport } from './routes/dashboard.admin.invite'
 import { Route as ApiPlutoStatusRouteImport } from './routes/api/pluto.status'
@@ -477,6 +478,11 @@ const AuthConfirmEmailRoute = AuthConfirmEmailRouteImport.update({
   path: '/confirm-email',
   getParentRoute: () => AuthRoute,
 } as any)
+const SdkDownloadFileRoute = SdkDownloadFileRouteImport.update({
+  id: '/sdk/download/$file',
+  path: '/sdk/download/$file',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const DashboardIntegrationsLovableFrontendRoute =
   DashboardIntegrationsLovableFrontendRouteImport.update({
     id: '/lovable-frontend',
@@ -586,6 +592,7 @@ export interface FileRoutesByFullPath {
   '/api/pluto/status': typeof ApiPlutoStatusRoute
   '/dashboard/admin/invite': typeof DashboardAdminInviteRoute
   '/dashboard/integrations/lovable-frontend': typeof DashboardIntegrationsLovableFrontendRoute
+  '/sdk/download/$file': typeof SdkDownloadFileRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -668,6 +675,7 @@ export interface FileRoutesByTo {
   '/api/pluto/status': typeof ApiPlutoStatusRoute
   '/dashboard/admin/invite': typeof DashboardAdminInviteRoute
   '/dashboard/integrations/lovable-frontend': typeof DashboardIntegrationsLovableFrontendRoute
+  '/sdk/download/$file': typeof SdkDownloadFileRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -752,6 +760,7 @@ export interface FileRoutesById {
   '/api/pluto/status': typeof ApiPlutoStatusRoute
   '/dashboard/admin/invite': typeof DashboardAdminInviteRoute
   '/dashboard/integrations/lovable-frontend': typeof DashboardIntegrationsLovableFrontendRoute
+  '/sdk/download/$file': typeof SdkDownloadFileRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -837,6 +846,7 @@ export interface FileRouteTypes {
     | '/api/pluto/status'
     | '/dashboard/admin/invite'
     | '/dashboard/integrations/lovable-frontend'
+    | '/sdk/download/$file'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -919,6 +929,7 @@ export interface FileRouteTypes {
     | '/api/pluto/status'
     | '/dashboard/admin/invite'
     | '/dashboard/integrations/lovable-frontend'
+    | '/sdk/download/$file'
   id:
     | '__root__'
     | '/'
@@ -1002,6 +1013,7 @@ export interface FileRouteTypes {
     | '/api/pluto/status'
     | '/dashboard/admin/invite'
     | '/dashboard/integrations/lovable-frontend'
+    | '/sdk/download/$file'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -1018,6 +1030,7 @@ export interface RootRouteChildren {
   ApiPlutoSplatRoute: typeof ApiPlutoSplatRoute
   ApiPlutoMonitorRoute: typeof ApiPlutoMonitorRoute
   ApiPlutoStatusRoute: typeof ApiPlutoStatusRoute
+  SdkDownloadFileRoute: typeof SdkDownloadFileRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -1554,6 +1567,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthConfirmEmailRouteImport
       parentRoute: typeof AuthRoute
     }
+    '/sdk/download/$file': {
+      id: '/sdk/download/$file'
+      path: '/sdk/download/$file'
+      fullPath: '/sdk/download/$file'
+      preLoaderRoute: typeof SdkDownloadFileRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/dashboard/integrations/lovable-frontend': {
       id: '/dashboard/integrations/lovable-frontend'
       path: '/lovable-frontend'
@@ -1772,6 +1792,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPlutoSplatRoute: ApiPlutoSplatRoute,
   ApiPlutoMonitorRoute: ApiPlutoMonitorRoute,
   ApiPlutoStatusRoute: ApiPlutoStatusRoute,
+  SdkDownloadFileRoute: SdkDownloadFileRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
