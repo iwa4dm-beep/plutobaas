@@ -248,6 +248,7 @@ function Landing() {
         <ModulesSection />
         <CodeShowcase />
         <DashboardSection />
+        <SaasBuildersSection />
         <PricingSection />
         <DeploySection />
         <FAQSection />
