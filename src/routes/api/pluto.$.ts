@@ -65,7 +65,12 @@ async function handle({ request, params }: { request: Request; params: { _splat?
       body: ["GET", "HEAD"].includes(request.method) ? undefined : await request.arrayBuffer(),
       redirect: "manual",
     });
-    if (GATEWAY_FAILURE_STATUSES.has(upstreamRes.status)) {
+    const upstreamCT = (upstreamRes.headers.get("content-type") ?? "").toLowerCase();
+    const looksLikeGatewayHtml = GATEWAY_FAILURE_STATUSES.has(upstreamRes.status)
+      && !upstreamCT.includes("application/json")
+      && !upstreamCT.includes("text/plain");
+    if (looksLikeGatewayHtml) {
+      // True gateway failure (nginx/Cloudflare error page, no JSON body).
       recordError(`/${splat}`, `upstream gateway failure ${upstreamRes.status}`);
       return offlineJson({
         path: `/${splat}`,
@@ -86,6 +91,9 @@ async function handle({ request, params }: { request: Request; params: { _splat?
     } else {
       recordError(`/${splat}`, `upstream returned ${upstreamRes.status}`);
     }
+    // Pass through the real upstream body (including 4xx/5xx JSON errors) so
+    // the UI can show the actual validation / auth message instead of a
+    // generic "backend unreachable" stub.
     return new Response(upstreamRes.body, {
       status: upstreamRes.status,
       statusText: upstreamRes.statusText,
@@ -97,6 +105,7 @@ async function handle({ request, params }: { request: Request; params: { _splat?
     return offlineJson({ error: msg, target });
   }
 }
+
 
 
 export const Route = createFileRoute("/api/pluto/$")({
