@@ -1,7 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { plutoApi, pushUiHistory } from "@/lib/pluto/upstream";
-import { AutoHelpPanel } from "@/components/help/AutoHelpPanel";
+import { HelpPanel } from "@/components/help/HelpPanel";
+import { dashboardPlutoMarketplaceHelp } from "@/content/help/dashboard.pluto-marketplace";
 
 export const Route = createFileRoute("/dashboard/pluto-marketplace")({
   component: MarketplacePage,
@@ -71,7 +72,7 @@ function MarketplacePage() {
     <div className="p-6 space-y-6">
       <div>
         <h1 className="text-2xl font-semibold">Marketplace & Extensions</h1>
-      <AutoHelpPanel slug={'dashboard.pluto-marketplace'} title={'Marketplace & Extensions'} description={''} />
+      <HelpPanel help={dashboardPlutoMarketplaceHelp} />
         <p className="text-sm text-muted-foreground">Plugins, templates, starters, and webhook-plugins.</p>
       </div>
 

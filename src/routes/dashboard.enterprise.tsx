@@ -5,7 +5,8 @@ import {
   CheckCircle2, XCircle, AlertTriangle, Clock, Radio,
 } from "lucide-react";
 import { PageHeader } from "@/components/pluto/PageHeader";
-import { AutoHelpPanel } from "@/components/help/AutoHelpPanel";
+import { HelpPanel } from "@/components/help/HelpPanel";
+import { dashboardEnterpriseHelp } from "@/content/help/dashboard.enterprise";
 import {
   isLive, enterprise,
   type IpRule, type CustomDomain, type RegionConfig, type StatusComponent, type StatusIncident,
@@ -171,7 +172,7 @@ function EnterprisePage() {
     <div className="space-y-6">
       <PageHeader title="Enterprise & Multi-region"
         description="IP access rules, custom domains, region routing, and the public status page (Phase 20)" />
-      <AutoHelpPanel slug={'dashboard.enterprise'} title={'Enterprise & Multi-region'} description={'IP access rules, custom domains, region routing, and the public status page (Phase 20)'} />
+      <HelpPanel help={dashboardEnterpriseHelp} />
       <div className="flex justify-end">
         <button onClick={() => void load()}
           className="inline-flex items-center gap-2 text-sm rounded-md border border-border px-3 py-1.5 hover:bg-accent">

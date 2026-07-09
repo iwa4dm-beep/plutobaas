@@ -18,7 +18,8 @@ import {
   StopCircle,
 } from "lucide-react";
 import { PageHeader } from "@/components/pluto/PageHeader";
-import { AutoHelpPanel } from "@/components/help/AutoHelpPanel";
+import { HelpPanel } from "@/components/help/HelpPanel";
+import { dashboardCustomDomainsHelp } from "@/content/help/dashboard.custom-domains";
 import { ErrorBanner } from "@/components/pluto/ErrorBanner";
 import { enterprise, isLive, live, me, type CustomDomain } from "@/lib/pluto/live";
 import { useWorkspace } from "@/lib/pluto/workspace-context";
@@ -348,11 +349,7 @@ function CustomDomainsPage() {
         title="Custom domains"
         description="Serve your Pluto API from your own hostname (e.g. api.yourbrand.com, or *.tenants.yourbrand.com for multi-tenant subdomains). Add the DNS records we generate, then click Verify."
       />
-      <AutoHelpPanel
-        slug="dashboard.custom-domains"
-        title="Custom domains"
-        description="Attach a hostname or wildcard you own to this workspace. We issue a TLS certificate automatically once the DNS record is verified — status updates arrive in real time from the backend."
-      />
+      <HelpPanel help={dashboardCustomDomainsHelp} />
 
       <div className="flex items-center justify-between">
         <div className="inline-flex items-center gap-2 text-xs text-muted-foreground">

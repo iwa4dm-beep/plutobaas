@@ -10,7 +10,8 @@ import { Archive, RefreshCw, Play, X, RotateCcw, ShieldAlert, GitBranch, Diff, L
 import { toast } from "sonner";
 import { PaginatedTable } from "@/components/pluto/PaginatedTable";
 import { usePaginatedTable } from "@/lib/pluto/usePaginatedTable";
-import { AutoHelpPanel } from "@/components/help/AutoHelpPanel";
+import { HelpPanel } from "@/components/help/HelpPanel";
+import { dashboardBackupsHelp } from "@/content/help/dashboard.backups";
 
 export const Route = createFileRoute("/dashboard/backups")({ component: BackupsPage });
 
@@ -103,7 +104,7 @@ function BackupsPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold flex items-center gap-2"><Archive className="h-5 w-5" /> Backups & restore</h1>
-      <AutoHelpPanel slug={'dashboard.backups'} title={'Backups & restore'} description={''} />
+      <HelpPanel help={dashboardBackupsHelp} />
           <p className="text-sm text-muted-foreground">Create schema / table / full exports and restore with dry-run previews.</p>
         </div>
         <Button variant="outline" size="sm" onClick={refresh}><RefreshCw className="h-4 w-4 mr-1" /> Refresh</Button>

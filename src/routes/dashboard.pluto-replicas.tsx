@@ -1,7 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { plutoApi, pushUiHistory } from "@/lib/pluto/upstream";
-import { AutoHelpPanel } from "@/components/help/AutoHelpPanel";
+import { HelpPanel } from "@/components/help/HelpPanel";
+import { dashboardPlutoReplicasHelp } from "@/content/help/dashboard.pluto-replicas";
 
 export const Route = createFileRoute("/dashboard/pluto-replicas")({
   component: ReplicasPage,
@@ -46,7 +47,7 @@ function ReplicasPage() {
   return (
     <div className="p-6 space-y-6">
       <h1 className="text-2xl font-semibold">Multi-region Read Replicas</h1>
-      <AutoHelpPanel slug={'dashboard.pluto-replicas'} title={'Multi-region Read Replicas'} description={''} />
+      <HelpPanel help={dashboardPlutoReplicasHelp} />
       {err && <div className="rounded-md bg-destructive/10 text-destructive p-3 text-sm">{err}</div>}
       <input className="border rounded px-2 py-1 bg-background w-full" placeholder="Project ID" value={projectId} onChange={(e) => setProjectId(e.target.value)} />
 

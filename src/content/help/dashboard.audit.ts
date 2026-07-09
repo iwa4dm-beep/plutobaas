@@ -38,7 +38,10 @@ export const dashboardAuditHelp: PageHelp = {
     {
       id: "trouble",
       title: { bn: "সাধারণ সমস্যা", en: "Common issues" },
-      whatItDoes: { bn: "", en: "" },
+      whatItDoes: {
+        bn: "audit event না দেখা গেলে বা access denied হলে এই তালিকা ধরে debug করুন।",
+        en: "Walk this list when audit events are missing or access is denied.",
+      },
       troubleshooting: [
         {
           problem: { bn: "Event দেখাচ্ছে না", en: "Events not showing" },
