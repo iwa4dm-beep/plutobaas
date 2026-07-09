@@ -1,19 +1,22 @@
 name: Build & release @timescard/pluto-js SDK
 
+# Publish only happens on a git tag like `v0.1.2` or `sdk-v0.1.2`.
+# `main` pushes just rebuild the tarball artifact — no npm publish.
 on:
   push:
     branches: [main]
     paths:
       - "pluto-backend/packages/sdk-js/**"
       - ".github/workflows/sdk-release.yml"
+    tags:
+      - "v*"
+      - "sdk-v*"
   workflow_dispatch:
     inputs:
       publish_npm:
         description: "Also publish to npm registry"
         required: false
         default: "false"
-  release:
-    types: [published]
 
 jobs:
   build:
@@ -22,6 +25,8 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: oven-sh/setup-bun@v2
         with:
@@ -32,6 +37,20 @@ jobs:
           node-version: 20
           registry-url: "https://registry.npmjs.org/"
 
+      - name: Decide publish mode
+        id: mode
+        run: |
+          IS_TAG="false"
+          case "${GITHUB_REF:-}" in
+            refs/tags/v*|refs/tags/sdk-v*) IS_TAG="true" ;;
+          esac
+          SHOULD_PUBLISH="false"
+          if [ "$IS_TAG" = "true" ] || [ "${{ github.event.inputs.publish_npm }}" = "true" ]; then
+            SHOULD_PUBLISH="true"
+          fi
+          echo "is_tag=$IS_TAG"           >> "$GITHUB_OUTPUT"
+          echo "should_publish=$SHOULD_PUBLISH" >> "$GITHUB_OUTPUT"
+
       - name: Read SDK metadata
         id: v
         working-directory: pluto-backend/packages/sdk-js
@@ -39,70 +58,125 @@ jobs:
           echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
           echo "name=$(node -p "require('./package.json').name")"       >> "$GITHUB_OUTPUT"
 
+      - name: Generate changelog from commits
+        id: changelog
+        env:
+          VERSION: ${{ steps.v.outputs.version }}
+        run: |
+          node scripts/gen-sdk-changelog.mjs --version "$VERSION" \
+            --out pluto-backend/packages/sdk-js/CHANGELOG.md \
+            --readme pluto-backend/packages/sdk-js/README.md
+          echo "generated=true" >> "$GITHUB_OUTPUT"
+
       - name: Build + pack + hash
         env:
           VERSION: ${{ steps.v.outputs.version }}
           NAME: ${{ steps.v.outputs.name }}
+        run: bash scripts/build-sdk-tarball.sh
+
+      - name: npm publish --dry-run
+        working-directory: pluto-backend/packages/sdk-js
         run: |
-          cd pluto-backend/packages/sdk-js
-          bun install --no-save
-          bunx tsup src/index.ts --format esm,cjs --dts --clean --minify
-          npm pack
-          cd -
+          npm publish --dry-run --access public 2>&1 | tee /tmp/npm-dryrun.log
 
-          mkdir -p public/downloads
-          SRC=$(ls pluto-backend/packages/sdk-js/*.tgz | head -1)
-          cp "$SRC" "public/downloads/pluto-js-${VERSION}.tgz"
-          cp "$SRC" "public/downloads/pluto-js-latest.tgz"
-
-          HASH_V=$(sha256sum "public/downloads/pluto-js-${VERSION}.tgz" | awk '{print $1}')
-          HASH_L=$(sha256sum "public/downloads/pluto-js-latest.tgz"   | awk '{print $1}')
-
-          cat > public/downloads/manifest.json <<EOF
-          {
-            "name": "${NAME}",
-            "npm": "https://www.npmjs.com/package/${NAME}",
-            "version": "${VERSION}",
-            "latest": "/sdk/download/pluto-js-latest.tgz",
-            "versioned": "/sdk/download/pluto-js-${VERSION}.tgz",
-            "algorithm": "sha256",
-            "files": [
-              {
-                "version": "${VERSION}",
-                "file": "pluto-js-${VERSION}.tgz",
-                "url": "/sdk/download/pluto-js-${VERSION}.tgz",
-                "sha256": "${HASH_V}"
-              },
-              {
-                "version": "latest",
-                "file": "pluto-js-latest.tgz",
-                "url": "/sdk/download/pluto-js-latest.tgz",
-                "sha256": "${HASH_L}"
-              }
-            ]
-          }
-          EOF
-
-      - name: Publish to npm
-        if: ${{ github.event_name == 'release' || github.event.inputs.publish_npm == 'true' }}
+      - name: Publish to npm (tag or manual only)
+        id: publish
+        if: ${{ steps.mode.outputs.should_publish == 'true' }}
         working-directory: pluto-backend/packages/sdk-js
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           if [ -z "${NODE_AUTH_TOKEN:-}" ]; then
-            echo "::warning::NPM_TOKEN secret not set — skipping npm publish."
-            exit 0
+            echo "::error::NPM_TOKEN secret is not set — cannot publish."
+            echo "status=missing_token" >> "$GITHUB_OUTPUT"
+            exit 1
           fi
-          npm publish --access public --provenance || echo "::warning::npm publish failed (already published?)"
+          set +e
+          npm publish --access public --provenance 2>&1 | tee /tmp/npm-publish.log
+          CODE=${PIPESTATUS[0]}
+          set -e
+          echo "----- registry response (last 40 lines) -----"
+          tail -n 40 /tmp/npm-publish.log
+          echo "---------------------------------------------"
+          if [ $CODE -ne 0 ]; then
+            if grep -qi "cannot publish over" /tmp/npm-publish.log; then
+              echo "::warning::version already published — treating as no-op"
+              echo "status=already_published" >> "$GITHUB_OUTPUT"
+            else
+              echo "status=failed" >> "$GITHUB_OUTPUT"
+              exit $CODE
+            fi
+          else
+            echo "status=published" >> "$GITHUB_OUTPUT"
+          fi
 
-      - name: Commit refreshed tarball
+      - name: Fresh install verification
+        id: verify
+        if: ${{ steps.mode.outputs.should_publish == 'true' && steps.publish.outputs.status == 'published' }}
+        env:
+          NAME: ${{ steps.v.outputs.name }}
+          VERSION: ${{ steps.v.outputs.version }}
+        run: |
+          set +e
+          TMP=$(mktemp -d)
+          cd "$TMP"
+          npm init -y >/dev/null
+          # Registry propagation lag — retry a few times.
+          for i in 1 2 3 4 5; do
+            npm install "${NAME}@${VERSION}" --no-audit --no-fund 2>&1 | tee /tmp/npm-install.log
+            CODE=${PIPESTATUS[0]}
+            [ $CODE -eq 0 ] && break
+            echo "install attempt $i failed — retry in 10s"; sleep 10
+          done
+          if [ $CODE -ne 0 ]; then
+            echo "status=install_failed" >> "$GITHUB_OUTPUT"
+            exit $CODE
+          fi
+          node -e "const p=require('${NAME}'); console.log('exports:', Object.keys(p).slice(0,10))" \
+            | tee /tmp/npm-smoke.log
+          echo "status=ok" >> "$GITHUB_OUTPUT"
+
+      - name: Write release-status.json
+        if: always()
+        env:
+          NAME: ${{ steps.v.outputs.name }}
+          VERSION: ${{ steps.v.outputs.version }}
+          PUBLISH_STATUS: ${{ steps.publish.outputs.status || 'skipped' }}
+          VERIFY_STATUS: ${{ steps.verify.outputs.status || 'skipped' }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          HASH_V=""
+          [ -f "public/downloads/pluto-js-${VERSION}.tgz" ] && HASH_V=$(sha256sum "public/downloads/pluto-js-${VERSION}.tgz" | awk '{print $1}')
+          HASH_L=""
+          [ -f "public/downloads/pluto-js-latest.tgz" ] && HASH_L=$(sha256sum "public/downloads/pluto-js-latest.tgz" | awk '{print $1}')
+          PUBLISH_LOG_TAIL=$(tail -n 40 /tmp/npm-publish.log 2>/dev/null | jq -Rs . || echo '""')
+          INSTALL_LOG_TAIL=$(tail -n 30 /tmp/npm-install.log 2>/dev/null | jq -Rs . || echo '""')
+          SMOKE_LOG=$(tail -n 10 /tmp/npm-smoke.log 2>/dev/null | jq -Rs . || echo '""')
+          cat > public/downloads/release-status.json <<EOF
+          {
+            "name": "${NAME}",
+            "version": "${VERSION}",
+            "publish_status": "${PUBLISH_STATUS}",
+            "verify_status": "${VERIFY_STATUS}",
+            "ran_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "run_url": "${RUN_URL}",
+            "sha256": { "versioned": "${HASH_V}", "latest": "${HASH_L}" },
+            "publish_log_tail": ${PUBLISH_LOG_TAIL},
+            "install_log_tail": ${INSTALL_LOG_TAIL},
+            "smoke_output": ${SMOKE_LOG}
+          }
+          EOF
+          echo "----- release-status.json -----"
+          cat public/downloads/release-status.json
+
+      - name: Commit refreshed artifacts
+        if: always()
         run: |
           git config user.name  "lovable-bot"
           git config user.email "bot@lovable.dev"
-          git add public/downloads/
+          git add public/downloads/ pluto-backend/packages/sdk-js/CHANGELOG.md pluto-backend/packages/sdk-js/README.md 2>/dev/null || true
           if git diff --staged --quiet; then
-            echo "No SDK changes to commit."
+            echo "No artifact changes to commit."
           else
-            git commit -m "chore(sdk): rebuild ${{ steps.v.outputs.name }} ${{ steps.v.outputs.version }}"
-            git push
-          fi
+            git commit -m "chore(sdk): release ${{ steps.v.outputs.name }} ${{ steps.v.outputs.version }}"
+            git push || echo "::warning::push failed (protected branch or detached tag build)"
