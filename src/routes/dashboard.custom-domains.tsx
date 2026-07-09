@@ -67,8 +67,9 @@ function CustomDomainsPage() {
     getWorkspaceBaseUrl(workspaceId),
   );
   const [rtStatus, setRtStatus] = useState<"idle" | "connecting" | "open" | "closed" | "polling">("idle");
-  const [role, setRole] = useState<"loading" | "admin" | "member">("loading");
-  const canAdmin = role === "admin";
+  const [role, setRole] = useState<"loading" | "workspace_admin" | "domain_admin" | "member">("loading");
+  const canAdmin = role === "workspace_admin" || role === "domain_admin";
+  const canManageAdmins = role === "workspace_admin";
 
   const load = useCallback(async () => {
     setErr(null);
