@@ -301,7 +301,7 @@ function CodeBlock({ lang, content, caption }: { lang: string; content: string; 
 const PROGRESS_KEY = "pluto.connectProject.progress";
 
 function ConnectProjectPage() {
-  const apiBase = getApiBase();
+  const apiBase = resolveApiUrl();
   const [done, setDone] = useState<Set<string>>(new Set());
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ ok: boolean; text: string } | null>(null);
