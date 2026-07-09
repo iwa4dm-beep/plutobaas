@@ -6,7 +6,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Play, Sparkles, Info } from "lucide-react";
 import { toast } from "sonner";
 import { api, isLive } from "@/lib/pluto/live";
-import { AutoHelpPanel } from "@/components/help/AutoHelpPanel";
+import { HelpPanel } from "@/components/help/HelpPanel";
+import { dashboardGraphqlHelp } from "@/content/help/dashboard.graphql";
 
 export const Route = createFileRoute("/dashboard/graphql")({
   head: () => ({
@@ -88,7 +89,7 @@ function GraphqlPage() {
         <h1 className="text-2xl font-semibold flex items-center gap-2">
           <Sparkles className="h-5 w-5" /> GraphQL Explorer
         </h1>
-      <AutoHelpPanel slug={'dashboard.graphql'} title={'GraphQL Explorer'} description={''} />
+      <HelpPanel help={dashboardGraphqlHelp} />
         <p className="text-sm text-muted-foreground">
           Send GraphQL queries against <code>/graphql/v1</code> using your current session.
         </p>

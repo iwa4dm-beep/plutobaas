@@ -10,6 +10,13 @@ import { dashboardAiHelp } from "./dashboard.ai";
 import { dashboardIndexHelp } from "./dashboard.index";
 import { dashboardPlutoAdminHelp } from "./dashboard.pluto-admin";
 import { dashboardIntegrationsHelp } from "./dashboard.integrations";
+import { dashboardDatabaseHelp } from "./dashboard.database";
+import { dashboardDatabaseImportHelp } from "./dashboard.database-import";
+import { dashboardSqlHelp } from "./dashboard.sql";
+import { dashboardPlutoSchemaHelp } from "./dashboard.pluto-schema";
+import { dashboardPlutoStudioHelp } from "./dashboard.pluto-studio";
+import { dashboardMigrationsHelp } from "./dashboard.migrations";
+import { dashboardGraphqlHelp } from "./dashboard.graphql";
 
 export type HelpEntry = {
   help: PageHelp;
@@ -23,11 +30,21 @@ function slugToRoute(slug: string): string {
 }
 
 export const HELP_REGISTRY: HelpEntry[] = [
+  // Overview
   dashboardIndexHelp,
   dashboardPlutoAdminHelp,
   dashboardVerifyHelp,
   dashboardIntegrationsHelp,
+  // Data
+  dashboardDatabaseHelp,
+  dashboardDatabaseImportHelp,
+  dashboardSqlHelp,
+  dashboardPlutoSchemaHelp,
+  dashboardPlutoStudioHelp,
+  dashboardMigrationsHelp,
+  dashboardGraphqlHelp,
   dashboardApiHelp,
+  // Ops
   dashboardCorsHelp,
   dashboardAuditHelp,
   dashboardAiHelp,
