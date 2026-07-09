@@ -57,6 +57,7 @@ import { dashboardPlutoSdkHelp } from "./dashboard.pluto-sdk";
 import { dashboardSdkDemoHelp } from "./dashboard.sdk-demo";
 import { dashboardDevexHelp } from "./dashboard.devex";
 import { dashboardSettingsHelp } from "./dashboard.settings";
+import { dashboardConnectProjectHelp } from "./dashboard.connect-project";
 
 export type HelpEntry = {
   help: PageHelp;
