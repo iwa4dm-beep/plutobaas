@@ -66,7 +66,7 @@ function StoragePage() {
           </button>
         }
       />
-      <AutoHelpPanel slug={'dashboard.storage'} title={'Storage'} description={'Public/private buckets ও file management।'} />
+      <HelpPanel help={dashboardStorageHelp} />
 
       <div className="grid lg:grid-cols-[240px_1fr] gap-6">
         <aside className="rounded-lg border border-border bg-card p-3 h-fit">
