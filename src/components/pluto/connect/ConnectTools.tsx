@@ -98,7 +98,7 @@ export function MigrationRunner({ apiBase }: { apiBase: string }) {
       return;
     }
     setRunning(true); setSummary(null); abortRef.current = false;
-    const next = items.map((it) => ({ ...it, status: "idle" as Status, ms: undefined, error: undefined }));
+    const next: StmtState[] = items.map((it) => ({ sql: it.sql, status: "idle" }));
     setItems(next);
 
     let ok = 0, fail = 0;
