@@ -1,0 +1,30 @@
+[Unit]
+Description=Pluto daily backup (source zip + pg_dump + configs + verify)
+Wants=docker.service
+After=docker.service network-online.target
+
+[Service]
+Type=oneshot
+# Non-secret config (paths, keep count, encrypt toggle)
+EnvironmentFile=/etc/pluto-backup.env
+# Secret passphrase — mode 0600, root:root, NOT world-readable.
+# Contains one line:  BACKUP_PASSPHRASE=<strong-random-value>
+EnvironmentFile=/etc/pluto-backup.secret
+ExecStart=/opt/pluto/deploy/backup/daily-backup.sh
+
+# Hardening
+User=root
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+ProtectSystem=full
+ProtectHome=read-only
+PrivateTmp=yes
+NoNewPrivileges=yes
+
+# Never leak the passphrase into the journal
+StandardOutput=append:/var/log/pluto-backup/systemd.log
+StandardError=append:/var/log/pluto-backup/systemd.log
+
+[Install]
+WantedBy=multi-user.target

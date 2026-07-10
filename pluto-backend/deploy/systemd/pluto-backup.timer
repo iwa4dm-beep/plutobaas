@@ -1,0 +1,11 @@
+[Unit]
+Description=Run Pluto backup daily at 03:15 UTC
+
+[Timer]
+OnCalendar=*-*-* 03:15:00 UTC
+Persistent=true
+RandomizedDelaySec=10min
+Unit=pluto-backup.service
+
+[Install]
+WantedBy=timers.target
