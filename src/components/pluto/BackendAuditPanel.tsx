@@ -104,6 +104,22 @@ export function BackendAuditPanel() {
               aria-label="max retries"
             />
           </label>
+          <label className="flex items-center gap-1 text-[10px] text-muted-foreground">
+            auto
+            <select
+              value={autoRefreshSec}
+              onChange={(e) => setAutoRefreshSec(Number(e.target.value))}
+              className="rounded border border-border bg-background px-1 py-0.5 text-[10px]"
+              aria-label="auto refresh interval"
+              data-testid="audit-auto-refresh"
+            >
+              <option value={0}>off</option>
+              <option value={5}>5s</option>
+              <option value={15}>15s</option>
+              <option value={30}>30s</option>
+              <option value={60}>60s</option>
+            </select>
+          </label>
           <button
             onClick={() => void load()}
             disabled={loading}
