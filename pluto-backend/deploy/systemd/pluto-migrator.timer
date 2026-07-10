@@ -1,0 +1,15 @@
+[Unit]
+Description=Run pending Pluto migrations shortly after boot and on failure retry
+Requires=pluto-migrator.service
+
+[Timer]
+# Boot হওয়ার 60s পর একবার migration চালাবে।
+OnBootSec=60s
+# শেষ activation থেকে 5 মিনিট পর পর re-check (idempotent — কিছু pending না
+# থাকলে দ্রুত exit করে)।
+OnUnitInactiveSec=5min
+Unit=pluto-migrator.service
+Persistent=true
+
+[Install]
+WantedBy=timers.target
