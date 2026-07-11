@@ -181,7 +181,7 @@ function AutoConnectPage() {
             </div>
             {step > 1 && (
               <button
-                onClick={() => { setStep(1); setFile(null); setZip(null); setAnalyze(null); setPlan(null); setArtifacts(null); setLogs([]); setDb({ driver: "postgres", url: "" }); setAckDestructive(false); }}
+                onClick={() => { setStep(1); setFile(null); setZip(null); setVerify(null); setAnalyze(null); setPlan(null); setArtifacts(null); setLogs([]); setDb({ driver: "postgres", url: "" }); setAckDestructive(false); setAckTyped(""); }}
                 className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-md border border-border px-3 py-2 text-sm text-foreground hover:bg-muted"
               >
                 <RefreshCw className="h-4 w-4" /> নতুন করে শুরু
