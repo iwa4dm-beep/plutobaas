@@ -118,6 +118,31 @@ function AutoConnectPage() {
     finally { setBusy(false); }
   };
 
+  const buildAudit = useCallback(() => {
+    let impact = null;
+    if (plan) {
+      const tables = plan.tables.map((t) => ({ name: t.name, columns: t.columns, timestamps: true }));
+      let sql = buildMigrationBundle(tables);
+      if (db.driver === "mysql") sql = mysqlToPg(sql);
+      impact = summarizeImpact(analyzeSql(sql));
+    }
+    const input: AuditInput = {
+      project: { file: file?.name, sizeBytes: file?.size },
+      db,
+      plan,
+      impact,
+      ack: { checkbox: ackDestructive, typed: ackTyped, required: (impact?.destructive ?? 0) > 0 },
+      verification: verify,
+      rollback: lastRollback,
+      retentionDays,
+    };
+    const report = buildAuditJson(input);
+    const json = new Blob([JSON.stringify(report, null, 2)], { type: "application/json" });
+    const html = new Blob([buildAuditHtml(report)], { type: "text/html" });
+    return { json, html };
+  }, [plan, db, file, ackDestructive, ackTyped, verify, lastRollback, retentionDays]);
+
+
   return (
     <div className="min-h-screen bg-background">
       <div className="mx-auto max-w-6xl px-4 py-10">
