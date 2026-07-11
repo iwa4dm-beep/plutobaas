@@ -126,30 +126,52 @@ function AutoConnectPage() {
           </p>
         </header>
 
-        <Stepper current={step} />
+        <div className="mb-4 flex gap-2">
+          {([
+            ["wizard", "Wizard", Wand2],
+            ["test", "Test Mode", PlayCircle],
+            ["logs", "Rollback Logs", ScrollText],
+          ] as const).map(([k, label, Icon]) => (
+            <button key={k} onClick={() => setTab(k)}
+              className={`inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm ${
+                tab === k ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground hover:bg-muted"
+              }`}>
+              <Icon className="h-4 w-4" /> {label}
+            </button>
+          ))}
+        </div>
 
-        <div className="mt-8 grid gap-6 md:grid-cols-[1fr_360px]">
+        {tab === "wizard" && <Stepper current={step} />}
+
+        <div className="mt-6 grid gap-6 md:grid-cols-[1fr_360px]">
           <main className="rounded-lg border border-border bg-card p-6">
-            {step === 1 && <UploadStep onFile={onFile} busy={busy} inputRef={inputRef} />}
-            {step === 2 && <AnalyzeStep file={file} onRun={runAnalyze} busy={busy} />}
-            {step === 3 && analyze && (
-              <PlanStep analyze={analyze} plan={plan} planModel={planModel} onPlan={runPlan} onNext={() => setStep(4)} busy={busy} />
-            )}
-            {step === 4 && plan && (
-              <MigrationsStep
-                plan={plan}
-                db={db}
-                setDb={setDb}
-                onValidateDb={runValidateDb}
-                ack={ackDestructive}
-                setAck={setAckDestructive}
-                onNext={() => setStep(5)}
-                busy={busy}
-              />
-            )}
-            {step === 5 && plan && <WireStep plan={plan} onBuild={runBuild} busy={busy} />}
-            {step === 6 && artifacts && <DownloadStep artifacts={artifacts} />}
+            {tab === "wizard" && <>
+              {step === 1 && <UploadStep onFile={onFile} busy={busy} inputRef={inputRef} verify={verify} />}
+              {step === 2 && <AnalyzeStep file={file} onRun={runAnalyze} busy={busy} />}
+              {step === 3 && analyze && (
+                <PlanStep analyze={analyze} plan={plan} planModel={planModel} onPlan={runPlan} onNext={() => setStep(4)} busy={busy} />
+              )}
+              {step === 4 && plan && (
+                <MigrationsStep
+                  plan={plan}
+                  db={db}
+                  setDb={setDb}
+                  onValidateDb={runValidateDb}
+                  ack={ackDestructive}
+                  setAck={setAckDestructive}
+                  ackTyped={ackTyped}
+                  setAckTyped={setAckTyped}
+                  onNext={() => setStep(5)}
+                  busy={busy}
+                />
+              )}
+              {step === 5 && plan && <WireStep plan={plan} onBuild={runBuild} busy={busy} />}
+              {step === 6 && artifacts && <DownloadStep artifacts={artifacts} />}
+            </>}
+            {tab === "test" && <TestModePanel plan={plan} db={db} />}
+            {tab === "logs" && <RollbackLogPanel />}
           </main>
+
 
           <aside className="rounded-lg border border-border bg-card p-4">
             <h3 className="mb-2 text-sm font-semibold text-foreground">Live Log</h3>
