@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState, useCallback, useRef, useMemo } from "react";
 import JSZip from "jszip";
-import { Upload, FileArchive, Sparkles, Database, Wand2, Download, Loader2, CheckCircle2, AlertTriangle, RefreshCw, ShieldCheck, FileText, PlugZap, PlayCircle, ScrollText, ShieldAlert, XCircle, Radar, StopCircle } from "lucide-react";
+import { Upload, FileArchive, Sparkles, Database, Wand2, Download, Loader2, CheckCircle2, AlertTriangle, RefreshCw, ShieldCheck, FileText, PlugZap, PlayCircle, ScrollText, ShieldAlert, XCircle, Radar, StopCircle, HelpCircle } from "lucide-react";
 import { toast } from "sonner";
 import { analyzeZip } from "@/lib/autoconnect/analyzer";
 import { planIntegration } from "@/lib/autoconnect/ai-planner.functions";
