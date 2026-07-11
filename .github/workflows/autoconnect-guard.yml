@@ -1,0 +1,34 @@
+name: Auto-Connect Guard
+
+# Fails PRs that break the autoconnect / audit-report pipeline.
+# Runs on any change to those modules, their tests, or the /auto-connect route.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/lib/autoconnect/**"
+      - "src/routes/auto-connect.tsx"
+      - ".github/workflows/autoconnect-guard.yml"
+  pull_request:
+    paths:
+      - "src/lib/autoconnect/**"
+      - "src/routes/auto-connect.tsx"
+      - ".github/workflows/autoconnect-guard.yml"
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - name: Install
+        run: bun install --frozen-lockfile
+      - name: Typecheck (fails on any new TS error project-wide)
+        run: bun run typecheck
+      - name: Cancel-flow e2e (asserts exit code 4 + rollback in audit-report.json)
+        run: bunx vitest run src/lib/autoconnect/e2e-cancel.spec.ts
+      - name: Build
+        run: bun run build
