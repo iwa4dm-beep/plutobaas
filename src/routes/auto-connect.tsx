@@ -29,7 +29,7 @@ export const Route = createFileRoute("/auto-connect")({
 
 type Step = 1 | 2 | 3 | 4 | 5 | 6;
 
-type Tab = "wizard" | "test" | "logs";
+type Tab = "wizard" | "test" | "logs" | "help";
 
 function AutoConnectPage() {
   const [tab, setTab] = useState<Tab>("wizard");
