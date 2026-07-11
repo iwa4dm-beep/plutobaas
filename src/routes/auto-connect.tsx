@@ -515,14 +515,38 @@ function MigrationsStep({ plan, db, setDb, onValidateDb, ack, setAck, ackTyped, 
         </div>
 
         {impact.destructive > 0 && (
-          <label className="mt-3 flex items-start gap-2 rounded-md border border-red-500/40 bg-red-500/5 p-3 text-sm">
-            <input type="checkbox" checked={ack} onChange={(e) => setAck(e.target.checked)} className="mt-1" />
-            <span className="text-red-800 dark:text-red-200">
-              <ShieldCheck className="inline h-4 w-4" /> <b>{impact.destructive}</b> destructive statement আছে — আমি বুঝেছি এবং apply-এ সম্মতি দিচ্ছি। ব্যর্থ হলে <code>apply.sh</code> auto-rollback করবে।
-            </span>
-          </label>
+          <div className="mt-3 space-y-2 rounded-md border border-red-500/40 bg-red-500/5 p-3 text-sm">
+            <div className="font-medium text-red-800 dark:text-red-200">
+              <ShieldAlert className="mr-1 inline h-4 w-4" />
+              {impact.destructive} destructive statement — data loss risk
+            </div>
+            <ul className="max-h-32 overflow-auto pl-5 text-xs font-mono text-red-700 dark:text-red-300">
+              {impact.destructiveStatements.slice(0, 6).map((d, i) => (
+                <li key={i} className="list-disc">
+                  #{d.index} {d.kind} {d.table ? `on ${d.table}` : ""} — <span className="opacity-80">{d.sample}</span>
+                </li>
+              ))}
+            </ul>
+            <label className="flex items-start gap-2 text-sm">
+              <input type="checkbox" checked={ack} onChange={(e) => setAck(e.target.checked)} className="mt-1" />
+              <span className="text-red-800 dark:text-red-200">
+                <ShieldCheck className="inline h-4 w-4" /> আমি impact বুঝেছি ও apply-এ সম্মতি দিচ্ছি (auto-rollback থাকবে)।
+              </span>
+            </label>
+            <div className="text-xs text-red-800 dark:text-red-200">
+              নিশ্চিতকরণ হিসেবে টাইপ করুন <code className="font-mono">APPLY</code>:
+              <input
+                type="text"
+                value={ackTyped}
+                onChange={(e) => setAckTyped(e.target.value)}
+                placeholder="APPLY"
+                className="ml-2 rounded-md border border-red-500/40 bg-background px-2 py-0.5 font-mono text-xs"
+              />
+            </div>
+          </div>
         )}
       </div>
+
 
       <button onClick={onNext} disabled={!canProceed}
         className="rounded-md bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
