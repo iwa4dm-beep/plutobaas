@@ -223,7 +223,7 @@ function Stepper({ current }: { current: Step }) {
   );
 }
 
-function UploadStep({ onFile, busy, inputRef }: { onFile: (f: File) => void; busy: boolean; inputRef: React.RefObject<HTMLInputElement | null> }) {
+function UploadStep({ onFile, busy, inputRef, verify }: { onFile: (f: File) => void; busy: boolean; inputRef: React.RefObject<HTMLInputElement | null>; verify: VerifyResult | null }) {
   return (
     <div>
       <h2 className="text-lg font-semibold text-foreground">১. প্রজেক্ট ZIP আপলোড</h2>
