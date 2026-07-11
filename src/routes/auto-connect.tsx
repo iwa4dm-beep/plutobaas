@@ -211,6 +211,7 @@ function AutoConnectPage() {
             </>}
             {tab === "test" && <TestModePanel plan={plan} db={db} auditInput={auditInput} onSimulated={(r) => { setRawLog(r.jsonl); setLastRollback(parseRollbackLog(r.jsonl)); }} />}
             {tab === "logs" && <RollbackLogPanel onLoaded={setLastRollback} rawLog={rawLog} setRawLog={setRawLog} cancellation={cancellation} setCancellation={setCancellation} log={log} />}
+            {tab === "help" && <HelpPanel />}
           </main>
 
 
