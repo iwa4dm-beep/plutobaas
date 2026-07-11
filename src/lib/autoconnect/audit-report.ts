@@ -39,7 +39,9 @@ export function buildAuditJson(input: AuditInput): AuditReport {
   const ackOk = !input.ack?.required
     ? true
     : (input.ack.checkbox && input.ack.typed.trim().toUpperCase() === "APPLY");
-  const rollbackStatus: AuditReport["summary"]["rollbackStatus"] = !input.rollback
+  const rollbackStatus: AuditReport["summary"]["rollbackStatus"] = input.cancellation
+    ? "cancelled"
+    : !input.rollback
     ? "n/a"
     : input.rollback.ok ? "ok"
     : input.rollback.rolledBack ? "rolled_back" : "failed";
