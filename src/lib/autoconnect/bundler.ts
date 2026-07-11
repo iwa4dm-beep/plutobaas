@@ -8,6 +8,7 @@ import { mapEnv, buildEnvTemplate, buildInstallSecretsScript } from "./env-mappe
 import { buildStructureReport } from "./structure-report";
 import { buildDbConfigTs } from "./db-wizard.functions";
 import { mysqlToPg } from "./mysql-to-pg";
+import { buildManifest } from "./zip-verify";
 
 export async function buildBundle(
   originalZip: JSZip,
