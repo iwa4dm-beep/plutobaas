@@ -558,7 +558,10 @@ function MigrationsStep({ plan, db, setDb, onValidateDb, ack, setAck, ackTyped, 
   );
 }
 
-function WireStep({ plan, onBuild, busy }: { plan: IntegrationPlan; onBuild: () => void; busy: boolean }) {
+function WireStep({ plan, retentionDays, setRetentionDays, onBuild, busy }: {
+  plan: IntegrationPlan; retentionDays: number; setRetentionDays: (n: number) => void;
+  onBuild: () => void; busy: boolean;
+}) {
   return (
     <div>
       <h2 className="text-lg font-semibold text-foreground">৫. Wire APIs & Rewrite Frontend</h2>
@@ -570,6 +573,15 @@ function WireStep({ plan, onBuild, busy }: { plan: IntegrationPlan; onBuild: () 
         <div>Storage buckets: <b>{plan.storageBuckets.length}</b></div>
         <div>Auth bridge: <b>{plan.auth.source}</b> → <b>{plan.auth.target}</b></div>
       </div>
+      <label className="mt-4 flex items-center gap-3 text-sm">
+        <span className="text-muted-foreground">Snapshot retention (days):</span>
+        <input
+          type="number" min={1} max={365} value={retentionDays}
+          onChange={(e) => setRetentionDays(Math.max(1, Math.min(365, Number(e.target.value) || 14)))}
+          className="w-24 rounded-md border border-border bg-background px-2 py-1 font-mono text-sm"
+        />
+        <span className="text-xs text-muted-foreground">apply.sh সফল হওয়ার পর এর চেয়ে পুরনো snapshot ও log auto-delete হবে।</span>
+      </label>
       <button onClick={onBuild} disabled={busy}
         className="mt-6 inline-flex items-center gap-2 rounded-md bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
         {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />} Bundle তৈরি করুন
@@ -578,22 +590,42 @@ function WireStep({ plan, onBuild, busy }: { plan: IntegrationPlan; onBuild: () 
   );
 }
 
-function DownloadStep({ artifacts }: { artifacts: { frontend: Blob; migrations: Blob; report: Blob } }) {
+function DownloadStep({ artifacts, buildAudit }: {
+  artifacts: { frontend: Blob; migrations: Blob; report: Blob };
+  buildAudit: () => { json: Blob; html: Blob };
+}) {
   return (
     <div>
       <h2 className="text-lg font-semibold text-foreground">৬. Download</h2>
-      <p className="mt-1 text-sm text-muted-foreground">Migration ZIP-এ apply.sh (auto-rollback), env template, install-secrets, db config, structure report — সব যুক্ত।</p>
+      <p className="mt-1 text-sm text-muted-foreground">Migration ZIP-এ apply.sh (verified + auto-rollback + retention), rollback.sh, serve-progress.sh, env template — সব যুক্ত।</p>
       <div className="mt-5 grid gap-3">
         <FileCard name="frontend-connected.zip" size={artifacts.frontend.size} onClick={() => downloadBlob(artifacts.frontend, "frontend-connected.zip")} />
         <FileCard name="pluto-migrations.zip" size={artifacts.migrations.size} onClick={() => downloadBlob(artifacts.migrations, "pluto-migrations.zip")} />
         <FileCard name="INTEGRATION_REPORT.md" size={artifacts.report.size} onClick={() => downloadBlob(artifacts.report, "INTEGRATION_REPORT.md")} />
+        <div className="rounded-md border border-primary/40 bg-primary/5 p-4">
+          <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-primary">
+            <FileText className="h-4 w-4" /> Single audit report (impact + ack + verification + rollback)
+          </div>
+          <div className="flex gap-2">
+            <button onClick={() => { const { json } = buildAudit(); downloadBlob(json, "audit-report.json"); }}
+              className="rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground hover:bg-primary/90">
+              Download JSON
+            </button>
+            <button onClick={() => { const { html } = buildAudit(); downloadBlob(html, "audit-report.html"); }}
+              className="rounded-md border border-primary/40 px-3 py-1.5 text-sm text-primary hover:bg-primary/10">
+              Download HTML
+            </button>
+          </div>
+        </div>
       </div>
       <div className="mt-6 rounded-md border border-green-500/40 bg-green-500/5 p-4 text-sm text-green-800 dark:text-green-200">
-        <b>VPS-এ:</b> <code>unzip pluto-migrations.zip</code> → <code>bash install-secrets.sh</code> → <code>bash apply.sh</code>। ব্যর্থ হলে auto-rollback হবে।
+        <b>VPS-এ:</b> <code>unzip pluto-migrations.zip</code> → <code>bash install-secrets.sh</code> → <code>bash apply.sh</code>।
+        Real-time progress: <code>bash serve-progress.sh 8787</code> → "Rollback Logs" tab-এ <code>http://127.0.0.1:8787/stream</code> paste করুন।
       </div>
     </div>
   );
 }
+
 
 function Stat({ label, value, tone }: { label: string; value: number | string; tone?: "ok" | "danger" }) {
   const c = tone === "danger" ? "border-red-500/40 bg-red-500/5" : "border-border bg-muted/40";
