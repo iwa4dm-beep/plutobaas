@@ -1015,9 +1015,16 @@ function RollbackLogPanel({ onLoaded, rawLog, setRawLog, cancellation, setCancel
           </div>
         )}
         {cancellation && (
-          <div className="mt-2 rounded-md border border-red-500/40 bg-red-500/5 p-2 text-xs text-red-800 dark:text-red-200">
+          <div className={`mt-2 rounded-md border p-2 text-xs ${
+            cancellation.refusedBecauseFinished
+              ? "border-yellow-500/40 bg-yellow-500/5 text-yellow-800 dark:text-yellow-200"
+              : "border-red-500/40 bg-red-500/5 text-red-800 dark:text-red-200"
+          }`}>
             <XCircle className="mr-1 inline h-3.5 w-3.5" />
-            Cancellation recorded @ <code>{cancellation.at}</code> · job <code>{cancellation.jobId}</code>
+            {cancellation.refusedBecauseFinished ? "Cancellation REFUSED" : "Cancellation recorded"} @ <code>{cancellation.at}</code>
+            · job <code>{cancellation.jobId}</code>
+            {cancellation.phase && <> · phase <b>{cancellation.phase}</b></>}
+            {cancellation.exitCode != null && <> · exit <b>{cancellation.exitCode}</b></>}
             {cancellation.note && ` — ${cancellation.note}`}
             <button onClick={() => setCancellation(null)}
               className="ml-2 underline hover:opacity-70">clear</button>
