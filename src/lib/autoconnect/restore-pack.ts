@@ -18,15 +18,28 @@ BUNDLE_DIR="$(cd "$(dirname "\${BASH_SOURCE[0]}")" && pwd)"
 DB_URL="\${DATABASE_URL:-${opts.db}}"
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 JOB_ID="\${JOB_ID:-job-$STAMP}"
-SNAP_ROOT="\${SNAP_ROOT:-/var/backups/pluto-autoconnect}"
+SNAP_ROOT="\${SNAP_ROOT:-${snapRoot}}"
 SNAP_DIR="$SNAP_ROOT/$JOB_ID"
-LOG_DIR="\${LOG_DIR:-/var/log/pluto-autoconnect}"
+LOG_DIR="\${LOG_DIR:-$SNAP_ROOT/logs}"
 mkdir -p "$SNAP_DIR" "$LOG_DIR"
 LOG_TXT="$LOG_DIR/$JOB_ID.log"
 LOG_JSON="$LOG_DIR/$JOB_ID.jsonl"
+CANCEL_FLAG="$LOG_DIR/$JOB_ID.cancel"
 VOLUMES="\${PLUTO_VOLUMES:-${volumes}}"
 CONFIGS="\${PLUTO_CONFIGS:-${configs}}"
 RETENTION_DAYS="\${RETENTION_DAYS:-${retention}}"
+
+check_cancel() {
+  if [ -f "$CANCEL_FLAG" ]; then
+    jlog "cancel" "start" "\\"reason\\":\\"cancel flag detected at $CANCEL_FLAG\\""
+    echo "▶ CANCEL requested — rolling back" | tee -a "$LOG_TXT"
+    do_rollback || true
+    jlog "cancel" "done"
+    rm -f "$CANCEL_FLAG"
+    trap - EXIT
+    exit 4
+  fi
+}
 
 jlog() {
   local step="$1" status="$2" extra="\${3:-}"
