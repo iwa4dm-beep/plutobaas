@@ -464,13 +464,23 @@ function MigrationsStep({ plan, db, setDb, onValidateDb, ack, setAck, ackTyped, 
         <h2 className="text-lg font-semibold text-foreground">৪b. Dry-Run Preview</h2>
         <p className="mt-1 text-sm text-muted-foreground">apply-এর আগে diff + impact — destructive statement থাকলে ম্যানুয়াল acknowledgement লাগবে।</p>
 
-        <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-5">
-          <Stat label="Total" value={impact.total} />
+        <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+          <Stat label="Total stmts" value={impact.total} />
           <Stat label="New tables" value={impact.newTables} />
-          <Stat label="RLS" value={impact.rlsEnabled} />
+          <Stat label="RLS enabled" value={impact.rlsEnabled} />
+          <Stat label="Policies" value={impact.policies} />
           <Stat label="Grants" value={impact.grants} />
+          <Stat label="Cols +/−" value={`${impact.columnsAdded}/${impact.columnsDropped}`} tone={impact.columnsDropped > 0 ? "danger" : undefined} />
+          <Stat label="Indexes/FKs" value={`${impact.indexes}/${impact.fkAdded}`} />
           <Stat label="Destructive" value={impact.destructive} tone={impact.destructive > 0 ? "danger" : "ok"} />
         </div>
+        <div className="mt-2 text-xs text-muted-foreground">
+          Tables touched ({impact.affectedTables.length}): <code>{impact.affectedTables.slice(0, 12).join(", ") || "—"}</code>
+          {impact.affectedTables.length > 12 && ` +${impact.affectedTables.length - 12}`}
+          {" · "}Roles: <code>{impact.rolesTouched.join(", ") || "—"}</code>
+          {" · "}Row-impact estimate: <b>{impact.rowsEstimate}</b>
+        </div>
+
 
         <div className="mt-3 max-h-80 overflow-auto rounded-md border border-border">
           <table className="w-full text-xs font-mono">
