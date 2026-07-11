@@ -460,6 +460,7 @@ function MigrationsStep({ plan, db, setDb, onValidateDb, ack, setAck, ackTyped, 
 
   return (
     <div className="space-y-6">
+      <PreApplyVerification verify={verify} />
       <div>
         <h2 className="text-lg font-semibold text-foreground">৪a. DB Wizard</h2>
         <p className="mt-1 text-sm text-muted-foreground">MySQL/PostgreSQL নির্বাচন ও connection string যাচাই — উপযুক্ত ড্রাইভার/কনফিগ auto-generate হবে।</p>
