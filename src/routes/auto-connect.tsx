@@ -646,9 +646,10 @@ function WireStep({ plan, retentionDays, setRetentionDays, snapshotRoot, setSnap
   );
 }
 
-function DownloadStep({ artifacts, buildAudit, rawLog }: {
+function DownloadStep({ artifacts, buildAudit, downloadAuditZip, rawLog }: {
   artifacts: { frontend: Blob; migrations: Blob; report: Blob };
   buildAudit: () => { json: Blob; html: Blob };
+  downloadAuditZip: () => Promise<void>;
   rawLog: string;
 }) {
   return (
