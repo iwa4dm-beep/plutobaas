@@ -2,11 +2,12 @@
 // Now snapshots BOTH the DB and Docker volumes + configs so rollback truly
 // returns to the previous state.
 
-export function buildApplyScript(opts: { db: string; sqlFile?: string; volumes?: string[]; configs?: string[]; retentionDays?: number }): string {
+export function buildApplyScript(opts: { db: string; sqlFile?: string; volumes?: string[]; configs?: string[]; retentionDays?: number; snapshotRoot?: string }): string {
   const sql = opts.sqlFile ?? "001_pluto_auto.sql";
   const volumes = (opts.volumes ?? ["pluto_pgdata", "pluto_api_data"]).join(" ");
   const configs = (opts.configs ?? ["/etc/pluto", "/etc/pluto-autoconnect.env"]).join(" ");
   const retention = opts.retentionDays ?? 14;
+  const snapRoot = opts.snapshotRoot ?? "/var/backups/pluto-autoconnect";
   return `#!/usr/bin/env bash
 # Auto-Connect: apply migrations with FULL snapshot (DB + Docker volumes + configs)
 # and automatic rollback on failure. Every step is journaled to a JSONL log
