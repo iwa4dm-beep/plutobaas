@@ -193,8 +193,8 @@ function AutoConnectPage() {
                   busy={busy}
                 />
               )}
-              {step === 5 && plan && <WireStep plan={plan} onBuild={runBuild} busy={busy} />}
-              {step === 6 && artifacts && <DownloadStep artifacts={artifacts} />}
+              {step === 5 && plan && <WireStep plan={plan} retentionDays={retentionDays} setRetentionDays={setRetentionDays} onBuild={runBuild} busy={busy} />}
+              {step === 6 && artifacts && <DownloadStep artifacts={artifacts} buildAudit={buildAudit} />}
             </>}
             {tab === "test" && <TestModePanel plan={plan} db={db} />}
             {tab === "logs" && <RollbackLogPanel />}
