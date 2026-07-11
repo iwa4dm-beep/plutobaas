@@ -47,7 +47,10 @@ function AutoConnectPage() {
   const [busy, setBusy] = useState(false);
   const [artifacts, setArtifacts] = useState<{ frontend: Blob; migrations: Blob; report: Blob } | null>(null);
   const [retentionDays, setRetentionDays] = useState<number>(14);
+  const [snapshotRoot, setSnapshotRoot] = useState<string>("/var/backups/pluto-autoconnect");
   const [lastRollback, setLastRollback] = useState<LogSummary | null>(null);
+  const [rawLog, setRawLog] = useState<string>("");
+  const [cancellation, setCancellation] = useState<{ at: string; jobId?: string; via: "ui" | "cli"; note?: string } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const log = useCallback((m: string) => {
