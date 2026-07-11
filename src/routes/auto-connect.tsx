@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState, useCallback, useRef, useMemo } from "react";
 import JSZip from "jszip";
-import { Upload, FileArchive, Sparkles, Database, Wand2, Download, Loader2, CheckCircle2, AlertTriangle, RefreshCw, ShieldCheck, FileText, PlugZap, PlayCircle, ScrollText, ShieldAlert } from "lucide-react";
+import { Upload, FileArchive, Sparkles, Database, Wand2, Download, Loader2, CheckCircle2, AlertTriangle, RefreshCw, ShieldCheck, FileText, PlugZap, PlayCircle, ScrollText, ShieldAlert, XCircle, Radar, StopCircle } from "lucide-react";
 import { toast } from "sonner";
 import { analyzeZip } from "@/lib/autoconnect/analyzer";
 import { planIntegration } from "@/lib/autoconnect/ai-planner.functions";
@@ -47,7 +47,10 @@ function AutoConnectPage() {
   const [busy, setBusy] = useState(false);
   const [artifacts, setArtifacts] = useState<{ frontend: Blob; migrations: Blob; report: Blob } | null>(null);
   const [retentionDays, setRetentionDays] = useState<number>(14);
+  const [snapshotRoot, setSnapshotRoot] = useState<string>("/var/backups/pluto-autoconnect");
   const [lastRollback, setLastRollback] = useState<LogSummary | null>(null);
+  const [rawLog, setRawLog] = useState<string>("");
+  const [cancellation, setCancellation] = useState<{ at: string; jobId?: string; via: "ui" | "cli"; note?: string } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const log = useCallback((m: string) => {
@@ -112,7 +115,7 @@ function AutoConnectPage() {
     if (!zip || !analyze || !plan) return;
     setBusy(true); log("Building bundle (SQL + rewrite + restore-pack + env-template)…");
     try {
-      const a = await buildBundle(zip, analyze, plan, db.validated ? db : undefined, { retentionDays });
+      const a = await buildBundle(zip, analyze, plan, db.validated ? db : undefined, { retentionDays, snapshotRoot });
       setArtifacts(a); log("✓ Bundle ready"); setStep(6);
     } catch (e) { toast.error("Build fail: " + (e as Error).message); }
     finally { setBusy(false); }
@@ -135,12 +138,15 @@ function AutoConnectPage() {
       verification: verify,
       rollback: lastRollback,
       retentionDays,
+      snapshotRoot,
+      cancellation,
+      rawLogJsonl: rawLog || null,
     };
     const report = buildAuditJson(input);
     const json = new Blob([JSON.stringify(report, null, 2)], { type: "application/json" });
     const html = new Blob([buildAuditHtml(report)], { type: "text/html" });
     return { json, html };
-  }, [plan, db, file, ackDestructive, ackTyped, verify, lastRollback, retentionDays]);
+  }, [plan, db, file, ackDestructive, ackTyped, verify, lastRollback, retentionDays, snapshotRoot, cancellation, rawLog]);
 
 
   return (
@@ -191,13 +197,14 @@ function AutoConnectPage() {
                   setAckTyped={setAckTyped}
                   onNext={() => setStep(5)}
                   busy={busy}
+                  verify={verify}
                 />
               )}
-              {step === 5 && plan && <WireStep plan={plan} retentionDays={retentionDays} setRetentionDays={setRetentionDays} onBuild={runBuild} busy={busy} />}
-              {step === 6 && artifacts && <DownloadStep artifacts={artifacts} buildAudit={buildAudit} />}
+              {step === 5 && plan && <WireStep plan={plan} retentionDays={retentionDays} setRetentionDays={setRetentionDays} snapshotRoot={snapshotRoot} setSnapshotRoot={setSnapshotRoot} onBuild={runBuild} busy={busy} />}
+              {step === 6 && artifacts && <DownloadStep artifacts={artifacts} buildAudit={buildAudit} rawLog={rawLog} />}
             </>}
             {tab === "test" && <TestModePanel plan={plan} db={db} />}
-            {tab === "logs" && <RollbackLogPanel onLoaded={setLastRollback} />}
+            {tab === "logs" && <RollbackLogPanel onLoaded={setLastRollback} rawLog={rawLog} setRawLog={setRawLog} cancellation={cancellation} setCancellation={setCancellation} log={log} />}
           </main>
 
 
@@ -437,11 +444,11 @@ function StructureReport({ analyze }: { analyze: AnalyzeResult }) {
   );
 }
 
-function MigrationsStep({ plan, db, setDb, onValidateDb, ack, setAck, ackTyped, setAckTyped, onNext, busy }: {
+function MigrationsStep({ plan, db, setDb, onValidateDb, ack, setAck, ackTyped, setAckTyped, onNext, busy, verify }: {
   plan: IntegrationPlan; db: DbConfig; setDb: (d: DbConfig) => void;
   onValidateDb: () => void; ack: boolean; setAck: (v: boolean) => void;
   ackTyped: string; setAckTyped: (v: string) => void;
-  onNext: () => void; busy: boolean;
+  onNext: () => void; busy: boolean; verify: VerifyResult | null;
 }) {
   const tables = plan.tables.map((t) => ({ name: t.name, columns: t.columns, timestamps: true }));
   const rawSql = useMemo(() => buildMigrationBundle(tables), [tables]);
@@ -453,6 +460,7 @@ function MigrationsStep({ plan, db, setDb, onValidateDb, ack, setAck, ackTyped, 
 
   return (
     <div className="space-y-6">
+      <PreApplyVerification verify={verify} />
       <div>
         <h2 className="text-lg font-semibold text-foreground">৪a. DB Wizard</h2>
         <p className="mt-1 text-sm text-muted-foreground">MySQL/PostgreSQL নির্বাচন ও connection string যাচাই — উপযুক্ত ড্রাইভার/কনফিগ auto-generate হবে।</p>
@@ -584,8 +592,9 @@ function MigrationsStep({ plan, db, setDb, onValidateDb, ack, setAck, ackTyped, 
   );
 }
 
-function WireStep({ plan, retentionDays, setRetentionDays, onBuild, busy }: {
+function WireStep({ plan, retentionDays, setRetentionDays, snapshotRoot, setSnapshotRoot, onBuild, busy }: {
   plan: IntegrationPlan; retentionDays: number; setRetentionDays: (n: number) => void;
+  snapshotRoot: string; setSnapshotRoot: (s: string) => void;
   onBuild: () => void; busy: boolean;
 }) {
   return (
@@ -599,15 +608,31 @@ function WireStep({ plan, retentionDays, setRetentionDays, onBuild, busy }: {
         <div>Storage buckets: <b>{plan.storageBuckets.length}</b></div>
         <div>Auth bridge: <b>{plan.auth.source}</b> → <b>{plan.auth.target}</b></div>
       </div>
-      <label className="mt-4 flex items-center gap-3 text-sm">
-        <span className="text-muted-foreground">Snapshot retention (days):</span>
-        <input
-          type="number" min={1} max={365} value={retentionDays}
-          onChange={(e) => setRetentionDays(Math.max(1, Math.min(365, Number(e.target.value) || 14)))}
-          className="w-24 rounded-md border border-border bg-background px-2 py-1 font-mono text-sm"
-        />
-        <span className="text-xs text-muted-foreground">apply.sh সফল হওয়ার পর এর চেয়ে পুরনো snapshot ও log auto-delete হবে।</span>
-      </label>
+      <div className="mt-4 space-y-3 rounded-md border border-border p-3">
+        <div className="text-sm font-semibold text-foreground">Snapshot storage</div>
+        <label className="flex flex-col gap-1 text-sm sm:flex-row sm:items-center sm:gap-3">
+          <span className="w-40 shrink-0 text-muted-foreground">Storage path (SNAP_ROOT):</span>
+          <input
+            type="text" value={snapshotRoot}
+            onChange={(e) => setSnapshotRoot(e.target.value || "/var/backups/pluto-autoconnect")}
+            placeholder="/var/backups/pluto-autoconnect"
+            className="flex-1 rounded-md border border-border bg-background px-2 py-1 font-mono text-xs"
+          />
+        </label>
+        <div className="text-xs text-muted-foreground">
+          DB dump, Docker volume tarballs, config tarballs — সব এই একই path-এ store হবে,
+          এবং retention cleanup-ও এই path থেকে চালাবে। Logs default: <code>&lt;SNAP_ROOT&gt;/logs</code>।
+        </div>
+        <label className="flex items-center gap-3 text-sm">
+          <span className="text-muted-foreground">Retention (days):</span>
+          <input
+            type="number" min={1} max={365} value={retentionDays}
+            onChange={(e) => setRetentionDays(Math.max(1, Math.min(365, Number(e.target.value) || 14)))}
+            className="w-24 rounded-md border border-border bg-background px-2 py-1 font-mono text-sm"
+          />
+          <span className="text-xs text-muted-foreground">apply.sh সফল হওয়ার পর এর চেয়ে পুরনো snapshot ও log auto-delete।</span>
+        </label>
+      </div>
       <button onClick={onBuild} disabled={busy}
         className="mt-6 inline-flex items-center gap-2 rounded-md bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
         {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />} Bundle তৈরি করুন
@@ -616,23 +641,24 @@ function WireStep({ plan, retentionDays, setRetentionDays, onBuild, busy }: {
   );
 }
 
-function DownloadStep({ artifacts, buildAudit }: {
+function DownloadStep({ artifacts, buildAudit, rawLog }: {
   artifacts: { frontend: Blob; migrations: Blob; report: Blob };
   buildAudit: () => { json: Blob; html: Blob };
+  rawLog: string;
 }) {
   return (
     <div>
       <h2 className="text-lg font-semibold text-foreground">৬. Download</h2>
-      <p className="mt-1 text-sm text-muted-foreground">Migration ZIP-এ apply.sh (verified + auto-rollback + retention), rollback.sh, serve-progress.sh, env template — সব যুক্ত।</p>
+      <p className="mt-1 text-sm text-muted-foreground">Migration ZIP-এ apply.sh (verified + auto-rollback + retention), rollback.sh, cancel.sh, serve-progress.sh, env template — সব যুক্ত।</p>
       <div className="mt-5 grid gap-3">
         <FileCard name="frontend-connected.zip" size={artifacts.frontend.size} onClick={() => downloadBlob(artifacts.frontend, "frontend-connected.zip")} />
         <FileCard name="pluto-migrations.zip" size={artifacts.migrations.size} onClick={() => downloadBlob(artifacts.migrations, "pluto-migrations.zip")} />
         <FileCard name="INTEGRATION_REPORT.md" size={artifacts.report.size} onClick={() => downloadBlob(artifacts.report, "INTEGRATION_REPORT.md")} />
         <div className="rounded-md border border-primary/40 bg-primary/5 p-4">
           <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-primary">
-            <FileText className="h-4 w-4" /> Single audit report (impact + ack + verification + rollback)
+            <FileText className="h-4 w-4" /> Single audit report (impact + ack + verification + rollback + cancellation)
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <button onClick={() => { const { json } = buildAudit(); downloadBlob(json, "audit-report.json"); }}
               className="rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground hover:bg-primary/90">
               Download JSON
@@ -641,12 +667,21 @@ function DownloadStep({ artifacts, buildAudit }: {
               className="rounded-md border border-primary/40 px-3 py-1.5 text-sm text-primary hover:bg-primary/10">
               Download HTML
             </button>
+            <button
+              disabled={!rawLog}
+              onClick={() => downloadBlob(new Blob([rawLog], { type: "application/x-ndjson" }), "progress-log.jsonl")}
+              className="inline-flex items-center gap-1 rounded-md border border-primary/40 px-3 py-1.5 text-sm text-primary hover:bg-primary/10 disabled:opacity-40"
+              title={rawLog ? "Download raw JSONL progress + rollback log" : "Load a JSONL log in the Rollback Logs tab first"}
+            >
+              <Download className="h-3.5 w-3.5" /> Raw JSONL log {rawLog ? `(${(rawLog.length / 1024).toFixed(1)} KB)` : "(empty)"}
+            </button>
           </div>
         </div>
       </div>
       <div className="mt-6 rounded-md border border-green-500/40 bg-green-500/5 p-4 text-sm text-green-800 dark:text-green-200">
         <b>VPS-এ:</b> <code>unzip pluto-migrations.zip</code> → <code>bash install-secrets.sh</code> → <code>bash apply.sh</code>।
-        Real-time progress: <code>bash serve-progress.sh 8787</code> → "Rollback Logs" tab-এ <code>http://127.0.0.1:8787/stream</code> paste করুন।
+        Real-time progress: <code>bash serve-progress.sh 8787</code> → "Rollback Logs" tab-এ <b>Auto-detect</b> চাপুন
+        (manual: <code>http://127.0.0.1:8787/stream</code>)।
       </div>
     </div>
   );
@@ -767,62 +802,154 @@ function TestModePanel({ plan, db }: { plan: IntegrationPlan | null; db: DbConfi
 // ---------------------------------------------------------------------------
 // Rollback Log Viewer — parse JSONL logs from apply.sh
 // ---------------------------------------------------------------------------
-function RollbackLogPanel({ onLoaded }: { onLoaded: (s: LogSummary | null) => void }) {
+function RollbackLogPanel({ onLoaded, rawLog, setRawLog, cancellation, setCancellation, log }: {
+  onLoaded: (s: LogSummary | null) => void;
+  rawLog: string; setRawLog: (s: string) => void;
+  cancellation: { at: string; jobId?: string; via: "ui" | "cli"; note?: string } | null;
+  setCancellation: (c: { at: string; jobId?: string; via: "ui" | "cli"; note?: string } | null) => void;
+  log: (m: string) => void;
+}) {
   const [summary, setSummary] = useState<LogSummary | null>(null);
-  const [raw, setRaw] = useState<string>("");
-  const [streamUrl, setStreamUrl] = useState<string>("");
+  const [streamUrl, setStreamUrl] = useState<string>("http://127.0.0.1:8787/stream");
   const [streaming, setStreaming] = useState(false);
+  const [discovering, setDiscovering] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
   const esRef = useRef<EventSource | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback((text: string) => {
-    setRaw(text);
+    setRawLog(text);
     const s = parseRollbackLog(text);
     setSummary(s);
     onLoaded(s);
-  }, [onLoaded]);
+  }, [onLoaded, setRawLog]);
 
   const stopStream = useCallback(() => {
     esRef.current?.close(); esRef.current = null; setStreaming(false);
   }, []);
 
-  const startStream = useCallback(() => {
-    if (!streamUrl) { toast.error("SSE URL দিন (e.g. http://127.0.0.1:8787/stream)"); return; }
+  const connectTo = useCallback((url: string) => {
     stopStream();
     try {
-      const es = new EventSource(streamUrl);
+      const es = new EventSource(url);
       esRef.current = es;
       setStreaming(true);
       let buf = "";
       es.onmessage = (ev) => {
         buf += ev.data + "\n";
-        setRaw(buf);
+        setRawLog(buf);
         const s = parseRollbackLog(buf);
-        setSummary(s);
-        onLoaded(s);
+        setSummary(s); onLoaded(s);
       };
       es.onerror = () => { toast.error("SSE সংযোগ বিচ্ছিন্ন"); stopStream(); };
     } catch (e) { toast.error("Stream শুরু করা যায়নি: " + (e as Error).message); }
-  }, [streamUrl, stopStream, onLoaded]);
+  }, [stopStream, onLoaded, setRawLog]);
+
+  const startStream = useCallback(() => {
+    if (!streamUrl) { toast.error("SSE URL দিন"); return; }
+    connectTo(streamUrl);
+  }, [streamUrl, connectTo]);
+
+  // Auto-discover: probe common host:port combinations that serve-progress.sh
+  // typically listens on (SSH tunnels, same-origin dev proxy, common LAN IPs).
+  const autoDiscover = useCallback(async () => {
+    setDiscovering(true); log("Auto-discovering SSE endpoints…");
+    const origin = typeof window !== "undefined" ? window.location.origin : "";
+    const candidates = [
+      "http://127.0.0.1:8787",
+      "http://localhost:8787",
+      "http://127.0.0.1:8788",
+      "http://localhost:9787",
+      origin ? `${origin}/api/public/autoconnect` : "",
+    ].filter(Boolean);
+    for (const base of candidates) {
+      try {
+        const r = await Promise.race([
+          fetch(`${base}/jobs`, { method: "GET" }),
+          new Promise<Response>((_, rej) => setTimeout(() => rej(new Error("timeout")), 1200)),
+        ]);
+        if (!r.ok) continue;
+        const j = await r.json().catch(() => null) as { jobs?: string[]; current?: string } | null;
+        const job = j?.current || j?.jobs?.[0];
+        const url = job ? `${base}/stream?job=${encodeURIComponent(job)}` : `${base}/stream`;
+        setStreamUrl(url);
+        log(`✓ Found progress server at ${base}${job ? ` (job=${job})` : ""}`);
+        connectTo(url);
+        setDiscovering(false);
+        toast.success(`Connected to ${base}`);
+        return;
+      } catch { /* try next */ }
+    }
+    setDiscovering(false);
+    log("✗ Auto-detect failed — কোনো serve-progress.sh reachable নেই");
+    toast.error("Auto-detect failed — SSH tunnel চালু আছে কিনা দেখুন");
+  }, [connectTo, log]);
+
+  // Download raw JSONL from stream server (or fall back to whatever's loaded).
+  const downloadRawLog = useCallback(async () => {
+    // Try to pull fresh from server if a stream URL is set
+    try {
+      const base = streamUrl.replace(/\/stream.*$/, "");
+      const job = summary?.jobId && summary.jobId !== "unknown" ? summary.jobId : "";
+      const url = `${base}/log${job ? `?job=${encodeURIComponent(job)}` : ""}`;
+      const r = await Promise.race([
+        fetch(url),
+        new Promise<Response>((_, rej) => setTimeout(() => rej(new Error("timeout")), 1500)),
+      ]);
+      if (r.ok) {
+        const blob = await r.blob();
+        downloadBlob(blob, `${job || "progress"}.jsonl`);
+        return;
+      }
+    } catch { /* fall back */ }
+    if (!rawLog) { toast.error("কোনো log নেই — আগে stream/upload করুন"); return; }
+    downloadBlob(new Blob([rawLog], { type: "application/x-ndjson" }), `${summary?.jobId ?? "progress"}.jsonl`);
+  }, [streamUrl, summary, rawLog]);
+
+  // Cancel the running job — POST to the progress server's /cancel endpoint.
+  const cancelJob = useCallback(async () => {
+    const job = summary?.jobId;
+    if (!job || job === "unknown") { toast.error("জব চলছে না — cancel করার কিছু নেই"); return; }
+    setCancelling(true);
+    try {
+      const base = streamUrl.replace(/\/stream.*$/, "");
+      const r = await fetch(`${base}/cancel?job=${encodeURIComponent(job)}`, { method: "POST" });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const at = new Date().toISOString();
+      setCancellation({ at, jobId: job, via: "ui", note: `Cancelled via UI against ${base}` });
+      log(`✔ cancel signal sent for ${job} — apply.sh will rollback at next checkpoint`);
+      toast.success("Cancel signal sent — apply.sh will roll back safely");
+    } catch (e) {
+      // Record cancellation attempt even if server unreachable — audit log still useful.
+      const at = new Date().toISOString();
+      setCancellation({ at, jobId: job, via: "ui", note: `Cancel attempted but server unreachable: ${(e as Error).message}` });
+      toast.error("Cancel failed: " + (e as Error).message + " — manual: bash cancel.sh " + job);
+    } finally { setCancelling(false); }
+  }, [summary, streamUrl, log, setCancellation]);
 
   return (
     <div className="space-y-4">
       <div>
         <h2 className="text-lg font-semibold text-foreground">Rollback Log Viewer</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          VPS-এর <code>/var/log/pluto-autoconnect/&lt;jobId&gt;.jsonl</code> ফাইল আপলোড করুন,
-          অথবা <code>serve-progress.sh</code>-এর SSE URL দিয়ে real-time apply/rollback progress stream করুন।
+          VPS-এর JSONL log আপলোড করুন, অথবা <code>serve-progress.sh</code> থেকে real-time stream করুন।
+          <b> Auto-detect</b> চাপলে সাধারণ endpoint scan করবে।
         </p>
       </div>
 
       <div className="rounded-md border border-primary/40 bg-primary/5 p-3">
-        <div className="mb-2 text-sm font-semibold text-primary">Live Stream (SSE)</div>
+        <div className="mb-2 flex items-center justify-between">
+          <div className="text-sm font-semibold text-primary">Live Stream (SSE)</div>
+          <button onClick={autoDiscover} disabled={discovering || streaming}
+            className="inline-flex items-center gap-1 rounded-md bg-primary/20 px-2.5 py-1 text-xs text-primary hover:bg-primary/30 disabled:opacity-50">
+            {discovering ? <Loader2 className="h-3 w-3 animate-spin" /> : <Radar className="h-3 w-3" />}
+            Auto-detect
+          </button>
+        </div>
         <div className="flex gap-2">
           <input
-            type="url"
-            placeholder="http://127.0.0.1:8787/stream"
-            value={streamUrl}
-            onChange={(e) => setStreamUrl(e.target.value)}
+            type="url" placeholder="http://127.0.0.1:8787/stream"
+            value={streamUrl} onChange={(e) => setStreamUrl(e.target.value)}
             className="flex-1 rounded-md border border-border bg-background px-3 py-2 font-mono text-xs"
           />
           {!streaming ? (
@@ -836,29 +963,44 @@ function RollbackLogPanel({ onLoaded }: { onLoaded: (s: LogSummary | null) => vo
               Disconnect
             </button>
           )}
+          <button onClick={cancelJob} disabled={cancelling || !summary?.jobId || summary.jobId === "unknown"}
+            className="inline-flex items-center gap-1 rounded-md border border-red-500/60 bg-red-500/10 px-3 py-1.5 text-sm text-red-700 hover:bg-red-500/20 disabled:opacity-40 dark:text-red-300"
+            title="Cooperatively cancel the running apply/rollback job">
+            {cancelling ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <StopCircle className="h-3.5 w-3.5" />}
+            Cancel job
+          </button>
         </div>
         {streaming && (
           <div className="mt-2 flex items-center gap-2 text-xs text-primary">
-            <Loader2 className="h-3 w-3 animate-spin" /> live — {summary?.entries.length ?? 0} events received
+            <Loader2 className="h-3 w-3 animate-spin" /> live — {summary?.entries.length ?? 0} events · job: <code>{summary?.jobId ?? "?"}</code>
+          </div>
+        )}
+        {cancellation && (
+          <div className="mt-2 rounded-md border border-red-500/40 bg-red-500/5 p-2 text-xs text-red-800 dark:text-red-200">
+            <XCircle className="mr-1 inline h-3.5 w-3.5" />
+            Cancellation recorded @ <code>{cancellation.at}</code> · job <code>{cancellation.jobId}</code>
+            {cancellation.note && ` — ${cancellation.note}`}
+            <button onClick={() => setCancellation(null)}
+              className="ml-2 underline hover:opacity-70">clear</button>
           </div>
         )}
       </div>
 
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <button onClick={() => fileRef.current?.click()}
           className="rounded-md border border-border px-3 py-1.5 text-sm hover:bg-muted">
           .jsonl ফাইল লোড করুন
         </button>
-        <input ref={fileRef} type="file" accept=".jsonl,.log,.txt,application/json"
-          className="hidden"
-          onChange={async (e) => {
-            const f = e.target.files?.[0]; if (!f) return;
-            load(await f.text());
-          }} />
+        <input ref={fileRef} type="file" accept=".jsonl,.log,.txt,application/json" className="hidden"
+          onChange={async (e) => { const f = e.target.files?.[0]; if (!f) return; load(await f.text()); }} />
+        <button onClick={downloadRawLog} disabled={!rawLog && !streaming}
+          className="inline-flex items-center gap-1 rounded-md border border-border px-3 py-1.5 text-sm hover:bg-muted disabled:opacity-40">
+          <Download className="h-3.5 w-3.5" /> Download raw JSONL
+        </button>
         <textarea
           placeholder='অথবা এখানে paste করুন…  {"ts":"…","step":"apply_sql","status":"fail",…}'
-          className="min-h-[80px] flex-1 rounded-md border border-border bg-background px-3 py-2 font-mono text-xs"
-          value={raw}
+          className="min-h-[60px] flex-1 rounded-md border border-border bg-background px-3 py-2 font-mono text-xs"
+          value={rawLog}
           onChange={(e) => load(e.target.value)}
         />
       </div>
@@ -911,10 +1053,85 @@ function RollbackLogPanel({ onLoaded }: { onLoaded: (s: LogSummary | null) => vo
       {!summary && (
         <div className="rounded-md border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
           <AlertTriangle className="mx-auto mb-2 h-6 w-6" />
-          কোনো log লোড হয়নি — উপরে ফাইল দিন অথবা JSONL paste করুন।
+          কোনো log লোড হয়নি — Auto-detect করুন, ফাইল দিন, অথবা JSONL paste করুন।
         </div>
       )}
     </div>
   );
 }
+
+// Pre-apply verification recap — surfaces manifest / checksum results BEFORE
+// any script gets a chance to run. Files-checked and mismatches are shown
+// explicitly so the operator can bail out at this screen if anything's off.
+function PreApplyVerification({ verify }: { verify: VerifyResult | null }) {
+  const [expanded, setExpanded] = useState(false);
+  if (!verify) {
+    return (
+      <div className="rounded-md border border-yellow-500/40 bg-yellow-500/5 p-3 text-sm">
+        <AlertTriangle className="mr-1 inline h-4 w-4 text-yellow-600" />
+        Integrity check hasn't run — আপলোড স্টেপ থেকে শুরু করুন।
+      </div>
+    );
+  }
+  const ok = verify.entries.filter((e) => e.ok);
+  const bad = verify.entries.filter((e) => !e.ok);
+  const state = !verify.hasManifest ? "warn" : verify.ok ? "ok" : "bad";
+  const border = state === "ok" ? "border-green-500/40 bg-green-500/5"
+    : state === "bad" ? "border-red-500/40 bg-red-500/5"
+    : "border-yellow-500/40 bg-yellow-500/5";
+  return (
+    <div className={`rounded-md border p-3 text-sm ${border}`}>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2 font-semibold">
+          {state === "ok" ? <ShieldCheck className="h-4 w-4 text-green-600" />
+            : state === "bad" ? <ShieldAlert className="h-4 w-4 text-red-600" />
+            : <ShieldAlert className="h-4 w-4 text-yellow-600" />}
+          Pre-apply verification — {verify.message}
+        </div>
+        {verify.entries.length > 0 && (
+          <button onClick={() => setExpanded((v) => !v)}
+            className="rounded border border-border px-2 py-0.5 text-xs hover:bg-muted">
+            {expanded ? "hide" : `show all ${verify.entries.length}`}
+          </button>
+        )}
+      </div>
+      <div className="mt-2 grid grid-cols-3 gap-2 text-xs">
+        <div className="rounded bg-background/50 p-2">
+          <div className="text-muted-foreground">Files checked</div>
+          <div className="text-lg font-bold text-foreground">{verify.entries.length}</div>
+        </div>
+        <div className="rounded bg-background/50 p-2">
+          <div className="text-muted-foreground">Verified ✓</div>
+          <div className="text-lg font-bold text-green-700 dark:text-green-300">{ok.length}</div>
+        </div>
+        <div className="rounded bg-background/50 p-2">
+          <div className="text-muted-foreground">Mismatch / missing ✘</div>
+          <div className={`text-lg font-bold ${bad.length ? "text-red-700 dark:text-red-300" : "text-foreground"}`}>{bad.length}</div>
+        </div>
+      </div>
+      {bad.length > 0 && (
+        <div className="mt-2 rounded bg-red-500/10 p-2 text-xs">
+          <div className="font-semibold text-red-700 dark:text-red-300">apply.sh will refuse to run:</div>
+          <ul className="mt-1 max-h-40 space-y-0.5 overflow-auto font-mono">
+            {bad.slice(0, 30).map((e) => (
+              <li key={e.path} className="text-red-700 dark:text-red-300">
+                ✘ <code>{e.path}</code> — {e.actual ? "hash mismatch" : "missing from ZIP"}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {expanded && (
+        <ul className="mt-2 max-h-64 space-y-0.5 overflow-auto font-mono text-[11px]">
+          {verify.entries.map((e) => (
+            <li key={e.path} className={e.ok ? "text-green-700 dark:text-green-300" : "text-red-700 dark:text-red-300"}>
+              {e.ok ? "✓" : "✘"} {e.path} <span className="text-muted-foreground">— sha:{e.expected.slice(0, 10)}…</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 

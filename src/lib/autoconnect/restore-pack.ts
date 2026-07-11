@@ -2,11 +2,12 @@
 // Now snapshots BOTH the DB and Docker volumes + configs so rollback truly
 // returns to the previous state.
 
-export function buildApplyScript(opts: { db: string; sqlFile?: string; volumes?: string[]; configs?: string[]; retentionDays?: number }): string {
+export function buildApplyScript(opts: { db: string; sqlFile?: string; volumes?: string[]; configs?: string[]; retentionDays?: number; snapshotRoot?: string }): string {
   const sql = opts.sqlFile ?? "001_pluto_auto.sql";
   const volumes = (opts.volumes ?? ["pluto_pgdata", "pluto_api_data"]).join(" ");
   const configs = (opts.configs ?? ["/etc/pluto", "/etc/pluto-autoconnect.env"]).join(" ");
   const retention = opts.retentionDays ?? 14;
+  const snapRoot = opts.snapshotRoot ?? "/var/backups/pluto-autoconnect";
   return `#!/usr/bin/env bash
 # Auto-Connect: apply migrations with FULL snapshot (DB + Docker volumes + configs)
 # and automatic rollback on failure. Every step is journaled to a JSONL log
@@ -17,15 +18,28 @@ BUNDLE_DIR="$(cd "$(dirname "\${BASH_SOURCE[0]}")" && pwd)"
 DB_URL="\${DATABASE_URL:-${opts.db}}"
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 JOB_ID="\${JOB_ID:-job-$STAMP}"
-SNAP_ROOT="\${SNAP_ROOT:-/var/backups/pluto-autoconnect}"
+SNAP_ROOT="\${SNAP_ROOT:-${snapRoot}}"
 SNAP_DIR="$SNAP_ROOT/$JOB_ID"
-LOG_DIR="\${LOG_DIR:-/var/log/pluto-autoconnect}"
+LOG_DIR="\${LOG_DIR:-$SNAP_ROOT/logs}"
 mkdir -p "$SNAP_DIR" "$LOG_DIR"
 LOG_TXT="$LOG_DIR/$JOB_ID.log"
 LOG_JSON="$LOG_DIR/$JOB_ID.jsonl"
+CANCEL_FLAG="$LOG_DIR/$JOB_ID.cancel"
 VOLUMES="\${PLUTO_VOLUMES:-${volumes}}"
 CONFIGS="\${PLUTO_CONFIGS:-${configs}}"
 RETENTION_DAYS="\${RETENTION_DAYS:-${retention}}"
+
+check_cancel() {
+  if [ -f "$CANCEL_FLAG" ]; then
+    jlog "cancel" "start" "\\"reason\\":\\"cancel flag detected at $CANCEL_FLAG\\""
+    echo "▶ CANCEL requested — rolling back" | tee -a "$LOG_TXT"
+    do_rollback || true
+    jlog "cancel" "done"
+    rm -f "$CANCEL_FLAG"
+    trap - EXIT
+    exit 4
+  fi
+}
 
 jlog() {
   local step="$1" status="$2" extra="\${3:-}"
@@ -125,7 +139,8 @@ cat > "$SNAP_DIR/snapshot.json" <<JSON
 JSON
 jlog "snapshot_manifest" "ok"
 
-# 5) Apply
+# 5) Apply (cooperative cancel check before starting the transaction)
+check_cancel
 jlog "apply_sql" "start" "\\"file\\":\\"${sql}\\""
 echo "▶ Applying ${sql} in single transaction (ON_ERROR_STOP)…" | tee -a "$LOG_TXT"
 if psql "$DB_URL" -v ON_ERROR_STOP=1 --single-transaction -f "$BUNDLE_DIR/${sql}" 2>>"$LOG_TXT"; then
@@ -204,13 +219,18 @@ echo "✔ rollback complete for $JOB_ID"
 
 // Server-Sent-Events tailer served by the VPS so the /auto-connect page
 // can stream real-time apply/rollback progress via EventSource.
+// Also exposes:
+//   GET /jobs          → JSON list of jobIds (for auto-discovery)
+//   GET /log?job=…     → raw JSONL download
+//   POST /cancel?job=… → touches the cancel flag (apply.sh polls it)
 export function buildServeProgressScript(): string {
   return `#!/usr/bin/env bash
 # Serve the running JOB's JSONL log over HTTP/SSE for the /auto-connect page.
 # Usage:  JOB_ID=job-... bash serve-progress.sh [PORT]   # default port 8787
 #         (bind 127.0.0.1 by default — expose over SSH tunnel: ssh -L 8787:127.0.0.1:8787 …)
 set -euo pipefail
-LOG_DIR="\${LOG_DIR:-/var/log/pluto-autoconnect}"
+SNAP_ROOT="\${SNAP_ROOT:-/var/backups/pluto-autoconnect}"
+LOG_DIR="\${LOG_DIR:-$SNAP_ROOT/logs}"
 JOB_ID="\${JOB_ID:-$(ls -1t "$LOG_DIR"/*.jsonl 2>/dev/null | head -1 | xargs -n1 basename | sed 's/\\.jsonl$//')}"
 PORT="\${1:-8787}"
 BIND="\${BIND:-127.0.0.1}"
@@ -218,35 +238,75 @@ LOG_JSON="$LOG_DIR/$JOB_ID.jsonl"
 [ -f "$LOG_JSON" ] || { echo "no log for $JOB_ID at $LOG_JSON"; exit 1; }
 command -v python3 >/dev/null || { echo "python3 required"; exit 1; }
 
-echo "▶ SSE progress for $JOB_ID on http://$BIND:$PORT/stream"
-LOG_JSON="$LOG_JSON" PORT="$PORT" BIND="$BIND" python3 - <<'PY'
-import os, time, http.server, threading
-LOG=os.environ['LOG_JSON']; PORT=int(os.environ['PORT']); BIND=os.environ['BIND']
+echo "▶ SSE progress for $JOB_ID on http://$BIND:$PORT/stream (jobs/log/cancel endpoints alongside)"
+LOG_DIR="$LOG_DIR" LOG_JSON="$LOG_JSON" JOB_ID="$JOB_ID" PORT="$PORT" BIND="$BIND" python3 - <<'PY'
+import os, time, json, glob, http.server, urllib.parse
+LOG=os.environ['LOG_JSON']; LOG_DIR=os.environ['LOG_DIR']
+JOB=os.environ['JOB_ID']; PORT=int(os.environ['PORT']); BIND=os.environ['BIND']
+def cors(h):
+    h.send_header('Access-Control-Allow-Origin','*')
+    h.send_header('Access-Control-Allow-Methods','GET,POST,OPTIONS')
+    h.send_header('Access-Control-Allow-Headers','*')
 class H(http.server.BaseHTTPRequestHandler):
     def log_message(self, *a): pass
+    def do_OPTIONS(self): self.send_response(204); cors(self); self.end_headers()
+    def do_POST(self):
+        u=urllib.parse.urlparse(self.path); q=urllib.parse.parse_qs(u.query)
+        if u.path=='/cancel':
+            job=q.get('job',[JOB])[0]
+            open(os.path.join(LOG_DIR, job+'.cancel'),'w').close()
+            self.send_response(200); cors(self); self.send_header('Content-Type','application/json'); self.end_headers()
+            self.wfile.write(json.dumps({'ok':True,'job':job}).encode()); return
+        self.send_response(404); cors(self); self.end_headers()
     def do_GET(self):
-        if self.path not in ('/stream','/'):
-            self.send_response(404); self.end_headers(); return
-        self.send_response(200)
+        u=urllib.parse.urlparse(self.path); q=urllib.parse.parse_qs(u.query)
+        if u.path=='/jobs':
+            jobs=sorted([os.path.basename(f)[:-6] for f in glob.glob(os.path.join(LOG_DIR,'*.jsonl'))], reverse=True)
+            self.send_response(200); cors(self); self.send_header('Content-Type','application/json'); self.end_headers()
+            self.wfile.write(json.dumps({'jobs':jobs,'current':JOB}).encode()); return
+        if u.path=='/log':
+            job=q.get('job',[JOB])[0]; path=os.path.join(LOG_DIR, job+'.jsonl')
+            if not os.path.exists(path):
+                self.send_response(404); cors(self); self.end_headers(); return
+            data=open(path,'rb').read()
+            self.send_response(200); cors(self); self.send_header('Content-Type','application/x-ndjson')
+            self.send_header('Content-Disposition', f'attachment; filename="{job}.jsonl"')
+            self.end_headers(); self.wfile.write(data); return
+        if u.path not in ('/stream','/'):
+            self.send_response(404); cors(self); self.end_headers(); return
+        self.send_response(200); cors(self)
         self.send_header('Content-Type','text/event-stream')
-        self.send_header('Cache-Control','no-cache')
-        self.send_header('Access-Control-Allow-Origin','*')
-        self.end_headers()
+        self.send_header('Cache-Control','no-cache'); self.end_headers()
+        job=q.get('job',[JOB])[0]; target=os.path.join(LOG_DIR, job+'.jsonl')
         try:
-            with open(LOG,'r') as f:
-                # send existing history first
+            with open(target,'r') as f:
                 for line in f:
                     if line.strip():
                         self.wfile.write(f"data: {line.strip()}\\n\\n".encode()); self.wfile.flush()
                 while True:
                     line=f.readline()
                     if not line:
-                        self.wfile.write(b": ping\\n\\n"); self.wfile.flush()
-                        time.sleep(1); continue
+                        self.wfile.write(b": ping\\n\\n"); self.wfile.flush(); time.sleep(1); continue
                     self.wfile.write(f"data: {line.strip()}\\n\\n".encode()); self.wfile.flush()
         except (BrokenPipeError, ConnectionResetError): pass
 http.server.ThreadingHTTPServer((BIND,PORT), H).serve_forever()
 PY
+`;
+}
+
+// Cancel script — writes the cancel flag file that apply.sh polls between phases.
+export function buildCancelScript(opts?: { snapshotRoot?: string }): string {
+  const snapRoot = opts?.snapshotRoot ?? "/var/backups/pluto-autoconnect";
+  return `#!/usr/bin/env bash
+# Cooperatively cancel a running apply.sh job. Writes a flag file that
+# apply.sh polls between snapshot phases and before the SQL apply step.
+set -euo pipefail
+SNAP_ROOT="\${SNAP_ROOT:-${snapRoot}}"
+LOG_DIR="\${LOG_DIR:-$SNAP_ROOT/logs}"
+JOB_ID="\${1:-\${JOB_ID:-$(ls -1t "$LOG_DIR"/*.jsonl 2>/dev/null | head -1 | xargs -n1 basename | sed 's/\\.jsonl$//')}}"
+[ -n "$JOB_ID" ] || { echo "no JOB_ID"; exit 1; }
+touch "$LOG_DIR/$JOB_ID.cancel"
+echo "✔ cancel flag set for $JOB_ID at $LOG_DIR/$JOB_ID.cancel"
 `;
 }
 
@@ -265,18 +325,28 @@ bash apply.sh
 - সফল হলে \`$SNAP_ROOT\` ও \`$LOG_DIR\`-এ \`RETENTION_DAYS\`-এর চেয়ে পুরনো ফাইল স্বয়ংক্রিয়ভাবে delete হবে।
 - Structured log: \`/var/log/pluto-autoconnect/<jobId>.jsonl\`।
 
-## Real-time progress → /auto-connect
+## Real-time progress + auto-discovery + cancel → /auto-connect
 \`\`\`bash
-JOB_ID=job-20260711T… bash serve-progress.sh 8787
-# local dev machine:
+SNAP_ROOT=/var/backups/pluto-autoconnect bash serve-progress.sh 8787
+# local dev machine (SSH tunnel):
 ssh -L 8787:127.0.0.1:8787 you@vps
-# then in the "Rollback Logs" tab, paste: http://127.0.0.1:8787/stream
 \`\`\`
+Endpoints exposed on \`http://127.0.0.1:8787\`:
+- \`GET /stream[?job=…]\` — SSE live tail (auto-discovered by the UI's "Auto-detect" button)
+- \`GET /jobs\` — list of jobIds (used for auto-discovery)
+- \`GET /log?job=…\` — raw JSONL download (also downloadable from the UI)
+- \`POST /cancel?job=…\` — cooperative cancel (used by the UI's Cancel button)
 
 ## Manual Rollback (bundle + snapshot both checksum-verified)
 \`\`\`bash
 bash rollback.sh                 # latest snapshot
 bash rollback.sh job-20260711T…  # specific job
+\`\`\`
+
+## Manual cancel
+\`\`\`bash
+bash cancel.sh                   # latest job
+bash cancel.sh job-20260711T…    # specific job
 \`\`\`
 
 ## Exit codes
@@ -286,5 +356,6 @@ bash rollback.sh job-20260711T…  # specific job
 | 1 | মাইগ্রেশন ব্যর্থ, auto-rollback সম্পন্ন |
 | 2 | verify / snapshot ব্যর্থ (কারণ stderr-এ) |
 | 3 | rollback ব্যর্থ — manual দরকার |
+| 4 | ব্যবহারকারী cancel করেছেন, rollback সম্পন্ন |
 `;
 }
