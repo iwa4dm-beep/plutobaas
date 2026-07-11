@@ -50,7 +50,7 @@ function AutoConnectPage() {
   const [snapshotRoot, setSnapshotRoot] = useState<string>("/var/backups/pluto-autoconnect");
   const [lastRollback, setLastRollback] = useState<LogSummary | null>(null);
   const [rawLog, setRawLog] = useState<string>("");
-  const [cancellation, setCancellation] = useState<{ at: string; jobId?: string; via: "ui" | "cli"; note?: string } | null>(null);
+  const [cancellation, setCancellation] = useState<CancellationRecord | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const log = useCallback((m: string) => {
