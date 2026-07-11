@@ -159,18 +159,32 @@ exit 1
 export function buildRollbackScript(): string {
   return `#!/usr/bin/env bash
 # Manual rollback to a specific job snapshot (defaults to the most recent).
+# Verifies both the bundle SHA256SUMS (this pack) and the snapshot SHA256SUMS
+# before touching anything, with a clear failure reason if either check fails.
 set -euo pipefail
+BUNDLE_DIR="$(cd "$(dirname "\${BASH_SOURCE[0]}")" && pwd)"
 DB_URL="\${DATABASE_URL:?set DATABASE_URL}"
-SNAP_ROOT="\${SNAP_DIR:-/var/backups/pluto-autoconnect}"
+SNAP_ROOT="\${SNAP_ROOT:-/var/backups/pluto-autoconnect}"
 JOB_ID="\${1:-$(ls -1t "$SNAP_ROOT" 2>/dev/null | head -1)}"
 SNAP="$SNAP_ROOT/$JOB_ID"
-[ -d "$SNAP" ] || { echo "no snapshot at $SNAP"; exit 1; }
 
-echo "▶ Verifying checksums…"
-( cd "$SNAP" && sha256sum -c SHA256SUMS ) || { echo "✘ checksum mismatch"; exit 2; }
+die() { echo "✘ $1"; exit "\${2:-2}"; }
+
+[ -d "$SNAP" ] || die "snapshot not found: $SNAP" 1
+
+echo "▶ Verifying restore-pack integrity…"
+[ -f "$BUNDLE_DIR/SHA256SUMS" ] || die "bundle SHA256SUMS missing — restore-pack untrusted"
+( cd "$BUNDLE_DIR" && sha256sum -c --strict --quiet SHA256SUMS ) \\
+  || die "restore-pack checksum mismatch — refuse to run (bundle corrupt/tampered)"
+
+echo "▶ Verifying snapshot checksums for $JOB_ID…"
+[ -f "$SNAP/SHA256SUMS" ] || die "snapshot SHA256SUMS missing at $SNAP — refuse rollback"
+( cd "$SNAP" && sha256sum -c --strict --quiet SHA256SUMS ) \\
+  || die "snapshot checksum mismatch — $JOB_ID is corrupt, pick another jobId"
 
 echo "▶ Restoring DB…"
-pg_restore -d "$DB_URL" --clean --if-exists --no-owner --no-privileges "$SNAP/db.dump"
+pg_restore -d "$DB_URL" --clean --if-exists --no-owner --no-privileges "$SNAP/db.dump" \\
+  || die "pg_restore failed — DB not modified"
 
 if command -v docker >/dev/null 2>&1 && [ -f "$SNAP/snapshot.json" ]; then
   for f in "$SNAP"/vol-*.tgz; do
@@ -178,28 +192,88 @@ if command -v docker >/dev/null 2>&1 && [ -f "$SNAP/snapshot.json" ]; then
     v="$(basename "$f" .tgz | sed 's/^vol-//')"
     echo "▶ Restoring volume $v…"
     docker run --rm -v "$v":/dst -v "$SNAP":/src alpine \\
-      sh -c "rm -rf /dst/* /dst/.[!.]* 2>/dev/null; tar xzf /src/vol-$v.tgz -C /dst"
+      sh -c "rm -rf /dst/* /dst/.[!.]* 2>/dev/null; tar xzf /src/vol-$v.tgz -C /dst" \\
+      || die "volume restore failed: $v"
   done
 fi
 
-[ -f "$SNAP/configs.tgz" ] && { echo "▶ Restoring configs…"; tar xzf "$SNAP/configs.tgz" -C /; }
+[ -f "$SNAP/configs.tgz" ] && { echo "▶ Restoring configs…"; tar xzf "$SNAP/configs.tgz" -C / || die "config restore failed"; }
 echo "✔ rollback complete for $JOB_ID"
+`;
+}
+
+// Server-Sent-Events tailer served by the VPS so the /auto-connect page
+// can stream real-time apply/rollback progress via EventSource.
+export function buildServeProgressScript(): string {
+  return `#!/usr/bin/env bash
+# Serve the running JOB's JSONL log over HTTP/SSE for the /auto-connect page.
+# Usage:  JOB_ID=job-... bash serve-progress.sh [PORT]   # default port 8787
+#         (bind 127.0.0.1 by default — expose over SSH tunnel: ssh -L 8787:127.0.0.1:8787 …)
+set -euo pipefail
+LOG_DIR="\${LOG_DIR:-/var/log/pluto-autoconnect}"
+JOB_ID="\${JOB_ID:-$(ls -1t "$LOG_DIR"/*.jsonl 2>/dev/null | head -1 | xargs -n1 basename | sed 's/\\.jsonl$//')}"
+PORT="\${1:-8787}"
+BIND="\${BIND:-127.0.0.1}"
+LOG_JSON="$LOG_DIR/$JOB_ID.jsonl"
+[ -f "$LOG_JSON" ] || { echo "no log for $JOB_ID at $LOG_JSON"; exit 1; }
+command -v python3 >/dev/null || { echo "python3 required"; exit 1; }
+
+echo "▶ SSE progress for $JOB_ID on http://$BIND:$PORT/stream"
+LOG_JSON="$LOG_JSON" PORT="$PORT" BIND="$BIND" python3 - <<'PY'
+import os, time, http.server, threading
+LOG=os.environ['LOG_JSON']; PORT=int(os.environ['PORT']); BIND=os.environ['BIND']
+class H(http.server.BaseHTTPRequestHandler):
+    def log_message(self, *a): pass
+    def do_GET(self):
+        if self.path not in ('/stream','/'):
+            self.send_response(404); self.end_headers(); return
+        self.send_response(200)
+        self.send_header('Content-Type','text/event-stream')
+        self.send_header('Cache-Control','no-cache')
+        self.send_header('Access-Control-Allow-Origin','*')
+        self.end_headers()
+        try:
+            with open(LOG,'r') as f:
+                # send existing history first
+                for line in f:
+                    if line.strip():
+                        self.wfile.write(f"data: {line.strip()}\\n\\n".encode()); self.wfile.flush()
+                while True:
+                    line=f.readline()
+                    if not line:
+                        self.wfile.write(b": ping\\n\\n"); self.wfile.flush()
+                        time.sleep(1); continue
+                    self.wfile.write(f"data: {line.strip()}\\n\\n".encode()); self.wfile.flush()
+        except (BrokenPipeError, ConnectionResetError): pass
+http.server.ThreadingHTTPServer((BIND,PORT), H).serve_forever()
+PY
 `;
 }
 
 export function buildRestoreReadme(): string {
   return `# Restore & Rollback Pack
 
-## এক-ক্লিক Apply (DB + Docker volumes + configs snapshot)
+## এক-ক্লিক Apply (verified bundle + DB/volume/config snapshot)
 \`\`\`bash
 export DATABASE_URL="postgres://user:pass@host:5432/pluto"
+export RETENTION_DAYS=14           # optional, default 14 — auto-cleans older snapshots + logs
 bash apply.sh
 \`\`\`
+- Pre-flight: \`sha256sum -c SHA256SUMS\` on the bundle itself — mismatch aborts with a clear reason **before** anything is touched.
 - Snapshot: \`/var/backups/pluto-autoconnect/<jobId>/\` — \`db.dump\`, \`vol-*.tgz\`, \`configs.tgz\`, \`SHA256SUMS\`, \`snapshot.json\`.
 - ব্যর্থ হলে auto-rollback: DB → volumes → configs।
-- Structured log: \`/var/log/pluto-autoconnect/<jobId>.jsonl\` — Auto-Connect Studio-এর "Rollback Logs" tab-এ আপলোড করে বিশ্লেষণ করা যাবে।
+- সফল হলে \`$SNAP_ROOT\` ও \`$LOG_DIR\`-এ \`RETENTION_DAYS\`-এর চেয়ে পুরনো ফাইল স্বয়ংক্রিয়ভাবে delete হবে।
+- Structured log: \`/var/log/pluto-autoconnect/<jobId>.jsonl\`।
 
-## Manual Rollback
+## Real-time progress → /auto-connect
+\`\`\`bash
+JOB_ID=job-20260711T… bash serve-progress.sh 8787
+# local dev machine:
+ssh -L 8787:127.0.0.1:8787 you@vps
+# then in the "Rollback Logs" tab, paste: http://127.0.0.1:8787/stream
+\`\`\`
+
+## Manual Rollback (bundle + snapshot both checksum-verified)
 \`\`\`bash
 bash rollback.sh                 # latest snapshot
 bash rollback.sh job-20260711T…  # specific job
@@ -210,7 +284,7 @@ bash rollback.sh job-20260711T…  # specific job
 |---|---|
 | 0 | সফল |
 | 1 | মাইগ্রেশন ব্যর্থ, auto-rollback সম্পন্ন |
-| 2 | snapshot ব্যর্থ |
+| 2 | verify / snapshot ব্যর্থ (কারণ stderr-এ) |
 | 3 | rollback ব্যর্থ — manual দরকার |
 `;
 }
