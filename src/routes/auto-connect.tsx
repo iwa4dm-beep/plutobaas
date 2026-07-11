@@ -14,7 +14,7 @@ import { buildStructureReport, groupFiles } from "@/lib/autoconnect/structure-re
 import { verifyZip, type VerifyResult } from "@/lib/autoconnect/zip-verify";
 import { parseRollbackLog, type LogSummary } from "@/lib/autoconnect/rollback-log";
 import { runE2E, type E2EReport } from "@/lib/autoconnect/e2e-runner";
-import { buildAuditJson, buildAuditHtml, type AuditInput } from "@/lib/autoconnect/audit-report";
+import { buildAuditJson, buildAuditHtml, buildAuditBundle, type AuditInput, type CancellationRecord } from "@/lib/autoconnect/audit-report";
 import type { AnalyzeResult, DbConfig, IntegrationPlan, SqlStatement } from "@/lib/autoconnect/types";
 
 export const Route = createFileRoute("/auto-connect")({
