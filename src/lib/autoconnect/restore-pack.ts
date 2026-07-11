@@ -254,6 +254,24 @@ class H(http.server.BaseHTTPRequestHandler):
         u=urllib.parse.urlparse(self.path); q=urllib.parse.parse_qs(u.query)
         if u.path=='/cancel':
             job=q.get('job',[JOB])[0]
+            path=os.path.join(LOG_DIR, job+'.jsonl')
+            # Guard: refuse to cancel a job that has already produced a terminal record.
+            finished=False; reason=None
+            if os.path.exists(path):
+                try:
+                    tail=open(path,'r').read().splitlines()[-40:]
+                    for line in tail:
+                        try: r=json.loads(line)
+                        except: continue
+                        if r.get('step')=='done' and r.get('status')=='ok': finished=True; reason='done'; break
+                        if r.get('step')=='rollback' and r.get('status')=='done': finished=True; reason='rolled_back'; break
+                        if r.get('step')=='cancel' and r.get('status')=='done': finished=True; reason='already_cancelled'; break
+                        if 'exitCode' in r: finished=True; reason='exited(%s)'%r.get('exitCode'); break
+                except: pass
+            if finished:
+                self.send_response(409); cors(self); self.send_header('Content-Type','application/json'); self.end_headers()
+                self.wfile.write(json.dumps({'ok':False,'job':job,'refused':True,'reason':reason or 'finished',
+                    'message':'job already finished — cancel refused'}).encode()); return
             open(os.path.join(LOG_DIR, job+'.cancel'),'w').close()
             self.send_response(200); cors(self); self.send_header('Content-Type','application/json'); self.end_headers()
             self.wfile.write(json.dumps({'ok':True,'job':job}).encode()); return
@@ -305,6 +323,12 @@ SNAP_ROOT="\${SNAP_ROOT:-${snapRoot}}"
 LOG_DIR="\${LOG_DIR:-$SNAP_ROOT/logs}"
 JOB_ID="\${1:-\${JOB_ID:-$(ls -1t "$LOG_DIR"/*.jsonl 2>/dev/null | head -1 | xargs -n1 basename | sed 's/\\.jsonl$//')}}"
 [ -n "$JOB_ID" ] || { echo "no JOB_ID"; exit 1; }
+LOG_JSON="$LOG_DIR/$JOB_ID.jsonl"
+# Guard: refuse if the job is already finished — nothing to cancel.
+if [ -f "$LOG_JSON" ] && tail -n 40 "$LOG_JSON" | grep -Eq '"step":"done","status":"ok"|"step":"rollback","status":"done"|"step":"cancel","status":"done"|"exitCode"'; then
+  echo "✘ refusing to cancel: job $JOB_ID has already finished (see $LOG_JSON)" >&2
+  exit 5
+fi
 touch "$LOG_DIR/$JOB_ID.cancel"
 echo "✔ cancel flag set for $JOB_ID at $LOG_DIR/$JOB_ID.cancel"
 `;

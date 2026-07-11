@@ -14,7 +14,7 @@ import { buildStructureReport, groupFiles } from "@/lib/autoconnect/structure-re
 import { verifyZip, type VerifyResult } from "@/lib/autoconnect/zip-verify";
 import { parseRollbackLog, type LogSummary } from "@/lib/autoconnect/rollback-log";
 import { runE2E, type E2EReport } from "@/lib/autoconnect/e2e-runner";
-import { buildAuditJson, buildAuditHtml, type AuditInput } from "@/lib/autoconnect/audit-report";
+import { buildAuditJson, buildAuditHtml, buildAuditBundle, type AuditInput, type CancellationRecord } from "@/lib/autoconnect/audit-report";
 import type { AnalyzeResult, DbConfig, IntegrationPlan, SqlStatement } from "@/lib/autoconnect/types";
 
 export const Route = createFileRoute("/auto-connect")({
@@ -50,7 +50,7 @@ function AutoConnectPage() {
   const [snapshotRoot, setSnapshotRoot] = useState<string>("/var/backups/pluto-autoconnect");
   const [lastRollback, setLastRollback] = useState<LogSummary | null>(null);
   const [rawLog, setRawLog] = useState<string>("");
-  const [cancellation, setCancellation] = useState<{ at: string; jobId?: string; via: "ui" | "cli"; note?: string } | null>(null);
+  const [cancellation, setCancellation] = useState<CancellationRecord | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const log = useCallback((m: string) => {
@@ -121,7 +121,7 @@ function AutoConnectPage() {
     finally { setBusy(false); }
   };
 
-  const buildAudit = useCallback(() => {
+  const auditInput = useMemo<AuditInput>(() => {
     let impact = null;
     if (plan) {
       const tables = plan.tables.map((t) => ({ name: t.name, columns: t.columns, timestamps: true }));
@@ -129,24 +129,29 @@ function AutoConnectPage() {
       if (db.driver === "mysql") sql = mysqlToPg(sql);
       impact = summarizeImpact(analyzeSql(sql));
     }
-    const input: AuditInput = {
+    return {
       project: { file: file?.name, sizeBytes: file?.size },
-      db,
-      plan,
-      impact,
+      db, plan, impact,
       ack: { checkbox: ackDestructive, typed: ackTyped, required: (impact?.destructive ?? 0) > 0 },
       verification: verify,
       rollback: lastRollback,
-      retentionDays,
-      snapshotRoot,
-      cancellation,
+      retentionDays, snapshotRoot, cancellation,
       rawLogJsonl: rawLog || null,
     };
-    const report = buildAuditJson(input);
+  }, [plan, db, file, ackDestructive, ackTyped, verify, lastRollback, retentionDays, snapshotRoot, cancellation, rawLog]);
+
+  const buildAudit = useCallback(() => {
+    const report = buildAuditJson(auditInput);
     const json = new Blob([JSON.stringify(report, null, 2)], { type: "application/json" });
     const html = new Blob([buildAuditHtml(report)], { type: "text/html" });
     return { json, html };
-  }, [plan, db, file, ackDestructive, ackTyped, verify, lastRollback, retentionDays, snapshotRoot, cancellation, rawLog]);
+  }, [auditInput]);
+
+  const downloadAuditZip = useCallback(async () => {
+    const blob = await buildAuditBundle(auditInput);
+    const jobId = lastRollback?.jobId || cancellation?.jobId || "audit";
+    downloadBlob(blob, `audit-${jobId}.zip`);
+  }, [auditInput, lastRollback, cancellation]);
 
 
   return (
@@ -201,9 +206,9 @@ function AutoConnectPage() {
                 />
               )}
               {step === 5 && plan && <WireStep plan={plan} retentionDays={retentionDays} setRetentionDays={setRetentionDays} snapshotRoot={snapshotRoot} setSnapshotRoot={setSnapshotRoot} onBuild={runBuild} busy={busy} />}
-              {step === 6 && artifacts && <DownloadStep artifacts={artifacts} buildAudit={buildAudit} rawLog={rawLog} />}
+              {step === 6 && artifacts && <DownloadStep artifacts={artifacts} buildAudit={buildAudit} downloadAuditZip={downloadAuditZip} rawLog={rawLog} />}
             </>}
-            {tab === "test" && <TestModePanel plan={plan} db={db} />}
+            {tab === "test" && <TestModePanel plan={plan} db={db} auditInput={auditInput} onSimulated={(r) => { setRawLog(r.jsonl); setLastRollback(parseRollbackLog(r.jsonl)); }} />}
             {tab === "logs" && <RollbackLogPanel onLoaded={setLastRollback} rawLog={rawLog} setRawLog={setRawLog} cancellation={cancellation} setCancellation={setCancellation} log={log} />}
           </main>
 
@@ -641,9 +646,10 @@ function WireStep({ plan, retentionDays, setRetentionDays, snapshotRoot, setSnap
   );
 }
 
-function DownloadStep({ artifacts, buildAudit, rawLog }: {
+function DownloadStep({ artifacts, buildAudit, downloadAuditZip, rawLog }: {
   artifacts: { frontend: Blob; migrations: Blob; report: Blob };
   buildAudit: () => { json: Blob; html: Blob };
+  downloadAuditZip: () => Promise<void>;
   rawLog: string;
 }) {
   return (
@@ -674,6 +680,11 @@ function DownloadStep({ artifacts, buildAudit, rawLog }: {
               title={rawLog ? "Download raw JSONL progress + rollback log" : "Load a JSONL log in the Rollback Logs tab first"}
             >
               <Download className="h-3.5 w-3.5" /> Raw JSONL log {rawLog ? `(${(rawLog.length / 1024).toFixed(1)} KB)` : "(empty)"}
+            </button>
+            <button onClick={downloadAuditZip}
+              className="inline-flex items-center gap-1 rounded-md bg-primary/90 px-3 py-1.5 text-sm text-primary-foreground hover:bg-primary"
+              title="Single ZIP: audit HTML/JSON + raw JSONL + verification-mismatch CSV">
+              <FileArchive className="h-3.5 w-3.5" /> Download audit bundle (.zip)
             </button>
           </div>
         </div>
@@ -723,8 +734,13 @@ function FileCard({ name, size, onClick }: { name: string; size: number; onClick
 // ---------------------------------------------------------------------------
 // Test Mode — placeholder DB dry-run / apply / induced-fail + rollback loop
 // ---------------------------------------------------------------------------
-function TestModePanel({ plan, db }: { plan: IntegrationPlan | null; db: DbConfig }) {
+function TestModePanel({ plan, db, onSimulated, auditInput }: {
+  plan: IntegrationPlan | null; db: DbConfig;
+  onSimulated?: (r: E2EReport) => void;
+  auditInput?: AuditInput;
+}) {
   const [failAt, setFailAt] = useState(2);
+  const [cancelAt, setCancelAt] = useState(1);
   const [report, setReport] = useState<E2EReport | null>(null);
 
   const stmts = useMemo<SqlStatement[]>(() => {
@@ -735,8 +751,28 @@ function TestModePanel({ plan, db }: { plan: IntegrationPlan | null; db: DbConfi
     return analyzeSql(sql);
   }, [plan, db.driver]);
 
-  const run = (mode: "dry-run" | "apply" | "induced-fail") => {
-    setReport(runE2E(stmts, { mode, failAt }));
+  const run = (mode: E2EReport["mode"]) => {
+    const r = runE2E(stmts, { mode, failAt, cancelAt });
+    setReport(r);
+    onSimulated?.(r);
+  };
+
+  const downloadSimulatedAudit = async () => {
+    if (!report || !auditInput) return;
+    const merged: AuditInput = {
+      ...auditInput,
+      rollback: parseRollbackLog(report.jsonl),
+      rawLogJsonl: report.jsonl,
+      cancellation: report.cancelled ? {
+        at: new Date().toISOString(), via: "ui",
+        jobId: `sim-${report.mode}`,
+        phase: report.mode === "cancel-snapshot" ? "snapshot" : report.mode === "cancel-sql" ? "sql" : "unknown",
+        exitCode: report.exitCode,
+        note: `E2E ${report.mode} — passed=${report.passed}, rolledBack=${report.rolledBack}, exit=${report.exitCode}`,
+      } : auditInput.cancellation,
+    };
+    const blob = await buildAuditBundle(merged);
+    downloadBlob(blob, `audit-e2e-${report.mode}.zip`);
   };
 
   if (!plan) {
@@ -752,7 +788,8 @@ function TestModePanel({ plan, db }: { plan: IntegrationPlan | null; db: DbConfi
       <div>
         <h2 className="text-lg font-semibold text-foreground">End-to-End Test Mode</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          Placeholder in-browser simulator — কোনো real DB ছুঁবে না। Dry-run, apply, এবং induced-fail + rollback flow বারবার চালান।
+          Placeholder in-browser simulator — কোনো real DB ছুঁবে না। Dry-run, apply, induced-fail,
+          এবং <b>snapshot/SQL phase cancel → rollback + exit code 4</b> flow বারবার চালান।
         </p>
       </div>
 
@@ -772,19 +809,55 @@ function TestModePanel({ plan, db }: { plan: IntegrationPlan | null; db: DbConfi
         <div className="ml-auto text-xs text-muted-foreground">total statements: {stmts.length}</div>
       </div>
 
+      <div className="rounded-md border border-yellow-500/40 bg-yellow-500/5 p-3">
+        <div className="mb-2 text-sm font-semibold text-yellow-800 dark:text-yellow-200">
+          <StopCircle className="mr-1 inline h-4 w-4" /> Cancel-during-phase test
+        </div>
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          <span className="text-muted-foreground">Cancel at step #</span>
+          <input type="number" value={cancelAt} min={0} max={Math.max(0, stmts.length - 1)}
+            onChange={(e) => setCancelAt(Number(e.target.value))}
+            className="w-20 rounded-md border border-border bg-background px-2 py-1 text-sm" />
+          <button onClick={() => run("cancel-snapshot")}
+            className="rounded-md bg-yellow-600 px-3 py-1.5 text-sm text-white hover:bg-yellow-700">
+            Cancel during snapshot
+          </button>
+          <button onClick={() => run("cancel-sql")}
+            className="rounded-md bg-yellow-600 px-3 py-1.5 text-sm text-white hover:bg-yellow-700">
+            Cancel during SQL
+          </button>
+        </div>
+        <div className="mt-1 text-xs text-yellow-800/80 dark:text-yellow-200/80">
+          Verifies rollback runs and exit code <b>4</b> is journaled → audit report captures it.
+        </div>
+      </div>
+
       {report && (
         <div className={`rounded-md border p-3 text-sm ${
           report.passed ? "border-green-500/40 bg-green-500/5" : "border-red-500/40 bg-red-500/5"
         }`}>
-          <div className="font-medium">
-            {report.passed ? "✓ PASS" : "✘ FAIL"} · mode: <code>{report.mode}</code> ·
-            {" "}{report.durationMs}ms · rolledBack: {String(report.rolledBack)} ·
-            {" "}final tables: {report.finalTables.length}
+          <div className="flex items-center justify-between">
+            <div className="font-medium">
+              {report.passed ? "✓ PASS" : "✘ FAIL"} · mode: <code>{report.mode}</code> ·
+              {" "}{report.durationMs}ms · rolledBack: <b>{String(report.rolledBack)}</b> ·
+              cancelled: <b>{String(report.cancelled)}</b> · exit: <b>{report.exitCode}</b> ·
+              tables: {report.finalTables.length}
+            </div>
+            <button onClick={downloadSimulatedAudit} disabled={!auditInput}
+              className="inline-flex items-center gap-1 rounded-md bg-primary/90 px-2.5 py-1 text-xs text-primary-foreground hover:bg-primary disabled:opacity-40">
+              <FileArchive className="h-3 w-3" /> audit .zip
+            </button>
           </div>
+          {report.cancelled && report.exitCode === 4 && (
+            <div className="mt-1 text-xs text-yellow-800 dark:text-yellow-200">
+              ✓ cancel recorded · rollback ran · exit code <b>4</b> journaled in JSONL
+            </div>
+          )}
           <ul className="mt-2 max-h-64 space-y-0.5 overflow-auto font-mono text-xs">
             {report.steps.map((s) => (
               <li key={s.index} className={
                 s.status === "failed" ? "text-red-700 dark:text-red-300"
+                  : s.status === "cancelled" ? "text-yellow-700 dark:text-yellow-300"
                   : s.status === "skipped" ? "text-muted-foreground"
                   : "text-green-700 dark:text-green-300"
               }>
@@ -805,8 +878,8 @@ function TestModePanel({ plan, db }: { plan: IntegrationPlan | null; db: DbConfi
 function RollbackLogPanel({ onLoaded, rawLog, setRawLog, cancellation, setCancellation, log }: {
   onLoaded: (s: LogSummary | null) => void;
   rawLog: string; setRawLog: (s: string) => void;
-  cancellation: { at: string; jobId?: string; via: "ui" | "cli"; note?: string } | null;
-  setCancellation: (c: { at: string; jobId?: string; via: "ui" | "cli"; note?: string } | null) => void;
+  cancellation: CancellationRecord | null;
+  setCancellation: (c: CancellationRecord | null) => void;
   log: (m: string) => void;
 }) {
   const [summary, setSummary] = useState<LogSummary | null>(null);
@@ -851,9 +924,11 @@ function RollbackLogPanel({ onLoaded, rawLog, setRawLog, cancellation, setCancel
   }, [streamUrl, connectTo]);
 
   // Auto-discover: probe common host:port combinations that serve-progress.sh
-  // typically listens on (SSH tunnels, same-origin dev proxy, common LAN IPs).
+  // typically listens on. Uses exponential backoff so the /auto-connect page
+  // still succeeds if the stream server starts a few seconds later than the
+  // click (e.g. bash serve-progress.sh & racing the browser).
   const autoDiscover = useCallback(async () => {
-    setDiscovering(true); log("Auto-discovering SSE endpoints…");
+    setDiscovering(true); log("Auto-discovering SSE endpoints (with retry)…");
     const origin = typeof window !== "undefined" ? window.location.origin : "";
     const candidates = [
       "http://127.0.0.1:8787",
@@ -862,27 +937,32 @@ function RollbackLogPanel({ onLoaded, rawLog, setRawLog, cancellation, setCancel
       "http://localhost:9787",
       origin ? `${origin}/api/public/autoconnect` : "",
     ].filter(Boolean);
-    for (const base of candidates) {
-      try {
-        const r = await Promise.race([
-          fetch(`${base}/jobs`, { method: "GET" }),
-          new Promise<Response>((_, rej) => setTimeout(() => rej(new Error("timeout")), 1200)),
-        ]);
-        if (!r.ok) continue;
-        const j = await r.json().catch(() => null) as { jobs?: string[]; current?: string } | null;
-        const job = j?.current || j?.jobs?.[0];
-        const url = job ? `${base}/stream?job=${encodeURIComponent(job)}` : `${base}/stream`;
-        setStreamUrl(url);
-        log(`✓ Found progress server at ${base}${job ? ` (job=${job})` : ""}`);
-        connectTo(url);
-        setDiscovering(false);
-        toast.success(`Connected to ${base}`);
-        return;
-      } catch { /* try next */ }
+    const delays = [0, 500, 1000, 2000, 4000, 8000]; // ~15s total window
+    for (let attempt = 0; attempt < delays.length; attempt++) {
+      if (delays[attempt]) await new Promise((r) => setTimeout(r, delays[attempt]));
+      log(`↻ attempt ${attempt + 1}/${delays.length}…`);
+      for (const base of candidates) {
+        try {
+          const r = await Promise.race([
+            fetch(`${base}/jobs`, { method: "GET" }),
+            new Promise<Response>((_, rej) => setTimeout(() => rej(new Error("timeout")), 1200)),
+          ]);
+          if (!r.ok) continue;
+          const j = await r.json().catch(() => null) as { jobs?: string[]; current?: string } | null;
+          const job = j?.current || j?.jobs?.[0];
+          const url = job ? `${base}/stream?job=${encodeURIComponent(job)}` : `${base}/stream`;
+          setStreamUrl(url);
+          log(`✓ Found progress server at ${base}${job ? ` (job=${job})` : ""} on attempt ${attempt + 1}`);
+          connectTo(url);
+          setDiscovering(false);
+          toast.success(`Connected to ${base}`);
+          return;
+        } catch { /* try next */ }
+      }
     }
     setDiscovering(false);
-    log("✗ Auto-detect failed — কোনো serve-progress.sh reachable নেই");
-    toast.error("Auto-detect failed — SSH tunnel চালু আছে কিনা দেখুন");
+    log("✗ Auto-detect gave up after " + delays.length + " attempts");
+    toast.error("Auto-detect failed — SSH tunnel / serve-progress.sh চালু আছে কিনা দেখুন");
   }, [connectTo, log]);
 
   // Download raw JSONL from stream server (or fall back to whatever's loaded).
@@ -907,22 +987,43 @@ function RollbackLogPanel({ onLoaded, rawLog, setRawLog, cancellation, setCancel
   }, [streamUrl, summary, rawLog]);
 
   // Cancel the running job — POST to the progress server's /cancel endpoint.
+  // Refuses (locally and server-side) if the job has already finished, and
+  // records a "refused" cancellation in the audit so operators see WHY.
   const cancelJob = useCallback(async () => {
     const job = summary?.jobId;
     if (!job || job === "unknown") { toast.error("জব চলছে না — cancel করার কিছু নেই"); return; }
+    if (summary?.finished) {
+      const at = new Date().toISOString();
+      setCancellation({ at, jobId: job, via: "ui", refusedBecauseFinished: true,
+        note: `Cancel refused — job already ${summary.ok ? "succeeded" : summary.rolledBack ? "rolled back" : summary.cancelled ? "cancelled" : "failed"} (exit ${summary.exitCode ?? "n/a"})` });
+      log(`⚠ cancel refused for ${job} — job already terminated (exit ${summary.exitCode ?? "n/a"})`);
+      toast.error("Cancel refused — job already finished");
+      return;
+    }
+    if (!window.confirm(`Cancel job ${job}?\n\napply.sh will roll back at the next checkpoint. Continue?`)) return;
     setCancelling(true);
     try {
       const base = streamUrl.replace(/\/stream.*$/, "");
       const r = await fetch(`${base}/cancel?job=${encodeURIComponent(job)}`, { method: "POST" });
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
       const at = new Date().toISOString();
-      setCancellation({ at, jobId: job, via: "ui", note: `Cancelled via UI against ${base}` });
+      if (r.status === 409) {
+        const body = await r.json().catch(() => ({}));
+        setCancellation({ at, jobId: job, via: "ui", refusedBecauseFinished: true,
+          note: `Server refused: ${body?.reason ?? "already finished"}` });
+        log(`⚠ server refused cancel for ${job}: ${body?.reason ?? "already finished"}`);
+        toast.error("Server refused cancel — job already finished");
+        return;
+      }
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const phase = summary?.entries.some((e) => e.step === "apply_sql") ? "sql" : "snapshot";
+      setCancellation({ at, jobId: job, via: "ui", phase, exitCode: 4,
+        note: `Cancelled via UI against ${base}` });
       log(`✔ cancel signal sent for ${job} — apply.sh will rollback at next checkpoint`);
       toast.success("Cancel signal sent — apply.sh will roll back safely");
     } catch (e) {
-      // Record cancellation attempt even if server unreachable — audit log still useful.
       const at = new Date().toISOString();
-      setCancellation({ at, jobId: job, via: "ui", note: `Cancel attempted but server unreachable: ${(e as Error).message}` });
+      setCancellation({ at, jobId: job, via: "ui",
+        note: `Cancel attempted but server unreachable: ${(e as Error).message}` });
       toast.error("Cancel failed: " + (e as Error).message + " — manual: bash cancel.sh " + job);
     } finally { setCancelling(false); }
   }, [summary, streamUrl, log, setCancellation]);
@@ -976,9 +1077,16 @@ function RollbackLogPanel({ onLoaded, rawLog, setRawLog, cancellation, setCancel
           </div>
         )}
         {cancellation && (
-          <div className="mt-2 rounded-md border border-red-500/40 bg-red-500/5 p-2 text-xs text-red-800 dark:text-red-200">
+          <div className={`mt-2 rounded-md border p-2 text-xs ${
+            cancellation.refusedBecauseFinished
+              ? "border-yellow-500/40 bg-yellow-500/5 text-yellow-800 dark:text-yellow-200"
+              : "border-red-500/40 bg-red-500/5 text-red-800 dark:text-red-200"
+          }`}>
             <XCircle className="mr-1 inline h-3.5 w-3.5" />
-            Cancellation recorded @ <code>{cancellation.at}</code> · job <code>{cancellation.jobId}</code>
+            {cancellation.refusedBecauseFinished ? "Cancellation REFUSED" : "Cancellation recorded"} @ <code>{cancellation.at}</code>
+            · job <code>{cancellation.jobId}</code>
+            {cancellation.phase && <> · phase <b>{cancellation.phase}</b></>}
+            {cancellation.exitCode != null && <> · exit <b>{cancellation.exitCode}</b></>}
             {cancellation.note && ` — ${cancellation.note}`}
             <button onClick={() => setCancellation(null)}
               className="ml-2 underline hover:opacity-70">clear</button>
@@ -1109,27 +1217,79 @@ function PreApplyVerification({ verify }: { verify: VerifyResult | null }) {
           <div className={`text-lg font-bold ${bad.length ? "text-red-700 dark:text-red-300" : "text-foreground"}`}>{bad.length}</div>
         </div>
       </div>
-      {bad.length > 0 && (
-        <div className="mt-2 rounded bg-red-500/10 p-2 text-xs">
-          <div className="font-semibold text-red-700 dark:text-red-300">apply.sh will refuse to run:</div>
-          <ul className="mt-1 max-h-40 space-y-0.5 overflow-auto font-mono">
-            {bad.slice(0, 30).map((e) => (
-              <li key={e.path} className="text-red-700 dark:text-red-300">
-                ✘ <code>{e.path}</code> — {e.actual ? "hash mismatch" : "missing from ZIP"}
-              </li>
+      {bad.length > 0 && <MismatchTable entries={bad} title="apply.sh will refuse to run — mismatches:" defaultSort="component" />}
+      {expanded && <MismatchTable entries={verify.entries} title={`All ${verify.entries.length} files`} defaultSort="path" />}
+    </div>
+  );
+}
+
+// Classify each verified/mismatched file by which "component" of the bundle
+// it belongs to, so operators can quickly see whether the tampering is in
+// SQL vs. scripts vs. frontend vs. metadata.
+function componentOf(path: string): { label: string; tone: string } {
+  if (/\.sql$/i.test(path)) return { label: "SQL migration", tone: "bg-purple-500/15 text-purple-700 dark:text-purple-300" };
+  if (/^(apply|rollback|cancel|serve-progress|install-secrets)\.sh$/i.test(path)) return { label: "restore script", tone: "bg-blue-500/15 text-blue-700 dark:text-blue-300" };
+  if (/\.(sh|bash)$/i.test(path)) return { label: "shell script", tone: "bg-blue-500/15 text-blue-700 dark:text-blue-300" };
+  if (/\.env|secrets/i.test(path)) return { label: "env / secrets", tone: "bg-amber-500/15 text-amber-700 dark:text-amber-300" };
+  if (/manifest\.json|SHA256SUMS|snapshot\.json/i.test(path)) return { label: "manifest", tone: "bg-slate-500/15 text-slate-700 dark:text-slate-300" };
+  if (/README|REPORT|\.md$/i.test(path)) return { label: "docs", tone: "bg-muted text-muted-foreground" };
+  if (/\.(ts|tsx|js|jsx|css|html)$/i.test(path)) return { label: "frontend", tone: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300" };
+  if (/db\.config|driver/i.test(path)) return { label: "db config", tone: "bg-indigo-500/15 text-indigo-700 dark:text-indigo-300" };
+  return { label: "other", tone: "bg-muted text-muted-foreground" };
+}
+
+type MismatchRow = { path: string; expected: string; actual: string; ok: boolean };
+type SortKey = "path" | "component" | "status";
+
+function MismatchTable({ entries, title, defaultSort }: { entries: MismatchRow[]; title: string; defaultSort: SortKey }) {
+  const [sort, setSort] = useState<SortKey>(defaultSort);
+  const [dir, setDir] = useState<"asc" | "desc">("asc");
+  const rows = useMemo(() => {
+    const r = entries.map((e) => ({ ...e, component: componentOf(e.path) }));
+    r.sort((a, b) => {
+      const av = sort === "component" ? a.component.label : sort === "status" ? (a.ok ? "ok" : a.actual ? "mismatch" : "missing") : a.path;
+      const bv = sort === "component" ? b.component.label : sort === "status" ? (b.ok ? "ok" : b.actual ? "mismatch" : "missing") : b.path;
+      return dir === "asc" ? av.localeCompare(bv) : bv.localeCompare(av);
+    });
+    return r;
+  }, [entries, sort, dir]);
+  const toggle = (k: SortKey) => { if (sort === k) setDir(dir === "asc" ? "desc" : "asc"); else { setSort(k); setDir("asc"); } };
+  const arrow = (k: SortKey) => sort === k ? (dir === "asc" ? " ▲" : " ▼") : "";
+  return (
+    <div className="mt-2 rounded border border-border bg-background/40">
+      <div className="border-b border-border px-2 py-1 text-xs font-semibold text-foreground">{title}</div>
+      <div className="max-h-72 overflow-auto">
+        <table className="w-full text-[11px] font-mono">
+          <thead className="sticky top-0 bg-muted text-muted-foreground">
+            <tr>
+              <th className="cursor-pointer px-2 py-1 text-left" onClick={() => toggle("status")}>·{arrow("status")}</th>
+              <th className="cursor-pointer px-2 py-1 text-left" onClick={() => toggle("component")}>Component{arrow("component")}</th>
+              <th className="cursor-pointer px-2 py-1 text-left" onClick={() => toggle("path")}>Path{arrow("path")}</th>
+              <th className="px-2 py-1 text-left">Expected SHA-256</th>
+              <th className="px-2 py-1 text-left">Actual SHA-256</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.path} className={r.ok ? "" : "bg-red-500/5"}>
+                <td className="px-2 py-1 align-top">
+                  <span className={`rounded px-1.5 py-0.5 text-[10px] ${
+                    r.ok ? "bg-green-500/15 text-green-700 dark:text-green-300"
+                      : r.actual ? "bg-red-500/20 text-red-700 dark:text-red-300"
+                      : "bg-yellow-500/20 text-yellow-700 dark:text-yellow-300"
+                  }`}>{r.ok ? "ok" : r.actual ? "mismatch" : "missing"}</span>
+                </td>
+                <td className="px-2 py-1 align-top"><span className={`rounded px-1.5 py-0.5 text-[10px] ${r.component.tone}`}>{r.component.label}</span></td>
+                <td className="px-2 py-1 align-top break-all">{r.path}</td>
+                <td className="px-2 py-1 align-top text-muted-foreground" title={r.expected}>{r.expected.slice(0, 16)}…</td>
+                <td className={`px-2 py-1 align-top ${r.ok ? "text-muted-foreground" : "text-red-700 dark:text-red-300"}`} title={r.actual}>
+                  {r.actual ? r.actual.slice(0, 16) + "…" : "(missing)"}
+                </td>
+              </tr>
             ))}
-          </ul>
-        </div>
-      )}
-      {expanded && (
-        <ul className="mt-2 max-h-64 space-y-0.5 overflow-auto font-mono text-[11px]">
-          {verify.entries.map((e) => (
-            <li key={e.path} className={e.ok ? "text-green-700 dark:text-green-300" : "text-red-700 dark:text-red-300"}>
-              {e.ok ? "✓" : "✘"} {e.path} <span className="text-muted-foreground">— sha:{e.expected.slice(0, 10)}…</span>
-            </li>
-          ))}
-        </ul>
-      )}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
