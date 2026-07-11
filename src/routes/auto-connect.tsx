@@ -115,7 +115,7 @@ function AutoConnectPage() {
     if (!zip || !analyze || !plan) return;
     setBusy(true); log("Building bundle (SQL + rewrite + restore-pack + env-template)…");
     try {
-      const a = await buildBundle(zip, analyze, plan, db.validated ? db : undefined, { retentionDays });
+      const a = await buildBundle(zip, analyze, plan, db.validated ? db : undefined, { retentionDays, snapshotRoot });
       setArtifacts(a); log("✓ Bundle ready"); setStep(6);
     } catch (e) { toast.error("Build fail: " + (e as Error).message); }
     finally { setBusy(false); }
