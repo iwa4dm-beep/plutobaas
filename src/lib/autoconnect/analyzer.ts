@@ -163,7 +163,13 @@ export async function analyzeZip(
 
     // Read only reasonable text files
     const isText = /\.(php|ts|tsx|js|jsx|json|env|md|yml|yaml|blade\.php)$/.test(lower);
-    if (!isText) continue;
+    let used = false;
+    let usedReason: string | undefined;
+    const markUsed = (r: string) => { used = true; usedReason = usedReason ?? r; };
+    if (!isText) {
+      pushFile({ path: entry.name, size: 0, kind: kindOf(entry.name), used: false });
+      continue;
+    }
 
     const text = await entry.async("string");
     result.stats.totalBytes += text.length;
@@ -228,15 +234,31 @@ export async function analyzeZip(
 
     // ── .env keys ──
     if (lower.endsWith(".env") || lower.endsWith(".env.example")) {
-      const keys = Array.from(text.matchAll(/^([A-Z0-9_]+)=/gm)).map((x) => x[1]);
+      const kv = Array.from(text.matchAll(/^([A-Z0-9_]+)=(.*)$/gm));
+      const keys = kv.map((x) => x[1]);
       if (entry.name.includes("frontend") || entry.name.startsWith("client")) {
         result.frontend.envKeys.push(...keys);
       } else {
         result.backend.envKeys.push(...keys);
+        for (const m of kv) result.backend.envExample[m[1]] = m[2].trim();
       }
+      markUsed("env keys");
     }
+
+    // Detect used markers for various backend/frontend patterns
+    if (/database\/migrations\/.+\.php$/.test(lower)) markUsed("migration");
+    else if (/app\/models\/.+\.php$/.test(lower)) markUsed("model");
+    else if (/routes\/(api|web)\.php$/.test(lower)) markUsed("route");
+    else if (/app\/http\/controllers\/.+\.php$/.test(lower)) markUsed("controller");
+    else if (lower.endsWith("composer.json") || lower.endsWith("package.json")) markUsed("manifest");
+    else if (/vite\.config\.(t|j)s$/.test(lower)) markUsed("vite config");
+    else if (/\.(tsx?|jsx?)$/.test(lower) && !entry.name.includes("/vendor/")) {
+      if (scanApiCalls(entry.name, text).length) markUsed("api call site");
+    } else if (/config\/(auth|filesystems)\.php$/.test(lower)) markUsed("laravel config");
+
+    pushFile({ path: entry.name, size: text.length, kind: kindOf(entry.name), used, reason: usedReason });
   }
 
-  onProgress?.(`Scanned ${result.stats.totalFiles} files`);
+  onProgress?.(`Scanned ${result.stats.totalFiles} files (${result.stats.usedFiles} used)`);
   return result;
 }
