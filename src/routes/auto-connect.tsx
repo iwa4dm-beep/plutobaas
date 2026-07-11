@@ -138,12 +138,15 @@ function AutoConnectPage() {
       verification: verify,
       rollback: lastRollback,
       retentionDays,
+      snapshotRoot,
+      cancellation,
+      rawLogJsonl: rawLog || null,
     };
     const report = buildAuditJson(input);
     const json = new Blob([JSON.stringify(report, null, 2)], { type: "application/json" });
     const html = new Blob([buildAuditHtml(report)], { type: "text/html" });
     return { json, html };
-  }, [plan, db, file, ackDestructive, ackTyped, verify, lastRollback, retentionDays]);
+  }, [plan, db, file, ackDestructive, ackTyped, verify, lastRollback, retentionDays, snapshotRoot, cancellation, rawLog]);
 
 
   return (
