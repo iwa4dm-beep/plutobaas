@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState, useCallback, useRef, useMemo } from "react";
 import JSZip from "jszip";
-import { Upload, FileArchive, Sparkles, Database, Wand2, Download, Loader2, CheckCircle2, AlertTriangle, RefreshCw, ShieldCheck, FileText, PlugZap } from "lucide-react";
+import { Upload, FileArchive, Sparkles, Database, Wand2, Download, Loader2, CheckCircle2, AlertTriangle, RefreshCw, ShieldCheck, FileText, PlugZap, PlayCircle, ScrollText, ShieldAlert } from "lucide-react";
 import { toast } from "sonner";
 import { analyzeZip } from "@/lib/autoconnect/analyzer";
 import { planIntegration } from "@/lib/autoconnect/ai-planner.functions";
@@ -11,7 +11,10 @@ import { mysqlToPg } from "@/lib/autoconnect/mysql-to-pg";
 import { analyzeSql, summarizeImpact } from "@/lib/autoconnect/sql-analyzer";
 import { validateDbConnection } from "@/lib/autoconnect/db-wizard.functions";
 import { buildStructureReport, groupFiles } from "@/lib/autoconnect/structure-report";
-import type { AnalyzeResult, DbConfig, IntegrationPlan } from "@/lib/autoconnect/types";
+import { verifyZip, type VerifyResult } from "@/lib/autoconnect/zip-verify";
+import { parseRollbackLog, type LogSummary } from "@/lib/autoconnect/rollback-log";
+import { runE2E, type E2EReport } from "@/lib/autoconnect/e2e-runner";
+import type { AnalyzeResult, DbConfig, IntegrationPlan, SqlStatement } from "@/lib/autoconnect/types";
 
 export const Route = createFileRoute("/auto-connect")({
   head: () => ({
