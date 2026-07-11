@@ -1296,4 +1296,104 @@ function MismatchTable({ entries, title, defaultSort }: { entries: MismatchRow[]
   );
 }
 
+function HelpPanel() {
+  const bundleFiles: Array<{ name: string; desc: string }> = [
+    { name: "audit-report.json", desc: "Machine-readable summary — impact, ack, verification, rollback outcome, exit code, cancellation record." },
+    { name: "audit-report.html", desc: "Self-contained styled report. Open in any browser; safe to archive or attach to a change request." },
+    { name: "<jobId>.jsonl", desc: "Raw progress log streamed by apply.sh / rollback.sh. One JSON event per line — the ground truth." },
+    { name: "verification-mismatches.csv", desc: "Per-file SHA-256 verification: path, ok flag, expected hash, actual hash, note (missing / hash-mismatch)." },
+    { name: "cancellation.json", desc: "Present only if the job was cancelled. Records via (ui|cli), phase, exit code, and whether the cancel was refused." },
+    { name: "README.txt", desc: "One-page human summary — job id, timestamp, exit code, rollback status." },
+  ];
+  const rollbackStates: Array<{ code: string; label: string; desc: string }> = [
+    { code: "0", label: "ok", desc: "Apply completed cleanly. No rollback needed." },
+    { code: "1", label: "rolled_back", desc: "A step failed. apply.sh restored the snapshot automatically." },
+    { code: "2", label: "failed", desc: "Rollback itself failed — manual recovery required. Inspect the JSONL." },
+    { code: "4", label: "cancelled", desc: "You (or cancel.sh) requested cancel. Snapshot was restored; treat like a rolled-back run." },
+  ];
+  return (
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-lg font-semibold text-foreground">Help &amp; interpretation guide</h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Quick reference for the audit bundle ZIP and how to read verification / cancellation states.
+          For the full workflow docs see <code>INTEGRATION_REPORT.md</code> inside the migration bundle.
+        </p>
+      </div>
+
+      <section className="rounded-lg border border-border bg-card p-4">
+        <h3 className="mb-2 flex items-center gap-2 text-sm font-semibold text-foreground">
+          <FileArchive className="h-4 w-4" /> Audit bundle ZIP — what&apos;s inside
+        </h3>
+        <ul className="divide-y divide-border text-sm">
+          {bundleFiles.map((f) => (
+            <li key={f.name} className="grid grid-cols-[220px_1fr] gap-3 py-2">
+              <code className="font-mono text-xs text-primary">{f.name}</code>
+              <span className="text-muted-foreground">{f.desc}</span>
+            </li>
+          ))}
+        </ul>
+      </section>
+
+      <section className="rounded-lg border border-border bg-card p-4">
+        <h3 className="mb-2 flex items-center gap-2 text-sm font-semibold text-foreground">
+          <ShieldAlert className="h-4 w-4" /> Verification mismatches
+        </h3>
+        <p className="text-sm text-muted-foreground">
+          Every file in the migration ZIP is hashed with SHA-256 at build time and re-hashed on the VPS before
+          <code className="mx-1">apply.sh</code>/<code>rollback.sh</code> runs. Rows in
+          <code className="mx-1">verification-mismatches.csv</code> and the pre-apply table mean:
+        </p>
+        <ul className="mt-2 space-y-1 text-sm">
+          <li>
+            <span className="mr-2 rounded bg-emerald-500/15 px-1.5 py-0.5 font-mono text-xs text-emerald-400">ok=1</span>
+            Expected and actual hashes match — file is intact. Safe to proceed.
+          </li>
+          <li>
+            <span className="mr-2 rounded bg-amber-500/15 px-1.5 py-0.5 font-mono text-xs text-amber-400">missing</span>
+            Actual hash is empty — the file is not in the ZIP. Usually a truncated upload; re-download the bundle.
+          </li>
+          <li>
+            <span className="mr-2 rounded bg-rose-500/15 px-1.5 py-0.5 font-mono text-xs text-rose-400">hash-mismatch</span>
+            File present but hashes differ — the ZIP was edited or corrupted in transit. Do <b>not</b> apply; rebuild.
+          </li>
+        </ul>
+        <p className="mt-2 text-xs text-muted-foreground">
+          The <b>Component</b> column groups mismatches (SQL migration, restore script, frontend, config, docs) so you can
+          tell whether the damage is in destructive SQL or in cosmetic files.
+        </p>
+      </section>
+
+      <section className="rounded-lg border border-border bg-card p-4">
+        <h3 className="mb-2 flex items-center gap-2 text-sm font-semibold text-foreground">
+          <StopCircle className="h-4 w-4" /> Cancellation &amp; the &quot;refused&quot; state
+        </h3>
+        <p className="text-sm text-muted-foreground">
+          Cancelling drops a flag file that <code className="mx-1">apply.sh</code> polls between steps. When picked up,
+          the current step aborts and the snapshot is restored — exit code <b>4</b>.
+        </p>
+        <p className="mt-2 text-sm text-muted-foreground">
+          If the job already finished (success or failure) before your cancel reached the server, the guard returns
+          <b> HTTP 409 </b>and records <code className="mx-1">refusedBecauseFinished: true</code> in the audit report.
+          This is <b>not</b> an error — it just means the cancel was a no-op. The real outcome is whatever
+          <code className="mx-1">rollbackStatus</code> already shows (usually <code>ok</code> or <code>rolled_back</code>).
+        </p>
+        <table className="mt-3 w-full text-sm">
+          <thead className="text-xs text-muted-foreground">
+            <tr><th className="text-left font-medium">Exit</th><th className="text-left font-medium">Status</th><th className="text-left font-medium">Meaning</th></tr>
+          </thead>
+          <tbody>
+            {rollbackStates.map((r) => (
+              <tr key={r.code} className="border-t border-border">
+                <td className="py-1.5 pr-3 font-mono text-primary">{r.code}</td>
+                <td className="py-1.5 pr-3">{r.label}</td>
+                <td className="py-1.5 text-muted-foreground">{r.desc}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </section>
+    </div>
+  );
+}
 
