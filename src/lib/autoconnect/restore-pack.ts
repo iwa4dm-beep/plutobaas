@@ -254,6 +254,24 @@ class H(http.server.BaseHTTPRequestHandler):
         u=urllib.parse.urlparse(self.path); q=urllib.parse.parse_qs(u.query)
         if u.path=='/cancel':
             job=q.get('job',[JOB])[0]
+            path=os.path.join(LOG_DIR, job+'.jsonl')
+            # Guard: refuse to cancel a job that has already produced a terminal record.
+            finished=False; reason=None
+            if os.path.exists(path):
+                try:
+                    tail=open(path,'r').read().splitlines()[-40:]
+                    for line in tail:
+                        try: r=json.loads(line)
+                        except: continue
+                        if r.get('step')=='done' and r.get('status')=='ok': finished=True; reason='done'; break
+                        if r.get('step')=='rollback' and r.get('status')=='done': finished=True; reason='rolled_back'; break
+                        if r.get('step')=='cancel' and r.get('status')=='done': finished=True; reason='already_cancelled'; break
+                        if 'exitCode' in r: finished=True; reason='exited(%s)'%r.get('exitCode'); break
+                except: pass
+            if finished:
+                self.send_response(409); cors(self); self.send_header('Content-Type','application/json'); self.end_headers()
+                self.wfile.write(json.dumps({'ok':False,'job':job,'refused':True,'reason':reason or 'finished',
+                    'message':'job already finished — cancel refused'}).encode()); return
             open(os.path.join(LOG_DIR, job+'.cancel'),'w').close()
             self.send_response(200); cors(self); self.send_header('Content-Type','application/json'); self.end_headers()
             self.wfile.write(json.dumps({'ok':True,'job':job}).encode()); return
