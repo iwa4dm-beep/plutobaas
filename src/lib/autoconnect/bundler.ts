@@ -3,7 +3,7 @@ import JSZip from "jszip";
 import type { AnalyzeResult, DbConfig, IntegrationPlan } from "./types";
 import { buildMigrationBundle } from "./migration-converter";
 import { rewriteFrontend } from "./frontend-rewriter";
-import { buildApplyScript, buildRollbackScript, buildRestoreReadme } from "./restore-pack";
+import { buildApplyScript, buildRollbackScript, buildRestoreReadme, buildServeProgressScript } from "./restore-pack";
 import { mapEnv, buildEnvTemplate, buildInstallSecretsScript } from "./env-mapper";
 import { buildStructureReport } from "./structure-report";
 import { buildDbConfigTs } from "./db-wizard.functions";
@@ -15,7 +15,9 @@ export async function buildBundle(
   analyze: AnalyzeResult,
   plan: IntegrationPlan,
   db?: DbConfig,
+  opts?: { retentionDays?: number },
 ): Promise<{ frontend: Blob; migrations: Blob; report: Blob }> {
+  const retentionDays = opts?.retentionDays ?? 14;
   const tables = plan.tables.length
     ? plan.tables.map((t) => ({ name: t.name, columns: t.columns, timestamps: true }))
     : analyze.backend.tables;
@@ -30,8 +32,9 @@ export async function buildBundle(
 
   const files: { path: string; content: string }[] = [
     { path: "001_pluto_auto.sql", content: sql },
-    { path: "apply.sh", content: buildApplyScript({ db: db?.url ?? "postgres://user:pass@host:5432/pluto" }) },
+    { path: "apply.sh", content: buildApplyScript({ db: db?.url ?? "postgres://user:pass@host:5432/pluto", retentionDays }) },
     { path: "rollback.sh", content: buildRollbackScript() },
+    { path: "serve-progress.sh", content: buildServeProgressScript() },
     { path: "pluto.env.template", content: envTemplate },
     { path: "install-secrets.sh", content: buildInstallSecretsScript() },
     { path: "pluto.db.config.ts", content: buildDbConfigTs(db?.driver ?? "postgres", db?.url ?? "") },

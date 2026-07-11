@@ -14,6 +14,7 @@ import { buildStructureReport, groupFiles } from "@/lib/autoconnect/structure-re
 import { verifyZip, type VerifyResult } from "@/lib/autoconnect/zip-verify";
 import { parseRollbackLog, type LogSummary } from "@/lib/autoconnect/rollback-log";
 import { runE2E, type E2EReport } from "@/lib/autoconnect/e2e-runner";
+import { buildAuditJson, buildAuditHtml, type AuditInput } from "@/lib/autoconnect/audit-report";
 import type { AnalyzeResult, DbConfig, IntegrationPlan, SqlStatement } from "@/lib/autoconnect/types";
 
 export const Route = createFileRoute("/auto-connect")({
@@ -45,6 +46,8 @@ function AutoConnectPage() {
   const [logs, setLogs] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [artifacts, setArtifacts] = useState<{ frontend: Blob; migrations: Blob; report: Blob } | null>(null);
+  const [retentionDays, setRetentionDays] = useState<number>(14);
+  const [lastRollback, setLastRollback] = useState<LogSummary | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const log = useCallback((m: string) => {
@@ -109,11 +112,36 @@ function AutoConnectPage() {
     if (!zip || !analyze || !plan) return;
     setBusy(true); log("Building bundle (SQL + rewrite + restore-pack + env-template)…");
     try {
-      const a = await buildBundle(zip, analyze, plan, db.validated ? db : undefined);
+      const a = await buildBundle(zip, analyze, plan, db.validated ? db : undefined, { retentionDays });
       setArtifacts(a); log("✓ Bundle ready"); setStep(6);
     } catch (e) { toast.error("Build fail: " + (e as Error).message); }
     finally { setBusy(false); }
   };
+
+  const buildAudit = useCallback(() => {
+    let impact = null;
+    if (plan) {
+      const tables = plan.tables.map((t) => ({ name: t.name, columns: t.columns, timestamps: true }));
+      let sql = buildMigrationBundle(tables);
+      if (db.driver === "mysql") sql = mysqlToPg(sql);
+      impact = summarizeImpact(analyzeSql(sql));
+    }
+    const input: AuditInput = {
+      project: { file: file?.name, sizeBytes: file?.size },
+      db,
+      plan,
+      impact,
+      ack: { checkbox: ackDestructive, typed: ackTyped, required: (impact?.destructive ?? 0) > 0 },
+      verification: verify,
+      rollback: lastRollback,
+      retentionDays,
+    };
+    const report = buildAuditJson(input);
+    const json = new Blob([JSON.stringify(report, null, 2)], { type: "application/json" });
+    const html = new Blob([buildAuditHtml(report)], { type: "text/html" });
+    return { json, html };
+  }, [plan, db, file, ackDestructive, ackTyped, verify, lastRollback, retentionDays]);
+
 
   return (
     <div className="min-h-screen bg-background">
@@ -165,11 +193,11 @@ function AutoConnectPage() {
                   busy={busy}
                 />
               )}
-              {step === 5 && plan && <WireStep plan={plan} onBuild={runBuild} busy={busy} />}
-              {step === 6 && artifacts && <DownloadStep artifacts={artifacts} />}
+              {step === 5 && plan && <WireStep plan={plan} retentionDays={retentionDays} setRetentionDays={setRetentionDays} onBuild={runBuild} busy={busy} />}
+              {step === 6 && artifacts && <DownloadStep artifacts={artifacts} buildAudit={buildAudit} />}
             </>}
             {tab === "test" && <TestModePanel plan={plan} db={db} />}
-            {tab === "logs" && <RollbackLogPanel />}
+            {tab === "logs" && <RollbackLogPanel onLoaded={setLastRollback} />}
           </main>
 
 
@@ -556,7 +584,10 @@ function MigrationsStep({ plan, db, setDb, onValidateDb, ack, setAck, ackTyped, 
   );
 }
 
-function WireStep({ plan, onBuild, busy }: { plan: IntegrationPlan; onBuild: () => void; busy: boolean }) {
+function WireStep({ plan, retentionDays, setRetentionDays, onBuild, busy }: {
+  plan: IntegrationPlan; retentionDays: number; setRetentionDays: (n: number) => void;
+  onBuild: () => void; busy: boolean;
+}) {
   return (
     <div>
       <h2 className="text-lg font-semibold text-foreground">৫. Wire APIs & Rewrite Frontend</h2>
@@ -568,6 +599,15 @@ function WireStep({ plan, onBuild, busy }: { plan: IntegrationPlan; onBuild: () 
         <div>Storage buckets: <b>{plan.storageBuckets.length}</b></div>
         <div>Auth bridge: <b>{plan.auth.source}</b> → <b>{plan.auth.target}</b></div>
       </div>
+      <label className="mt-4 flex items-center gap-3 text-sm">
+        <span className="text-muted-foreground">Snapshot retention (days):</span>
+        <input
+          type="number" min={1} max={365} value={retentionDays}
+          onChange={(e) => setRetentionDays(Math.max(1, Math.min(365, Number(e.target.value) || 14)))}
+          className="w-24 rounded-md border border-border bg-background px-2 py-1 font-mono text-sm"
+        />
+        <span className="text-xs text-muted-foreground">apply.sh সফল হওয়ার পর এর চেয়ে পুরনো snapshot ও log auto-delete হবে।</span>
+      </label>
       <button onClick={onBuild} disabled={busy}
         className="mt-6 inline-flex items-center gap-2 rounded-md bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
         {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />} Bundle তৈরি করুন
@@ -576,22 +616,42 @@ function WireStep({ plan, onBuild, busy }: { plan: IntegrationPlan; onBuild: () 
   );
 }
 
-function DownloadStep({ artifacts }: { artifacts: { frontend: Blob; migrations: Blob; report: Blob } }) {
+function DownloadStep({ artifacts, buildAudit }: {
+  artifacts: { frontend: Blob; migrations: Blob; report: Blob };
+  buildAudit: () => { json: Blob; html: Blob };
+}) {
   return (
     <div>
       <h2 className="text-lg font-semibold text-foreground">৬. Download</h2>
-      <p className="mt-1 text-sm text-muted-foreground">Migration ZIP-এ apply.sh (auto-rollback), env template, install-secrets, db config, structure report — সব যুক্ত।</p>
+      <p className="mt-1 text-sm text-muted-foreground">Migration ZIP-এ apply.sh (verified + auto-rollback + retention), rollback.sh, serve-progress.sh, env template — সব যুক্ত।</p>
       <div className="mt-5 grid gap-3">
         <FileCard name="frontend-connected.zip" size={artifacts.frontend.size} onClick={() => downloadBlob(artifacts.frontend, "frontend-connected.zip")} />
         <FileCard name="pluto-migrations.zip" size={artifacts.migrations.size} onClick={() => downloadBlob(artifacts.migrations, "pluto-migrations.zip")} />
         <FileCard name="INTEGRATION_REPORT.md" size={artifacts.report.size} onClick={() => downloadBlob(artifacts.report, "INTEGRATION_REPORT.md")} />
+        <div className="rounded-md border border-primary/40 bg-primary/5 p-4">
+          <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-primary">
+            <FileText className="h-4 w-4" /> Single audit report (impact + ack + verification + rollback)
+          </div>
+          <div className="flex gap-2">
+            <button onClick={() => { const { json } = buildAudit(); downloadBlob(json, "audit-report.json"); }}
+              className="rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground hover:bg-primary/90">
+              Download JSON
+            </button>
+            <button onClick={() => { const { html } = buildAudit(); downloadBlob(html, "audit-report.html"); }}
+              className="rounded-md border border-primary/40 px-3 py-1.5 text-sm text-primary hover:bg-primary/10">
+              Download HTML
+            </button>
+          </div>
+        </div>
       </div>
       <div className="mt-6 rounded-md border border-green-500/40 bg-green-500/5 p-4 text-sm text-green-800 dark:text-green-200">
-        <b>VPS-এ:</b> <code>unzip pluto-migrations.zip</code> → <code>bash install-secrets.sh</code> → <code>bash apply.sh</code>। ব্যর্থ হলে auto-rollback হবে।
+        <b>VPS-এ:</b> <code>unzip pluto-migrations.zip</code> → <code>bash install-secrets.sh</code> → <code>bash apply.sh</code>।
+        Real-time progress: <code>bash serve-progress.sh 8787</code> → "Rollback Logs" tab-এ <code>http://127.0.0.1:8787/stream</code> paste করুন।
       </div>
     </div>
   );
 }
+
 
 function Stat({ label, value, tone }: { label: string; value: number | string; tone?: "ok" | "danger" }) {
   const c = tone === "danger" ? "border-red-500/40 bg-red-500/5" : "border-border bg-muted/40";
@@ -707,28 +767,86 @@ function TestModePanel({ plan, db }: { plan: IntegrationPlan | null; db: DbConfi
 // ---------------------------------------------------------------------------
 // Rollback Log Viewer — parse JSONL logs from apply.sh
 // ---------------------------------------------------------------------------
-function RollbackLogPanel() {
+function RollbackLogPanel({ onLoaded }: { onLoaded: (s: LogSummary | null) => void }) {
   const [summary, setSummary] = useState<LogSummary | null>(null);
   const [raw, setRaw] = useState<string>("");
+  const [streamUrl, setStreamUrl] = useState<string>("");
+  const [streaming, setStreaming] = useState(false);
+  const esRef = useRef<EventSource | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const load = (text: string) => {
+  const load = useCallback((text: string) => {
     setRaw(text);
-    setSummary(parseRollbackLog(text));
-  };
+    const s = parseRollbackLog(text);
+    setSummary(s);
+    onLoaded(s);
+  }, [onLoaded]);
+
+  const stopStream = useCallback(() => {
+    esRef.current?.close(); esRef.current = null; setStreaming(false);
+  }, []);
+
+  const startStream = useCallback(() => {
+    if (!streamUrl) { toast.error("SSE URL দিন (e.g. http://127.0.0.1:8787/stream)"); return; }
+    stopStream();
+    try {
+      const es = new EventSource(streamUrl);
+      esRef.current = es;
+      setStreaming(true);
+      let buf = "";
+      es.onmessage = (ev) => {
+        buf += ev.data + "\n";
+        setRaw(buf);
+        const s = parseRollbackLog(buf);
+        setSummary(s);
+        onLoaded(s);
+      };
+      es.onerror = () => { toast.error("SSE সংযোগ বিচ্ছিন্ন"); stopStream(); };
+    } catch (e) { toast.error("Stream শুরু করা যায়নি: " + (e as Error).message); }
+  }, [streamUrl, stopStream, onLoaded]);
 
   return (
     <div className="space-y-4">
       <div>
         <h2 className="text-lg font-semibold text-foreground">Rollback Log Viewer</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          VPS-এর <code>/var/log/pluto-autoconnect/&lt;jobId&gt;.jsonl</code> ফাইল আপলোড করুন — কোন step এ কেন ব্যর্থ হলো বিস্তারিত দেখা যাবে।
+          VPS-এর <code>/var/log/pluto-autoconnect/&lt;jobId&gt;.jsonl</code> ফাইল আপলোড করুন,
+          অথবা <code>serve-progress.sh</code>-এর SSE URL দিয়ে real-time apply/rollback progress stream করুন।
         </p>
+      </div>
+
+      <div className="rounded-md border border-primary/40 bg-primary/5 p-3">
+        <div className="mb-2 text-sm font-semibold text-primary">Live Stream (SSE)</div>
+        <div className="flex gap-2">
+          <input
+            type="url"
+            placeholder="http://127.0.0.1:8787/stream"
+            value={streamUrl}
+            onChange={(e) => setStreamUrl(e.target.value)}
+            className="flex-1 rounded-md border border-border bg-background px-3 py-2 font-mono text-xs"
+          />
+          {!streaming ? (
+            <button onClick={startStream}
+              className="rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground hover:bg-primary/90">
+              Connect
+            </button>
+          ) : (
+            <button onClick={stopStream}
+              className="rounded-md bg-red-500 px-3 py-1.5 text-sm text-white hover:bg-red-600">
+              Disconnect
+            </button>
+          )}
+        </div>
+        {streaming && (
+          <div className="mt-2 flex items-center gap-2 text-xs text-primary">
+            <Loader2 className="h-3 w-3 animate-spin" /> live — {summary?.entries.length ?? 0} events received
+          </div>
+        )}
       </div>
 
       <div className="flex flex-wrap gap-2">
         <button onClick={() => fileRef.current?.click()}
-          className="rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground hover:bg-primary/90">
+          className="rounded-md border border-border px-3 py-1.5 text-sm hover:bg-muted">
           .jsonl ফাইল লোড করুন
         </button>
         <input ref={fileRef} type="file" accept=".jsonl,.log,.txt,application/json"
@@ -744,6 +862,7 @@ function RollbackLogPanel() {
           onChange={(e) => load(e.target.value)}
         />
       </div>
+
 
       {summary && (
         <div className="space-y-3">
