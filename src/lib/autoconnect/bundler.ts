@@ -15,9 +15,10 @@ export async function buildBundle(
   analyze: AnalyzeResult,
   plan: IntegrationPlan,
   db?: DbConfig,
-  opts?: { retentionDays?: number },
+  opts?: { retentionDays?: number; snapshotRoot?: string },
 ): Promise<{ frontend: Blob; migrations: Blob; report: Blob }> {
   const retentionDays = opts?.retentionDays ?? 14;
+  const snapshotRoot = opts?.snapshotRoot ?? "/var/backups/pluto-autoconnect";
   const tables = plan.tables.length
     ? plan.tables.map((t) => ({ name: t.name, columns: t.columns, timestamps: true }))
     : analyze.backend.tables;
@@ -32,8 +33,9 @@ export async function buildBundle(
 
   const files: { path: string; content: string }[] = [
     { path: "001_pluto_auto.sql", content: sql },
-    { path: "apply.sh", content: buildApplyScript({ db: db?.url ?? "postgres://user:pass@host:5432/pluto", retentionDays }) },
+    { path: "apply.sh", content: buildApplyScript({ db: db?.url ?? "postgres://user:pass@host:5432/pluto", retentionDays, snapshotRoot }) },
     { path: "rollback.sh", content: buildRollbackScript() },
+    { path: "cancel.sh", content: buildCancelScript({ snapshotRoot }) },
     { path: "serve-progress.sh", content: buildServeProgressScript() },
     { path: "pluto.env.template", content: envTemplate },
     { path: "install-secrets.sh", content: buildInstallSecretsScript() },
