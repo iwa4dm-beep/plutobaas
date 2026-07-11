@@ -871,7 +871,6 @@ function TestModePanel({ plan, db, onSimulated, auditInput }: {
     </div>
   );
 }
-}
 
 // ---------------------------------------------------------------------------
 // Rollback Log Viewer — parse JSONL logs from apply.sh
