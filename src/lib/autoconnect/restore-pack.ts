@@ -238,35 +238,75 @@ LOG_JSON="$LOG_DIR/$JOB_ID.jsonl"
 [ -f "$LOG_JSON" ] || { echo "no log for $JOB_ID at $LOG_JSON"; exit 1; }
 command -v python3 >/dev/null || { echo "python3 required"; exit 1; }
 
-echo "▶ SSE progress for $JOB_ID on http://$BIND:$PORT/stream"
-LOG_JSON="$LOG_JSON" PORT="$PORT" BIND="$BIND" python3 - <<'PY'
-import os, time, http.server, threading
-LOG=os.environ['LOG_JSON']; PORT=int(os.environ['PORT']); BIND=os.environ['BIND']
+echo "▶ SSE progress for $JOB_ID on http://$BIND:$PORT/stream (jobs/log/cancel endpoints alongside)"
+LOG_DIR="$LOG_DIR" LOG_JSON="$LOG_JSON" JOB_ID="$JOB_ID" PORT="$PORT" BIND="$BIND" python3 - <<'PY'
+import os, time, json, glob, http.server, urllib.parse
+LOG=os.environ['LOG_JSON']; LOG_DIR=os.environ['LOG_DIR']
+JOB=os.environ['JOB_ID']; PORT=int(os.environ['PORT']); BIND=os.environ['BIND']
+def cors(h):
+    h.send_header('Access-Control-Allow-Origin','*')
+    h.send_header('Access-Control-Allow-Methods','GET,POST,OPTIONS')
+    h.send_header('Access-Control-Allow-Headers','*')
 class H(http.server.BaseHTTPRequestHandler):
     def log_message(self, *a): pass
+    def do_OPTIONS(self): self.send_response(204); cors(self); self.end_headers()
+    def do_POST(self):
+        u=urllib.parse.urlparse(self.path); q=urllib.parse.parse_qs(u.query)
+        if u.path=='/cancel':
+            job=q.get('job',[JOB])[0]
+            open(os.path.join(LOG_DIR, job+'.cancel'),'w').close()
+            self.send_response(200); cors(self); self.send_header('Content-Type','application/json'); self.end_headers()
+            self.wfile.write(json.dumps({'ok':True,'job':job}).encode()); return
+        self.send_response(404); cors(self); self.end_headers()
     def do_GET(self):
-        if self.path not in ('/stream','/'):
-            self.send_response(404); self.end_headers(); return
-        self.send_response(200)
+        u=urllib.parse.urlparse(self.path); q=urllib.parse.parse_qs(u.query)
+        if u.path=='/jobs':
+            jobs=sorted([os.path.basename(f)[:-6] for f in glob.glob(os.path.join(LOG_DIR,'*.jsonl'))], reverse=True)
+            self.send_response(200); cors(self); self.send_header('Content-Type','application/json'); self.end_headers()
+            self.wfile.write(json.dumps({'jobs':jobs,'current':JOB}).encode()); return
+        if u.path=='/log':
+            job=q.get('job',[JOB])[0]; path=os.path.join(LOG_DIR, job+'.jsonl')
+            if not os.path.exists(path):
+                self.send_response(404); cors(self); self.end_headers(); return
+            data=open(path,'rb').read()
+            self.send_response(200); cors(self); self.send_header('Content-Type','application/x-ndjson')
+            self.send_header('Content-Disposition', f'attachment; filename="{job}.jsonl"')
+            self.end_headers(); self.wfile.write(data); return
+        if u.path not in ('/stream','/'):
+            self.send_response(404); cors(self); self.end_headers(); return
+        self.send_response(200); cors(self)
         self.send_header('Content-Type','text/event-stream')
-        self.send_header('Cache-Control','no-cache')
-        self.send_header('Access-Control-Allow-Origin','*')
-        self.end_headers()
+        self.send_header('Cache-Control','no-cache'); self.end_headers()
+        job=q.get('job',[JOB])[0]; target=os.path.join(LOG_DIR, job+'.jsonl')
         try:
-            with open(LOG,'r') as f:
-                # send existing history first
+            with open(target,'r') as f:
                 for line in f:
                     if line.strip():
                         self.wfile.write(f"data: {line.strip()}\\n\\n".encode()); self.wfile.flush()
                 while True:
                     line=f.readline()
                     if not line:
-                        self.wfile.write(b": ping\\n\\n"); self.wfile.flush()
-                        time.sleep(1); continue
+                        self.wfile.write(b": ping\\n\\n"); self.wfile.flush(); time.sleep(1); continue
                     self.wfile.write(f"data: {line.strip()}\\n\\n".encode()); self.wfile.flush()
         except (BrokenPipeError, ConnectionResetError): pass
 http.server.ThreadingHTTPServer((BIND,PORT), H).serve_forever()
 PY
+`;
+}
+
+// Cancel script — writes the cancel flag file that apply.sh polls between phases.
+export function buildCancelScript(opts?: { snapshotRoot?: string }): string {
+  const snapRoot = opts?.snapshotRoot ?? "/var/backups/pluto-autoconnect";
+  return `#!/usr/bin/env bash
+# Cooperatively cancel a running apply.sh job. Writes a flag file that
+# apply.sh polls between snapshot phases and before the SQL apply step.
+set -euo pipefail
+SNAP_ROOT="\${SNAP_ROOT:-${snapRoot}}"
+LOG_DIR="\${LOG_DIR:-$SNAP_ROOT/logs}"
+JOB_ID="\${1:-\${JOB_ID:-$(ls -1t "$LOG_DIR"/*.jsonl 2>/dev/null | head -1 | xargs -n1 basename | sed 's/\\.jsonl$//')}}"
+[ -n "$JOB_ID" ] || { echo "no JOB_ID"; exit 1; }
+touch "$LOG_DIR/$JOB_ID.cancel"
+echo "✔ cancel flag set for $JOB_ID at $LOG_DIR/$JOB_ID.cancel"
 `;
 }
 
