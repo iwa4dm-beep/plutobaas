@@ -28,15 +28,20 @@ export const Route = createFileRoute("/auto-connect")({
 
 type Step = 1 | 2 | 3 | 4 | 5 | 6;
 
+type Tab = "wizard" | "test" | "logs";
+
 function AutoConnectPage() {
+  const [tab, setTab] = useState<Tab>("wizard");
   const [step, setStep] = useState<Step>(1);
   const [file, setFile] = useState<File | null>(null);
   const [zip, setZip] = useState<JSZip | null>(null);
+  const [verify, setVerify] = useState<VerifyResult | null>(null);
   const [analyze, setAnalyze] = useState<AnalyzeResult | null>(null);
   const [plan, setPlan] = useState<IntegrationPlan | null>(null);
   const [planModel, setPlanModel] = useState<string>("");
   const [db, setDb] = useState<DbConfig>({ driver: "postgres", url: "" });
   const [ackDestructive, setAckDestructive] = useState(false);
+  const [ackTyped, setAckTyped] = useState("");
   const [logs, setLogs] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [artifacts, setArtifacts] = useState<{ frontend: Blob; migrations: Blob; report: Blob } | null>(null);
