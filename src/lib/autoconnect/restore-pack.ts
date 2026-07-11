@@ -2,35 +2,47 @@
 // Now snapshots BOTH the DB and Docker volumes + configs so rollback truly
 // returns to the previous state.
 
-export function buildApplyScript(opts: { db: string; sqlFile?: string; volumes?: string[]; configs?: string[] }): string {
+export function buildApplyScript(opts: { db: string; sqlFile?: string; volumes?: string[]; configs?: string[]; retentionDays?: number }): string {
   const sql = opts.sqlFile ?? "001_pluto_auto.sql";
   const volumes = (opts.volumes ?? ["pluto_pgdata", "pluto_api_data"]).join(" ");
   const configs = (opts.configs ?? ["/etc/pluto", "/etc/pluto-autoconnect.env"]).join(" ");
+  const retention = opts.retentionDays ?? 14;
   return `#!/usr/bin/env bash
 # Auto-Connect: apply migrations with FULL snapshot (DB + Docker volumes + configs)
 # and automatic rollback on failure. Every step is journaled to a JSONL log
 # so the /auto-connect Rollback Log Viewer can replay what happened.
 set -euo pipefail
 
+BUNDLE_DIR="$(cd "$(dirname "\${BASH_SOURCE[0]}")" && pwd)"
 DB_URL="\${DATABASE_URL:-${opts.db}}"
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 JOB_ID="\${JOB_ID:-job-$STAMP}"
-SNAP_DIR="\${SNAP_DIR:-/var/backups/pluto-autoconnect}/$JOB_ID"
+SNAP_ROOT="\${SNAP_ROOT:-/var/backups/pluto-autoconnect}"
+SNAP_DIR="$SNAP_ROOT/$JOB_ID"
 LOG_DIR="\${LOG_DIR:-/var/log/pluto-autoconnect}"
 mkdir -p "$SNAP_DIR" "$LOG_DIR"
 LOG_TXT="$LOG_DIR/$JOB_ID.log"
 LOG_JSON="$LOG_DIR/$JOB_ID.jsonl"
 VOLUMES="\${PLUTO_VOLUMES:-${volumes}}"
 CONFIGS="\${PLUTO_CONFIGS:-${configs}}"
+RETENTION_DAYS="\${RETENTION_DAYS:-${retention}}"
 
 jlog() {
   local step="$1" status="$2" extra="\${3:-}"
   printf '{"ts":"%s","jobId":"%s","step":"%s","status":"%s"%s}\\n' \\
     "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$JOB_ID" "$step" "$status" \\
-    "$( [ -n "$extra" ] && echo ",$extra" || true )" >> "$LOG_JSON"
+    "$( [ -n "$extra" ] && echo ",$extra" || true )" | tee -a "$LOG_JSON"
 }
 
-trap 'rc=$?; if [ $rc -ne 0 ] && [ "\${ROLLED_BACK:-0}" != "1" ]; then \\
+fail() {
+  # Human-readable failure with a clear reason, plus a structured jlog entry.
+  local step="$1" reason="$2"
+  echo "✘ [$step] $reason" | tee -a "$LOG_TXT"
+  jlog "$step" "fail" "\\"error\\":\\"$(printf '%s' "$reason" | sed 's/"/\\\\"/g')\\""
+  exit 2
+}
+
+trap 'rc=$?; if [ $rc -ne 0 ] && [ "\${ROLLED_BACK:-0}" != "1" ] && [ "\${SKIP_ROLLBACK:-0}" != "1" ]; then \\
   echo "✘ unexpected exit $rc — attempting rollback" | tee -a "$LOG_TXT"; \\
   do_rollback || true; fi' EXIT
 
@@ -38,23 +50,19 @@ do_rollback() {
   ROLLED_BACK=1
   jlog "rollback" "start"
   echo "▶ ROLLBACK starting" | tee -a "$LOG_TXT"
-  # 1) DB restore
   if [ -f "$SNAP_DIR/db.dump" ]; then
     pg_restore -d "$DB_URL" --clean --if-exists --no-owner --no-privileges \\
       "$SNAP_DIR/db.dump" 2>>"$LOG_TXT" && jlog "rollback_db" "ok" || jlog "rollback_db" "fail"
   fi
-  # 2) Volumes (stop containers, replace volume, start again)
   if command -v docker >/dev/null 2>&1; then
     for v in $VOLUMES; do
-      f="$SNAP_DIR/vol-$v.tgz"
-      [ -f "$f" ] || continue
+      f="$SNAP_DIR/vol-$v.tgz"; [ -f "$f" ] || continue
       docker run --rm -v "$v":/dst -v "$SNAP_DIR":/src alpine \\
         sh -c "rm -rf /dst/* /dst/.[!.]* 2>/dev/null; tar xzf /src/vol-$v.tgz -C /dst" \\
         2>>"$LOG_TXT" && jlog "rollback_volume" "ok" "\\"volume\\":\\"$v\\"" \\
         || jlog "rollback_volume" "fail" "\\"volume\\":\\"$v\\""
     done
   fi
-  # 3) Configs
   if [ -f "$SNAP_DIR/configs.tgz" ]; then
     tar xzf "$SNAP_DIR/configs.tgz" -C / 2>>"$LOG_TXT" \\
       && jlog "rollback_configs" "ok" || jlog "rollback_configs" "fail"
@@ -63,8 +71,19 @@ do_rollback() {
   echo "✔ rollback finished — see $LOG_JSON" | tee -a "$LOG_TXT"
 }
 
+# ---- 0) Pre-flight: verify bundle manifest & checksums BEFORE touching prod
+SKIP_ROLLBACK=1
+jlog "verify_bundle" "start"
+[ -f "$BUNDLE_DIR/SHA256SUMS" ] || fail "verify_bundle" "SHA256SUMS missing from bundle — refuse to run untrusted migration"
+[ -f "$BUNDLE_DIR/manifest.json" ] || fail "verify_bundle" "manifest.json missing from bundle"
+( cd "$BUNDLE_DIR" && sha256sum -c --strict --quiet SHA256SUMS ) 2>>"$LOG_TXT" \\
+  || fail "verify_bundle" "checksum mismatch — bundle is corrupt or tampered (see $LOG_TXT)"
+jlog "verify_bundle" "ok"
+SKIP_ROLLBACK=0
+
 echo "▶ Job $JOB_ID — snapshotting to $SNAP_DIR" | tee -a "$LOG_TXT"
-jlog "start" "ok" "\\"snapDir\\":\\"$SNAP_DIR\\""
+jlog "start" "ok" "\\"snapDir\\":\\"$SNAP_DIR\\",\\"retentionDays\\":$RETENTION_DAYS"
+
 
 # 1) DB dump
 jlog "snapshot_db" "start"
