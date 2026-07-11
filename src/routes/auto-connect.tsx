@@ -197,7 +197,7 @@ function AutoConnectPage() {
               {step === 6 && artifacts && <DownloadStep artifacts={artifacts} buildAudit={buildAudit} />}
             </>}
             {tab === "test" && <TestModePanel plan={plan} db={db} />}
-            {tab === "logs" && <RollbackLogPanel />}
+            {tab === "logs" && <RollbackLogPanel onLoaded={setLastRollback} />}
           </main>
 
 
