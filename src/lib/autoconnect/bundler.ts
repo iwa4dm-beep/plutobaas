@@ -28,15 +28,22 @@ export async function buildBundle(
   const { entries, unknown } = mapEnv(analyze.backend.envExample);
   const envTemplate = buildEnvTemplate(entries, unknown);
 
+  const files: { path: string; content: string }[] = [
+    { path: "001_pluto_auto.sql", content: sql },
+    { path: "apply.sh", content: buildApplyScript({ db: db?.url ?? "postgres://user:pass@host:5432/pluto" }) },
+    { path: "rollback.sh", content: buildRollbackScript() },
+    { path: "pluto.env.template", content: envTemplate },
+    { path: "install-secrets.sh", content: buildInstallSecretsScript() },
+    { path: "pluto.db.config.ts", content: buildDbConfigTs(db?.driver ?? "postgres", db?.url ?? "") },
+    { path: "STRUCTURE_REPORT.md", content: buildStructureReport(analyze) },
+    { path: "README.md", content: buildRestoreReadme() },
+  ];
+  const { manifest, sums } = await buildManifest(files);
+
   const migZip = new JSZip();
-  migZip.file("001_pluto_auto.sql", sql);
-  migZip.file("apply.sh", buildApplyScript({ db: db?.url ?? "postgres://user:pass@host:5432/pluto" }));
-  migZip.file("rollback.sh", buildRollbackScript());
-  migZip.file("pluto.env.template", envTemplate);
-  migZip.file("install-secrets.sh", buildInstallSecretsScript());
-  migZip.file("pluto.db.config.ts", buildDbConfigTs(db?.driver ?? "postgres", db?.url ?? ""));
-  migZip.file("STRUCTURE_REPORT.md", buildStructureReport(analyze));
-  migZip.file("README.md", buildRestoreReadme());
+  for (const f of files) migZip.file(f.path, f.content);
+  migZip.file("manifest.json", manifest);
+  migZip.file("SHA256SUMS", sums);
 
   return {
     frontend: await rewritten.generateAsync({ type: "blob", compression: "DEFLATE" }),
