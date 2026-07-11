@@ -245,9 +245,43 @@ function UploadStep({ onFile, busy, inputRef, verify }: { onFile: (f: File) => v
           onChange={(e) => { const f = e.target.files?.[0]; if (f) onFile(f); }} />
         <p className="mt-4 text-xs text-muted-foreground">সর্বোচ্চ ২০০MB</p>
       </label>
+      {verify && <VerifyPanel verify={verify} />}
     </div>
   );
 }
+
+function VerifyPanel({ verify }: { verify: VerifyResult }) {
+  const bad = verify.entries.filter((e) => !e.ok);
+  return (
+    <div className={`mt-4 rounded-md border p-3 text-sm ${
+      !verify.hasManifest ? "border-border bg-muted/40"
+        : verify.ok ? "border-green-500/40 bg-green-500/5"
+        : "border-red-500/40 bg-red-500/5"
+    }`}>
+      <div className="flex items-center gap-2 font-medium">
+        {!verify.hasManifest ? <FileText className="h-4 w-4" /> :
+          verify.ok ? <CheckCircle2 className="h-4 w-4 text-green-600" /> :
+          <ShieldAlert className="h-4 w-4 text-red-600" />}
+        Integrity check: {verify.message}
+      </div>
+      {verify.hasManifest && (
+        <div className="mt-2 text-xs text-muted-foreground">
+          Manifest generated: {verify.manifest?.generatedAt ?? "—"} · files: {verify.entries.length}
+        </div>
+      )}
+      {bad.length > 0 && (
+        <ul className="mt-2 max-h-40 space-y-0.5 overflow-auto font-mono text-xs">
+          {bad.slice(0, 30).map((e) => (
+            <li key={e.path} className="text-red-700 dark:text-red-300">
+              ✘ {e.path} {e.actual ? "hash mismatch" : "missing"}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 
 function AnalyzeStep({ file, onRun, busy }: { file: File | null; onRun: () => void; busy: boolean }) {
   return (
