@@ -1,132 +1,119 @@
+# Auto-Connect Studio — Phase 3 Enhancements
 
-# Auto-Connect Studio — Phase 2 Enhancements
-
-Auto-Connect Studio পেইজে (`/auto-connect`) ৫টি নতুন ফিচার যোগ করা হবে। বেশিরভাগ কাজ ক্লায়েন্ট-সাইড (JSZip in-memory) এবং কিছু হেল্পার ফাইল সার্ভার-সাইড।
+Five focused additions to `/auto-connect`, keeping the existing 6-step wizard intact.
 
 ---
 
-## 1. এক-ক্লিক Restore-and-Rollback Pack
+## 1. Impact Summary + Explicit Acknowledgement (Dry-Run)
 
-**কী হবে:** bundle-এর সাথে `restore-with-rollback.sh` স্ক্রিপ্ট generate হবে যা মাইগ্রেশন ব্যর্থ হলে auto-rollback করে।
+**Files**
+- `src/lib/autoconnect/impact-analyzer.ts` (new)
+- `src/components/autoconnect/ImpactSummary.tsx` (new)
+- `src/components/autoconnect/DryRunPreview.tsx` (edit)
 
-**Flow:**
-```text
-apply.sh চালালে →
-  1. Pre-migration snapshot (pg_dump -F c → snap-<ts>.dump)
-  2. psql -v ON_ERROR_STOP=1 -1 -f migrations.sql  (single transaction)
-  3. Success → snapshot retain; Failure → pg_restore auto rollback + exit 1
-  4. Rollback log → /var/log/pluto-autoconnect/<jobId>.log
+**What it computes** from the already-parsed `SqlStatement[]`:
+- Tables created / altered / dropped (counts + names)
+- Columns added / dropped / type-changed
+- Indexes / constraints / FKs added or dropped
+- RLS policies added/dropped, `GRANT` / `REVOKE` on which roles
+- Estimated affected rows: `0` for `CREATE`, `unknown` for `ALTER/DROP` on existing tables — flagged red
+- Destructive flags: `DROP`, `TRUNCATE`, `ALTER … DROP COLUMN`, `ALTER … TYPE` (data loss risk)
+
+**UI**
+- Panel above statement list: tiles for Tables / Columns / Policies / Grants / Destructive-ops.
+- "I understand the impact" checkbox — **required** when destructive count > 0.
+- Apply button disabled until (a) no destructive ops, or (b) checkbox ticked AND typed confirmation `APPLY`.
+
+---
+
+## 2. Snapshot Safety: Docker Volumes + Configs
+
+**Files**
+- `src/lib/autoconnect/restore-pack.ts` (edit — expand `apply.sh` / `rollback.sh`)
+- `pluto-backend/deploy/backup/snapshot-volumes.sh` (new, referenced by generated pack)
+
+**apply.sh additions** (runs before `psql`):
+```
+SNAP_DIR=/var/backups/pluto-autoconnect/<jobId>
+# 1. pg_dump (already exists)
+# 2. Docker volume snapshot
+for v in $(docker inspect -f '{{range .Mounts}}{{.Name}} {{end}}' pluto-pg pluto-api); do
+  docker run --rm -v $v:/src -v $SNAP_DIR:/dst alpine \
+    tar czf /dst/vol-$v.tgz -C /src .
+done
+# 3. Config snapshot
+tar czf $SNAP_DIR/configs.tgz /etc/pluto /etc/pluto-autoconnect.env docker-compose.yml
+sha256sum $SNAP_DIR/* > $SNAP_DIR/SHA256SUMS
 ```
 
-**নতুন ফাইল:**
-- `src/lib/autoconnect/restore-pack.ts` — generates `apply.sh`, `rollback.sh`, `README-RESTORE.md`
-- Bundle-এ auto-included via `bundler.ts`
+**rollback.sh**: stop containers → `psql` restore from `pg_dump` → untar each `vol-*.tgz` back into the volume (`docker run --rm -v $v:/dst … tar xzf …`) → restore configs → start containers → health-check.
+
+Manifest entry `snapshot.json` records volumes, config paths, checksums, timestamps so the rollback script can verify integrity before touching anything.
 
 ---
 
-## 2. Environment/Secret Auto-Map (Placeholder Restore)
+## 3. Rollback Log Viewer in `/auto-connect`
 
-**কী হবে:** Laravel `.env.example` স্ক্যান করে key list বের করবে → প্রতিটির জন্য Pluto BaaS equivalent map করবে → `pluto.env.template` তৈরি করবে যা systemd `EnvironmentFile=` compatible।
+**Files**
+- `src/lib/autoconnect/rollback-log.functions.ts` (new — `getRollbackLog(jobId)`, `listRollbackJobs()`)
+- `src/components/autoconnect/RollbackLogViewer.tsx` (new)
+- `src/routes/auto-connect.tsx` (edit — new tab "Rollback Logs")
 
-**Mapping table (built-in):**
-| Laravel key | Pluto equivalent | Note |
-|---|---|---|
-| `DB_HOST/PORT/DATABASE/USERNAME/PASSWORD` | `PLUTO_PG_URL` | assembled |
-| `APP_KEY` | `PLUTO_JWT_SECRET` | auto-generated placeholder `<GENERATE:32>` |
-| `MAIL_*` | `PLUTO_SMTP_*` | 1:1 |
-| `AWS_*` / `FILESYSTEM_DISK=s3` | `PLUTO_STORAGE_*` | S3-compatible |
-| `SANCTUM_STATEFUL_DOMAINS` | `PLUTO_ALLOWED_ORIGINS` | CSV |
-| unknown | passthrough with `# TODO` | flagged in report |
-
-**Output artifacts:**
-- `pluto.env.template` — plaintext template with `<GENERATE:N>` / `<REQUIRED>` placeholders
-- `install-secrets.sh` — reads template, prompts missing, generates random ones, writes to `/etc/pluto-autoconnect.env` (mode 0600) and reloads target systemd unit
-
-**নতুন ফাইল:** `src/lib/autoconnect/env-mapper.ts`
-
----
-
-## 3. SQL Migration Dry-Run Preview (diff + impact)
-
-**কী হবে:** apply-এর আগে UI-তে টেবিল-বাই-টেবিল প্রিভিউ:
-- **Diff view** — proposed `CREATE TABLE` vs existing schema (যদি live Pluto DB connect করা থাকে, optional endpoint call; না হলে "assumed empty schema" mode)
-- **Impact analysis** (heuristic, static):
-  - New tables count
-  - Destructive statements detected (`DROP`, `TRUNCATE`, `ALTER … DROP COLUMN`) — red badge
-  - RLS enable per table
-  - Estimated row cost (skipped — schema only)
-  - FK cascade fanout
-- **Row-level color coding:** green (create), yellow (alter), red (drop)
-
-**নতুন ফাইল:**
-- `src/lib/autoconnect/sql-analyzer.ts` — parse generated SQL → StatementNode[] with kind/table/destructive flag
-- `src/components/autoconnect/DryRunPreview.tsx` — expandable per-statement view
-- Step 4 (`MigrationsStep`)-এ integrate; "Apply" button disabled until user acknowledges destructive ops
-
----
-
-## 4. DB Wizard (MySQL/PostgreSQL) + Connection String Validator
-
-**কী হবে:** Step 3.5 হিসেবে নতুন উইজার্ড:
-1. **Choose driver:** MySQL / PostgreSQL (radio)
-2. **Connection string input** (or discrete fields: host/port/db/user/pass/ssl)
-3. **Validate** — client sends to server function `validateDbConnection({driver, url})` → server does a lightweight TCP probe (using `pg`/`mysql2` if available; else regex + reachability via `net.connect` timeout 3s)
-4. **Auto-generate driver config:**
-   - PostgreSQL: `pluto.db.config.ts` uses `pg` Pool, migrations skip MySQL→PG converter
-   - MySQL: enables `migration-converter.ts`-এর **MySQL→PG translation layer** (INT AUTO_INCREMENT → SERIAL, TINYINT(1) → BOOLEAN, ENGINE=InnoDB stripped, backticks → double-quotes, `DATETIME` → `TIMESTAMPTZ`)
-5. Wizard result feeds Step 4 SQL generation
-
-**নতুন ফাইল:**
-- `src/lib/autoconnect/db-wizard.functions.ts` — server fn: `validateDbConnection`
-- `src/lib/autoconnect/mysql-to-pg.ts` — SQL translator (reuse existing `pluto-backend/packages/api/tests/mysql-to-pg.test.ts` patterns)
-- `src/components/autoconnect/DbWizardStep.tsx`
-
----
-
-## 5. Detailed Structure Report Page
-
-**কী হবে:** Step 2.5 হিসেবে (Analyze এর পরে) একটি expandable report:
-- **Frontend tree:** package.json (framework, deps), vite.config.*, routes/pages, API call sites (file:line → endpoint) — used files highlighted green, unused গ্রে
-- **Backend tree:** migrations (per-file table list), models (FK graph mini-diagram — text based), routes/api.php + web.php (method + path), controllers (used/unused), config/* files consumed
-- **Usage highlighting rules:** referenced by imports / route registration = highlighted; orphan = gray with "unused" badge
-- **Summary counts:** total files, used, unused, ignored (vendor/node_modules)
-- **Download button:** `STRUCTURE_REPORT.md` (also auto-included in final bundle)
-
-**নতুন ফাইল:**
-- `src/lib/autoconnect/structure-report.ts` — build tree + usage graph
-- `src/components/autoconnect/StructureReport.tsx` — collapsible tree UI
-
-`analyzer.ts` এ minor extension: track `filesUsed: Set<string>`, `filesUnused: string[]`.
-
----
-
-## File Change Summary
-
-**New (10):**
-- `src/lib/autoconnect/restore-pack.ts`
-- `src/lib/autoconnect/env-mapper.ts`
-- `src/lib/autoconnect/sql-analyzer.ts`
-- `src/lib/autoconnect/db-wizard.functions.ts`
-- `src/lib/autoconnect/mysql-to-pg.ts`
-- `src/lib/autoconnect/structure-report.ts`
-- `src/components/autoconnect/DryRunPreview.tsx`
-- `src/components/autoconnect/DbWizardStep.tsx`
-- `src/components/autoconnect/StructureReport.tsx`
-- `src/components/autoconnect/RestorePackPreview.tsx`
-
-**Modified (4):**
-- `src/routes/auto-connect.tsx` — steps 2.5, 3.5 যোগ, wiring
-- `src/lib/autoconnect/analyzer.ts` — usage graph tracking
-- `src/lib/autoconnect/bundler.ts` — restore-pack + env template inject
-- `src/lib/autoconnect/types.ts` — new types (DbConfig, StructureReport, SqlStatement)
-
-## Stepper (new)
-
-```text
-1 Upload → 2 Analyze → 2.5 Structure Report → 3 AI Plan
-  → 3.5 DB Wizard → 4 Migrations (+Dry-Run) → 5 Wire APIs → 6 Download (+Restore Pack)
+**Log format** written by `apply.sh` to `/var/log/pluto-autoconnect/<jobId>.jsonl`:
+```
+{"ts":"...","step":"snapshot_db","status":"ok","durationMs":812}
+{"ts":"...","step":"apply_sql","status":"fail","stmtIndex":7,"sql":"...","error":"..."}
+{"ts":"...","step":"rollback","status":"ok"}
 ```
 
-সব ক্লায়েন্ট-সাইড, কেবল `validateDbConnection` সার্ভার fn। Lovable Cloud/AI already enabled।
+Server function tails the file via SSH-less local read (assumes VPS has the app running; for MVP the log ships back inside the downloaded ZIP under `logs/<jobId>.jsonl` and the viewer parses uploaded logs).
 
-Approve করলে ধাপে ধাপে সব ফাইল তৈরি করব।
+**Viewer UI**: timeline of steps, expandable failing step showing the offending SQL, error text, and a "Copy rollback command" button.
+
+---
+
+## 4. End-to-End Test Mode (Placeholder DB)
+
+**Files**
+- `src/lib/autoconnect/e2e-runner.functions.ts` (new)
+- `src/components/autoconnect/E2ETestPanel.tsx` (new)
+- `src/routes/auto-connect.tsx` (edit — "Test Mode" toggle in header)
+
+**How it works**
+- Server fn spins up an in-memory PGlite instance (`@electric-sql/pglite`) per session — no real DB touched.
+- Runs the generated migration SQL against PGlite → captures output.
+- Simulates failure at a chosen statement index (user picks from dropdown) to test rollback.
+- Records per-step results (`dry-run`, `apply`, `induced-fail`, `rollback`) and shows pass/fail badges.
+
+Add-package: `bun add @electric-sql/pglite` (WASM, Worker-safe).
+
+---
+
+## 5. ZIP Integrity Verification on Upload
+
+**Files**
+- `src/lib/autoconnect/zip-verify.ts` (new)
+- `src/lib/autoconnect/analyzer.ts` (edit — call verifier first)
+- `src/components/autoconnect/UploadStep.tsx` (edit — show verification panel)
+
+**Flow**
+1. On ZIP upload, look for `manifest.json` + `SHA256SUMS` at the root (produced by our backup pipeline / bundler).
+2. If present: for every entry, recompute SHA-256 via `crypto.subtle.digest('SHA-256', bytes)` and compare.
+3. Report table: file path, expected hash, actual hash, ✓/✗. Any mismatch blocks continuation.
+4. If manifest is missing (user uploaded a raw project ZIP), show a warning banner and let them continue — verification just skipped, not failed.
+
+Also emit `manifest.json` + `SHA256SUMS` in `bundler.ts` for every artifact we generate so downloaded packs are self-verifying.
+
+---
+
+## Stepper After Changes
+```
+Upload (+Verify) → Analyze → Structure Report → AI Plan
+  → DB Wizard → Migrations (Dry-Run + Impact + Ack)
+  → Wire APIs → Download (Restore Pack w/ Volume Snapshots)
+[Header tabs] Test Mode · Rollback Logs
+```
+
+## Non-Goals
+- No live SSH into the VPS from the browser — logs come via uploaded ZIP or a future agent.
+- No editing of generated SQL in-browser (stays read-only with the ack flow).
