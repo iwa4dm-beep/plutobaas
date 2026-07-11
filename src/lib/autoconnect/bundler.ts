@@ -3,7 +3,7 @@ import JSZip from "jszip";
 import type { AnalyzeResult, DbConfig, IntegrationPlan } from "./types";
 import { buildMigrationBundle } from "./migration-converter";
 import { rewriteFrontend } from "./frontend-rewriter";
-import { buildApplyScript, buildRollbackScript, buildRestoreReadme, buildServeProgressScript } from "./restore-pack";
+import { buildApplyScript, buildRollbackScript, buildRestoreReadme, buildServeProgressScript, buildCancelScript } from "./restore-pack";
 import { mapEnv, buildEnvTemplate, buildInstallSecretsScript } from "./env-mapper";
 import { buildStructureReport } from "./structure-report";
 import { buildDbConfigTs } from "./db-wizard.functions";
