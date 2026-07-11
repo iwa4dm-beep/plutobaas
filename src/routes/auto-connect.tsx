@@ -45,6 +45,8 @@ function AutoConnectPage() {
   const [logs, setLogs] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [artifacts, setArtifacts] = useState<{ frontend: Blob; migrations: Blob; report: Blob } | null>(null);
+  const [retentionDays, setRetentionDays] = useState<number>(14);
+  const [lastRollback, setLastRollback] = useState<LogSummary | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const log = useCallback((m: string) => {
