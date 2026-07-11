@@ -1,50 +1,61 @@
-// Package the rewritten frontend + generated SQL into two downloadable ZIPs.
+// Package the rewritten frontend + generated SQL into downloadable ZIPs.
 import JSZip from "jszip";
-import type { AnalyzeResult, IntegrationPlan } from "./types";
+import type { AnalyzeResult, DbConfig, IntegrationPlan } from "./types";
 import { buildMigrationBundle } from "./migration-converter";
 import { rewriteFrontend } from "./frontend-rewriter";
+import { buildApplyScript, buildRollbackScript, buildRestoreReadme } from "./restore-pack";
+import { mapEnv, buildEnvTemplate, buildInstallSecretsScript } from "./env-mapper";
+import { buildStructureReport } from "./structure-report";
+import { buildDbConfigTs } from "./db-wizard.functions";
+import { mysqlToPg } from "./mysql-to-pg";
 
 export async function buildBundle(
   originalZip: JSZip,
   analyze: AnalyzeResult,
   plan: IntegrationPlan,
+  db?: DbConfig,
 ): Promise<{ frontend: Blob; migrations: Blob; report: Blob }> {
-  // Merge AI-planned tables into the SQL if provided
   const tables = plan.tables.length
-    ? plan.tables.map((t) => ({
-        name: t.name,
-        columns: t.columns,
-        timestamps: true,
-      }))
+    ? plan.tables.map((t) => ({ name: t.name, columns: t.columns, timestamps: true }))
     : analyze.backend.tables;
 
-  const sql = buildMigrationBundle(tables);
+  let sql = buildMigrationBundle(tables);
+  if (db?.driver === "mysql") sql = mysqlToPg(sql);
+
   const { zip: rewritten } = await rewriteFrontend(originalZip, analyze);
+
+  const { entries, unknown } = mapEnv(analyze.backend.envExample);
+  const envTemplate = buildEnvTemplate(entries, unknown);
 
   const migZip = new JSZip();
   migZip.file("001_pluto_auto.sql", sql);
-  migZip.file("README.md", `# Pluto Auto-generated Migrations\n\nApply with:\n\n\`\`\`\npsql "$DATABASE_URL" -f 001_pluto_auto.sql\n\`\`\``);
-
-  const report = buildReport(analyze, plan);
+  migZip.file("apply.sh", buildApplyScript({ db: db?.url ?? "postgres://user:pass@host:5432/pluto" }));
+  migZip.file("rollback.sh", buildRollbackScript());
+  migZip.file("pluto.env.template", envTemplate);
+  migZip.file("install-secrets.sh", buildInstallSecretsScript());
+  migZip.file("pluto.db.config.ts", buildDbConfigTs(db?.driver ?? "postgres", db?.url ?? ""));
+  migZip.file("STRUCTURE_REPORT.md", buildStructureReport(analyze));
+  migZip.file("README.md", buildRestoreReadme());
 
   return {
     frontend: await rewritten.generateAsync({ type: "blob", compression: "DEFLATE" }),
     migrations: await migZip.generateAsync({ type: "blob", compression: "DEFLATE" }),
-    report: new Blob([report], { type: "text/markdown" }),
+    report: new Blob([buildReport(analyze, plan, db)], { type: "text/markdown" }),
   };
 }
 
-function buildReport(a: AnalyzeResult, p: IntegrationPlan): string {
+function buildReport(a: AnalyzeResult, p: IntegrationPlan, db?: DbConfig): string {
   return `# Integration Report
 
 Generated: ${new Date().toISOString()}
 
 ## Summary
-- Files scanned: ${a.stats.totalFiles}
+- Files scanned: ${a.stats.totalFiles} (used: ${a.stats.usedFiles})
 - Tables planned: ${p.tables.length}
 - Endpoints mapped: ${p.endpoints.length}
-- Frontend rewrites planned: ${p.frontendRewrites.length}
-- Risks flagged: ${p.risks.length}
+- Frontend rewrites: ${p.frontendRewrites.length}
+- Risks: ${p.risks.length}
+- DB: ${db ? `${db.driver} — ${db.host ?? "?"}:${db.port ?? "?"}/${db.database ?? "?"}` : "not configured"}
 
 ## Tables
 ${p.tables.map((t) => `- **${t.name}** — ${t.columns.length} cols, RLS: ${t.rls}`).join("\n") || "- none"}
@@ -55,11 +66,14 @@ ${p.endpoints.slice(0, 40).map((e) => `- \`${e.laravel}\` → \`${e.pluto}\` (${
 ## Risks
 ${p.risks.map((r) => `- **[${r.severity.toUpperCase()}]** ${r.message}`).join("\n") || "- none"}
 
-## Next steps
-1. Download and unzip \`frontend-connected.zip\` — replaces your existing frontend.
-2. Apply \`pluto-migrations.zip/001_pluto_auto.sql\` to your Pluto Postgres.
-3. Set \`VITE_PLUTO_URL\` and \`VITE_PLUTO_ANON_KEY\` in \`.env\`.
-4. \`npm i @pluto/client && npm run dev\`.
+## Bundle Contents (pluto-migrations.zip)
+- \`001_pluto_auto.sql\` — schema + GRANTs + RLS + owner policies
+- \`apply.sh\` — one-click apply with auto-rollback on failure
+- \`rollback.sh\` — manual rollback to last snapshot
+- \`pluto.env.template\` — systemd-compatible env template
+- \`install-secrets.sh\` — auto-generate + install secrets
+- \`pluto.db.config.ts\` — DB driver config (${db?.driver ?? "postgres"})
+- \`STRUCTURE_REPORT.md\` — file-level scan report
 `;
 }
 

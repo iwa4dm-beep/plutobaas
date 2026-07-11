@@ -1,196 +1,132 @@
 
-# Auto-Connect Studio — এক-ক্লিক প্রজেক্ট ইন্টিগ্রেশন
+# Auto-Connect Studio — Phase 2 Enhancements
 
-## লক্ষ্য
-ব্যবহারকারী শুধু একটি **React + Vite + Laravel** প্রজেক্টের ZIP আপলোড করবেন। AI নিজে থেকেই:
-1. সব ফাইল/ফোল্ডার স্ক্যান করবে
-2. Laravel migrations → Pluto Postgres-এ কনভার্ট ও রান করবে
-3. Laravel routes/controllers → Pluto REST/RPC-এ ম্যাপ করবে
-4. React/Vite frontend-এর API কলগুলো Pluto endpoint-এ রিরাইট করবে
-5. `.env`, Pluto client SDK, auth, storage — সব অটো ইনজেক্ট করবে
-6. এক-ক্লিক deploy-ready প্যাকেজ ফেরত দিবে
-
-কোনো ম্যানুয়াল কাজ নেই।
+Auto-Connect Studio পেইজে (`/auto-connect`) ৫টি নতুন ফিচার যোগ করা হবে। বেশিরভাগ কাজ ক্লায়েন্ট-সাইড (JSZip in-memory) এবং কিছু হেল্পার ফাইল সার্ভার-সাইড।
 
 ---
 
-## নতুন পেইজ: `/auto-connect`
+## 1. এক-ক্লিক Restore-and-Rollback Pack
 
-### ধাপভিত্তিক UI (Wizard, ৬টি স্টেপ)
+**কী হবে:** bundle-এর সাথে `restore-with-rollback.sh` স্ক্রিপ্ট generate হবে যা মাইগ্রেশন ব্যর্থ হলে auto-rollback করে।
+
+**Flow:**
+```text
+apply.sh চালালে →
+  1. Pre-migration snapshot (pg_dump -F c → snap-<ts>.dump)
+  2. psql -v ON_ERROR_STOP=1 -1 -f migrations.sql  (single transaction)
+  3. Success → snapshot retain; Failure → pg_restore auto rollback + exit 1
+  4. Rollback log → /var/log/pluto-autoconnect/<jobId>.log
+```
+
+**নতুন ফাইল:**
+- `src/lib/autoconnect/restore-pack.ts` — generates `apply.sh`, `rollback.sh`, `README-RESTORE.md`
+- Bundle-এ auto-included via `bundler.ts`
+
+---
+
+## 2. Environment/Secret Auto-Map (Placeholder Restore)
+
+**কী হবে:** Laravel `.env.example` স্ক্যান করে key list বের করবে → প্রতিটির জন্য Pluto BaaS equivalent map করবে → `pluto.env.template` তৈরি করবে যা systemd `EnvironmentFile=` compatible।
+
+**Mapping table (built-in):**
+| Laravel key | Pluto equivalent | Note |
+|---|---|---|
+| `DB_HOST/PORT/DATABASE/USERNAME/PASSWORD` | `PLUTO_PG_URL` | assembled |
+| `APP_KEY` | `PLUTO_JWT_SECRET` | auto-generated placeholder `<GENERATE:32>` |
+| `MAIL_*` | `PLUTO_SMTP_*` | 1:1 |
+| `AWS_*` / `FILESYSTEM_DISK=s3` | `PLUTO_STORAGE_*` | S3-compatible |
+| `SANCTUM_STATEFUL_DOMAINS` | `PLUTO_ALLOWED_ORIGINS` | CSV |
+| unknown | passthrough with `# TODO` | flagged in report |
+
+**Output artifacts:**
+- `pluto.env.template` — plaintext template with `<GENERATE:N>` / `<REQUIRED>` placeholders
+- `install-secrets.sh` — reads template, prompts missing, generates random ones, writes to `/etc/pluto-autoconnect.env` (mode 0600) and reloads target systemd unit
+
+**নতুন ফাইল:** `src/lib/autoconnect/env-mapper.ts`
+
+---
+
+## 3. SQL Migration Dry-Run Preview (diff + impact)
+
+**কী হবে:** apply-এর আগে UI-তে টেবিল-বাই-টেবিল প্রিভিউ:
+- **Diff view** — proposed `CREATE TABLE` vs existing schema (যদি live Pluto DB connect করা থাকে, optional endpoint call; না হলে "assumed empty schema" mode)
+- **Impact analysis** (heuristic, static):
+  - New tables count
+  - Destructive statements detected (`DROP`, `TRUNCATE`, `ALTER … DROP COLUMN`) — red badge
+  - RLS enable per table
+  - Estimated row cost (skipped — schema only)
+  - FK cascade fanout
+- **Row-level color coding:** green (create), yellow (alter), red (drop)
+
+**নতুন ফাইল:**
+- `src/lib/autoconnect/sql-analyzer.ts` — parse generated SQL → StatementNode[] with kind/table/destructive flag
+- `src/components/autoconnect/DryRunPreview.tsx` — expandable per-statement view
+- Step 4 (`MigrationsStep`)-এ integrate; "Apply" button disabled until user acknowledges destructive ops
+
+---
+
+## 4. DB Wizard (MySQL/PostgreSQL) + Connection String Validator
+
+**কী হবে:** Step 3.5 হিসেবে নতুন উইজার্ড:
+1. **Choose driver:** MySQL / PostgreSQL (radio)
+2. **Connection string input** (or discrete fields: host/port/db/user/pass/ssl)
+3. **Validate** — client sends to server function `validateDbConnection({driver, url})` → server does a lightweight TCP probe (using `pg`/`mysql2` if available; else regex + reachability via `net.connect` timeout 3s)
+4. **Auto-generate driver config:**
+   - PostgreSQL: `pluto.db.config.ts` uses `pg` Pool, migrations skip MySQL→PG converter
+   - MySQL: enables `migration-converter.ts`-এর **MySQL→PG translation layer** (INT AUTO_INCREMENT → SERIAL, TINYINT(1) → BOOLEAN, ENGINE=InnoDB stripped, backticks → double-quotes, `DATETIME` → `TIMESTAMPTZ`)
+5. Wizard result feeds Step 4 SQL generation
+
+**নতুন ফাইল:**
+- `src/lib/autoconnect/db-wizard.functions.ts` — server fn: `validateDbConnection`
+- `src/lib/autoconnect/mysql-to-pg.ts` — SQL translator (reuse existing `pluto-backend/packages/api/tests/mysql-to-pg.test.ts` patterns)
+- `src/components/autoconnect/DbWizardStep.tsx`
+
+---
+
+## 5. Detailed Structure Report Page
+
+**কী হবে:** Step 2.5 হিসেবে (Analyze এর পরে) একটি expandable report:
+- **Frontend tree:** package.json (framework, deps), vite.config.*, routes/pages, API call sites (file:line → endpoint) — used files highlighted green, unused গ্রে
+- **Backend tree:** migrations (per-file table list), models (FK graph mini-diagram — text based), routes/api.php + web.php (method + path), controllers (used/unused), config/* files consumed
+- **Usage highlighting rules:** referenced by imports / route registration = highlighted; orphan = gray with "unused" badge
+- **Summary counts:** total files, used, unused, ignored (vendor/node_modules)
+- **Download button:** `STRUCTURE_REPORT.md` (also auto-included in final bundle)
+
+**নতুন ফাইল:**
+- `src/lib/autoconnect/structure-report.ts` — build tree + usage graph
+- `src/components/autoconnect/StructureReport.tsx` — collapsible tree UI
+
+`analyzer.ts` এ minor extension: track `filesUsed: Set<string>`, `filesUnused: string[]`.
+
+---
+
+## File Change Summary
+
+**New (10):**
+- `src/lib/autoconnect/restore-pack.ts`
+- `src/lib/autoconnect/env-mapper.ts`
+- `src/lib/autoconnect/sql-analyzer.ts`
+- `src/lib/autoconnect/db-wizard.functions.ts`
+- `src/lib/autoconnect/mysql-to-pg.ts`
+- `src/lib/autoconnect/structure-report.ts`
+- `src/components/autoconnect/DryRunPreview.tsx`
+- `src/components/autoconnect/DbWizardStep.tsx`
+- `src/components/autoconnect/StructureReport.tsx`
+- `src/components/autoconnect/RestorePackPreview.tsx`
+
+**Modified (4):**
+- `src/routes/auto-connect.tsx` — steps 2.5, 3.5 যোগ, wiring
+- `src/lib/autoconnect/analyzer.ts` — usage graph tracking
+- `src/lib/autoconnect/bundler.ts` — restore-pack + env template inject
+- `src/lib/autoconnect/types.ts` — new types (DbConfig, StructureReport, SqlStatement)
+
+## Stepper (new)
 
 ```text
-[1] Upload ZIP  →  [2] Analyze  →  [3] Review Plan
-       ↓
-[4] Run Migrations  →  [5] Wire APIs  →  [6] Download + Deploy
+1 Upload → 2 Analyze → 2.5 Structure Report → 3 AI Plan
+  → 3.5 DB Wizard → 4 Migrations (+Dry-Run) → 5 Wire APIs → 6 Download (+Restore Pack)
 ```
 
-প্রতিটি স্টেপে লাইভ progress + লগ + রোলব্যাক বাটন।
+সব ক্লায়েন্ট-সাইড, কেবল `validateDbConnection` সার্ভার fn। Lovable Cloud/AI already enabled।
 
----
-
-## Step 1 — Upload
-- Dropzone (max 200MB ZIP)
-- বাদ যাবে: `node_modules`, `vendor`, `.git`, `dist`, `build`, `storage/logs`
-- ZIP সার্ভারে extract → `/tmp/autoconnect/<jobId>/`
-
-## Step 2 — AI Analyze (auto)
-সার্ভার-সাইড analyzer রান করবে:
-
-| ডিটেক্ট | সোর্স |
-|---|---|
-| Frontend stack | `package.json`, `vite.config.*` |
-| Laravel version | `composer.json`, `artisan` |
-| DB schema | `database/migrations/*.php` |
-| Models & relations | `app/Models/*.php` |
-| API routes | `routes/api.php`, `routes/web.php` |
-| Controllers | `app/Http/Controllers/**` |
-| Auth guards | `config/auth.php`, Sanctum/Passport |
-| Storage disks | `config/filesystems.php` |
-| Frontend API calls | `axios`/`fetch`/`useSWR`/`react-query` grep |
-| ENV vars | `.env.example` |
-
-AI (Lovable AI Gateway, `google/gemini-2.5-flash`) একটি **Integration Plan JSON** তৈরি করবে:
-```json
-{ "tables": [...], "endpoints": [...], "auth": {...},
-  "storage_buckets": [...], "frontend_rewrites": [...],
-  "env_map": {...}, "risks": [...] }
-```
-
-## Step 3 — Review Plan
-- টেবিলের তালিকা (কলাম, FK, RLS suggestion সহ)
-- REST endpoint ম্যাপিং টেবিল (Laravel route → Pluto path)
-- Frontend ফাইল diff প্রিভিউ
-- ঝুঁকি/warning ব্যানার (যেমন: raw SQL, Eloquent scopes)
-- ব্যবহারকারী চেকবক্সে টগল করতে পারবেন কী কী apply হবে
-
-## Step 4 — Run Migrations (auto)
-- Laravel migration PHP → Postgres SQL কনভার্টার (কলাম টাইপ ম্যাপ, timestamps, FK, indexes, soft deletes)
-- Pluto migration runner-এ push (`/pluto-backend/migrations/` স্টাইলে)
-- প্রতিটি টেবিলে auto-generate:
-  - `GRANT` statements (public-schema rule মেনে)
-  - RLS enable + owner-based policy
-  - `updated_at` trigger
-- ব্যর্থ হলে auto-rollback + লগ
-
-## Step 5 — Wire APIs (auto)
-- প্রতিটি Laravel Resource Controller → Pluto Data API v3 endpoint (`/rest/v3/...`)
-- Custom controller method → Pluto RPC (`registerRpc`) স্কেলিটন তৈরি
-- Auth: Sanctum → Pluto JWT bridge (auto middleware ইনজেক্ট)
-- Storage: Laravel disks → Pluto storage buckets (create + policy)
-- Frontend rewrite:
-  - `axios.baseURL` → Pluto base URL
-  - `import { createPlutoClient }` অটো-ইনজেক্ট
-  - Auth token attach helper
-  - `.env` → `VITE_PLUTO_URL`, `VITE_PLUTO_ANON_KEY`
-
-## Step 6 — Download + Deploy
-তৈরি হবে:
-- `frontend-connected.zip` (রিরাইট করা Vite প্রজেক্ট)
-- `pluto-migrations.zip` (SQL ফাইলগুলো)
-- `INTEGRATION_REPORT.md` (কী কী হলো, কী হয়নি, next steps)
-- One-command deploy স্ক্রিপ্ট (`./apply.sh`)
-- "Apply to my Pluto instance" বাটন — সরাসরি বর্তমান Pluto backend-এ push
-
----
-
-## Technical Design
-
-### ফাইল স্ট্রাকচার
-```text
-src/routes/auto-connect.tsx              # wizard UI
-src/routes/auto-connect.$jobId.tsx       # job detail / progress
-src/components/autoconnect/
-  UploadStep.tsx
-  AnalyzeStep.tsx
-  PlanReview.tsx
-  MigrationsStep.tsx
-  WireApiStep.tsx
-  DownloadStep.tsx
-  LogStream.tsx
-
-src/lib/autoconnect/
-  analyzer.functions.ts       # createServerFn: unzip + scan
-  laravel-parser.server.ts    # PHP AST-light regex parser
-  migration-converter.server.ts
-  route-mapper.server.ts
-  frontend-rewriter.server.ts
-  ai-planner.functions.ts     # Lovable AI Gateway call
-  job-store.server.ts         # job state (Pluto DB)
-
-src/routes/api/public/autoconnect/
-  upload.ts                   # multipart ZIP receive
-  status.$jobId.ts            # SSE progress stream
-```
-
-### ডাটাবেস (Pluto তে নতুন টেবিল)
-```text
-autoconnect_jobs(id, user_id, status, plan_json, report_json, created_at)
-autoconnect_artifacts(id, job_id, kind, path, size)
-autoconnect_logs(id, job_id, ts, level, message)
-```
-সব টেবিলে RLS: `user_id = auth.uid()`, `GRANT` authenticated রোলে।
-
-### AI Prompt Strategy
-- **Zod schema-constrained** structured output (`Output.object`)
-- Schema-এ কোনো `.min()`/`.max()` নেই (gateway rule)
-- Length/limit prompt-এ, validate কোডে
-- Model: `google/gemini-2.5-flash` (দ্রুত + বড় context)
-- Fallback: `NoObjectGeneratedError` হলে `error.text` parse
-
-### Laravel → Pluto ম্যাপিং রুলস
-| Laravel | Pluto |
-|---|---|
-| `$table->id()` | `id uuid PK default gen_random_uuid()` |
-| `$table->string('x')` | `x text` |
-| `$table->foreignId('user_id')` | `user_id uuid REFERENCES users(id)` |
-| `Route::apiResource('posts', ...)` | `/rest/v3/posts` CRUD |
-| `Auth::user()` | Pluto JWT → `auth.uid()` |
-| `Storage::disk('s3')` | Pluto bucket + signed URLs |
-| Sanctum token | Pluto refresh_token flow |
-
-### সিকিউরিটি
-- ZIP bomb protection (max uncompressed 2GB, max files 20k)
-- Path traversal check (extracted paths must stay in job dir)
-- PHP execution **কখনো নয়** — শুধু static parse
-- Job আইসোলেশন per-user (RLS)
-- Rate limit: 3 job/user/hour
-
-### প্রগ্রেস স্ট্রিম
-Server route `/api/public/autoconnect/status/$jobId` → SSE
-Frontend `EventSource` দিয়ে লাইভ লগ + percentage
-
----
-
-## ডেলিভারেবল চেকলিস্ট
-- [ ] `/auto-connect` route + 6-step wizard UI
-- [ ] ZIP upload + safe extraction
-- [ ] Laravel static analyzer (migrations, routes, models, controllers)
-- [ ] AI planner (Lovable AI Gateway, structured output)
-- [ ] Migration converter (PHP → Postgres SQL + RLS + GRANT)
-- [ ] Route mapper (Laravel → Pluto REST/RPC)
-- [ ] Frontend rewriter (axios/fetch → Pluto client)
-- [ ] Job persistence (3 নতুন টেবিল + migration)
-- [ ] SSE live progress
-- [ ] Download bundle (frontend zip + migrations zip + report)
-- [ ] "Apply to Pluto" one-click deploy
-- [ ] বাংলা + ইংরেজি UI টেক্সট
-- [ ] Error boundary + rollback প্রতি স্টেপে
-
----
-
-## স্কোপের বাইরে (Phase 2)
-- Vue/Angular frontend সাপোর্ট
-- Laravel Livewire/Inertia SSR
-- Complex raw SQL migration
-- Custom middleware auto-porting
-- WebSocket/Broadcasting mapping
-
----
-
-## আনুমানিক সাইজ
-- ~15 নতুন ফাইল
-- ~1 migration (3 টেবিল)
-- ~2500-3000 লাইন কোড
-- Lovable AI Gateway + Pluto DB ব্যবহার হবে (কোনো নতুন secret লাগবে না)
-
-প্ল্যান approve করলে ধাপে ধাপে বিল্ড শুরু করবো — প্রথমে UI shell + upload + analyzer, তারপর AI planner, এরপর converters ও rewriter, শেষে download + deploy।
+Approve করলে ধাপে ধাপে সব ফাইল তৈরি করব।

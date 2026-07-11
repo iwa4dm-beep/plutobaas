@@ -1,7 +1,7 @@
 // Auto-Connect Studio shared types
 export type Column = {
   name: string;
-  type: string;      // Postgres type
+  type: string;
   nullable?: boolean;
   default?: string;
   primary?: boolean;
@@ -18,11 +18,19 @@ export type TableDef = {
 };
 
 export type LaravelRoute = {
-  method: string;         // GET/POST/...
-  uri: string;            // /api/posts/{id}
-  controller?: string;    // App\Http\Controllers\PostController@show
+  method: string;
+  uri: string;
+  controller?: string;
   name?: string;
   middleware?: string[];
+};
+
+export type FileNode = {
+  path: string;
+  size: number;
+  kind: "frontend" | "backend" | "config" | "other";
+  used: boolean;
+  reason?: string;
 };
 
 export type AnalyzeResult = {
@@ -44,11 +52,14 @@ export type AnalyzeResult = {
     authGuard?: string;
     storageDisks: string[];
     envKeys: string[];
+    envExample: Record<string, string>;
     rawMigrationFiles: number;
   };
+  files: FileNode[];
   stats: {
     totalFiles: number;
     totalBytes: number;
+    usedFiles: number;
     skipped: string[];
   };
 };
@@ -61,8 +72,8 @@ export type IntegrationPlan = {
     reason?: string;
   }[];
   endpoints: {
-    laravel: string;               // "GET /api/posts"
-    pluto: string;                 // "GET /rest/v3/posts"
+    laravel: string;
+    pluto: string;
     kind: "rest" | "rpc";
     rpcName?: string;
     notes?: string;
@@ -79,8 +90,24 @@ export type IntegrationPlan = {
   risks: { severity: "low" | "med" | "high"; message: string }[];
 };
 
-export type Artifact = {
-  name: string;
-  blob: Blob;
-  size: number;
+export type Artifact = { name: string; blob: Blob; size: number };
+
+export type DbDriver = "postgres" | "mysql";
+export type DbConfig = {
+  driver: DbDriver;
+  url: string;
+  host?: string;
+  port?: number;
+  database?: string;
+  user?: string;
+  ssl?: boolean;
+  validated?: boolean;
+  message?: string;
+};
+
+export type SqlStatement = {
+  kind: "create_table" | "alter" | "drop" | "grant" | "policy" | "rls" | "begin" | "commit" | "other";
+  table?: string;
+  destructive: boolean;
+  sql: string;
 };
