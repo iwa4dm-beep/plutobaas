@@ -9,9 +9,9 @@ import { parseRollbackLog } from "./rollback-log";
 import type { SqlStatement } from "./types";
 
 const stmts: SqlStatement[] = [
-  { sql: "CREATE TABLE users (id int)", kind: "create_table", table: "users" },
-  { sql: "CREATE TABLE posts (id int)", kind: "create_table", table: "posts" },
-  { sql: "ALTER TABLE users ADD COLUMN email text", kind: "alter", table: "users" },
+  { sql: "CREATE TABLE users (id int)", kind: "create_table", table: "users", destructive: false },
+  { sql: "CREATE TABLE posts (id int)", kind: "create_table", table: "posts", destructive: false },
+  { sql: "ALTER TABLE users ADD COLUMN email text", kind: "alter", table: "users", destructive: false },
 ];
 
 function auditFor(mode: "cancel-snapshot" | "cancel-sql", cancelAt: number) {
