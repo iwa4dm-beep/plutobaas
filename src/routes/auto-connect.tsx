@@ -681,6 +681,11 @@ function DownloadStep({ artifacts, buildAudit, downloadAuditZip, rawLog }: {
             >
               <Download className="h-3.5 w-3.5" /> Raw JSONL log {rawLog ? `(${(rawLog.length / 1024).toFixed(1)} KB)` : "(empty)"}
             </button>
+            <button onClick={downloadAuditZip}
+              className="inline-flex items-center gap-1 rounded-md bg-primary/90 px-3 py-1.5 text-sm text-primary-foreground hover:bg-primary"
+              title="Single ZIP: audit HTML/JSON + raw JSONL + verification-mismatch CSV">
+              <FileArchive className="h-3.5 w-3.5" /> Download audit bundle (.zip)
+            </button>
           </div>
         </div>
       </div>
