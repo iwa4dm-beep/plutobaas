@@ -16,6 +16,9 @@ export type AuditInput = {
   verification?: VerifyResult | null;
   rollback?: LogSummary | null;
   retentionDays?: number;
+  snapshotRoot?: string;
+  cancellation?: { at: string; jobId?: string; via: "ui" | "cli"; note?: string } | null;
+  rawLogJsonl?: string | null;
 };
 
 export type AuditReport = {
@@ -25,7 +28,7 @@ export type AuditReport = {
     ackOk: boolean;
     destructive: number;
     tables: number;
-    rollbackStatus: "n/a" | "ok" | "rolled_back" | "failed";
+    rollbackStatus: "n/a" | "ok" | "rolled_back" | "failed" | "cancelled";
   };
   input: AuditInput;
 };
