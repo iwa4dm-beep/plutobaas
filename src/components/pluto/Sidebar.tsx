@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useRouterState } from "@tanstack/react-router";
 import {
   Activity, Archive, Boxes, Building2, ChevronDown, Cloud, Database, Files,
-  Gauge, GitBranch, Globe, HeartPulse, KeyRound, LineChart,
+  Gauge, GitBranch, GitCompare, Globe, HeartPulse, KeyRound, LineChart,
   LockKeyhole, LogOut, Package, Plug, Radio, ScrollText, Search, Server,
   Settings, Shield, ShieldAlert, ShieldCheck, ShoppingBag, Sparkles, Table2,
   Terminal, Users, Waves, X, Zap,
@@ -27,6 +27,7 @@ const groups: Group[] = [
       { to: "/dashboard", label: "Overview", icon: Gauge },
       { to: "/dashboard/vps-status", label: "VPS Status", icon: HeartPulse },
       { to: "/dashboard/deployment-history", label: "Deployment History", icon: ScrollText },
+      { to: "/dashboard/deployment-compare", label: "Compare Deployments", icon: GitCompare },
       { to: "/dashboard/pluto-admin", label: "Pluto Admin", icon: Server },
       { to: "/dashboard/verify", label: "Live checklist", icon: Activity },
       { to: "/dashboard/integrations", label: "Integration health", icon: HeartPulse },

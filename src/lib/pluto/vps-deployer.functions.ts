@@ -151,3 +151,81 @@ export const verifyDeploy = createServerFn({ method: "POST" })
       debug: r.debug,
     };
   });
+
+// ---------- Dry run: validate only, no writes ----------
+// Steps:
+//   1. Parse/validate SQL locally (statement count, forbid destructive-without-guard patterns).
+//   2. HEAD the storage bucket root to confirm reachability + auth.
+//   3. Call verifyDeploy to prove the workspace exists + admin API reachable.
+const DryRunInput = z.object({
+  workspaceId: z.string().min(1),
+  sql: z.string().max(2 * 1024 * 1024).optional(),
+  bucket: z.string().min(1).max(64).default("deployments"),
+});
+
+export type DryRunStep = {
+  key: "validate-sql" | "check-storage" | "check-verify";
+  label: string;
+  ok: boolean;
+  detail: string;
+  debug: StepDebug | null;
+};
+
+export type DryRunResult = { ok: boolean; steps: DryRunStep[] };
+
+function validateSqlText(sql: string): { ok: boolean; detail: string } {
+  const stripped = sql.replace(/--.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "").trim();
+  if (!stripped) return { ok: false, detail: "SQL is empty after removing comments" };
+  const statements = stripped.split(";").map(s => s.trim()).filter(Boolean);
+  const dangerous = /\b(DROP\s+(TABLE|SCHEMA|DATABASE)|TRUNCATE)\b/i;
+  const risky = statements.filter(s => dangerous.test(s) && !/IF\s+EXISTS/i.test(s));
+  if (risky.length) return { ok: false, detail: `${risky.length} destructive statement(s) without IF EXISTS guard` };
+  const openParens = (stripped.match(/\(/g) || []).length;
+  const closeParens = (stripped.match(/\)/g) || []).length;
+  if (openParens !== closeParens) return { ok: false, detail: `unbalanced parens (${openParens} open, ${closeParens} close)` };
+  return { ok: true, detail: `${statements.length} statement(s) parsed` };
+}
+
+export const dryRunDeploy = createServerFn({ method: "POST" })
+  .inputValidator((d: unknown) => DryRunInput.parse(d))
+  .handler(async ({ data }): Promise<DryRunResult> => {
+    const steps: DryRunStep[] = [];
+
+    // 1. Local SQL validation
+    if (data.sql && data.sql.trim()) {
+      const v = validateSqlText(data.sql);
+      steps.push({ key: "validate-sql", label: "Validate SQL", ok: v.ok, detail: v.detail, debug: null });
+    } else {
+      steps.push({ key: "validate-sql", label: "Validate SQL", ok: true, detail: "skipped (no SQL provided)", debug: null });
+    }
+
+    // 2. Storage reachability via HEAD (list bucket)
+    const headers = serviceHeaders();
+    if ("error" in headers) {
+      steps.push({ key: "check-storage", label: "Check storage reachability", ok: false, detail: headers.error, debug: null });
+      steps.push({ key: "check-verify", label: "Verify admin API", ok: false, detail: headers.error, debug: null });
+      return { ok: false, steps };
+    }
+    const storageUrl = `${getVpsBaseUrl()}/storage/v1/bucket/${encodeURIComponent(data.bucket)}`;
+    const storageRes = await rawFetch(storageUrl, "GET", headers, null, null, 10_000);
+    steps.push({
+      key: "check-storage",
+      label: "Check storage reachability",
+      ok: storageRes.ok,
+      detail: storageRes.ok ? `bucket "${data.bucket}" reachable` : `HTTP ${storageRes.status}: ${storageRes.text.slice(0, 200)}`,
+      debug: storageRes.debug,
+    });
+
+    // 3. Verify admin API + workspace exists
+    const verifyUrl = `${getVpsBaseUrl()}/admin/v1/workspaces/${encodeURIComponent(data.workspaceId)}/deployments?limit=1`;
+    const verifyRes = await rawFetch(verifyUrl, "GET", headers, null, null, 10_000);
+    steps.push({
+      key: "check-verify",
+      label: "Verify admin API",
+      ok: verifyRes.ok,
+      detail: verifyRes.ok ? `workspace reachable via admin API` : `HTTP ${verifyRes.status}: ${verifyRes.text.slice(0, 200)}`,
+      debug: verifyRes.debug,
+    });
+
+    return { ok: steps.every(s => s.ok), steps };
+  });

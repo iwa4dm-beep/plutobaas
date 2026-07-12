@@ -75,6 +75,7 @@ import { Route as DashboardEnterpriseRouteImport } from './routes/dashboard.ente
 import { Route as DashboardDomainsRouteImport } from './routes/dashboard.domains'
 import { Route as DashboardDevexRouteImport } from './routes/dashboard.devex'
 import { Route as DashboardDeploymentHistoryRouteImport } from './routes/dashboard.deployment-history'
+import { Route as DashboardDeploymentCompareRouteImport } from './routes/dashboard.deployment-compare'
 import { Route as DashboardDatabaseImportRouteImport } from './routes/dashboard.database-import'
 import { Route as DashboardDatabaseRouteImport } from './routes/dashboard.database'
 import { Route as DashboardCustomDomainsRouteImport } from './routes/dashboard.custom-domains'
@@ -438,6 +439,12 @@ const DashboardDeploymentHistoryRoute =
     path: '/deployment-history',
     getParentRoute: () => DashboardRoute,
   } as any)
+const DashboardDeploymentCompareRoute =
+  DashboardDeploymentCompareRouteImport.update({
+    id: '/deployment-compare',
+    path: '/deployment-compare',
+    getParentRoute: () => DashboardRoute,
+  } as any)
 const DashboardDatabaseImportRoute = DashboardDatabaseImportRouteImport.update({
   id: '/database-import',
   path: '/database-import',
@@ -593,6 +600,7 @@ export interface FileRoutesByFullPath {
   '/dashboard/custom-domains': typeof DashboardCustomDomainsRouteWithChildren
   '/dashboard/database': typeof DashboardDatabaseRoute
   '/dashboard/database-import': typeof DashboardDatabaseImportRoute
+  '/dashboard/deployment-compare': typeof DashboardDeploymentCompareRoute
   '/dashboard/deployment-history': typeof DashboardDeploymentHistoryRoute
   '/dashboard/devex': typeof DashboardDevexRoute
   '/dashboard/domains': typeof DashboardDomainsRoute
@@ -685,6 +693,7 @@ export interface FileRoutesByTo {
   '/dashboard/custom-domains': typeof DashboardCustomDomainsRouteWithChildren
   '/dashboard/database': typeof DashboardDatabaseRoute
   '/dashboard/database-import': typeof DashboardDatabaseImportRoute
+  '/dashboard/deployment-compare': typeof DashboardDeploymentCompareRoute
   '/dashboard/deployment-history': typeof DashboardDeploymentHistoryRoute
   '/dashboard/devex': typeof DashboardDevexRoute
   '/dashboard/domains': typeof DashboardDomainsRoute
@@ -779,6 +788,7 @@ export interface FileRoutesById {
   '/dashboard/custom-domains': typeof DashboardCustomDomainsRouteWithChildren
   '/dashboard/database': typeof DashboardDatabaseRoute
   '/dashboard/database-import': typeof DashboardDatabaseImportRoute
+  '/dashboard/deployment-compare': typeof DashboardDeploymentCompareRoute
   '/dashboard/deployment-history': typeof DashboardDeploymentHistoryRoute
   '/dashboard/devex': typeof DashboardDevexRoute
   '/dashboard/domains': typeof DashboardDomainsRoute
@@ -874,6 +884,7 @@ export interface FileRouteTypes {
     | '/dashboard/custom-domains'
     | '/dashboard/database'
     | '/dashboard/database-import'
+    | '/dashboard/deployment-compare'
     | '/dashboard/deployment-history'
     | '/dashboard/devex'
     | '/dashboard/domains'
@@ -966,6 +977,7 @@ export interface FileRouteTypes {
     | '/dashboard/custom-domains'
     | '/dashboard/database'
     | '/dashboard/database-import'
+    | '/dashboard/deployment-compare'
     | '/dashboard/deployment-history'
     | '/dashboard/devex'
     | '/dashboard/domains'
@@ -1059,6 +1071,7 @@ export interface FileRouteTypes {
     | '/dashboard/custom-domains'
     | '/dashboard/database'
     | '/dashboard/database-import'
+    | '/dashboard/deployment-compare'
     | '/dashboard/deployment-history'
     | '/dashboard/devex'
     | '/dashboard/domains'
@@ -1609,6 +1622,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardDeploymentHistoryRouteImport
       parentRoute: typeof DashboardRoute
     }
+    '/dashboard/deployment-compare': {
+      id: '/dashboard/deployment-compare'
+      path: '/deployment-compare'
+      fullPath: '/dashboard/deployment-compare'
+      preLoaderRoute: typeof DashboardDeploymentCompareRouteImport
+      parentRoute: typeof DashboardRoute
+    }
     '/dashboard/database-import': {
       id: '/dashboard/database-import'
       path: '/database-import'
@@ -1845,6 +1865,7 @@ interface DashboardRouteChildren {
   DashboardCustomDomainsRoute: typeof DashboardCustomDomainsRouteWithChildren
   DashboardDatabaseRoute: typeof DashboardDatabaseRoute
   DashboardDatabaseImportRoute: typeof DashboardDatabaseImportRoute
+  DashboardDeploymentCompareRoute: typeof DashboardDeploymentCompareRoute
   DashboardDeploymentHistoryRoute: typeof DashboardDeploymentHistoryRoute
   DashboardDevexRoute: typeof DashboardDevexRoute
   DashboardDomainsRoute: typeof DashboardDomainsRoute
@@ -1917,6 +1938,7 @@ const DashboardRouteChildren: DashboardRouteChildren = {
   DashboardCustomDomainsRoute: DashboardCustomDomainsRouteWithChildren,
   DashboardDatabaseRoute: DashboardDatabaseRoute,
   DashboardDatabaseImportRoute: DashboardDatabaseImportRoute,
+  DashboardDeploymentCompareRoute: DashboardDeploymentCompareRoute,
   DashboardDeploymentHistoryRoute: DashboardDeploymentHistoryRoute,
   DashboardDevexRoute: DashboardDevexRoute,
   DashboardDomainsRoute: DashboardDomainsRoute,

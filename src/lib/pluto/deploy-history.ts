@@ -43,3 +43,62 @@ export function clearHistory(): void {
   window.localStorage.removeItem(KEY);
   window.dispatchEvent(new CustomEvent("pluto:deploy-history:changed"));
 }
+
+// ---------- Download ----------
+export function downloadEntryAsJson(entry: HistoryEntry, filename?: string): void {
+  if (typeof window === "undefined") return;
+  const blob = new Blob([JSON.stringify(entry, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename ?? `deployment-${entry.workspaceId}-${new Date(entry.timestamp).toISOString().replace(/[:.]/g, "-")}.json`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+// ---------- Compare ----------
+export type StepDiff = {
+  key: HistoryStep["key"];
+  label: string;
+  left: HistoryStep | null;
+  right: HistoryStep | null;
+  stateChanged: boolean;
+  latencyDeltaMs: number | null;
+  statusChanged: boolean;
+  reqBodyChanged: boolean;
+  resBodyChanged: boolean;
+};
+
+export type DeploymentDiff = {
+  workspaceChanged: boolean;
+  overallChanged: boolean;
+  steps: StepDiff[];
+};
+
+export function compareEntries(left: HistoryEntry, right: HistoryEntry): DeploymentDiff {
+  const keys: HistoryStep["key"][] = ["sql", "upload", "verify"];
+  const steps: StepDiff[] = keys.map((k) => {
+    const l = left.steps.find((s) => s.key === k) ?? null;
+    const r = right.steps.find((s) => s.key === k) ?? null;
+    const latencyDelta =
+      l?.debug && r?.debug ? r.debug.latencyMs - l.debug.latencyMs : null;
+    return {
+      key: k,
+      label: l?.label ?? r?.label ?? k,
+      left: l,
+      right: r,
+      stateChanged: (l?.state ?? null) !== (r?.state ?? null),
+      latencyDeltaMs: latencyDelta,
+      statusChanged: (l?.debug?.status ?? null) !== (r?.debug?.status ?? null),
+      reqBodyChanged: (l?.debug?.reqBodyPreview ?? null) !== (r?.debug?.reqBodyPreview ?? null),
+      resBodyChanged: (l?.debug?.resBodyPreview ?? null) !== (r?.debug?.resBodyPreview ?? null),
+    };
+  });
+  return {
+    workspaceChanged: left.workspaceId !== right.workspaceId,
+    overallChanged: left.overallOk !== right.overallOk,
+    steps,
+  };
+}

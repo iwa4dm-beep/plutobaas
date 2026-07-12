@@ -1,7 +1,7 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { CheckCircle2, XCircle, Circle, Trash2, ChevronDown, ChevronRight, History } from "lucide-react";
-import { loadHistory, clearHistory, type HistoryEntry } from "@/lib/pluto/deploy-history";
+import { CheckCircle2, XCircle, Circle, Trash2, ChevronDown, ChevronRight, History, Download, GitCompare } from "lucide-react";
+import { loadHistory, clearHistory, downloadEntryAsJson, type HistoryEntry } from "@/lib/pluto/deploy-history";
 
 export const Route = createFileRoute("/dashboard/deployment-history")({
   head: () => ({
@@ -41,14 +41,24 @@ function DeploymentHistoryPage() {
               সর্বশেষ ৫০টি deploy attempt — timestamp, status, verification result সহ। ডেটা এই browser-এ save থাকে।
             </p>
           </div>
-          {entries.length > 0 && (
-            <button
-              onClick={() => { if (confirm("Clear all deployment history?")) clearHistory(); }}
-              className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm hover:bg-destructive/10 hover:text-destructive hover:border-destructive/40"
-            >
-              <Trash2 className="h-4 w-4" /> Clear all
-            </button>
-          )}
+          <div className="flex items-center gap-2">
+            {entries.length >= 2 && (
+              <Link
+                to="/dashboard/deployment-compare"
+                className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm hover:bg-accent"
+              >
+                <GitCompare className="h-4 w-4" /> Compare
+              </Link>
+            )}
+            {entries.length > 0 && (
+              <button
+                onClick={() => { if (confirm("Clear all deployment history?")) clearHistory(); }}
+                className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm hover:bg-destructive/10 hover:text-destructive hover:border-destructive/40"
+              >
+                <Trash2 className="h-4 w-4" /> Clear all
+              </button>
+            )}
+          </div>
         </header>
 
         {entries.length === 0 && (
@@ -64,28 +74,38 @@ function DeploymentHistoryPage() {
             const ts = new Date(e.timestamp);
             return (
               <li key={e.id} className="rounded-lg border border-border bg-card">
-                <button
-                  onClick={() => setExpanded((x) => ({ ...x, [e.id]: !x[e.id] }))}
-                  className="w-full flex items-center gap-3 p-4 text-left hover:bg-accent/30"
-                >
-                  {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                  {e.overallOk
-                    ? <CheckCircle2 className="h-5 w-5 text-emerald-600" />
-                    : <XCircle className="h-5 w-5 text-destructive" />}
-                  <div className="flex-1 min-w-0">
-                    <div className="font-mono text-xs text-muted-foreground">{ts.toLocaleString()}</div>
-                    <div className="text-sm">
-                      Workspace <span className="font-mono">{e.workspaceId}</span>
+                <div className="flex items-stretch">
+                  <button
+                    onClick={() => setExpanded((x) => ({ ...x, [e.id]: !x[e.id] }))}
+                    className="flex-1 flex items-center gap-3 p-4 text-left hover:bg-accent/30"
+                  >
+                    {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                    {e.overallOk
+                      ? <CheckCircle2 className="h-5 w-5 text-emerald-600" />
+                      : <XCircle className="h-5 w-5 text-destructive" />}
+                    <div className="flex-1 min-w-0">
+                      <div className="font-mono text-xs text-muted-foreground">{ts.toLocaleString()}</div>
+                      <div className="text-sm">
+                        Workspace <span className="font-mono">{e.workspaceId}</span>
+                      </div>
                     </div>
-                  </div>
-                  <div className="text-xs text-muted-foreground text-right">
-                    {verify?.debug?.status ? (
-                      <>verify HTTP {verify.debug.status} · {verify.debug.latencyMs}ms</>
-                    ) : (
-                      verify?.state ?? "—"
-                    )}
-                  </div>
-                </button>
+                    <div className="text-xs text-muted-foreground text-right">
+                      {verify?.debug?.status ? (
+                        <>verify HTTP {verify.debug.status} · {verify.debug.latencyMs}ms</>
+                      ) : (
+                        verify?.state ?? "—"
+                      )}
+                    </div>
+                  </button>
+                  <button
+                    onClick={() => downloadEntryAsJson(e)}
+                    className="px-3 border-l border-border hover:bg-accent flex items-center"
+                    title="Download this deployment as JSON"
+                    aria-label="Download JSON"
+                  >
+                    <Download className="h-4 w-4" />
+                  </button>
+                </div>
                 {open && (
                   <div className="border-t border-border p-4 space-y-3">
                     {e.steps.map((s) => (
