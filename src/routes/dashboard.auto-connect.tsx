@@ -170,9 +170,20 @@ function AutoConnectPage() {
         </header>
 
         <div className="mb-8 grid gap-6 md:grid-cols-2">
-          <WorkspaceProvisionCard />
-          <DeployToVpsCard defaultBundle={artifacts?.migrations ?? null} defaultBundleName="migrations.zip" />
+          <WorkspaceProvisionCard
+            onProvisioned={({ workspaceId, autoDeploy }) => {
+              setProvisionedWorkspace(workspaceId);
+              if (autoDeploy) setAutoDeployTrigger(workspaceId);
+            }}
+          />
+          <DeployToVpsCard
+            defaultBundle={artifacts?.migrations ?? null}
+            defaultBundleName="migrations.zip"
+            defaultWorkspaceId={provisionedWorkspace}
+            autoStartTrigger={autoDeployTrigger}
+          />
         </div>
+
 
 
         <div className="mb-4 flex gap-2">
