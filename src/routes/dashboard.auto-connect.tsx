@@ -16,6 +16,7 @@ import { parseRollbackLog, type LogSummary } from "@/lib/autoconnect/rollback-lo
 import { runE2E, type E2EReport } from "@/lib/autoconnect/e2e-runner";
 import { buildAuditJson, buildAuditHtml, buildAuditBundle, type AuditInput, type CancellationRecord } from "@/lib/autoconnect/audit-report";
 import type { AnalyzeResult, DbConfig, IntegrationPlan, SqlStatement } from "@/lib/autoconnect/types";
+import { WorkspaceProvisionCard } from "@/components/pluto/WorkspaceProvisionCard";
 
 export const Route = createFileRoute("/dashboard/auto-connect")({
   head: () => ({
@@ -164,6 +165,10 @@ function AutoConnectPage() {
             মাইগ্রেশন (dry-run + auto-rollback), env auto-map, MySQL/PostgreSQL wizard, structure report — সব অটো।
           </p>
         </header>
+
+        <div className="mb-8">
+          <WorkspaceProvisionCard />
+        </div>
 
         <div className="mb-4 flex gap-2">
           {([
