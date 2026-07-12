@@ -1,7 +1,7 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { CheckCircle2, XCircle, Circle, Trash2, ChevronDown, ChevronRight, History } from "lucide-react";
-import { loadHistory, clearHistory, type HistoryEntry } from "@/lib/pluto/deploy-history";
+import { CheckCircle2, XCircle, Circle, Trash2, ChevronDown, ChevronRight, History, Download, GitCompare } from "lucide-react";
+import { loadHistory, clearHistory, downloadEntryAsJson, type HistoryEntry } from "@/lib/pluto/deploy-history";
 
 export const Route = createFileRoute("/dashboard/deployment-history")({
   head: () => ({
@@ -41,14 +41,24 @@ function DeploymentHistoryPage() {
               সর্বশেষ ৫০টি deploy attempt — timestamp, status, verification result সহ। ডেটা এই browser-এ save থাকে।
             </p>
           </div>
-          {entries.length > 0 && (
-            <button
-              onClick={() => { if (confirm("Clear all deployment history?")) clearHistory(); }}
-              className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm hover:bg-destructive/10 hover:text-destructive hover:border-destructive/40"
-            >
-              <Trash2 className="h-4 w-4" /> Clear all
-            </button>
-          )}
+          <div className="flex items-center gap-2">
+            {entries.length >= 2 && (
+              <Link
+                to="/dashboard/deployment-compare"
+                className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm hover:bg-accent"
+              >
+                <GitCompare className="h-4 w-4" /> Compare
+              </Link>
+            )}
+            {entries.length > 0 && (
+              <button
+                onClick={() => { if (confirm("Clear all deployment history?")) clearHistory(); }}
+                className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm hover:bg-destructive/10 hover:text-destructive hover:border-destructive/40"
+              >
+                <Trash2 className="h-4 w-4" /> Clear all
+              </button>
+            )}
+          </div>
         </header>
 
         {entries.length === 0 && (
