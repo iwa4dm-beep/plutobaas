@@ -1,8 +1,7 @@
 // End-to-end unit tests covering the deployment features:
 //   1. localStorage persistence roundtrip
-//   2. Download JSON produces a valid blob
+//   2. Download JSON produces a valid Blob URL + <a> click
 //   3. compareEntries diff detects state/latency/body changes
-//   4. dry-run SQL validator (behaviour import lives inside handler; we test the util shape via type)
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   clearHistory,
@@ -31,16 +30,47 @@ function mkEntry(over: Partial<HistoryEntry> = {}): HistoryEntry {
   };
 }
 
+type AnchorMock = { href: string; download: string; click: ReturnType<typeof vi.fn>; remove: () => void };
+type WinLike = {
+  localStorage: Storage;
+  dispatchEvent: () => boolean;
+};
+
+let anchors: AnchorMock[] = [];
+
 beforeEach(() => {
   const store = new Map<string, string>();
-  vi.stubGlobal("localStorage", {
+  const storage: Storage = {
     getItem: (k: string) => store.get(k) ?? null,
     setItem: (k: string, v: string) => void store.set(k, v),
     removeItem: (k: string) => void store.delete(k),
     clear: () => store.clear(),
-    key: () => null, length: 0,
-  } as Storage);
+    key: () => null,
+    length: 0,
+  };
+  const win: WinLike = { localStorage: storage, dispatchEvent: () => true };
+  vi.stubGlobal("window", win);
+
+  anchors = [];
+  const doc = {
+    createElement: (tag: string) => {
+      if (tag === "a") {
+        const a: AnchorMock = { href: "", download: "", click: vi.fn(), remove: () => {} };
+        anchors.push(a);
+        return a as unknown as HTMLAnchorElement;
+      }
+      return {} as HTMLElement;
+    },
+    body: { appendChild: () => {} },
+  };
+  vi.stubGlobal("document", doc);
+  vi.stubGlobal("URL", {
+    createObjectURL: () => "blob:mock",
+    revokeObjectURL: () => {},
+  });
+  vi.stubGlobal("Blob", class { constructor(public parts: unknown[], public opts?: unknown) {} });
 });
+
 afterEach(() => vi.unstubAllGlobals());
 
 describe("deploy-history persistence", () => {
@@ -65,20 +95,13 @@ describe("deploy-history persistence", () => {
 });
 
 describe("downloadEntryAsJson", () => {
-  it("triggers a valid JSON download", () => {
-    const created: HTMLAnchorElement[] = [];
-    const origCreate = document.createElement.bind(document);
-    vi.spyOn(document, "createElement").mockImplementation((tag: string) => {
-      const el = origCreate(tag) as HTMLAnchorElement;
-      if (tag === "a") { el.click = vi.fn(); created.push(el); }
-      return el;
-    });
-    vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:mock");
-    vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+  it("triggers a JSON download via <a> click", () => {
     downloadEntryAsJson(mkEntry());
-    expect(created).toHaveLength(1);
-    expect(created[0].download).toMatch(/^deployment-ws_1-/);
-    expect(created[0].href).toBe("blob:mock");
+    expect(anchors).toHaveLength(1);
+    expect(anchors[0].click).toHaveBeenCalledTimes(1);
+    expect(anchors[0].download).toMatch(/^deployment-ws_1-/);
+    expect(anchors[0].download).toMatch(/\.json$/);
+    expect(anchors[0].href).toBe("blob:mock");
   });
 });
 
