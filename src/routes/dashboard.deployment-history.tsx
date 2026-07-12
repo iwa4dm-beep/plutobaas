@@ -74,28 +74,38 @@ function DeploymentHistoryPage() {
             const ts = new Date(e.timestamp);
             return (
               <li key={e.id} className="rounded-lg border border-border bg-card">
-                <button
-                  onClick={() => setExpanded((x) => ({ ...x, [e.id]: !x[e.id] }))}
-                  className="w-full flex items-center gap-3 p-4 text-left hover:bg-accent/30"
-                >
-                  {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                  {e.overallOk
-                    ? <CheckCircle2 className="h-5 w-5 text-emerald-600" />
-                    : <XCircle className="h-5 w-5 text-destructive" />}
-                  <div className="flex-1 min-w-0">
-                    <div className="font-mono text-xs text-muted-foreground">{ts.toLocaleString()}</div>
-                    <div className="text-sm">
-                      Workspace <span className="font-mono">{e.workspaceId}</span>
+                <div className="flex items-stretch">
+                  <button
+                    onClick={() => setExpanded((x) => ({ ...x, [e.id]: !x[e.id] }))}
+                    className="flex-1 flex items-center gap-3 p-4 text-left hover:bg-accent/30"
+                  >
+                    {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                    {e.overallOk
+                      ? <CheckCircle2 className="h-5 w-5 text-emerald-600" />
+                      : <XCircle className="h-5 w-5 text-destructive" />}
+                    <div className="flex-1 min-w-0">
+                      <div className="font-mono text-xs text-muted-foreground">{ts.toLocaleString()}</div>
+                      <div className="text-sm">
+                        Workspace <span className="font-mono">{e.workspaceId}</span>
+                      </div>
                     </div>
-                  </div>
-                  <div className="text-xs text-muted-foreground text-right">
-                    {verify?.debug?.status ? (
-                      <>verify HTTP {verify.debug.status} · {verify.debug.latencyMs}ms</>
-                    ) : (
-                      verify?.state ?? "—"
-                    )}
-                  </div>
-                </button>
+                    <div className="text-xs text-muted-foreground text-right">
+                      {verify?.debug?.status ? (
+                        <>verify HTTP {verify.debug.status} · {verify.debug.latencyMs}ms</>
+                      ) : (
+                        verify?.state ?? "—"
+                      )}
+                    </div>
+                  </button>
+                  <button
+                    onClick={() => downloadEntryAsJson(e)}
+                    className="px-3 border-l border-border hover:bg-accent flex items-center"
+                    title="Download this deployment as JSON"
+                    aria-label="Download JSON"
+                  >
+                    <Download className="h-4 w-4" />
+                  </button>
+                </div>
                 {open && (
                   <div className="border-t border-border p-4 space-y-3">
                     {e.steps.map((s) => (
