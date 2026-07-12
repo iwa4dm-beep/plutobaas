@@ -14,6 +14,7 @@ import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
 import { Route as SignupRouteImport } from './routes/signup'
 import { Route as OnboardingRouteImport } from './routes/onboarding'
 import { Route as DashboardRouteImport } from './routes/dashboard'
+import { Route as AutoConnectRouteImport } from './routes/auto-connect'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AcceptInviteRouteImport } from './routes/accept-invite'
 import { Route as IndexRouteImport } from './routes/index'
@@ -121,6 +122,11 @@ const OnboardingRoute = OnboardingRouteImport.update({
 const DashboardRoute = DashboardRouteImport.update({
   id: '/dashboard',
   path: '/dashboard',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AutoConnectRoute = AutoConnectRouteImport.update({
+  id: '/auto-connect',
+  path: '/auto-connect',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthRoute = AuthRouteImport.update({
@@ -551,6 +557,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/accept-invite': typeof AcceptInviteRoute
   '/auth': typeof AuthRouteWithChildren
+  '/auto-connect': typeof AutoConnectRoute
   '/dashboard': typeof DashboardRouteWithChildren
   '/onboarding': typeof OnboardingRoute
   '/signup': typeof SignupRoute
@@ -641,6 +648,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/accept-invite': typeof AcceptInviteRoute
   '/auth': typeof AuthRouteWithChildren
+  '/auto-connect': typeof AutoConnectRoute
   '/onboarding': typeof OnboardingRoute
   '/signup': typeof SignupRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
@@ -731,6 +739,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/accept-invite': typeof AcceptInviteRoute
   '/auth': typeof AuthRouteWithChildren
+  '/auto-connect': typeof AutoConnectRoute
   '/dashboard': typeof DashboardRouteWithChildren
   '/onboarding': typeof OnboardingRoute
   '/signup': typeof SignupRoute
@@ -823,6 +832,7 @@ export interface FileRouteTypes {
     | '/'
     | '/accept-invite'
     | '/auth'
+    | '/auto-connect'
     | '/dashboard'
     | '/onboarding'
     | '/signup'
@@ -913,6 +923,7 @@ export interface FileRouteTypes {
     | '/'
     | '/accept-invite'
     | '/auth'
+    | '/auto-connect'
     | '/onboarding'
     | '/signup'
     | '/sitemap.xml'
@@ -1002,6 +1013,7 @@ export interface FileRouteTypes {
     | '/'
     | '/accept-invite'
     | '/auth'
+    | '/auto-connect'
     | '/dashboard'
     | '/onboarding'
     | '/signup'
@@ -1093,6 +1105,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AcceptInviteRoute: typeof AcceptInviteRoute
   AuthRoute: typeof AuthRouteWithChildren
+  AutoConnectRoute: typeof AutoConnectRoute
   DashboardRoute: typeof DashboardRouteWithChildren
   OnboardingRoute: typeof OnboardingRoute
   SignupRoute: typeof SignupRoute
@@ -1142,6 +1155,13 @@ declare module '@tanstack/react-router' {
       path: '/dashboard'
       fullPath: '/dashboard'
       preLoaderRoute: typeof DashboardRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/auto-connect': {
+      id: '/auto-connect'
+      path: '/auto-connect'
+      fullPath: '/auto-connect'
+      preLoaderRoute: typeof AutoConnectRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/auth': {
@@ -1920,6 +1940,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AcceptInviteRoute: AcceptInviteRoute,
   AuthRoute: AuthRouteWithChildren,
+  AutoConnectRoute: AutoConnectRoute,
   DashboardRoute: DashboardRouteWithChildren,
   OnboardingRoute: OnboardingRoute,
   SignupRoute: SignupRoute,
