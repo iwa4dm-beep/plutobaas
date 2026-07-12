@@ -10,10 +10,15 @@ type Result =
   | { ok: true; workspaceId: string; adminEmail: string; adminPassword: string; userId: string }
   | { ok: false; step: string; error: string; status: number };
 
-export function WorkspaceProvisionCard() {
+export function WorkspaceProvisionCard({
+  onProvisioned,
+}: {
+  onProvisioned?: (info: { workspaceId: string; adminEmail: string; autoDeploy: boolean }) => void;
+} = {}) {
   const provision = useServerFn(provisionWorkspace);
   const [projectName, setProjectName] = useState("");
   const [customEmail, setCustomEmail] = useState("");
+  const [autoDeploy, setAutoDeploy] = useState(false);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<Result | null>(null);
   const [showPw, setShowPw] = useState(false);
@@ -32,8 +37,11 @@ export function WorkspaceProvisionCard() {
         },
       });
       setResult(r);
-      if (r.ok) toast.success("Workspace + admin user তৈরি হয়েছে ✓");
-      else toast.error(`Failed at ${r.step}: ${r.error}`);
+      if (r.ok) {
+        toast.success("Workspace + admin user তৈরি হয়েছে ✓");
+        onProvisioned?.({ workspaceId: r.workspaceId, adminEmail: r.adminEmail, autoDeploy });
+        if (autoDeploy) toast.info("Auto-deploy শুরু হচ্ছে…");
+      } else toast.error(`Failed at ${r.step}: ${r.error}`);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Provision failed");
     } finally {
