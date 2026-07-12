@@ -91,7 +91,7 @@ export const pushMigrations = createServerFn({ method: "POST" })
     try { parsed = JSON.parse(created.text); } catch { /* keep empty */ }
     const id = parsed.id ?? "";
     if (!id) return { ok: false, error: "Upstream did not return migration id", status: 500, debug: created.debug };
-    const applied = await rawFetch(`${base}/admin/v1/migrations/${encodeURIComponent(id)}/apply`, "POST", headers, null, null, 60_000);
+    const applied = await rawFetch(`${base}/admin/v1/migrations/${encodeURIComponent(id)}/apply`, "POST", headers, "{}", "{}", 60_000);
     if (!applied.ok) return { ok: false, error: applied.text || `HTTP ${applied.status}`, status: applied.status, debug: applied.debug };
     return { ok: true, migrationId: id, applied: 1, debug: applied.debug };
   });
