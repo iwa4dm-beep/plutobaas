@@ -17,6 +17,7 @@ import { runE2E, type E2EReport } from "@/lib/autoconnect/e2e-runner";
 import { buildAuditJson, buildAuditHtml, buildAuditBundle, type AuditInput, type CancellationRecord } from "@/lib/autoconnect/audit-report";
 import type { AnalyzeResult, DbConfig, IntegrationPlan, SqlStatement } from "@/lib/autoconnect/types";
 import { WorkspaceProvisionCard } from "@/components/pluto/WorkspaceProvisionCard";
+import { DeployToVpsCard } from "@/components/pluto/DeployToVpsCard";
 
 export const Route = createFileRoute("/dashboard/auto-connect")({
   head: () => ({
