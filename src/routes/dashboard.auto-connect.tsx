@@ -53,6 +53,8 @@ function AutoConnectPage() {
   const [lastRollback, setLastRollback] = useState<LogSummary | null>(null);
   const [rawLog, setRawLog] = useState<string>("");
   const [cancellation, setCancellation] = useState<CancellationRecord | null>(null);
+  const [autoDeployTrigger, setAutoDeployTrigger] = useState<string | null>(null);
+  const [provisionedWorkspace, setProvisionedWorkspace] = useState<string>("");
   const inputRef = useRef<HTMLInputElement>(null);
 
   const log = useCallback((m: string) => {
