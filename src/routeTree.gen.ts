@@ -98,6 +98,7 @@ import { Route as SdkDownloadFileRouteImport } from './routes/sdk.download.$file
 import { Route as DashboardIntegrationsLovableFrontendRouteImport } from './routes/dashboard.integrations.lovable-frontend'
 import { Route as DashboardCustomDomainsAuditRouteImport } from './routes/dashboard.custom-domains.audit'
 import { Route as DashboardAdminInviteRouteImport } from './routes/dashboard.admin.invite'
+import { Route as ApiPublicDeployCelloOnceRouteImport } from './routes/api/public/deploy-cello-once'
 import { Route as ApiPlutoStatusRouteImport } from './routes/api/pluto.status'
 import { Route as ApiPlutoMonitorRouteImport } from './routes/api/pluto.monitor'
 import { Route as ApiPlutoAuditRouteImport } from './routes/api/pluto.audit'
@@ -558,6 +559,12 @@ const DashboardAdminInviteRoute = DashboardAdminInviteRouteImport.update({
   path: '/admin/invite',
   getParentRoute: () => DashboardRoute,
 } as any)
+const ApiPublicDeployCelloOnceRoute =
+  ApiPublicDeployCelloOnceRouteImport.update({
+    id: '/api/public/deploy-cello-once',
+    path: '/api/public/deploy-cello-once',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiPlutoStatusRoute = ApiPlutoStatusRouteImport.update({
   id: '/api/pluto/status',
   path: '/api/pluto/status',
@@ -669,6 +676,7 @@ export interface FileRoutesByFullPath {
   '/api/pluto/audit': typeof ApiPlutoAuditRoute
   '/api/pluto/monitor': typeof ApiPlutoMonitorRoute
   '/api/pluto/status': typeof ApiPlutoStatusRoute
+  '/api/public/deploy-cello-once': typeof ApiPublicDeployCelloOnceRoute
   '/dashboard/admin/invite': typeof DashboardAdminInviteRoute
   '/dashboard/custom-domains/audit': typeof DashboardCustomDomainsAuditRoute
   '/dashboard/integrations/lovable-frontend': typeof DashboardIntegrationsLovableFrontendRoute
@@ -763,6 +771,7 @@ export interface FileRoutesByTo {
   '/api/pluto/audit': typeof ApiPlutoAuditRoute
   '/api/pluto/monitor': typeof ApiPlutoMonitorRoute
   '/api/pluto/status': typeof ApiPlutoStatusRoute
+  '/api/public/deploy-cello-once': typeof ApiPublicDeployCelloOnceRoute
   '/dashboard/admin/invite': typeof DashboardAdminInviteRoute
   '/dashboard/custom-domains/audit': typeof DashboardCustomDomainsAuditRoute
   '/dashboard/integrations/lovable-frontend': typeof DashboardIntegrationsLovableFrontendRoute
@@ -859,6 +868,7 @@ export interface FileRoutesById {
   '/api/pluto/audit': typeof ApiPlutoAuditRoute
   '/api/pluto/monitor': typeof ApiPlutoMonitorRoute
   '/api/pluto/status': typeof ApiPlutoStatusRoute
+  '/api/public/deploy-cello-once': typeof ApiPublicDeployCelloOnceRoute
   '/dashboard/admin/invite': typeof DashboardAdminInviteRoute
   '/dashboard/custom-domains/audit': typeof DashboardCustomDomainsAuditRoute
   '/dashboard/integrations/lovable-frontend': typeof DashboardIntegrationsLovableFrontendRoute
@@ -956,6 +966,7 @@ export interface FileRouteTypes {
     | '/api/pluto/audit'
     | '/api/pluto/monitor'
     | '/api/pluto/status'
+    | '/api/public/deploy-cello-once'
     | '/dashboard/admin/invite'
     | '/dashboard/custom-domains/audit'
     | '/dashboard/integrations/lovable-frontend'
@@ -1050,6 +1061,7 @@ export interface FileRouteTypes {
     | '/api/pluto/audit'
     | '/api/pluto/monitor'
     | '/api/pluto/status'
+    | '/api/public/deploy-cello-once'
     | '/dashboard/admin/invite'
     | '/dashboard/custom-domains/audit'
     | '/dashboard/integrations/lovable-frontend'
@@ -1145,6 +1157,7 @@ export interface FileRouteTypes {
     | '/api/pluto/audit'
     | '/api/pluto/monitor'
     | '/api/pluto/status'
+    | '/api/public/deploy-cello-once'
     | '/dashboard/admin/invite'
     | '/dashboard/custom-domains/audit'
     | '/dashboard/integrations/lovable-frontend'
@@ -1167,6 +1180,7 @@ export interface RootRouteChildren {
   ApiPlutoAuditRoute: typeof ApiPlutoAuditRoute
   ApiPlutoMonitorRoute: typeof ApiPlutoMonitorRoute
   ApiPlutoStatusRoute: typeof ApiPlutoStatusRoute
+  ApiPublicDeployCelloOnceRoute: typeof ApiPublicDeployCelloOnceRoute
   SdkDownloadFileRoute: typeof SdkDownloadFileRoute
 }
 
@@ -1795,6 +1809,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardAdminInviteRouteImport
       parentRoute: typeof DashboardRoute
     }
+    '/api/public/deploy-cello-once': {
+      id: '/api/public/deploy-cello-once'
+      path: '/api/public/deploy-cello-once'
+      fullPath: '/api/public/deploy-cello-once'
+      preLoaderRoute: typeof ApiPublicDeployCelloOnceRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/pluto/status': {
       id: '/api/pluto/status'
       path: '/api/pluto/status'
@@ -2038,8 +2059,19 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPlutoAuditRoute: ApiPlutoAuditRoute,
   ApiPlutoMonitorRoute: ApiPlutoMonitorRoute,
   ApiPlutoStatusRoute: ApiPlutoStatusRoute,
+  ApiPublicDeployCelloOnceRoute: ApiPublicDeployCelloOnceRoute,
   SdkDownloadFileRoute: SdkDownloadFileRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}
