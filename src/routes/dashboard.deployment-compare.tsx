@@ -1,7 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
-import { ArrowLeftRight, CheckCircle2, XCircle, Circle, GitCompare } from "lucide-react";
-import { loadHistory, compareEntries, type HistoryEntry } from "@/lib/pluto/deploy-history";
+import { ArrowLeftRight, CheckCircle2, XCircle, Circle, GitCompare, Timer } from "lucide-react";
+import { loadHistory, compareEntries, type HistoryEntry, type HistoryStep } from "@/lib/pluto/deploy-history";
+import { diffLines, diffCounts, type DiffLine } from "@/lib/pluto/text-diff";
 
 export const Route = createFileRoute("/dashboard/deployment-compare")({
   head: () => ({
