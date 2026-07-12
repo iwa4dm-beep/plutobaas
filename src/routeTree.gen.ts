@@ -50,6 +50,7 @@ import { Route as DashboardPlutoQueuesRouteImport } from './routes/dashboard.plu
 import { Route as DashboardPlutoOrgsRouteImport } from './routes/dashboard.pluto-orgs'
 import { Route as DashboardPlutoMigrationsRouteImport } from './routes/dashboard.pluto-migrations'
 import { Route as DashboardPlutoMarketplaceRouteImport } from './routes/dashboard.pluto-marketplace'
+import { Route as DashboardPlutoKeyHelperRouteImport } from './routes/dashboard.pluto-key-helper'
 import { Route as DashboardPlutoGraphqlRouteImport } from './routes/dashboard.pluto-graphql'
 import { Route as DashboardPlutoFunctionsPlusRouteImport } from './routes/dashboard.pluto-functions-plus'
 import { Route as DashboardPlutoFunctionsRouteImport } from './routes/dashboard.pluto-functions'
@@ -310,6 +311,11 @@ const DashboardPlutoMarketplaceRoute =
     path: '/pluto-marketplace',
     getParentRoute: () => DashboardRoute,
   } as any)
+const DashboardPlutoKeyHelperRoute = DashboardPlutoKeyHelperRouteImport.update({
+  id: '/pluto-key-helper',
+  path: '/pluto-key-helper',
+  getParentRoute: () => DashboardRoute,
+} as any)
 const DashboardPlutoGraphqlRoute = DashboardPlutoGraphqlRouteImport.update({
   id: '/pluto-graphql',
   path: '/pluto-graphql',
@@ -626,6 +632,7 @@ export interface FileRoutesByFullPath {
   '/dashboard/pluto-functions': typeof DashboardPlutoFunctionsRoute
   '/dashboard/pluto-functions-plus': typeof DashboardPlutoFunctionsPlusRoute
   '/dashboard/pluto-graphql': typeof DashboardPlutoGraphqlRoute
+  '/dashboard/pluto-key-helper': typeof DashboardPlutoKeyHelperRoute
   '/dashboard/pluto-marketplace': typeof DashboardPlutoMarketplaceRoute
   '/dashboard/pluto-migrations': typeof DashboardPlutoMigrationsRoute
   '/dashboard/pluto-orgs': typeof DashboardPlutoOrgsRoute
@@ -719,6 +726,7 @@ export interface FileRoutesByTo {
   '/dashboard/pluto-functions': typeof DashboardPlutoFunctionsRoute
   '/dashboard/pluto-functions-plus': typeof DashboardPlutoFunctionsPlusRoute
   '/dashboard/pluto-graphql': typeof DashboardPlutoGraphqlRoute
+  '/dashboard/pluto-key-helper': typeof DashboardPlutoKeyHelperRoute
   '/dashboard/pluto-marketplace': typeof DashboardPlutoMarketplaceRoute
   '/dashboard/pluto-migrations': typeof DashboardPlutoMigrationsRoute
   '/dashboard/pluto-orgs': typeof DashboardPlutoOrgsRoute
@@ -814,6 +822,7 @@ export interface FileRoutesById {
   '/dashboard/pluto-functions': typeof DashboardPlutoFunctionsRoute
   '/dashboard/pluto-functions-plus': typeof DashboardPlutoFunctionsPlusRoute
   '/dashboard/pluto-graphql': typeof DashboardPlutoGraphqlRoute
+  '/dashboard/pluto-key-helper': typeof DashboardPlutoKeyHelperRoute
   '/dashboard/pluto-marketplace': typeof DashboardPlutoMarketplaceRoute
   '/dashboard/pluto-migrations': typeof DashboardPlutoMigrationsRoute
   '/dashboard/pluto-orgs': typeof DashboardPlutoOrgsRoute
@@ -910,6 +919,7 @@ export interface FileRouteTypes {
     | '/dashboard/pluto-functions'
     | '/dashboard/pluto-functions-plus'
     | '/dashboard/pluto-graphql'
+    | '/dashboard/pluto-key-helper'
     | '/dashboard/pluto-marketplace'
     | '/dashboard/pluto-migrations'
     | '/dashboard/pluto-orgs'
@@ -1003,6 +1013,7 @@ export interface FileRouteTypes {
     | '/dashboard/pluto-functions'
     | '/dashboard/pluto-functions-plus'
     | '/dashboard/pluto-graphql'
+    | '/dashboard/pluto-key-helper'
     | '/dashboard/pluto-marketplace'
     | '/dashboard/pluto-migrations'
     | '/dashboard/pluto-orgs'
@@ -1097,6 +1108,7 @@ export interface FileRouteTypes {
     | '/dashboard/pluto-functions'
     | '/dashboard/pluto-functions-plus'
     | '/dashboard/pluto-graphql'
+    | '/dashboard/pluto-key-helper'
     | '/dashboard/pluto-marketplace'
     | '/dashboard/pluto-migrations'
     | '/dashboard/pluto-orgs'
@@ -1445,6 +1457,13 @@ declare module '@tanstack/react-router' {
       path: '/pluto-marketplace'
       fullPath: '/dashboard/pluto-marketplace'
       preLoaderRoute: typeof DashboardPlutoMarketplaceRouteImport
+      parentRoute: typeof DashboardRoute
+    }
+    '/dashboard/pluto-key-helper': {
+      id: '/dashboard/pluto-key-helper'
+      path: '/pluto-key-helper'
+      fullPath: '/dashboard/pluto-key-helper'
+      preLoaderRoute: typeof DashboardPlutoKeyHelperRouteImport
       parentRoute: typeof DashboardRoute
     }
     '/dashboard/pluto-graphql': {
@@ -1891,6 +1910,7 @@ interface DashboardRouteChildren {
   DashboardPlutoFunctionsRoute: typeof DashboardPlutoFunctionsRoute
   DashboardPlutoFunctionsPlusRoute: typeof DashboardPlutoFunctionsPlusRoute
   DashboardPlutoGraphqlRoute: typeof DashboardPlutoGraphqlRoute
+  DashboardPlutoKeyHelperRoute: typeof DashboardPlutoKeyHelperRoute
   DashboardPlutoMarketplaceRoute: typeof DashboardPlutoMarketplaceRoute
   DashboardPlutoMigrationsRoute: typeof DashboardPlutoMigrationsRoute
   DashboardPlutoOrgsRoute: typeof DashboardPlutoOrgsRoute
@@ -1964,6 +1984,7 @@ const DashboardRouteChildren: DashboardRouteChildren = {
   DashboardPlutoFunctionsRoute: DashboardPlutoFunctionsRoute,
   DashboardPlutoFunctionsPlusRoute: DashboardPlutoFunctionsPlusRoute,
   DashboardPlutoGraphqlRoute: DashboardPlutoGraphqlRoute,
+  DashboardPlutoKeyHelperRoute: DashboardPlutoKeyHelperRoute,
   DashboardPlutoMarketplaceRoute: DashboardPlutoMarketplaceRoute,
   DashboardPlutoMigrationsRoute: DashboardPlutoMigrationsRoute,
   DashboardPlutoOrgsRoute: DashboardPlutoOrgsRoute,
@@ -2022,13 +2043,3 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { startInstance } from './start.ts'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-    config: Awaited<ReturnType<typeof startInstance.getOptions>>
-  }
-}
