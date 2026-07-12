@@ -347,15 +347,25 @@ export function DeployToVpsCard({
       </div>
 
       {showLogs && (
-        <div ref={logRef} className="max-h-56 overflow-auto rounded-md border border-border bg-black/90 text-white p-3 font-mono text-[11px] space-y-0.5">
-          {logs.length === 0 && <div className="text-white/40">(waiting for events…)</div>}
-          {logs.map((e, i) => (
-            <div key={i} className={
-              e.level === "error" ? "text-red-400" : e.level === "ok" ? "text-emerald-300" : "text-white/80"
-            }>
-              <span className="text-white/40">{new Date(e.t).toISOString().slice(11, 23)}</span>{" "}{e.msg}
-            </div>
-          ))}
+        <div className="space-y-1.5">
+          <StreamStatusPill
+            status={streamStatus}
+            attempt={attempt}
+            onReconnect={reconnectNow}
+            canReconnect={wsUrl !== null}
+          />
+          <div ref={logRef} className="max-h-56 overflow-auto rounded-md border border-border bg-black/90 text-white p-3 font-mono text-[11px] space-y-0.5">
+            {logs.length === 0 && <div className="text-white/40">(waiting for events…)</div>}
+            {logs.map((e, i) => (
+              <div key={i} className={
+                e.level === "error" ? "text-red-400" : e.level === "ok" ? "text-emerald-300" : "text-white/80"
+              }>
+                <span className="text-white/40">{new Date(e.t).toISOString().slice(11, 23)}</span>
+                {e.source === "ws" && <span className="text-sky-400"> ⟳</span>}
+                {" "}{e.msg}
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
