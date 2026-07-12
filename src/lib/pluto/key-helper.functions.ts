@@ -97,6 +97,44 @@ export const mintAdminJwt = createServerFn({ method: "POST" })
     return { ok: true, token, role: data.role, expiresAt: exp, header, payload };
   });
 
+// ---------- Fixed admin upstream config for the Pluto Admin page ----------
+//
+// Returns the upstream base URL + a ready-to-use admin JWT. If
+// PLUTO_SERVICE_ROLE_KEY is already a 3-part JWT we reuse it; otherwise we
+// mint a fresh HS256 JWT from PLUTO_JWT_SECRET so the admin page always
+// works out of the box with the operator-provided secret.
+export type AdminUpstreamConfig =
+  | { ok: true; url: string; token: string; source: "configured_jwt" | "minted_from_secret"; expiresAt: number | null }
+  | { ok: false; error: string; url: string };
+
+export const getAdminUpstreamConfig = createServerFn({ method: "GET" })
+  .handler(async (): Promise<AdminUpstreamConfig> => {
+    const url = getVpsBaseUrl();
+    const configured = getServiceRoleKey() ?? "";
+    if (configured && configured.split(".").length === 3) {
+      let exp: number | null = null;
+      try {
+        const payloadJson = JSON.parse(
+          Buffer.from(configured.split(".")[1].replace(/-/g, "+").replace(/_/g, "/"), "base64").toString("utf8"),
+        ) as { exp?: number };
+        exp = typeof payloadJson.exp === "number" ? payloadJson.exp : null;
+      } catch { /* ignore */ }
+      return { ok: true, url, token: configured, source: "configured_jwt", expiresAt: exp };
+    }
+    const secret = process.env.PLUTO_JWT_SECRET;
+    if (!secret) {
+      return { ok: false, url, error: "Neither PLUTO_SERVICE_ROLE_KEY (as JWT) nor PLUTO_JWT_SECRET is configured." };
+    }
+    const now = Math.floor(Date.now() / 1000);
+    const exp = now + 60 * 60 * 24 * 365;
+    const header  = { alg: "HS256", typ: "JWT" };
+    const payload = { role: "service_role", iss: "pluto", aud: "authenticated", sub: "00000000-0000-0000-0000-000000000000", iat: now, exp };
+    const h = b64urlEncode(JSON.stringify(header));
+    const p = b64urlEncode(JSON.stringify(payload));
+    const sig = await signHS256(`${h}.${p}`, secret);
+    return { ok: true, url, token: `${h}.${p}.${sig}`, source: "minted_from_secret", expiresAt: exp };
+  });
+
 // ---------- Live probe: does the currently configured key work against admin API? ----------
 
 export type ProbeResult = {

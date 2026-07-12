@@ -10,9 +10,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Check, Copy, KeyRound, Loader2, LogIn, Plus, RefreshCw, RotateCw, Server, Trash2, UserPlus } from "lucide-react";
+import { Check, Copy, KeyRound, Loader2, LogIn, Lock, Plus, RefreshCw, RotateCw, Server, Trash2, UserPlus } from "lucide-react";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
+import { getAdminUpstreamConfig } from "@/lib/pluto/key-helper.functions";
 
 export const Route = createFileRoute("/dashboard/pluto-admin")({
   component: PlutoAdminPage,
@@ -26,11 +27,39 @@ const LS_URL   = "pluto.upstream.url";
 const LS_TOKEN = "pluto.upstream.token";
 
 function useUpstream() {
-  const [url, setUrl]     = useState(() => localStorage.getItem(LS_URL)   || "");
-  const [token, setToken] = useState(() => localStorage.getItem(LS_TOKEN) || "");
+  const [url, setUrl]     = useState(() => (typeof window === "undefined" ? "" : localStorage.getItem(LS_URL)   || ""));
+  const [token, setToken] = useState(() => (typeof window === "undefined" ? "" : localStorage.getItem(LS_TOKEN) || ""));
+  const [source, setSource] = useState<"configured_jwt" | "minted_from_secret" | "manual" | null>(null);
+  const [bootErr, setBootErr] = useState<string | null>(null);
   useEffect(() => { if (url) localStorage.setItem(LS_URL, url); }, [url]);
   useEffect(() => { if (token) localStorage.setItem(LS_TOKEN, token); }, [token]);
-  return { url, setUrl, token, setToken };
+
+  // Auto-hydrate from the server (PLUTO_SERVICE_ROLE_KEY or minted from
+  // PLUTO_JWT_SECRET) so the upstream connection is always active with the
+  // last generated admin JWT.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const cfg = await getAdminUpstreamConfig();
+        if (cancelled) return;
+        if (cfg.ok) {
+          setUrl(cfg.url);
+          setToken(cfg.token);
+          setSource(cfg.source);
+          localStorage.setItem(LS_URL, cfg.url);
+          localStorage.setItem(LS_TOKEN, cfg.token);
+        } else {
+          setBootErr(cfg.error);
+        }
+      } catch (e) {
+        if (!cancelled) setBootErr((e as Error).message);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  return { url, setUrl, token, setToken, source, bootErr };
 }
 
 async function api<T>(url: string, token: string, path: string, init: RequestInit = {}): Promise<T> {
@@ -39,18 +68,20 @@ async function api<T>(url: string, token: string, path: string, init: RequestIni
     headers: {
       "Content-Type": "application/json",
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      "apikey": token,
       ...(init.headers || {}),
     },
   });
   const text = await res.text();
   const data = text ? JSON.parse(text) : null;
-  if (!res.ok) throw new Error(data?.error || data?.message || res.statusText);
+  if (!res.ok) throw new Error((data as { error?: string; message?: string })?.error || (data as { message?: string })?.message || res.statusText);
   return data as T;
 }
 
 function PlutoAdminPage() {
-  const { url, setUrl, token, setToken } = useUpstream();
+  const { url, setUrl, token, setToken, source, bootErr } = useUpstream();
   const configured = useMemo(() => url.length > 0 && token.length > 0, [url, token]);
+
 
   const [tab, setTab] = useState<"projects" | "members" | "keys">("projects");
   const [projects, setProjects] = useState<Project[]>([]);
@@ -161,17 +192,35 @@ function PlutoAdminPage() {
 
       {/* Connection */}
       <Card>
-        <CardHeader><CardTitle className="text-sm flex items-center gap-2"><Server className="h-4 w-4"/> Upstream connection</CardTitle></CardHeader>
+        <CardHeader>
+          <CardTitle className="text-sm flex items-center gap-2">
+            <Server className="h-4 w-4"/> Upstream connection
+            {source && (
+              <Badge variant="outline" className="ml-2 gap-1">
+                <Lock className="h-3 w-3"/>
+                {source === "configured_jwt" ? "fixed · configured JWT" : "fixed · minted from PLUTO_JWT_SECRET"}
+              </Badge>
+            )}
+          </CardTitle>
+        </CardHeader>
         <CardContent className="space-y-3">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <div><Label>Upstream URL</Label><Input placeholder="https://api.your-domain.com" value={url} onChange={e => setUrl(e.target.value)} /></div>
-            <div><Label>Admin JWT (paste or login below)</Label><Input placeholder="eyJhbGciOi..." value={token} onChange={e => setToken(e.target.value)} /></div>
+            <div>
+              <Label>Upstream URL</Label>
+              <Input placeholder="https://api.your-domain.com" value={url} readOnly={!!source} onChange={e => setUrl(e.target.value)} />
+            </div>
+            <div>
+              <Label>Admin JWT {source && <span className="text-xs text-muted-foreground">(auto-loaded from server secrets)</span>}</Label>
+              <Input placeholder="eyJhbGciOi..." value={token ? `${token.slice(0, 24)}…${token.slice(-8)}` : ""} readOnly={!!source} onChange={e => setToken(e.target.value)} />
+            </div>
           </div>
-          <LoginRow onLogin={login} disabled={!url || loading} />
-          {!configured && <Alert><AlertDescription>Set URL + token to load projects.</AlertDescription></Alert>}
+          {!source && <LoginRow onLogin={login} disabled={!url || loading} />}
+          {bootErr && <Alert variant="destructive"><AlertDescription>Auto-config failed: {bootErr}</AlertDescription></Alert>}
+          {!configured && !bootErr && <Alert><AlertDescription>Loading upstream config…</AlertDescription></Alert>}
           {err && <Alert variant="destructive"><AlertDescription>{err}</AlertDescription></Alert>}
         </CardContent>
       </Card>
+
 
       {configured && (
         <>
