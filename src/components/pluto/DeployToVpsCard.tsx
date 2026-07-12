@@ -201,10 +201,14 @@ export function DeployToVpsCard({
       state: s.state === "ok" ? "ok" : s.state === "skipped" ? "skipped" : "error",
       detail: s.detail, debug: s.debug,
     }));
-    const entry: HistoryEntry = { id, timestamp: Date.now(), workspaceId: wsId, overallOk, steps: historySteps };
+    const entry: HistoryEntry = {
+      id, timestamp: Date.now(), workspaceId: wsId, overallOk, steps: historySteps,
+      sql: sql.trim() || undefined,
+      bundleName: bundleBlob ? bundleName : undefined,
+    };
     saveHistoryEntry(entry);
     lastEntry.current = entry;
-  }, []);
+  }, [sql, bundleBlob, bundleName]);
 
   const runAll = useCallback(async (wsIdOverride?: string) => {
     const wsId = (wsIdOverride ?? workspaceId).trim();
