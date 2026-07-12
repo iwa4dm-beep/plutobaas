@@ -371,6 +371,33 @@ function DeployPage() {
               )}
             </div>
           )}
+
+          {postHealth && (
+            <div className="border rounded-md p-3 text-xs space-y-2">
+              <div className="flex items-center gap-2 flex-wrap">
+                <Badge variant={postHealth.ok ? "secondary" : "destructive"}>{postHealth.ok ? "health ok" : "health degraded"}</Badge>
+                <span className="text-muted-foreground">checked {postHealth.checkedAt}</span>
+              </div>
+              <div className="space-y-2">
+                <div className="border rounded p-2 bg-muted/40">
+                  <div className="flex items-center gap-2 mb-1">
+                    <Badge variant={postHealth.runtime.status >= 200 && postHealth.runtime.status < 300 ? "secondary" : "destructive"}>runtime HTTP {postHealth.runtime.status || "ERR"}</Badge>
+                    <span className="text-muted-foreground">{postHealth.runtime.latencyMs}ms</span>
+                  </div>
+                  <div className="break-all"><b>url:</b> <code>{postHealth.runtime.url}</code></div>
+                  <pre className="mt-1 overflow-auto bg-background p-2 rounded">{postHealth.runtime.body}</pre>
+                </div>
+                <div className="border rounded p-2 bg-muted/40">
+                  <div className="flex items-center gap-2 mb-1">
+                    <Badge variant={postHealth.invoke.status >= 200 && postHealth.invoke.status < 300 ? "secondary" : "destructive"}>bootstrap HTTP {postHealth.invoke.status || "ERR"}</Badge>
+                    <span className="text-muted-foreground">{postHealth.invoke.latencyMs}ms</span>
+                  </div>
+                  <div className="break-all"><b>url:</b> <code>{postHealth.invoke.url}</code></div>
+                  <pre className="mt-1 overflow-auto bg-background p-2 rounded">{postHealth.invoke.body}</pre>
+                </div>
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
 
