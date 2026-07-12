@@ -123,7 +123,7 @@ function DeployPage() {
     } finally {
       setDeployBusy(null);
     }
-  }, [workspaceId, workspaceIdValid, bundleFile, bundleSql, maxRetries, deployAllFn]);
+  }, [workspaceId, workspaceIdValid, bundleFile, bundleSql, maxRetries, deployAllFn, postDeployHealthFn]);
 
   const refreshHealth = useCallback(async () => {
     setLoadingHealth(true);
