@@ -6,8 +6,9 @@
 // - pk_* / anon-JWT        → publishable/anon
 // - unknown                → cannot classify
 
+export type JsonObj = Record<string, unknown>;
 export type KeyFormat =
-  | { kind: "jwt"; role: "service_role" | "anon" | "authenticated" | "unknown"; header: unknown; payload: unknown }
+  | { kind: "jwt"; role: "service_role" | "anon" | "authenticated" | "unknown"; header: JsonObj | null; payload: JsonObj | null }
   | { kind: "sk_secret" }
   | { kind: "sk_svc" }
   | { kind: "pk_publishable" }
