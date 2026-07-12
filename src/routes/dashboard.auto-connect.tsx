@@ -167,9 +167,11 @@ function AutoConnectPage() {
           </p>
         </header>
 
-        <div className="mb-8">
+        <div className="mb-8 grid gap-6 md:grid-cols-2">
           <WorkspaceProvisionCard />
+          <DeployToVpsCard defaultBundle={artifacts?.migrations ?? null} defaultBundleName="migrations.zip" />
         </div>
+
 
         <div className="mb-4 flex gap-2">
           {([
