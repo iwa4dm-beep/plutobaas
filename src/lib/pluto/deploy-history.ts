@@ -19,7 +19,30 @@ export type HistoryEntry = {
   workspaceId: string;
   overallOk: boolean;
   steps: HistoryStep[];
+  /** SQL used for the migration step, persisted so we can redeploy later. */
+  sql?: string;
+  /** Bundle filename shown in UI (Blob itself is not persisted). */
+  bundleName?: string;
 };
+
+// ---------- Redeploy prefill ----------
+// Bundle Blobs can't survive a full reload / storage round-trip, so we only
+// carry SQL + workspaceId + bundleName across the redeploy hop. The user is
+// prompted to re-select the bundle when it's required.
+const REDEPLOY_KEY = "pluto:deploy-redeploy-prefill";
+export type RedeployPrefill = { workspaceId: string; sql?: string; bundleName?: string };
+
+export function setRedeployPrefill(p: RedeployPrefill): void {
+  if (typeof window === "undefined") return;
+  window.sessionStorage.setItem(REDEPLOY_KEY, JSON.stringify(p));
+}
+export function consumeRedeployPrefill(): RedeployPrefill | null {
+  if (typeof window === "undefined") return null;
+  const raw = window.sessionStorage.getItem(REDEPLOY_KEY);
+  if (!raw) return null;
+  window.sessionStorage.removeItem(REDEPLOY_KEY);
+  try { return JSON.parse(raw) as RedeployPrefill; } catch { return null; }
+}
 
 export function loadHistory(): HistoryEntry[] {
   if (typeof window === "undefined") return [];
