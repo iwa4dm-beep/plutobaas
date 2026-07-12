@@ -245,7 +245,7 @@ export function DeployToVpsCard({
     log(ok1 && ok2 && ok3 ? "ok" : "error", `── DEPLOY ${ok1 && ok2 && ok3 ? "completed" : "failed"} ──`);
     if (ok1 && ok2 && ok3) toast.success("Deploy সম্পন্ন ✓");
     else toast.error("Deploy failed — retry individual steps below");
-  }, [workspaceId, dryOnly, sql, dryRun, runSql, runUpload, runVerify, persistHistory, log]);
+  }, [workspaceId, dryOnly, sql, dryRun, runSql, runUpload, runVerify, persistHistory, log, resetLogs]);
 
   const retryStep = useCallback(async (key: StepKey) => {
     const wsId = workspaceId.trim();
