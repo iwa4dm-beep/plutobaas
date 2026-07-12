@@ -411,13 +411,53 @@ export const deployAll = createServerFn({ method: "POST" })
     });
     steps.push(verStep);
 
+    // Step 3.5: unpack + serve — call the sandbox-worker on the VPS to
+    //           unpack the just-uploaded ZIP and flip the "current" symlink
+    //           that nginx serves. Requires PLUTO_SANDBOX_URL + PLUTO_SANDBOX_SECRET.
+    //           If unset, we log a "skipped" attempt and keep going — this makes
+    //           the pipeline safe to run on hosts where the worker isn't installed.
+    const bundleKey = `${data.bucket}/${cleanPath}`;
+    const sandboxUrl = (process.env.PLUTO_SANDBOX_URL ?? "").replace(/\/+$/, "");
+    const sandboxSecret = process.env.PLUTO_SANDBOX_SECRET ?? "";
+    const servedSiteFromWorker: { url?: string } = {};
+    const unpackStep = await withRetry("unpack-serve", "Unpack bundle + serve (sandbox worker)", data.maxRetries, async () => {
+      if (!sandboxUrl || !sandboxSecret) {
+        return {
+          ok: true,
+          detail: "skipped — PLUTO_SANDBOX_URL / PLUTO_SANDBOX_SECRET not configured. Install pluto-backend/sandbox-worker on the VPS to enable auto-serve.",
+          debug: null,
+          result: { skipped: true },
+        };
+      }
+      const body = JSON.stringify({ workspaceId: data.workspaceId, bucket: data.bucket, key: cleanPath });
+      const r = await rawFetch(
+        `${sandboxUrl}/unpack`,
+        "POST",
+        { "content-type": "application/json", "x-sandbox-secret": sandboxSecret, accept: "application/json" },
+        body,
+        body,
+        180_000,
+      );
+      if (!r.ok) return { ok: false, detail: `unpack HTTP ${r.status}: ${r.text.slice(0, 240)}`, debug: r.debug, result: null };
+      let parsed: { webRoot?: string; releaseDir?: string; servedAt?: string; sizeBytes?: number; durationMs?: number } = {};
+      try { parsed = JSON.parse(r.text); } catch { /* ignore */ }
+      servedSiteFromWorker.url = parsed.webRoot;
+      return {
+        ok: true,
+        detail: `unpacked ${parsed.sizeBytes ?? "?"} bytes in ${parsed.durationMs ?? "?"}ms → ${parsed.webRoot ?? "(root)"}`,
+        debug: r.debug,
+        result: parsed,
+      };
+    });
+    steps.push(unpackStep);
+
     // Step 4: activate service — register/patch a `bootstrap` function that
     //         announces the deployed bundle. This is the closest thing the
     //         upstream Pluto BaaS (v0.1) exposes to "start server after unpack":
     //         the function record marks the workspace's default project as
     //         having live code. If the upstream sandbox worker is unavailable,
     //         the register call still succeeds and health-check will surface it.
-    const bundleKey = `${data.bucket}/${cleanPath}`;
+
     let projectId: string | null = null;
     const activateStep = await withRetry("activate-service", "Activate service (register bootstrap function)", data.maxRetries, async () => {
       // 4a. Resolve the workspace's default project.
