@@ -79,20 +79,26 @@ export const pushMigrations = createServerFn({ method: "POST" })
   .handler(async ({ data }): Promise<PushMigrationResult> => {
     const headers = serviceHeaders({ "content-type": "application/json" });
     if ("error" in headers) return { ok: false, error: headers.error, status: 500, debug: null };
-    const url = `${getVpsBaseUrl()}/admin/v1/migrations`;
-    const body = JSON.stringify({
-      workspace_id: data.workspaceId,
-      sql: data.sql,
-      label: data.label ?? `auto-connect-${new Date().toISOString()}`,
-    });
-    const r = await rawFetch(url, "POST", headers, body, body, 60_000);
-    if (!r.ok) return { ok: false, error: r.text || `HTTP ${r.status}`, status: r.status, debug: r.debug };
-    let parsed: { id?: string; applied?: number } = {};
-    try { parsed = JSON.parse(r.text); } catch { /* keep empty */ }
-    return { ok: true, migrationId: parsed.id ?? "", applied: parsed.applied ?? 0, debug: r.debug };
+    // Upstream shape (verified against api.timescard.cloud openapi + probe):
+    //   POST /admin/v1/migrations  { name, up_sql, workspace_id }  -> 201 { id, ... }
+    //   POST /admin/v1/migrations/{id}/apply                        -> 200 { ok, migration }
+    const base = getVpsBaseUrl();
+    const name = (data.label ?? `auto-${Date.now()}`).replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 120);
+    const body = JSON.stringify({ name, up_sql: data.sql, workspace_id: data.workspaceId });
+    const created = await rawFetch(`${base}/admin/v1/migrations`, "POST", headers, body, body, 60_000);
+    if (!created.ok) return { ok: false, error: created.text || `HTTP ${created.status}`, status: created.status, debug: created.debug };
+    let parsed: { id?: string } = {};
+    try { parsed = JSON.parse(created.text); } catch { /* keep empty */ }
+    const id = parsed.id ?? "";
+    if (!id) return { ok: false, error: "Upstream did not return migration id", status: 500, debug: created.debug };
+    const applied = await rawFetch(`${base}/admin/v1/migrations/${encodeURIComponent(id)}/apply`, "POST", headers, null, null, 60_000);
+    if (!applied.ok) return { ok: false, error: applied.text || `HTTP ${applied.status}`, status: applied.status, debug: applied.debug };
+    return { ok: true, migrationId: id, applied: 1, debug: applied.debug };
   });
 
 // ---------- Step 2: upload bundle to storage ----------
+// Upstream storage expects multipart/form-data (Fastify multipart parser).
+// Raw application/zip bodies return 415 Unsupported Media Type.
 const UploadInput = z.object({
   workspaceId: z.string().min(1),
   bucket: z.string().min(1).max(64).default("deployments"),
@@ -109,7 +115,6 @@ export const uploadBundle = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => UploadInput.parse(d))
   .handler(async ({ data }): Promise<UploadBundleResult> => {
     const headers = serviceHeaders({
-      "content-type": data.contentType,
       "x-workspace-id": data.workspaceId,
       "x-upsert": "true",
     });
@@ -120,9 +125,13 @@ export const uploadBundle = createServerFn({ method: "POST" })
     for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
 
     const cleanPath = data.path.replace(/^\/+/, "");
+    const filename = cleanPath.split("/").pop() || "bundle.zip";
+    const form = new FormData();
+    form.append("file", new Blob([bytes], { type: data.contentType }), filename);
+
     const url = `${getVpsBaseUrl()}/storage/v1/object/${encodeURIComponent(data.bucket)}/${cleanPath}`;
-    const preview = `(binary upload ${bytes.length} bytes, content-type ${data.contentType})`;
-    const r = await rawFetch(url, "POST", headers, bytes, preview, 120_000);
+    const preview = `(multipart upload ${bytes.length} bytes, content-type ${data.contentType})`;
+    const r = await rawFetch(url, "POST", headers, form, preview, 120_000);
     if (!r.ok) return { ok: false, error: r.text || `HTTP ${r.status}`, status: r.status, debug: r.debug };
     return { ok: true, key: `${data.bucket}/${cleanPath}`, size: bytes.length, debug: r.debug };
   });
