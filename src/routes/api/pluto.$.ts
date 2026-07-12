@@ -66,7 +66,8 @@ async function handle({ request, params }: { request: Request; params: { _splat?
       redirect: "manual",
     });
     const upstreamCT = (upstreamRes.headers.get("content-type") ?? "").toLowerCase();
-    const looksLikeGatewayHtml = GATEWAY_FAILURE_STATUSES.has(upstreamRes.status)
+    const isGatewayFailure = GATEWAY_FAILURE_STATUSES.has(upstreamRes.status);
+    const looksLikeGatewayHtml = isGatewayFailure
       && !upstreamCT.includes("application/json")
       && !upstreamCT.includes("text/plain");
     if (looksLikeGatewayHtml) {
@@ -80,6 +81,22 @@ async function handle({ request, params }: { request: Request; params: { _splat?
         reason: "The Pluto backend origin is unreachable or unhealthy.",
       });
     }
+    if (isGatewayFailure) {
+      // Upstream returned a JSON/text 5xx — still a service failure. Convert
+      // to a fallback 200 so the frontend loader/probe can render a graceful
+      // "backend unavailable" state instead of surfacing a blank-screen 500.
+      const bodySnippet = await upstreamRes.clone().text().catch(() => "");
+      recordError(`/${splat}`, `upstream returned ${upstreamRes.status}`);
+      return offlineJson({
+        path: `/${splat}`,
+        target,
+        upstreamStatus: upstreamRes.status,
+        upstreamStatusText: upstreamRes.statusText,
+        fallback: true,
+        reason: "The Pluto backend returned a server error.",
+        body: bodySnippet.slice(0, 500),
+      });
+    }
     const respHeaders = new Headers();
     upstreamRes.headers.forEach((value, key) => {
       if (!HOP_BY_HOP.has(key.toLowerCase())) respHeaders.set(key, value);
@@ -91,9 +108,8 @@ async function handle({ request, params }: { request: Request; params: { _splat?
     } else {
       recordError(`/${splat}`, `upstream returned ${upstreamRes.status}`);
     }
-    // Pass through the real upstream body (including 4xx/5xx JSON errors) so
-    // the UI can show the actual validation / auth message instead of a
-    // generic "backend unreachable" stub.
+    // Pass through the real upstream body (including 4xx JSON errors) so the
+    // UI can show the actual validation / auth message.
     return new Response(upstreamRes.body, {
       status: upstreamRes.status,
       statusText: upstreamRes.statusText,
