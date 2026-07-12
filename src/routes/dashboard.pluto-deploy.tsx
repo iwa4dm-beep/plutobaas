@@ -5,12 +5,17 @@ import { AutoHelpPanel } from "@/components/help/AutoHelpPanel";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
-import { AlertTriangle, Play, RefreshCw, ShieldAlert } from "lucide-react";
+import { AlertTriangle, Play, RefreshCw, Rocket, ShieldAlert, Wrench } from "lucide-react";
 import { plutoApi } from "@/lib/pluto/upstream";
+import { useServerFn } from "@tanstack/react-start";
+import { deployAll, ensureDeployInfra, type DeployAllResult, type EnsureInfraResult } from "@/lib/pluto/vps-deployer.functions";
+
+const WORKSPACE_ID_RE = /^[a-zA-Z0-9][a-zA-Z0-9_-]{1,127}$/;
 
 export const Route = createFileRoute("/dashboard/pluto-deploy")({
   component: DeployPage,
@@ -41,6 +46,64 @@ function DeployPage() {
   const [allowDangerous, setAllowDangerous] = useState(false);
   const [running, setRunning] = useState(false);
   const [logs, setLogs] = useState<LogEntry[]>([]);
+
+  // Real-deploy state
+  const [workspaceId, setWorkspaceId] = useState("");
+  const [bundleFile, setBundleFile] = useState<File | null>(null);
+  const [bundleSql, setBundleSql] = useState("-- optional migration SQL to run before the bundle upload\nselect 1;");
+  const [maxRetries, setMaxRetries] = useState(2);
+  const [deployBusy, setDeployBusy] = useState<null | "infra" | "deploy">(null);
+  const [infraResult, setInfraResult] = useState<EnsureInfraResult | null>(null);
+  const [deployResult, setDeployResult] = useState<DeployAllResult | null>(null);
+  const [deployError, setDeployError] = useState<string | null>(null);
+
+  const workspaceIdValid = WORKSPACE_ID_RE.test(workspaceId.trim());
+
+  const ensureInfraFn = useServerFn(ensureDeployInfra);
+  const deployAllFn = useServerFn(deployAll);
+
+  const runEnsureInfra = useCallback(async () => {
+    setDeployBusy("infra");
+    setDeployError(null);
+    try {
+      const r = await ensureInfraFn({ data: { bucket: "deployments" } });
+      setInfraResult(r);
+    } catch (e) {
+      setDeployError((e as Error).message);
+    } finally {
+      setDeployBusy(null);
+    }
+  }, [ensureInfraFn]);
+
+  const runFullDeploy = useCallback(async () => {
+    if (!workspaceIdValid) { setDeployError("Invalid workspace ID"); return; }
+    if (!bundleFile) { setDeployError("Select a bundle .zip first"); return; }
+    setDeployBusy("deploy");
+    setDeployError(null);
+    setDeployResult(null);
+    try {
+      const buf = new Uint8Array(await bundleFile.arrayBuffer());
+      let binary = "";
+      for (let i = 0; i < buf.length; i++) binary += String.fromCharCode(buf[i]);
+      const contentBase64 = btoa(binary);
+      const bundlePath = `${workspaceId.trim()}/${bundleFile.name}`;
+      const r = await deployAllFn({ data: {
+        workspaceId: workspaceId.trim(),
+        sql: bundleSql.trim() || "select 1;",
+        bundlePath,
+        contentBase64,
+        bucket: "deployments",
+        maxRetries,
+        ensureInfra: true,
+        label: `deploy-${bundleFile.name.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 80)}`,
+      } });
+      setDeployResult(r);
+    } catch (e) {
+      setDeployError((e as Error).message);
+    } finally {
+      setDeployBusy(null);
+    }
+  }, [workspaceId, workspaceIdValid, bundleFile, bundleSql, maxRetries, deployAllFn]);
 
   const refreshHealth = useCallback(async () => {
     setLoadingHealth(true);
@@ -166,6 +229,126 @@ function DeployPage() {
           )}
         </CardContent>
       </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Rocket className="h-4 w-4" /> Real deploy — pushMigrations → uploadBundle → verifyDeploy
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-2">
+            <Label htmlFor="ws-id">Workspace ID <span className="text-muted-foreground">(slug or UUID; 2–128 chars, alphanumeric / _ / -)</span></Label>
+            <Input
+              id="ws-id"
+              value={workspaceId}
+              onChange={(e) => setWorkspaceId(e.target.value)}
+              placeholder="e.g. projectbest or 02504262-b997-408d-bdc7-f50c3066238b"
+              className={!workspaceId || workspaceIdValid ? "" : "border-destructive"}
+            />
+            {workspaceId && !workspaceIdValid && (
+              <p className="text-xs text-destructive">Invalid — must start alphanumeric and only contain letters, digits, _ or -.</p>
+            )}
+          </div>
+
+          <div className="grid gap-2">
+            <Label htmlFor="bundle">Bundle .zip</Label>
+            <Input id="bundle" type="file" accept=".zip,application/zip"
+              onChange={(e) => setBundleFile(e.target.files?.[0] ?? null)} />
+            {bundleFile && (
+              <p className="text-xs text-muted-foreground">{bundleFile.name} — {(bundleFile.size / 1024).toFixed(1)} KB</p>
+            )}
+          </div>
+
+          <div className="grid gap-2">
+            <Label htmlFor="bundle-sql">Migration SQL (runs before upload)</Label>
+            <Textarea id="bundle-sql" rows={4} className="font-mono text-xs" value={bundleSql} onChange={(e) => setBundleSql(e.target.value)} />
+          </div>
+
+          <div className="flex items-center gap-3 flex-wrap">
+            <Label className="text-sm">Max retries per step:</Label>
+            <Input type="number" min={0} max={5} value={maxRetries} onChange={(e) => setMaxRetries(Math.max(0, Math.min(5, Number(e.target.value) || 0)))} className="w-20" />
+            <Button size="sm" variant="outline" onClick={runEnsureInfra} disabled={deployBusy !== null}>
+              <Wrench className="h-4 w-4 mr-2" /> Ensure infra (bucket)
+            </Button>
+            <Button size="sm" onClick={runFullDeploy} disabled={deployBusy !== null || !workspaceIdValid || !bundleFile}>
+              <Rocket className="h-4 w-4 mr-2" /> Run full deploy
+            </Button>
+            {deployBusy && <span className="text-xs text-muted-foreground">running {deployBusy}…</span>}
+          </div>
+
+          {deployError && (
+            <Alert variant="destructive">
+              <AlertTriangle className="h-4 w-4" />
+              <AlertDescription>{deployError}</AlertDescription>
+            </Alert>
+          )}
+
+          {infraResult && (
+            <div className="border rounded-md p-3 text-xs space-y-2">
+              <div className="flex items-center gap-2">
+                <Badge variant={infraResult.ok ? "secondary" : "destructive"}>{infraResult.ok ? "infra ok" : "infra failed"}</Badge>
+                <span className="text-muted-foreground">Ensure infra result</span>
+              </div>
+              <ul className="space-y-1">
+                {infraResult.steps.map((s, i) => (
+                  <li key={i} className="flex gap-2">
+                    <Badge variant={s.ok ? "secondary" : "destructive"}>{s.ok ? "✓" : "✗"}</Badge>
+                    <span><b>{s.label}</b> — {s.detail}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {deployResult && (
+            <div className="border rounded-md p-3 text-xs space-y-3">
+              <div className="flex items-center gap-2">
+                <Badge variant={deployResult.ok ? "secondary" : "destructive"}>{deployResult.ok ? "deploy ok" : "deploy failed"}</Badge>
+                <span className="text-muted-foreground">workspace: <code>{deployResult.workspaceId}</code> · total {deployResult.totalMs}ms</span>
+              </div>
+              {deployResult.steps.map((s, i) => (
+                <details key={i} open={!s.ok} className="border rounded p-2">
+                  <summary className="cursor-pointer flex items-center gap-2">
+                    <Badge variant={s.ok ? "secondary" : "destructive"}>{s.ok ? "✓" : "✗"}</Badge>
+                    <b>{s.label}</b>
+                    <span className="text-muted-foreground">({s.attempts.length} attempt{s.attempts.length === 1 ? "" : "s"})</span>
+                  </summary>
+                  <div className="mt-2 space-y-2">
+                    {s.attempts.map((a, j) => (
+                      <div key={j} className="border rounded p-2 bg-muted/40">
+                        <div className="flex items-center gap-2 mb-1">
+                          <Badge variant={a.ok ? "secondary" : "destructive"}>attempt {a.attempt}</Badge>
+                          <span className="text-muted-foreground">{a.startedAt} · {a.latencyMs}ms</span>
+                        </div>
+                        <div className="mb-1"><b>detail:</b> {a.detail}</div>
+                        {a.debug && (
+                          <details>
+                            <summary className="cursor-pointer">HTTP debug</summary>
+                            <pre className="mt-1 overflow-auto bg-background p-2 rounded">{JSON.stringify(a.debug, null, 2)}</pre>
+                          </details>
+                        )}
+                      </div>
+                    ))}
+                    {s.result && (
+                      <details>
+                        <summary className="cursor-pointer">step result</summary>
+                        <pre className="mt-1 overflow-auto bg-muted p-2 rounded">{s.result}</pre>
+                      </details>
+                    )}
+                  </div>
+                </details>
+              ))}
+              {!deployResult.ok && (
+                <Button size="sm" onClick={runFullDeploy} disabled={deployBusy !== null}>
+                  <RefreshCw className="h-4 w-4 mr-2" /> Retry with same bundle
+                </Button>
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
 
       <Card>
         <CardHeader><CardTitle>Request / response log</CardTitle></CardHeader>

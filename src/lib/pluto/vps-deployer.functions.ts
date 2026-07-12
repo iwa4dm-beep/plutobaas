@@ -91,7 +91,7 @@ export const pushMigrations = createServerFn({ method: "POST" })
     try { parsed = JSON.parse(created.text); } catch { /* keep empty */ }
     const id = parsed.id ?? "";
     if (!id) return { ok: false, error: "Upstream did not return migration id", status: 500, debug: created.debug };
-    const applied = await rawFetch(`${base}/admin/v1/migrations/${encodeURIComponent(id)}/apply`, "POST", headers, null, null, 60_000);
+    const applied = await rawFetch(`${base}/admin/v1/migrations/${encodeURIComponent(id)}/apply`, "POST", headers, "{}", "{}", 60_000);
     if (!applied.ok) return { ok: false, error: applied.text || `HTTP ${applied.status}`, status: applied.status, debug: applied.debug };
     return { ok: true, migrationId: id, applied: 1, debug: applied.debug };
   });
@@ -228,8 +228,8 @@ export const dryRunDeploy = createServerFn({ method: "POST" })
       debug: storageRes.debug,
     });
 
-    // 3. Verify admin API + workspace exists
-    const verifyUrl = `${getVpsBaseUrl()}/admin/v1/workspaces/${encodeURIComponent(data.workspaceId)}/deployments?limit=1`;
+    // 3. Verify admin API via migrations list (there is no /workspaces/:id/deployments upstream)
+    const verifyUrl = `${getVpsBaseUrl()}/admin/v1/migrations?workspace_id=${encodeURIComponent(data.workspaceId)}&limit=1`;
     const verifyRes = await rawFetch(verifyUrl, "GET", headers, null, null, 10_000);
     steps.push({
       key: "check-verify",
@@ -241,3 +241,176 @@ export const dryRunDeploy = createServerFn({ method: "POST" })
 
     return { ok: steps.every(s => s.ok), steps };
   });
+
+// =====================================================================
+// Infra bootstrap + preflight + orchestrated deploy with retries
+// =====================================================================
+
+const SERVICE_USER_ID = "00000000-0000-0000-0000-000000000000";
+const SERVICE_USER_EMAIL = "service@pluto.local";
+
+async function sqlExec(sql: string, headers: Record<string, string>): Promise<{ ok: boolean; text: string; debug: StepDebug }> {
+  const url = `${getVpsBaseUrl()}/admin/v1/sql/exec`;
+  const body = JSON.stringify({ sql, read_only: false, confirm_destructive: true, allow_dangerous: true });
+  const r = await rawFetch(url, "POST", { ...headers, "content-type": "application/json" }, body, body, 30_000);
+  return { ok: r.ok, text: r.text, debug: r.debug };
+}
+
+// ---------- ensureDeployInfra: idempotently create service user + deployments bucket ----------
+const EnsureInfraInput = z.object({ bucket: z.string().min(1).max(64).default("deployments") });
+
+export type EnsureInfraStep = { key: string; label: string; ok: boolean; detail: string; debug: StepDebug | null };
+export type EnsureInfraResult = { ok: boolean; steps: EnsureInfraStep[] };
+
+export const ensureDeployInfra = createServerFn({ method: "POST" })
+  .inputValidator((d: unknown) => EnsureInfraInput.parse(d))
+  .handler(async ({ data }): Promise<EnsureInfraResult> => {
+    const headers = serviceHeaders();
+    if ("error" in headers) return { ok: false, steps: [{ key: "auth", label: "Auth", ok: false, detail: headers.error, debug: null }] };
+    const base = getVpsBaseUrl();
+    const steps: EnsureInfraStep[] = [];
+
+    // 1. Ensure service auth.users row exists — storage.objects.owner_id FKs to auth.users(id).
+    //    Without it, uploads by the zero-uuid service caller trigger 23503 FK errors.
+    const seedUser = `insert into auth.users (id, email, role, is_superadmin, email_verified) values ('${SERVICE_USER_ID}', '${SERVICE_USER_EMAIL}', 'service_role', true, true) on conflict (id) do nothing;`;
+    const userRes = await sqlExec(seedUser, headers);
+    steps.push({ key: "service-user", label: "Ensure service auth.users row", ok: userRes.ok, detail: userRes.ok ? "seeded (or already present)" : userRes.text.slice(0, 300), debug: userRes.debug });
+
+    // 2. Check bucket via storage API
+    const bucketGet = await rawFetch(`${base}/storage/v1/bucket/${encodeURIComponent(data.bucket)}`, "GET", headers, null, null, 10_000);
+    if (bucketGet.ok) {
+      steps.push({ key: "bucket", label: `Ensure bucket "${data.bucket}"`, ok: true, detail: "already exists", debug: bucketGet.debug });
+    } else if (bucketGet.status === 404) {
+      // 3. Seed bucket row directly (storage.buckets.owner_id is nullable; the /storage/v1/bucket POST
+      //    always tries to set owner_id = auth.uid() = zero-uuid, which now exists after step 1).
+      const seedBucket = `insert into storage.buckets (id, name, public) values ('${data.bucket.replace(/'/g, "''")}', '${data.bucket.replace(/'/g, "''")}', false) on conflict (id) do nothing;`;
+      const b = await sqlExec(seedBucket, headers);
+      steps.push({ key: "bucket", label: `Create bucket "${data.bucket}"`, ok: b.ok, detail: b.ok ? "created via SQL" : b.text.slice(0, 300), debug: b.debug });
+    } else {
+      steps.push({ key: "bucket", label: `Check bucket "${data.bucket}"`, ok: false, detail: `HTTP ${bucketGet.status}: ${bucketGet.text.slice(0, 200)}`, debug: bucketGet.debug });
+    }
+
+    // 4. Re-verify bucket now reachable via storage API
+    const finalCheck = await rawFetch(`${base}/storage/v1/bucket/${encodeURIComponent(data.bucket)}`, "GET", headers, null, null, 10_000);
+    steps.push({ key: "bucket-verify", label: "Verify bucket reachable", ok: finalCheck.ok, detail: finalCheck.ok ? `bucket "${data.bucket}" reachable` : `HTTP ${finalCheck.status}: ${finalCheck.text.slice(0, 200)}`, debug: finalCheck.debug });
+
+    return { ok: steps.every(s => s.ok), steps };
+  });
+
+// ---------- deployAll: orchestrated pushMigrations + uploadBundle + verifyDeploy with retries ----------
+const DeployAllInput = z.object({
+  workspaceId: z.string().min(1).max(128),
+  sql: z.string().min(1).max(2 * 1024 * 1024),
+  bundlePath: z.string().min(1).max(255),
+  contentBase64: z.string().min(1),
+  bucket: z.string().min(1).max(64).default("deployments"),
+  label: z.string().max(120).optional(),
+  maxRetries: z.number().int().min(0).max(5).default(2),
+  ensureInfra: z.boolean().default(true),
+});
+
+export type DeployStepKey = "ensure-infra" | "push-migrations" | "upload-bundle" | "verify-deploy";
+export type DeployStepAttempt = { attempt: number; ok: boolean; detail: string; debug: StepDebug | null; startedAt: string; latencyMs: number };
+export type DeployStepLog = { key: DeployStepKey; label: string; ok: boolean; attempts: DeployStepAttempt[]; result: string | null };
+export type DeployAllResult = { ok: boolean; workspaceId: string; totalMs: number; steps: DeployStepLog[] };
+
+function nowIso(): string { return new Date().toISOString(); }
+
+type AttemptOutcome = { ok: boolean; detail: string; debug: StepDebug | null; result: unknown };
+
+async function withRetry(
+  key: DeployStepKey,
+  label: string,
+  maxRetries: number,
+  attemptFn: (attempt: number) => Promise<AttemptOutcome>,
+): Promise<DeployStepLog> {
+  const attempts: DeployStepAttempt[] = [];
+  let last: AttemptOutcome | null = null;
+  for (let i = 0; i <= maxRetries; i++) {
+    const started = Date.now();
+    const startedAt = nowIso();
+    try {
+      last = await attemptFn(i + 1);
+    } catch (e) {
+      last = { ok: false, detail: (e as Error).message, debug: null, result: null };
+    }
+    attempts.push({ attempt: i + 1, ok: last.ok, detail: last.detail, debug: last.debug, startedAt, latencyMs: Date.now() - started });
+    if (last.ok) break;
+    if (i < maxRetries) await new Promise(r => setTimeout(r, 400 * 2 ** i));
+  }
+  let serialized: string | null = null;
+  try { serialized = last?.result != null ? JSON.stringify(last.result) : null; } catch { serialized = null; }
+  return { key, label, ok: !!last?.ok, attempts, result: serialized };
+}
+
+export const deployAll = createServerFn({ method: "POST" })
+  .inputValidator((d: unknown) => DeployAllInput.parse(d))
+  .handler(async ({ data }): Promise<DeployAllResult> => {
+    const t0 = Date.now();
+    const headers = serviceHeaders({ "content-type": "application/json" });
+    if ("error" in headers) {
+      return { ok: false, workspaceId: data.workspaceId, totalMs: 0, steps: [{ key: "ensure-infra", label: "Auth", ok: false, attempts: [{ attempt: 1, ok: false, detail: headers.error, debug: null, startedAt: nowIso(), latencyMs: 0 }], result: null }] };
+    }
+    const base = getVpsBaseUrl();
+    const steps: DeployStepLog[] = [];
+
+    // Step 0: infra
+    if (data.ensureInfra) {
+      const infra = await withRetry("ensure-infra", "Ensure infra (service user + bucket)", data.maxRetries, async () => {
+        const r = await ensureDeployInfra({ data: { bucket: data.bucket } });
+        return { ok: r.ok, detail: r.steps.map(s => `${s.ok ? "✓" : "✗"} ${s.label}: ${s.detail}`).join(" | "), debug: null, result: r };
+      });
+      steps.push(infra);
+      if (!infra.ok) return { ok: false, workspaceId: data.workspaceId, totalMs: Date.now() - t0, steps };
+    }
+
+    // Step 1: push migrations (create + apply)
+    const migName = ((data.label ?? `deploy-${Date.now()}`)).replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 120);
+    const migStep = await withRetry("push-migrations", "Push migrations (create + apply)", data.maxRetries, async () => {
+      const body = JSON.stringify({ name: migName, up_sql: data.sql, workspace_id: data.workspaceId });
+      const created = await rawFetch(`${base}/admin/v1/migrations`, "POST", headers, body, body, 60_000);
+      if (!created.ok) return { ok: false, detail: `create HTTP ${created.status}: ${created.text.slice(0, 200)}`, debug: created.debug, result: null };
+      let parsed: { id?: string } = {}; try { parsed = JSON.parse(created.text); } catch { /* ignore */ }
+      const id = parsed.id ?? "";
+      if (!id) return { ok: false, detail: "upstream returned no migration id", debug: created.debug, result: null };
+      const applied = await rawFetch(`${base}/admin/v1/migrations/${encodeURIComponent(id)}/apply`, "POST", headers, "{}", "{}", 60_000);
+      if (!applied.ok) return { ok: false, detail: `apply HTTP ${applied.status}: ${applied.text.slice(0, 200)}`, debug: applied.debug, result: { migrationId: id } };
+      return { ok: true, detail: `migration ${id} applied`, debug: applied.debug, result: { migrationId: id, applyBody: applied.text.slice(0, 500) } };
+    });
+    steps.push(migStep);
+
+    // Step 2: upload bundle (multipart)
+    const bin = atob(data.contentBase64);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    const cleanPath = data.bundlePath.replace(/^\/+/, "");
+    const filename = cleanPath.split("/").pop() || "bundle.zip";
+
+    const uplStep = await withRetry("upload-bundle", "Upload bundle to storage", data.maxRetries, async () => {
+      const form = new FormData();
+      form.append("file", new Blob([bytes], { type: "application/zip" }), filename);
+      const uplHeaders = serviceHeaders({ "x-workspace-id": data.workspaceId, "x-upsert": "true" });
+      if ("error" in uplHeaders) return { ok: false, detail: uplHeaders.error, debug: null, result: null };
+      const url = `${base}/storage/v1/object/${encodeURIComponent(data.bucket)}/${cleanPath}`;
+      const preview = `(multipart upload ${bytes.length} bytes)`;
+      const r = await rawFetch(url, "POST", uplHeaders, form, preview, 120_000);
+      if (!r.ok) return { ok: false, detail: `HTTP ${r.status}: ${r.text.slice(0, 200)}`, debug: r.debug, result: null };
+      return { ok: true, detail: `${bytes.length} bytes uploaded to ${data.bucket}/${cleanPath}`, debug: r.debug, result: { key: `${data.bucket}/${cleanPath}`, size: bytes.length, body: r.text.slice(0, 500) } };
+    });
+    steps.push(uplStep);
+
+    // Step 3: verify (list migrations for workspace)
+    const verStep = await withRetry("verify-deploy", "Verify deployment (migrations history)", data.maxRetries, async () => {
+      const url = `${base}/admin/v1/migrations?workspace_id=${encodeURIComponent(data.workspaceId)}&limit=3`;
+      const r = await rawFetch(url, "GET", headers, null, null, 15_000);
+      if (!r.ok) return { ok: false, detail: `HTTP ${r.status}: ${r.text.slice(0, 200)}`, debug: r.debug, result: null };
+      let parsed: unknown = null; try { parsed = JSON.parse(r.text); } catch { /* ignore */ }
+      const arr = Array.isArray(parsed) ? parsed : ((parsed as { items?: unknown[] })?.items ?? []);
+      const top = arr[0] as { id?: string; applied_at?: string; name?: string } | undefined;
+      return { ok: true, detail: top ? `latest: ${top.name} (${top.id}) applied ${top.applied_at}` : "no migrations found for workspace", debug: r.debug, result: { latest: top ?? null, count: arr.length } };
+    });
+    steps.push(verStep);
+
+    return { ok: steps.every(s => s.ok), workspaceId: data.workspaceId, totalMs: Date.now() - t0, steps };
+  });
+

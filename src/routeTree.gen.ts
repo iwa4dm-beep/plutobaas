@@ -100,6 +100,7 @@ import { Route as DashboardCustomDomainsAuditRouteImport } from './routes/dashbo
 import { Route as DashboardAdminInviteRouteImport } from './routes/dashboard.admin.invite'
 import { Route as ApiPlutoStatusRouteImport } from './routes/api/pluto.status'
 import { Route as ApiPlutoMonitorRouteImport } from './routes/api/pluto.monitor'
+import { Route as ApiPlutoDeployRouteImport } from './routes/api/pluto/deploy'
 import { Route as ApiPlutoAuditRouteImport } from './routes/api/pluto.audit'
 import { Route as ApiPlutoSplatRouteImport } from './routes/api/pluto.$'
 
@@ -568,6 +569,11 @@ const ApiPlutoMonitorRoute = ApiPlutoMonitorRouteImport.update({
   path: '/api/pluto/monitor',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPlutoDeployRoute = ApiPlutoDeployRouteImport.update({
+  id: '/api/pluto/deploy',
+  path: '/api/pluto/deploy',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiPlutoAuditRoute = ApiPlutoAuditRouteImport.update({
   id: '/api/pluto/audit',
   path: '/api/pluto/audit',
@@ -667,6 +673,7 @@ export interface FileRoutesByFullPath {
   '/dashboard/': typeof DashboardIndexRoute
   '/api/pluto/$': typeof ApiPlutoSplatRoute
   '/api/pluto/audit': typeof ApiPlutoAuditRoute
+  '/api/pluto/deploy': typeof ApiPlutoDeployRoute
   '/api/pluto/monitor': typeof ApiPlutoMonitorRoute
   '/api/pluto/status': typeof ApiPlutoStatusRoute
   '/dashboard/admin/invite': typeof DashboardAdminInviteRoute
@@ -761,6 +768,7 @@ export interface FileRoutesByTo {
   '/dashboard': typeof DashboardIndexRoute
   '/api/pluto/$': typeof ApiPlutoSplatRoute
   '/api/pluto/audit': typeof ApiPlutoAuditRoute
+  '/api/pluto/deploy': typeof ApiPlutoDeployRoute
   '/api/pluto/monitor': typeof ApiPlutoMonitorRoute
   '/api/pluto/status': typeof ApiPlutoStatusRoute
   '/dashboard/admin/invite': typeof DashboardAdminInviteRoute
@@ -857,6 +865,7 @@ export interface FileRoutesById {
   '/dashboard/': typeof DashboardIndexRoute
   '/api/pluto/$': typeof ApiPlutoSplatRoute
   '/api/pluto/audit': typeof ApiPlutoAuditRoute
+  '/api/pluto/deploy': typeof ApiPlutoDeployRoute
   '/api/pluto/monitor': typeof ApiPlutoMonitorRoute
   '/api/pluto/status': typeof ApiPlutoStatusRoute
   '/dashboard/admin/invite': typeof DashboardAdminInviteRoute
@@ -954,6 +963,7 @@ export interface FileRouteTypes {
     | '/dashboard/'
     | '/api/pluto/$'
     | '/api/pluto/audit'
+    | '/api/pluto/deploy'
     | '/api/pluto/monitor'
     | '/api/pluto/status'
     | '/dashboard/admin/invite'
@@ -1048,6 +1058,7 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/api/pluto/$'
     | '/api/pluto/audit'
+    | '/api/pluto/deploy'
     | '/api/pluto/monitor'
     | '/api/pluto/status'
     | '/dashboard/admin/invite'
@@ -1143,6 +1154,7 @@ export interface FileRouteTypes {
     | '/dashboard/'
     | '/api/pluto/$'
     | '/api/pluto/audit'
+    | '/api/pluto/deploy'
     | '/api/pluto/monitor'
     | '/api/pluto/status'
     | '/dashboard/admin/invite'
@@ -1165,6 +1177,7 @@ export interface RootRouteChildren {
   DocsSdkRoute: typeof DocsSdkRoute
   ApiPlutoSplatRoute: typeof ApiPlutoSplatRoute
   ApiPlutoAuditRoute: typeof ApiPlutoAuditRoute
+  ApiPlutoDeployRoute: typeof ApiPlutoDeployRoute
   ApiPlutoMonitorRoute: typeof ApiPlutoMonitorRoute
   ApiPlutoStatusRoute: typeof ApiPlutoStatusRoute
   SdkDownloadFileRoute: typeof SdkDownloadFileRoute
@@ -1809,6 +1822,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPlutoMonitorRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/pluto/deploy': {
+      id: '/api/pluto/deploy'
+      path: '/api/pluto/deploy'
+      fullPath: '/api/pluto/deploy'
+      preLoaderRoute: typeof ApiPlutoDeployRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/pluto/audit': {
       id: '/api/pluto/audit'
       path: '/api/pluto/audit'
@@ -2036,6 +2056,7 @@ const rootRouteChildren: RootRouteChildren = {
   DocsSdkRoute: DocsSdkRoute,
   ApiPlutoSplatRoute: ApiPlutoSplatRoute,
   ApiPlutoAuditRoute: ApiPlutoAuditRoute,
+  ApiPlutoDeployRoute: ApiPlutoDeployRoute,
   ApiPlutoMonitorRoute: ApiPlutoMonitorRoute,
   ApiPlutoStatusRoute: ApiPlutoStatusRoute,
   SdkDownloadFileRoute: SdkDownloadFileRoute,
