@@ -64,11 +64,10 @@ const MintInput = z.object({
   role: z.enum(["service_role", "anon", "authenticated"]).default("service_role"),
   ttlSeconds: z.number().int().min(60).max(60 * 60 * 24 * 400).default(60 * 60 * 24 * 365), // 1y default
   issuer: z.string().max(120).optional(),
-  extraClaims: z.record(z.string(), z.unknown()).optional(),
 });
 
 export type MintJwtResult =
-  | { ok: true; token: string; role: string; expiresAt: number; header: unknown; payload: unknown }
+  | { ok: true; token: string; role: string; expiresAt: number; header: JsonObj; payload: JsonObj }
   | { ok: false; error: string };
 
 export const mintAdminJwt = createServerFn({ method: "POST" })
