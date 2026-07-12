@@ -1,75 +1,61 @@
-# VPS Full-Connect Plan — Auto-Connect Studio ↔ api.timescard.cloud
+# Plan: `timescard.cloud`-এর subdomain-এ Live করা
 
-লক্ষ্য: ব্যবহারকারী Auto-Connect Studio-তে project দিলে সেটি automatic ভাবে VPS-এ deploy হবে, workspace + admin user auto-provision হবে, এবং সব file/data VPS-এ persist হবে।
+লক্ষ্য: এই Lovable project-টা `timescard.cloud`-এর একটা subdomain-এ (যেমন `app.timescard.cloud` বা `pluto.timescard.cloud`) live করা এবং SSL সহ auto-refresh-able deep links কাজ করা।
 
-## বর্তমান অবস্থা (সংক্ষেপে)
-- ✅ Frontend ↔ VPS proxy কাজ করছে (`/api/pluto/*` → `https://api.timescard.cloud`)
-- ✅ VPS healthy (Postgres, S3, JWT সব OK)
-- ❌ Auto-Connect শুধু ZIP তৈরি করে — VPS-এ push হয় না
-- ❌ Workspace + admin user auto-provision নেই
-- ❌ File/asset upload VPS storage-এ যায় না
+## পদক্ষেপ
 
----
+### 1. Subdomain সিদ্ধান্ত
 
-## Phase 1 — Auth ও Base Connection Layer (foundation)
-1. `src/lib/pluto/vps-client.ts` তৈরি: `apikey` + `Bearer` header সহ typed fetch wrapper (service-role এবং user-token দুই mode)।
-2. Service-role key `PLUTO_SERVICE_ROLE_KEY` secret হিসেবে সংরক্ষণ (server-only)।
-3. Server function `checkVpsHealth()` — `/livez`, `/readyz`, `/health/deps` একসাথে probe করে UI-তে live status দেখাবে।
+আপনাকে জানাতে হবে কোন subdomain চান। প্রস্তাব:
 
-## Phase 2 — Workspace + Admin User Auto-Provision
-1. Server function `provisionWorkspace({ projectName, adminEmail })`:
-   - `POST /admin/v1/workspaces` — workspace তৈরি
-   - `POST /auth/v1/admin/users` — auto email + generated password সহ admin user
-   - `POST /admin/v1/workspaces/:id/members` — admin role assign
-   - Generated credentials encrypted করে DB-তে সংরক্ষণ + একবার UI-তে দেখানো
-2. Auto-Connect wizard-এ নতুন step "Workspace Provision" যোগ (project name → auto email/password display)।
+- `app.timescard.cloud` — dashboard/app-এর জন্য standard
+- `pluto.timescard.cloud` — Pluto BaaS branding-এর সাথে মিলে
+- `admin.timescard.cloud` — admin console indication
 
-## Phase 3 — Direct VPS Deployment (ZIP → API push)
-1. `src/lib/autoconnect/vps-deployer.ts`:
-   - Migration SQL → `POST /admin/v1/migrations` (dry-run first, তারপর apply)
-   - Static asset/file → `POST /storage/v1/object/{bucket}/{path}` (multipart)
-   - Progress SSE consume করে UI progress bar-এ দেখাবে
-2. Auto-Connect Studio-তে "Deploy to VPS" button যোগ (existing "Download ZIP" এর পাশে)।
-3. Rollback endpoint `POST /admin/v1/migrations/:version/rollback` UI থেকে trigger।
+### 2. Lovable-এ project publish করা
 
-## Phase 4 — File/Folder Sync ("লেনদেন")
-1. Auto-Connect-এ upload হওয়া প্রতিটি file VPS `pluto_storage` bucket-এ mirror।
-2. Manifest table `project_assets` (VPS-side) — file path, SHA256, size, uploaded_by track।
-3. Studio dashboard-এ "Synced with VPS" badge (green/red) প্রতিটি file-এ।
+- `preview_ui--publish` দিয়ে project deploy করব → `plutobaas.lovable.app`-এ live হবে (~১ মিনিট)।
+- Publish না হলে custom domain flow available হয় না।
+- Publish আগে security scan check করব।
 
-## Phase 5 — Verification ও Observability
-1. Post-deploy smoke: `/admin/v1/migrations/last-boot`, `/health/deps`, tables list check।
-2. Audit log stream: `/admin/v1/logs?workspace_id=…` — Studio-তে live tail।
-3. E2E test (`e2e/vps-full-flow.spec.ts`): project create → provision → deploy → verify tables/storage → rollback।
+### 3. Custom domain connect
 
-## Phase 6 — Failure Handling
-- Timeout 30s + retry with exponential backoff (`retry-backoff.ts` already exists)
-- Deploy failure → auto rollback trigger + user-facing error banner
-- Credential leak protection: password শুধু একবার দেখানো, তারপর mask
+- Project Settings → Domains → **Connect Domain** → subdomain type করব (e.g. `app.timescard.cloud`)।
+- Lovable DNS instruction দেবে।
 
----
+### 4. DNS records (আপনার registrar-এ যোগ করতে হবে)
 
-## Technical Details
+`timescard.cloud`-এর DNS provider-এ (Cloudflare / Namecheap / GoDaddy যেখানেই আছে):
 
-**নতুন files:**
-- `src/lib/pluto/vps-client.ts` — typed VPS API client
-- `src/lib/autoconnect/vps-deployer.ts` — ZIP → API push logic
-- `src/lib/autoconnect/workspace-provisioner.functions.ts` — server fn
-- `src/routes/dashboard.vps-status.tsx` — health + audit dashboard
-- `e2e/vps-full-flow.spec.ts`
+```text
+Type: A       Name: app        Value: 185.158.133.1
+Type: TXT     Name: _lovable   Value: lovable_verify=<Lovable UI যা দেবে>
+```
 
-**Modified files:**
-- `src/routes/dashboard.auto-connect.tsx` — Deploy button + Provision step
-- `src/components/pluto/Sidebar.tsx` — "VPS Status" menu item
-- `src/routes/api/pluto.$.ts` — already OK
+**Cloudflare proxy (orange cloud) ব্যবহার করলে:** Connect dialog-এ Advanced → "Domain uses Cloudflare or a similar proxy" tick করতে হবে — তাহলে CNAME-based verification হবে।
 
-**Secrets:**
-- `PLUTO_SERVICE_ROLE_KEY` (add via `add_secret`)
-- `PLUTO_UPSTREAM_URL` (already set)
+### 5. Verify + SSL
 
-**Estimate:** ~6 phases, incremental — Phase 1-2 সবচেয়ে জরুরি (foundation), Phase 3 core value, Phase 4-6 polish।
+- DNS propagate হতে সর্বোচ্চ ৭২ ঘন্টা (সাধারণত ৫–৩০ মিনিট)।
+- Lovable auto SSL provision করবে।
+- Status: `Verifying` → `Setting up` → `Active`।
 
----
+### 6. Post-live verification
 
-## কোথা থেকে শুরু করব?
-প্রথমে Phase 1 + 2 (auth layer + workspace provisioning) implement করব, কারণ এই দুটি ছাড়া deploy step কাজ করবে না। আপনি approve করলে শুরু করছি।
+- `https://app.timescard.cloud` open করে check করব।
+- `/dashboard/pluto-deploy` deep link refresh করে TanStack routing verify করব।
+
+## আপনার কাছ থেকে যা লাগবে
+
+**১। কোন subdomain?** (`app`) যতগুলো প্রজেক্ট ডেপলয়মেন্ট করা হবে সব এভাবে পাবলিশ হবে নাম অটো পরিবর্তন হতে থাকবে।  
+২।`timescard.cloud`**-এর DNS কোথায় manage হয়?** ( Hostinger ) — Cloudflare হলে proxy mode বলে দেবেন।
+
+৩।Publish visibility — **public** (anyone with link) 
+
+## Technical notes
+
+- Lovable IP: `185.158.133.1` (static A record)
+- TanStack Start SPA fallback Lovable hosting-এই handled — `_redirects` / `vercel.json` লাগবে না।
+- DNS/domain add আমি করতে পারব না — সেটা আপনাকে registrar UI-তে করতে হবে। বাকি সব (publish, connect flow trigger, verification poll) আমি করব।
+
+Approve করলে আমি publish শুরু করব এবং subdomain connect step-by-step guide করব।
