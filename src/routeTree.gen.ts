@@ -14,7 +14,6 @@ import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
 import { Route as SignupRouteImport } from './routes/signup'
 import { Route as OnboardingRouteImport } from './routes/onboarding'
 import { Route as DashboardRouteImport } from './routes/dashboard'
-import { Route as AutoConnectRouteImport } from './routes/auto-connect'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AcceptInviteRouteImport } from './routes/accept-invite'
 import { Route as IndexRouteImport } from './routes/index'
@@ -81,6 +80,7 @@ import { Route as DashboardConnectProjectRouteImport } from './routes/dashboard.
 import { Route as DashboardBranchingRouteImport } from './routes/dashboard.branching'
 import { Route as DashboardBackupsRouteImport } from './routes/dashboard.backups'
 import { Route as DashboardBackendStatusRouteImport } from './routes/dashboard.backend-status'
+import { Route as DashboardAutoConnectRouteImport } from './routes/dashboard.auto-connect'
 import { Route as DashboardAuditLogRouteImport } from './routes/dashboard.audit-log'
 import { Route as DashboardAuditRouteImport } from './routes/dashboard.audit'
 import { Route as DashboardApiRouteImport } from './routes/dashboard.api'
@@ -121,11 +121,6 @@ const OnboardingRoute = OnboardingRouteImport.update({
 const DashboardRoute = DashboardRouteImport.update({
   id: '/dashboard',
   path: '/dashboard',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AutoConnectRoute = AutoConnectRouteImport.update({
-  id: '/auto-connect',
-  path: '/auto-connect',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthRoute = AuthRouteImport.update({
@@ -464,6 +459,11 @@ const DashboardBackendStatusRoute = DashboardBackendStatusRouteImport.update({
   path: '/backend-status',
   getParentRoute: () => DashboardRoute,
 } as any)
+const DashboardAutoConnectRoute = DashboardAutoConnectRouteImport.update({
+  id: '/auto-connect',
+  path: '/auto-connect',
+  getParentRoute: () => DashboardRoute,
+} as any)
 const DashboardAuditLogRoute = DashboardAuditLogRouteImport.update({
   id: '/audit-log',
   path: '/audit-log',
@@ -551,7 +551,6 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/accept-invite': typeof AcceptInviteRoute
   '/auth': typeof AuthRouteWithChildren
-  '/auto-connect': typeof AutoConnectRoute
   '/dashboard': typeof DashboardRouteWithChildren
   '/onboarding': typeof OnboardingRoute
   '/signup': typeof SignupRoute
@@ -565,6 +564,7 @@ export interface FileRoutesByFullPath {
   '/dashboard/api': typeof DashboardApiRoute
   '/dashboard/audit': typeof DashboardAuditRoute
   '/dashboard/audit-log': typeof DashboardAuditLogRoute
+  '/dashboard/auto-connect': typeof DashboardAutoConnectRoute
   '/dashboard/backend-status': typeof DashboardBackendStatusRoute
   '/dashboard/backups': typeof DashboardBackupsRoute
   '/dashboard/branching': typeof DashboardBranchingRoute
@@ -641,7 +641,6 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/accept-invite': typeof AcceptInviteRoute
   '/auth': typeof AuthRouteWithChildren
-  '/auto-connect': typeof AutoConnectRoute
   '/onboarding': typeof OnboardingRoute
   '/signup': typeof SignupRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
@@ -654,6 +653,7 @@ export interface FileRoutesByTo {
   '/dashboard/api': typeof DashboardApiRoute
   '/dashboard/audit': typeof DashboardAuditRoute
   '/dashboard/audit-log': typeof DashboardAuditLogRoute
+  '/dashboard/auto-connect': typeof DashboardAutoConnectRoute
   '/dashboard/backend-status': typeof DashboardBackendStatusRoute
   '/dashboard/backups': typeof DashboardBackupsRoute
   '/dashboard/branching': typeof DashboardBranchingRoute
@@ -731,7 +731,6 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/accept-invite': typeof AcceptInviteRoute
   '/auth': typeof AuthRouteWithChildren
-  '/auto-connect': typeof AutoConnectRoute
   '/dashboard': typeof DashboardRouteWithChildren
   '/onboarding': typeof OnboardingRoute
   '/signup': typeof SignupRoute
@@ -745,6 +744,7 @@ export interface FileRoutesById {
   '/dashboard/api': typeof DashboardApiRoute
   '/dashboard/audit': typeof DashboardAuditRoute
   '/dashboard/audit-log': typeof DashboardAuditLogRoute
+  '/dashboard/auto-connect': typeof DashboardAutoConnectRoute
   '/dashboard/backend-status': typeof DashboardBackendStatusRoute
   '/dashboard/backups': typeof DashboardBackupsRoute
   '/dashboard/branching': typeof DashboardBranchingRoute
@@ -823,7 +823,6 @@ export interface FileRouteTypes {
     | '/'
     | '/accept-invite'
     | '/auth'
-    | '/auto-connect'
     | '/dashboard'
     | '/onboarding'
     | '/signup'
@@ -837,6 +836,7 @@ export interface FileRouteTypes {
     | '/dashboard/api'
     | '/dashboard/audit'
     | '/dashboard/audit-log'
+    | '/dashboard/auto-connect'
     | '/dashboard/backend-status'
     | '/dashboard/backups'
     | '/dashboard/branching'
@@ -913,7 +913,6 @@ export interface FileRouteTypes {
     | '/'
     | '/accept-invite'
     | '/auth'
-    | '/auto-connect'
     | '/onboarding'
     | '/signup'
     | '/sitemap.xml'
@@ -926,6 +925,7 @@ export interface FileRouteTypes {
     | '/dashboard/api'
     | '/dashboard/audit'
     | '/dashboard/audit-log'
+    | '/dashboard/auto-connect'
     | '/dashboard/backend-status'
     | '/dashboard/backups'
     | '/dashboard/branching'
@@ -1002,7 +1002,6 @@ export interface FileRouteTypes {
     | '/'
     | '/accept-invite'
     | '/auth'
-    | '/auto-connect'
     | '/dashboard'
     | '/onboarding'
     | '/signup'
@@ -1016,6 +1015,7 @@ export interface FileRouteTypes {
     | '/dashboard/api'
     | '/dashboard/audit'
     | '/dashboard/audit-log'
+    | '/dashboard/auto-connect'
     | '/dashboard/backend-status'
     | '/dashboard/backups'
     | '/dashboard/branching'
@@ -1093,7 +1093,6 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AcceptInviteRoute: typeof AcceptInviteRoute
   AuthRoute: typeof AuthRouteWithChildren
-  AutoConnectRoute: typeof AutoConnectRoute
   DashboardRoute: typeof DashboardRouteWithChildren
   OnboardingRoute: typeof OnboardingRoute
   SignupRoute: typeof SignupRoute
@@ -1143,13 +1142,6 @@ declare module '@tanstack/react-router' {
       path: '/dashboard'
       fullPath: '/dashboard'
       preLoaderRoute: typeof DashboardRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/auto-connect': {
-      id: '/auto-connect'
-      path: '/auto-connect'
-      fullPath: '/auto-connect'
-      preLoaderRoute: typeof AutoConnectRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/auth': {
@@ -1614,6 +1606,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardBackendStatusRouteImport
       parentRoute: typeof DashboardRoute
     }
+    '/dashboard/auto-connect': {
+      id: '/dashboard/auto-connect'
+      path: '/auto-connect'
+      fullPath: '/dashboard/auto-connect'
+      preLoaderRoute: typeof DashboardAutoConnectRouteImport
+      parentRoute: typeof DashboardRoute
+    }
     '/dashboard/audit-log': {
       id: '/dashboard/audit-log'
       path: '/audit-log'
@@ -1778,6 +1777,7 @@ interface DashboardRouteChildren {
   DashboardApiRoute: typeof DashboardApiRoute
   DashboardAuditRoute: typeof DashboardAuditRoute
   DashboardAuditLogRoute: typeof DashboardAuditLogRoute
+  DashboardAutoConnectRoute: typeof DashboardAutoConnectRoute
   DashboardBackendStatusRoute: typeof DashboardBackendStatusRoute
   DashboardBackupsRoute: typeof DashboardBackupsRoute
   DashboardBranchingRoute: typeof DashboardBranchingRoute
@@ -1847,6 +1847,7 @@ const DashboardRouteChildren: DashboardRouteChildren = {
   DashboardApiRoute: DashboardApiRoute,
   DashboardAuditRoute: DashboardAuditRoute,
   DashboardAuditLogRoute: DashboardAuditLogRoute,
+  DashboardAutoConnectRoute: DashboardAutoConnectRoute,
   DashboardBackendStatusRoute: DashboardBackendStatusRoute,
   DashboardBackupsRoute: DashboardBackupsRoute,
   DashboardBranchingRoute: DashboardBranchingRoute,
@@ -1919,7 +1920,6 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AcceptInviteRoute: AcceptInviteRoute,
   AuthRoute: AuthRouteWithChildren,
-  AutoConnectRoute: AutoConnectRoute,
   DashboardRoute: DashboardRouteWithChildren,
   OnboardingRoute: OnboardingRoute,
   SignupRoute: SignupRoute,
@@ -1936,13 +1936,3 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { startInstance } from './start.ts'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-    config: Awaited<ReturnType<typeof startInstance.getOptions>>
-  }
-}
