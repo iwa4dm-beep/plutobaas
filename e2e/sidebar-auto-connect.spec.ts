@@ -25,11 +25,16 @@ const fakeSession = {
 };
 
 async function primeSession(page: Page) {
-  // Establish origin, drop a session, then hit the guarded route.
+  // Establish origin, drop a session + suppress the first-run onboarding
+  // tour (which mounts a Radix Dialog overlay that would intercept clicks),
+  // then hit the guarded route.
   await page.goto("/");
   await page.evaluate(
-    ([key, value]) => window.localStorage.setItem(key, value),
-    [SESSION_KEY, JSON.stringify(fakeSession)] as const,
+    ([key, value, tourKey]) => {
+      window.localStorage.setItem(key, value);
+      window.localStorage.setItem(tourKey, "1");
+    },
+    [SESSION_KEY, JSON.stringify(fakeSession), "pluto:help:onboarded"] as const,
   );
   // Stub the workspace listing so the dashboard shell doesn't hang on it.
   await page.route("**/api/pluto/**", (route) =>
