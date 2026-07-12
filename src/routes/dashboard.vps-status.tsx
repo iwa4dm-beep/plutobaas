@@ -4,6 +4,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { PageHeader } from "@/components/pluto/PageHeader";
 import { checkVpsHealth } from "@/lib/pluto/vps-health.functions";
 import { CheckCircle2, XCircle, RefreshCw, KeyRound } from "lucide-react";
+import { WorkspaceProvisionCard } from "@/components/pluto/WorkspaceProvisionCard";
 
 export const Route = createFileRoute("/dashboard/vps-status")({
   component: VpsStatusPage,
@@ -106,6 +107,8 @@ function VpsStatusPage() {
           <div className="text-xs text-muted-foreground">
             Last checked: {new Date(data.checkedAt).toLocaleString()} • auto-refresh every 30s
           </div>
+
+          <WorkspaceProvisionCard />
         </>
       )}
     </div>
