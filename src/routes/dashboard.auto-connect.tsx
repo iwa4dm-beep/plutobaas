@@ -17,6 +17,7 @@ import { runE2E, type E2EReport } from "@/lib/autoconnect/e2e-runner";
 import { buildAuditJson, buildAuditHtml, buildAuditBundle, type AuditInput, type CancellationRecord } from "@/lib/autoconnect/audit-report";
 import type { AnalyzeResult, DbConfig, IntegrationPlan, SqlStatement } from "@/lib/autoconnect/types";
 import { WorkspaceProvisionCard } from "@/components/pluto/WorkspaceProvisionCard";
+import { DeployToVpsCard } from "@/components/pluto/DeployToVpsCard";
 
 export const Route = createFileRoute("/dashboard/auto-connect")({
   head: () => ({
@@ -166,9 +167,11 @@ function AutoConnectPage() {
           </p>
         </header>
 
-        <div className="mb-8">
+        <div className="mb-8 grid gap-6 md:grid-cols-2">
           <WorkspaceProvisionCard />
+          <DeployToVpsCard defaultBundle={artifacts?.migrations ?? null} defaultBundleName="migrations.zip" />
         </div>
+
 
         <div className="mb-4 flex gap-2">
           {([
