@@ -321,10 +321,17 @@ function DeployPage() {
 
           {deployResult && (
             <div className="border rounded-md p-3 text-xs space-y-3">
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <Badge variant={deployResult.ok ? "secondary" : "destructive"}>{deployResult.ok ? "deploy ok" : "deploy failed"}</Badge>
                 <span className="text-muted-foreground">workspace: <code>{deployResult.workspaceId}</code> · total {deployResult.totalMs}ms</span>
               </div>
+              {deployResult.liveUrls && (
+                <div className="rounded border bg-muted/30 p-2 space-y-1">
+                  <div className="font-medium">Live endpoints</div>
+                  <div><span className="text-muted-foreground">runtime:</span> <code className="break-all">{deployResult.liveUrls.functionsHealth}</code></div>
+                  <div><span className="text-muted-foreground">bootstrap:</span> <code className="break-all">{deployResult.liveUrls.bootstrapInvoke}</code></div>
+                </div>
+              )}
               {deployResult.steps.map((s, i) => (
                 <details key={i} open={!s.ok} className="border rounded p-2">
                   <summary className="cursor-pointer flex items-center gap-2">
