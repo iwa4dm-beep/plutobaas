@@ -5,7 +5,7 @@
 // Uses Web Crypto (crypto.subtle) — no extra deps, Worker-compatible.
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { detectKeyFormat, isAdminCompatible, describeKey, type KeyFormat } from "./key-helper";
+import { detectKeyFormat, isAdminCompatible, describeKey, type KeyFormat, type JsonObj } from "./key-helper";
 import { getServiceRoleKey, getVpsBaseUrl } from "./vps-client";
 
 export type KeyInspectResult = {
