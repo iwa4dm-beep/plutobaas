@@ -98,6 +98,19 @@ export function WorkspaceProvisionCard({
       )}
 
       {!result?.ok && (
+        <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={autoDeploy}
+            onChange={(e) => setAutoDeploy(e.target.checked)}
+            disabled={busy}
+            className="h-3.5 w-3.5"
+          />
+          Provision-এর পর একই bundle দিয়ে Auto Deploy to VPS চালাও
+        </label>
+      )}
+
+      {!result?.ok && (
         <button
           onClick={run}
           disabled={busy || !projectName.trim()}
@@ -107,6 +120,7 @@ export function WorkspaceProvisionCard({
           {busy ? "Provisioning…" : "Create workspace"}
         </button>
       )}
+
 
       {result && !result.ok && (
         <div className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm flex gap-2">
