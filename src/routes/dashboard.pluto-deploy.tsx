@@ -335,6 +335,9 @@ function DeployPage() {
                   <div className="font-medium">Live endpoints</div>
                   <div><span className="text-muted-foreground">runtime:</span> <code className="break-all">{deployResult.liveUrls.functionsHealth}</code></div>
                   <div><span className="text-muted-foreground">bootstrap:</span> <code className="break-all">{deployResult.liveUrls.bootstrapInvoke}</code></div>
+                  {deployResult.liveUrls.servedSite && (
+                    <div><span className="text-muted-foreground">served site:</span> <a className="underline break-all" href={deployResult.liveUrls.servedSite} target="_blank" rel="noreferrer">{deployResult.liveUrls.servedSite}</a></div>
+                  )}
                 </div>
               )}
               {deployResult.steps.map((s, i) => (
