@@ -231,6 +231,126 @@ function DeployPage() {
       </Card>
 
       <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Rocket className="h-4 w-4" /> Real deploy — pushMigrations → uploadBundle → verifyDeploy
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-2">
+            <Label htmlFor="ws-id">Workspace ID <span className="text-muted-foreground">(slug or UUID; 2–128 chars, alphanumeric / _ / -)</span></Label>
+            <Input
+              id="ws-id"
+              value={workspaceId}
+              onChange={(e) => setWorkspaceId(e.target.value)}
+              placeholder="e.g. projectbest or 02504262-b997-408d-bdc7-f50c3066238b"
+              className={!workspaceId || workspaceIdValid ? "" : "border-destructive"}
+            />
+            {workspaceId && !workspaceIdValid && (
+              <p className="text-xs text-destructive">Invalid — must start alphanumeric and only contain letters, digits, _ or -.</p>
+            )}
+          </div>
+
+          <div className="grid gap-2">
+            <Label htmlFor="bundle">Bundle .zip</Label>
+            <Input id="bundle" type="file" accept=".zip,application/zip"
+              onChange={(e) => setBundleFile(e.target.files?.[0] ?? null)} />
+            {bundleFile && (
+              <p className="text-xs text-muted-foreground">{bundleFile.name} — {(bundleFile.size / 1024).toFixed(1)} KB</p>
+            )}
+          </div>
+
+          <div className="grid gap-2">
+            <Label htmlFor="bundle-sql">Migration SQL (runs before upload)</Label>
+            <Textarea id="bundle-sql" rows={4} className="font-mono text-xs" value={bundleSql} onChange={(e) => setBundleSql(e.target.value)} />
+          </div>
+
+          <div className="flex items-center gap-3 flex-wrap">
+            <Label className="text-sm">Max retries per step:</Label>
+            <Input type="number" min={0} max={5} value={maxRetries} onChange={(e) => setMaxRetries(Math.max(0, Math.min(5, Number(e.target.value) || 0)))} className="w-20" />
+            <Button size="sm" variant="outline" onClick={runEnsureInfra} disabled={deployBusy !== null}>
+              <Wrench className="h-4 w-4 mr-2" /> Ensure infra (bucket)
+            </Button>
+            <Button size="sm" onClick={runFullDeploy} disabled={deployBusy !== null || !workspaceIdValid || !bundleFile}>
+              <Rocket className="h-4 w-4 mr-2" /> Run full deploy
+            </Button>
+            {deployBusy && <span className="text-xs text-muted-foreground">running {deployBusy}…</span>}
+          </div>
+
+          {deployError && (
+            <Alert variant="destructive">
+              <AlertTriangle className="h-4 w-4" />
+              <AlertDescription>{deployError}</AlertDescription>
+            </Alert>
+          )}
+
+          {infraResult && (
+            <div className="border rounded-md p-3 text-xs space-y-2">
+              <div className="flex items-center gap-2">
+                <Badge variant={infraResult.ok ? "secondary" : "destructive"}>{infraResult.ok ? "infra ok" : "infra failed"}</Badge>
+                <span className="text-muted-foreground">Ensure infra result</span>
+              </div>
+              <ul className="space-y-1">
+                {infraResult.steps.map((s, i) => (
+                  <li key={i} className="flex gap-2">
+                    <Badge variant={s.ok ? "secondary" : "destructive"}>{s.ok ? "✓" : "✗"}</Badge>
+                    <span><b>{s.label}</b> — {s.detail}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {deployResult && (
+            <div className="border rounded-md p-3 text-xs space-y-3">
+              <div className="flex items-center gap-2">
+                <Badge variant={deployResult.ok ? "secondary" : "destructive"}>{deployResult.ok ? "deploy ok" : "deploy failed"}</Badge>
+                <span className="text-muted-foreground">workspace: <code>{deployResult.workspaceId}</code> · total {deployResult.totalMs}ms</span>
+              </div>
+              {deployResult.steps.map((s, i) => (
+                <details key={i} open={!s.ok} className="border rounded p-2">
+                  <summary className="cursor-pointer flex items-center gap-2">
+                    <Badge variant={s.ok ? "secondary" : "destructive"}>{s.ok ? "✓" : "✗"}</Badge>
+                    <b>{s.label}</b>
+                    <span className="text-muted-foreground">({s.attempts.length} attempt{s.attempts.length === 1 ? "" : "s"})</span>
+                  </summary>
+                  <div className="mt-2 space-y-2">
+                    {s.attempts.map((a, j) => (
+                      <div key={j} className="border rounded p-2 bg-muted/40">
+                        <div className="flex items-center gap-2 mb-1">
+                          <Badge variant={a.ok ? "secondary" : "destructive"}>attempt {a.attempt}</Badge>
+                          <span className="text-muted-foreground">{a.startedAt} · {a.latencyMs}ms</span>
+                        </div>
+                        <div className="mb-1"><b>detail:</b> {a.detail}</div>
+                        {a.debug && (
+                          <details>
+                            <summary className="cursor-pointer">HTTP debug</summary>
+                            <pre className="mt-1 overflow-auto bg-background p-2 rounded">{JSON.stringify(a.debug, null, 2)}</pre>
+                          </details>
+                        )}
+                      </div>
+                    ))}
+                    {s.result && (
+                      <details>
+                        <summary className="cursor-pointer">step result</summary>
+                        <pre className="mt-1 overflow-auto bg-muted p-2 rounded">{s.result}</pre>
+                      </details>
+                    )}
+                  </div>
+                </details>
+              ))}
+              {!deployResult.ok && (
+                <Button size="sm" onClick={runFullDeploy} disabled={deployBusy !== null}>
+                  <RefreshCw className="h-4 w-4 mr-2" /> Retry with same bundle
+                </Button>
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+
+      <Card>
         <CardHeader><CardTitle>Request / response log</CardTitle></CardHeader>
         <CardContent>
           {logs.length === 0 && <p className="text-sm text-muted-foreground">Nothing run yet.</p>}
