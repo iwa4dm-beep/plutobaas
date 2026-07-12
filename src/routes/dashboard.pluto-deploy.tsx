@@ -10,10 +10,10 @@ import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
-import { AlertTriangle, Play, RefreshCw, Rocket, ShieldAlert, Wrench } from "lucide-react";
+import { AlertTriangle, Activity, Play, RefreshCw, Rocket, ShieldAlert, Wrench } from "lucide-react";
 import { plutoApi } from "@/lib/pluto/upstream";
 import { useServerFn } from "@tanstack/react-start";
-import { deployAll, ensureDeployInfra, type DeployAllResult, type EnsureInfraResult } from "@/lib/pluto/vps-deployer.functions";
+import { deployAll, ensureDeployInfra, postDeployHealth, type DeployAllResult, type EnsureInfraResult, type PostDeployHealth } from "@/lib/pluto/vps-deployer.functions";
 
 const WORKSPACE_ID_RE = /^[a-zA-Z0-9][a-zA-Z0-9_-]{1,127}$/;
 
