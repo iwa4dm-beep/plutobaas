@@ -18,6 +18,7 @@ const groups: Group[] = [
     label: "Getting Started",
     items: [
       { to: "/dashboard/connect-project", label: "Connect your project", icon: Plug },
+      { to: "/auto-connect", label: "Auto-Connect Studio", icon: Zap },
     ],
   },
   {
