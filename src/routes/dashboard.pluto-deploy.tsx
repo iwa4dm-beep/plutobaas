@@ -47,6 +47,64 @@ function DeployPage() {
   const [running, setRunning] = useState(false);
   const [logs, setLogs] = useState<LogEntry[]>([]);
 
+  // Real-deploy state
+  const [workspaceId, setWorkspaceId] = useState("");
+  const [bundleFile, setBundleFile] = useState<File | null>(null);
+  const [bundleSql, setBundleSql] = useState("-- optional migration SQL to run before the bundle upload\nselect 1;");
+  const [maxRetries, setMaxRetries] = useState(2);
+  const [deployBusy, setDeployBusy] = useState<null | "infra" | "deploy">(null);
+  const [infraResult, setInfraResult] = useState<EnsureInfraResult | null>(null);
+  const [deployResult, setDeployResult] = useState<DeployAllResult | null>(null);
+  const [deployError, setDeployError] = useState<string | null>(null);
+
+  const workspaceIdValid = WORKSPACE_ID_RE.test(workspaceId.trim());
+
+  const ensureInfraFn = useServerFn(ensureDeployInfra);
+  const deployAllFn = useServerFn(deployAll);
+
+  const runEnsureInfra = useCallback(async () => {
+    setDeployBusy("infra");
+    setDeployError(null);
+    try {
+      const r = await ensureInfraFn({ data: { bucket: "deployments" } });
+      setInfraResult(r);
+    } catch (e) {
+      setDeployError((e as Error).message);
+    } finally {
+      setDeployBusy(null);
+    }
+  }, [ensureInfraFn]);
+
+  const runFullDeploy = useCallback(async () => {
+    if (!workspaceIdValid) { setDeployError("Invalid workspace ID"); return; }
+    if (!bundleFile) { setDeployError("Select a bundle .zip first"); return; }
+    setDeployBusy("deploy");
+    setDeployError(null);
+    setDeployResult(null);
+    try {
+      const buf = new Uint8Array(await bundleFile.arrayBuffer());
+      let binary = "";
+      for (let i = 0; i < buf.length; i++) binary += String.fromCharCode(buf[i]);
+      const contentBase64 = btoa(binary);
+      const bundlePath = `${workspaceId.trim()}/${bundleFile.name}`;
+      const r = await deployAllFn({ data: {
+        workspaceId: workspaceId.trim(),
+        sql: bundleSql.trim() || "select 1;",
+        bundlePath,
+        contentBase64,
+        bucket: "deployments",
+        maxRetries,
+        ensureInfra: true,
+        label: `deploy-${bundleFile.name.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 80)}`,
+      } });
+      setDeployResult(r);
+    } catch (e) {
+      setDeployError((e as Error).message);
+    } finally {
+      setDeployBusy(null);
+    }
+  }, [workspaceId, workspaceIdValid, bundleFile, bundleSql, maxRetries, deployAllFn]);
+
   const refreshHealth = useCallback(async () => {
     setLoadingHealth(true);
     setHealthErr(null);
