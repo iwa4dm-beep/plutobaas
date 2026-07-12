@@ -1393,6 +1393,52 @@ function HelpPanel() {
           </tbody>
         </table>
       </section>
+
+      <section className="rounded-lg border border-border bg-card p-4">
+        <h3 className="mb-2 flex items-center gap-2 text-sm font-semibold text-foreground">
+          <FileArchive className="h-4 w-4" /> Reading <code>audit-report.json</code> in code
+        </h3>
+        <p className="text-sm text-muted-foreground">
+          The JSON shape is stable and safe to script against. Treat
+          <code className="mx-1">summary.cancelRefused</code> as informational (not a failure) and
+          <code className="mx-1">verification.entries[*].ok=false</code> as a hard stop.
+        </p>
+        <pre className="mt-2 overflow-x-auto rounded-md border border-border bg-muted/40 p-3 text-xs leading-relaxed text-foreground">
+{`// node / bun
+const r = JSON.parse(await fs.promises.readFile("audit-report.json", "utf8"));
+
+// 1. ZIP / manifest integrity — block apply if any file failed.
+const badFiles = (r.input.verification?.entries ?? []).filter(e => !e.ok);
+if (badFiles.length) {
+  console.error("Verification failed:", r.input.verification.message);
+  for (const f of badFiles) {
+    const reason = f.actual ? "hash-mismatch" : "missing";
+    console.error(\` - \${f.path}  [\${reason}]  expected=\${f.expected.slice(0,12)}…\`);
+  }
+  process.exit(2);
+}
+
+// 2. Cancellation — "refused" means the job had already finished; not a failure.
+if (r.summary.cancelRefused) {
+  console.log("Cancel was a no-op — job already terminated. Real outcome:",
+              r.summary.rollbackStatus, "exit", r.summary.exitCode);
+} else if (r.input.cancellation) {
+  console.log("Cancelled during", r.input.cancellation.phase,
+              "→ exit", r.input.cancellation.exitCode);   // always 4
+}
+
+// 3. Final gate for CI.
+const ok = r.summary.rollbackStatus === "ok" && r.summary.verified && r.summary.ackOk;
+process.exit(ok ? 0 : 1);`}
+        </pre>
+        <p className="mt-2 text-xs text-muted-foreground">
+          Field cheat-sheet: <code>summary.verified</code> (bool) ·
+          <code className="mx-1">summary.rollbackStatus</code> (<code>ok</code> | <code>rolled_back</code> | <code>failed</code> | <code>cancelled</code> | <code>n/a</code>) ·
+          <code className="mx-1">summary.exitCode</code> (0 / 1 / 2 / 4) ·
+          <code className="mx-1">summary.cancelRefused</code> (bool) ·
+          <code className="mx-1">input.cancellation.phase</code> (<code>snapshot</code> | <code>sql</code> | <code>unknown</code>).
+        </p>
+      </section>
     </div>
   );
 }
