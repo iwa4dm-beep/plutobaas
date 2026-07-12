@@ -52,15 +52,30 @@ function DeployPage() {
   const [bundleFile, setBundleFile] = useState<File | null>(null);
   const [bundleSql, setBundleSql] = useState("-- optional migration SQL to run before the bundle upload\nselect 1;");
   const [maxRetries, setMaxRetries] = useState(2);
-  const [deployBusy, setDeployBusy] = useState<null | "infra" | "deploy">(null);
+  const [deployBusy, setDeployBusy] = useState<null | "infra" | "deploy" | "health">(null);
   const [infraResult, setInfraResult] = useState<EnsureInfraResult | null>(null);
   const [deployResult, setDeployResult] = useState<DeployAllResult | null>(null);
   const [deployError, setDeployError] = useState<string | null>(null);
+  const [postHealth, setPostHealth] = useState<PostDeployHealth | null>(null);
 
   const workspaceIdValid = WORKSPACE_ID_RE.test(workspaceId.trim());
 
   const ensureInfraFn = useServerFn(ensureDeployInfra);
   const deployAllFn = useServerFn(deployAll);
+  const postDeployHealthFn = useServerFn(postDeployHealth);
+
+  const refreshPostHealth = useCallback(async () => {
+    if (!workspaceIdValid) { setDeployError("Enter a valid workspace ID first"); return; }
+    setDeployBusy("health");
+    try {
+      const h = await postDeployHealthFn({ data: { workspaceId: workspaceId.trim() } });
+      setPostHealth(h);
+    } catch (e) {
+      setDeployError((e as Error).message);
+    } finally {
+      setDeployBusy(null);
+    }
+  }, [workspaceId, workspaceIdValid, postDeployHealthFn]);
 
   const runEnsureInfra = useCallback(async () => {
     setDeployBusy("infra");
