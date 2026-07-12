@@ -74,6 +74,7 @@ import { Route as DashboardFunctionsRouteImport } from './routes/dashboard.funct
 import { Route as DashboardEnterpriseRouteImport } from './routes/dashboard.enterprise'
 import { Route as DashboardDomainsRouteImport } from './routes/dashboard.domains'
 import { Route as DashboardDevexRouteImport } from './routes/dashboard.devex'
+import { Route as DashboardDeploymentHistoryRouteImport } from './routes/dashboard.deployment-history'
 import { Route as DashboardDatabaseImportRouteImport } from './routes/dashboard.database-import'
 import { Route as DashboardDatabaseRouteImport } from './routes/dashboard.database'
 import { Route as DashboardCustomDomainsRouteImport } from './routes/dashboard.custom-domains'
@@ -431,6 +432,12 @@ const DashboardDevexRoute = DashboardDevexRouteImport.update({
   path: '/devex',
   getParentRoute: () => DashboardRoute,
 } as any)
+const DashboardDeploymentHistoryRoute =
+  DashboardDeploymentHistoryRouteImport.update({
+    id: '/deployment-history',
+    path: '/deployment-history',
+    getParentRoute: () => DashboardRoute,
+  } as any)
 const DashboardDatabaseImportRoute = DashboardDatabaseImportRouteImport.update({
   id: '/database-import',
   path: '/database-import',
@@ -586,6 +593,7 @@ export interface FileRoutesByFullPath {
   '/dashboard/custom-domains': typeof DashboardCustomDomainsRouteWithChildren
   '/dashboard/database': typeof DashboardDatabaseRoute
   '/dashboard/database-import': typeof DashboardDatabaseImportRoute
+  '/dashboard/deployment-history': typeof DashboardDeploymentHistoryRoute
   '/dashboard/devex': typeof DashboardDevexRoute
   '/dashboard/domains': typeof DashboardDomainsRoute
   '/dashboard/enterprise': typeof DashboardEnterpriseRoute
@@ -677,6 +685,7 @@ export interface FileRoutesByTo {
   '/dashboard/custom-domains': typeof DashboardCustomDomainsRouteWithChildren
   '/dashboard/database': typeof DashboardDatabaseRoute
   '/dashboard/database-import': typeof DashboardDatabaseImportRoute
+  '/dashboard/deployment-history': typeof DashboardDeploymentHistoryRoute
   '/dashboard/devex': typeof DashboardDevexRoute
   '/dashboard/domains': typeof DashboardDomainsRoute
   '/dashboard/enterprise': typeof DashboardEnterpriseRoute
@@ -770,6 +779,7 @@ export interface FileRoutesById {
   '/dashboard/custom-domains': typeof DashboardCustomDomainsRouteWithChildren
   '/dashboard/database': typeof DashboardDatabaseRoute
   '/dashboard/database-import': typeof DashboardDatabaseImportRoute
+  '/dashboard/deployment-history': typeof DashboardDeploymentHistoryRoute
   '/dashboard/devex': typeof DashboardDevexRoute
   '/dashboard/domains': typeof DashboardDomainsRoute
   '/dashboard/enterprise': typeof DashboardEnterpriseRoute
@@ -864,6 +874,7 @@ export interface FileRouteTypes {
     | '/dashboard/custom-domains'
     | '/dashboard/database'
     | '/dashboard/database-import'
+    | '/dashboard/deployment-history'
     | '/dashboard/devex'
     | '/dashboard/domains'
     | '/dashboard/enterprise'
@@ -955,6 +966,7 @@ export interface FileRouteTypes {
     | '/dashboard/custom-domains'
     | '/dashboard/database'
     | '/dashboard/database-import'
+    | '/dashboard/deployment-history'
     | '/dashboard/devex'
     | '/dashboard/domains'
     | '/dashboard/enterprise'
@@ -1047,6 +1059,7 @@ export interface FileRouteTypes {
     | '/dashboard/custom-domains'
     | '/dashboard/database'
     | '/dashboard/database-import'
+    | '/dashboard/deployment-history'
     | '/dashboard/devex'
     | '/dashboard/domains'
     | '/dashboard/enterprise'
@@ -1589,6 +1602,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardDevexRouteImport
       parentRoute: typeof DashboardRoute
     }
+    '/dashboard/deployment-history': {
+      id: '/dashboard/deployment-history'
+      path: '/deployment-history'
+      fullPath: '/dashboard/deployment-history'
+      preLoaderRoute: typeof DashboardDeploymentHistoryRouteImport
+      parentRoute: typeof DashboardRoute
+    }
     '/dashboard/database-import': {
       id: '/dashboard/database-import'
       path: '/database-import'
@@ -1825,6 +1845,7 @@ interface DashboardRouteChildren {
   DashboardCustomDomainsRoute: typeof DashboardCustomDomainsRouteWithChildren
   DashboardDatabaseRoute: typeof DashboardDatabaseRoute
   DashboardDatabaseImportRoute: typeof DashboardDatabaseImportRoute
+  DashboardDeploymentHistoryRoute: typeof DashboardDeploymentHistoryRoute
   DashboardDevexRoute: typeof DashboardDevexRoute
   DashboardDomainsRoute: typeof DashboardDomainsRoute
   DashboardEnterpriseRoute: typeof DashboardEnterpriseRoute
@@ -1896,6 +1917,7 @@ const DashboardRouteChildren: DashboardRouteChildren = {
   DashboardCustomDomainsRoute: DashboardCustomDomainsRouteWithChildren,
   DashboardDatabaseRoute: DashboardDatabaseRoute,
   DashboardDatabaseImportRoute: DashboardDatabaseImportRoute,
+  DashboardDeploymentHistoryRoute: DashboardDeploymentHistoryRoute,
   DashboardDevexRoute: DashboardDevexRoute,
   DashboardDomainsRoute: DashboardDomainsRoute,
   DashboardEnterpriseRoute: DashboardEnterpriseRoute,
