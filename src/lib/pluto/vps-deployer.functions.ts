@@ -309,10 +309,10 @@ const DeployAllInput = z.object({
   ensureInfra: z.boolean().default(true),
 });
 
-export type DeployStepKey = "ensure-infra" | "push-migrations" | "upload-bundle" | "verify-deploy";
+export type DeployStepKey = "ensure-infra" | "push-migrations" | "upload-bundle" | "verify-deploy" | "activate-service" | "health-check";
 export type DeployStepAttempt = { attempt: number; ok: boolean; detail: string; debug: StepDebug | null; startedAt: string; latencyMs: number };
 export type DeployStepLog = { key: DeployStepKey; label: string; ok: boolean; attempts: DeployStepAttempt[]; result: string | null };
-export type DeployAllResult = { ok: boolean; workspaceId: string; totalMs: number; steps: DeployStepLog[] };
+export type DeployAllResult = { ok: boolean; workspaceId: string; totalMs: number; steps: DeployStepLog[]; liveUrls?: { functionsHealth: string; bootstrapInvoke: string } };
 
 function nowIso(): string { return new Date().toISOString(); }
 
@@ -411,6 +411,105 @@ export const deployAll = createServerFn({ method: "POST" })
     });
     steps.push(verStep);
 
-    return { ok: steps.every(s => s.ok), workspaceId: data.workspaceId, totalMs: Date.now() - t0, steps };
+    // Step 4: activate service — register/patch a `bootstrap` function that
+    //         announces the deployed bundle. This is the closest thing the
+    //         upstream Pluto BaaS (v0.1) exposes to "start server after unpack":
+    //         the function record marks the workspace's default project as
+    //         having live code. If the upstream sandbox worker is unavailable,
+    //         the register call still succeeds and health-check will surface it.
+    const bundleKey = `${data.bucket}/${cleanPath}`;
+    let projectId: string | null = null;
+    const activateStep = await withRetry("activate-service", "Activate service (register bootstrap function)", data.maxRetries, async () => {
+      // 4a. Resolve the workspace's default project.
+      const resolveSql = `select id from admin.projects where workspace_id = '${data.workspaceId.replace(/'/g, "''")}' order by created_at asc limit 1;`;
+      const resolved = await sqlExec(resolveSql, headers);
+      if (!resolved.ok) return { ok: false, detail: `resolve project: ${resolved.text.slice(0, 200)}`, debug: resolved.debug, result: null };
+      let rows: Array<{ id: string }> = [];
+      try { rows = (JSON.parse(resolved.text) as { rows?: Array<{ id: string }> }).rows ?? []; } catch { /* ignore */ }
+      if (!rows.length) return { ok: false, detail: `no admin.projects row for workspace ${data.workspaceId}`, debug: resolved.debug, result: null };
+      projectId = rows[0].id;
+
+      // 4b. List existing functions for the project; find bootstrap slug.
+      const listUrl = `${base}/functions/v1?project_id=${encodeURIComponent(projectId)}`;
+      const listRes = await rawFetch(listUrl, "GET", headers, null, null, 15_000);
+      if (!listRes.ok) return { ok: false, detail: `list fns HTTP ${listRes.status}: ${listRes.text.slice(0, 200)}`, debug: listRes.debug, result: { projectId } };
+      let fns: Array<{ id: string; slug: string }> = [];
+      try { const j = JSON.parse(listRes.text); fns = Array.isArray(j) ? j : (j.items ?? []); } catch { /* ignore */ }
+      const existing = fns.find(f => f.slug === "bootstrap");
+
+      // 4c. Small JS handler that echoes deploy metadata. verify_jwt:false so
+      //     the health probe can reach it without a per-request user token.
+      const code = `export default async (req) => new Response(JSON.stringify({ ok: true, service: "pluto-bootstrap", workspace: ${JSON.stringify(data.workspaceId)}, bundle: ${JSON.stringify(bundleKey)}, ts: Date.now() }), { headers: { "content-type": "application/json" } });`;
+
+      if (existing) {
+        const patchUrl = `${base}/functions/v1/${encodeURIComponent(existing.id)}`;
+        const body = JSON.stringify({ code, verify_jwt: false });
+        const r = await rawFetch(patchUrl, "PATCH", headers, body, body, 30_000);
+        if (!r.ok) return { ok: false, detail: `patch fn HTTP ${r.status}: ${r.text.slice(0, 200)}`, debug: r.debug, result: { projectId, functionId: existing.id } };
+        return { ok: true, detail: `bootstrap function updated (id ${existing.id})`, debug: r.debug, result: { projectId, functionId: existing.id, action: "patched", bundle: bundleKey } };
+      }
+      const createBody = JSON.stringify({ project_id: projectId, slug: "bootstrap", code, verify_jwt: false });
+      const r = await rawFetch(`${base}/functions/v1`, "POST", headers, createBody, createBody, 30_000);
+      if (!r.ok) return { ok: false, detail: `create fn HTTP ${r.status}: ${r.text.slice(0, 200)}`, debug: r.debug, result: { projectId } };
+      let created: { id?: string } = {}; try { created = JSON.parse(r.text); } catch { /* ignore */ }
+      return { ok: true, detail: `bootstrap function created (id ${created.id ?? "?"})`, debug: r.debug, result: { projectId, functionId: created.id, action: "created", bundle: bundleKey } };
+    });
+    steps.push(activateStep);
+
+    // Step 5: health check — probe public functions health + invoke bootstrap.
+    //         Non-fatal for overall deploy: reports upstream runtime status
+    //         even when the sandbox worker is not yet installed on the VPS.
+    const healthStep = await withRetry("health-check", "Health check (functions runtime + bootstrap invoke)", data.maxRetries, async () => {
+      const healthUrl = `${base}/functions/v1/health`;
+      const h = await rawFetch(healthUrl, "GET", { accept: "application/json" }, null, null, 10_000);
+      const invokeUrl = `${base}/functions/v1/invoke/bootstrap`;
+      const inv = await rawFetch(invokeUrl, "POST", { ...headers, "content-type": "application/json" }, "{}", "{}", 15_000);
+      const runtimeOk = h.ok;
+      const invokeOk = inv.ok;
+      const detail = [
+        `runtime: ${runtimeOk ? `✓ HTTP ${h.status}` : `✗ HTTP ${h.status}`} (${h.text.slice(0, 120)})`,
+        `bootstrap invoke: ${invokeOk ? `✓ HTTP ${inv.status}` : `✗ HTTP ${inv.status}`} (${inv.text.slice(0, 160)})`,
+      ].join(" | ");
+      // Consider the step "ok" if the runtime endpoint is up. Invoke failure
+      // (e.g. missing sandbox-worker.mjs on the VPS host) is diagnostic, not
+      // a deploy-blocking regression from our side.
+      return { ok: runtimeOk, detail, debug: h.debug, result: { runtime: { status: h.status, body: h.text.slice(0, 400) }, invoke: { status: inv.status, body: inv.text.slice(0, 400) } } };
+    });
+    steps.push(healthStep);
+
+    const liveUrls = { functionsHealth: `${base}/functions/v1/health`, bootstrapInvoke: `${base}/functions/v1/invoke/bootstrap` };
+    return { ok: steps.every(s => s.ok), workspaceId: data.workspaceId, totalMs: Date.now() - t0, steps, liveUrls };
   });
+
+// ---------- Standalone post-deploy health check (for Result panel refresh) ----------
+const PostDeployHealthInput = z.object({ workspaceId: z.string().min(1).max(128) });
+
+export type PostDeployHealth = {
+  ok: boolean;
+  runtime: { url: string; status: number; body: string; latencyMs: number };
+  invoke: { url: string; status: number; body: string; latencyMs: number };
+  checkedAt: string;
+};
+
+export const postDeployHealth = createServerFn({ method: "POST" })
+  .inputValidator((d: unknown) => PostDeployHealthInput.parse(d))
+  .handler(async (): Promise<PostDeployHealth> => {
+    const headers = serviceHeaders({ "content-type": "application/json" });
+    if ("error" in headers) {
+      const now = new Date().toISOString();
+      return { ok: false, runtime: { url: "", status: 0, body: headers.error, latencyMs: 0 }, invoke: { url: "", status: 0, body: headers.error, latencyMs: 0 }, checkedAt: now };
+    }
+    const base = getVpsBaseUrl();
+    const healthUrl = `${base}/functions/v1/health`;
+    const invokeUrl = `${base}/functions/v1/invoke/bootstrap`;
+    const h = await rawFetch(healthUrl, "GET", { accept: "application/json" }, null, null, 10_000);
+    const inv = await rawFetch(invokeUrl, "POST", headers, "{}", "{}", 15_000);
+    return {
+      ok: h.ok,
+      runtime: { url: healthUrl, status: h.status, body: h.text.slice(0, 800), latencyMs: h.debug.latencyMs },
+      invoke: { url: invokeUrl, status: inv.status, body: inv.text.slice(0, 800), latencyMs: inv.debug.latencyMs },
+      checkedAt: new Date().toISOString(),
+    };
+  });
+
 

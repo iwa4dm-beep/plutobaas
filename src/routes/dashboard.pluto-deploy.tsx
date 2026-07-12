@@ -10,10 +10,10 @@ import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
-import { AlertTriangle, Play, RefreshCw, Rocket, ShieldAlert, Wrench } from "lucide-react";
+import { AlertTriangle, Activity, Play, RefreshCw, Rocket, ShieldAlert, Wrench } from "lucide-react";
 import { plutoApi } from "@/lib/pluto/upstream";
 import { useServerFn } from "@tanstack/react-start";
-import { deployAll, ensureDeployInfra, type DeployAllResult, type EnsureInfraResult } from "@/lib/pluto/vps-deployer.functions";
+import { deployAll, ensureDeployInfra, postDeployHealth, type DeployAllResult, type EnsureInfraResult, type PostDeployHealth } from "@/lib/pluto/vps-deployer.functions";
 
 const WORKSPACE_ID_RE = /^[a-zA-Z0-9][a-zA-Z0-9_-]{1,127}$/;
 
@@ -52,15 +52,30 @@ function DeployPage() {
   const [bundleFile, setBundleFile] = useState<File | null>(null);
   const [bundleSql, setBundleSql] = useState("-- optional migration SQL to run before the bundle upload\nselect 1;");
   const [maxRetries, setMaxRetries] = useState(2);
-  const [deployBusy, setDeployBusy] = useState<null | "infra" | "deploy">(null);
+  const [deployBusy, setDeployBusy] = useState<null | "infra" | "deploy" | "health">(null);
   const [infraResult, setInfraResult] = useState<EnsureInfraResult | null>(null);
   const [deployResult, setDeployResult] = useState<DeployAllResult | null>(null);
   const [deployError, setDeployError] = useState<string | null>(null);
+  const [postHealth, setPostHealth] = useState<PostDeployHealth | null>(null);
 
   const workspaceIdValid = WORKSPACE_ID_RE.test(workspaceId.trim());
 
   const ensureInfraFn = useServerFn(ensureDeployInfra);
   const deployAllFn = useServerFn(deployAll);
+  const postDeployHealthFn = useServerFn(postDeployHealth);
+
+  const refreshPostHealth = useCallback(async () => {
+    if (!workspaceIdValid) { setDeployError("Enter a valid workspace ID first"); return; }
+    setDeployBusy("health");
+    try {
+      const h = await postDeployHealthFn({ data: { workspaceId: workspaceId.trim() } });
+      setPostHealth(h);
+    } catch (e) {
+      setDeployError((e as Error).message);
+    } finally {
+      setDeployBusy(null);
+    }
+  }, [workspaceId, workspaceIdValid, postDeployHealthFn]);
 
   const runEnsureInfra = useCallback(async () => {
     setDeployBusy("infra");
@@ -98,12 +113,17 @@ function DeployPage() {
         label: `deploy-${bundleFile.name.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 80)}`,
       } });
       setDeployResult(r);
+      // Auto-refresh post-deploy health so the Result panel shows live status.
+      try {
+        const h = await postDeployHealthFn({ data: { workspaceId: workspaceId.trim() } });
+        setPostHealth(h);
+      } catch { /* non-fatal — user can click Refresh health */ }
     } catch (e) {
       setDeployError((e as Error).message);
     } finally {
       setDeployBusy(null);
     }
-  }, [workspaceId, workspaceIdValid, bundleFile, bundleSql, maxRetries, deployAllFn]);
+  }, [workspaceId, workspaceIdValid, bundleFile, bundleSql, maxRetries, deployAllFn, postDeployHealthFn]);
 
   const refreshHealth = useCallback(async () => {
     setLoadingHealth(true);
@@ -274,6 +294,9 @@ function DeployPage() {
             <Button size="sm" onClick={runFullDeploy} disabled={deployBusy !== null || !workspaceIdValid || !bundleFile}>
               <Rocket className="h-4 w-4 mr-2" /> Run full deploy
             </Button>
+            <Button size="sm" variant="outline" onClick={refreshPostHealth} disabled={deployBusy !== null || !workspaceIdValid}>
+              <Activity className="h-4 w-4 mr-2" /> Refresh health
+            </Button>
             {deployBusy && <span className="text-xs text-muted-foreground">running {deployBusy}…</span>}
           </div>
 
@@ -303,10 +326,17 @@ function DeployPage() {
 
           {deployResult && (
             <div className="border rounded-md p-3 text-xs space-y-3">
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <Badge variant={deployResult.ok ? "secondary" : "destructive"}>{deployResult.ok ? "deploy ok" : "deploy failed"}</Badge>
                 <span className="text-muted-foreground">workspace: <code>{deployResult.workspaceId}</code> · total {deployResult.totalMs}ms</span>
               </div>
+              {deployResult.liveUrls && (
+                <div className="rounded border bg-muted/30 p-2 space-y-1">
+                  <div className="font-medium">Live endpoints</div>
+                  <div><span className="text-muted-foreground">runtime:</span> <code className="break-all">{deployResult.liveUrls.functionsHealth}</code></div>
+                  <div><span className="text-muted-foreground">bootstrap:</span> <code className="break-all">{deployResult.liveUrls.bootstrapInvoke}</code></div>
+                </div>
+              )}
               {deployResult.steps.map((s, i) => (
                 <details key={i} open={!s.ok} className="border rounded p-2">
                   <summary className="cursor-pointer flex items-center gap-2">
@@ -344,6 +374,33 @@ function DeployPage() {
                   <RefreshCw className="h-4 w-4 mr-2" /> Retry with same bundle
                 </Button>
               )}
+            </div>
+          )}
+
+          {postHealth && (
+            <div className="border rounded-md p-3 text-xs space-y-2">
+              <div className="flex items-center gap-2 flex-wrap">
+                <Badge variant={postHealth.ok ? "secondary" : "destructive"}>{postHealth.ok ? "health ok" : "health degraded"}</Badge>
+                <span className="text-muted-foreground">checked {postHealth.checkedAt}</span>
+              </div>
+              <div className="space-y-2">
+                <div className="border rounded p-2 bg-muted/40">
+                  <div className="flex items-center gap-2 mb-1">
+                    <Badge variant={postHealth.runtime.status >= 200 && postHealth.runtime.status < 300 ? "secondary" : "destructive"}>runtime HTTP {postHealth.runtime.status || "ERR"}</Badge>
+                    <span className="text-muted-foreground">{postHealth.runtime.latencyMs}ms</span>
+                  </div>
+                  <div className="break-all"><b>url:</b> <code>{postHealth.runtime.url}</code></div>
+                  <pre className="mt-1 overflow-auto bg-background p-2 rounded">{postHealth.runtime.body}</pre>
+                </div>
+                <div className="border rounded p-2 bg-muted/40">
+                  <div className="flex items-center gap-2 mb-1">
+                    <Badge variant={postHealth.invoke.status >= 200 && postHealth.invoke.status < 300 ? "secondary" : "destructive"}>bootstrap HTTP {postHealth.invoke.status || "ERR"}</Badge>
+                    <span className="text-muted-foreground">{postHealth.invoke.latencyMs}ms</span>
+                  </div>
+                  <div className="break-all"><b>url:</b> <code>{postHealth.invoke.url}</code></div>
+                  <pre className="mt-1 overflow-auto bg-background p-2 rounded">{postHealth.invoke.body}</pre>
+                </div>
+              </div>
             </div>
           )}
         </CardContent>
