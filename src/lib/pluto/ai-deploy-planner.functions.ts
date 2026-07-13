@@ -195,6 +195,164 @@ echo "  PLUTO_SANDBOX_SECRET=<value from /etc/pluto-sandbox/env>"
     return { script, checklist, dnsRecords, model: "deterministic-v1" };
   });
 
+// ── Uninstall / rollback script ────────────────────────────────────────────
+const UninstallInput = z.object({
+  domain: z.string().min(3),
+  keepCerts: z.boolean().optional().default(false),
+});
+
+export const generateUninstallScript = createServerFn({ method: "POST" })
+  .inputValidator((raw: unknown) => UninstallInput.parse(raw))
+  .handler(async ({ data }): Promise<{ script: string }> => {
+    const subdomain = `app.${data.domain}`.replace(/^app\.app\./, "app.");
+    const script = `#!/usr/bin/env bash
+# Pluto BaaS — rollback / uninstall for ${subdomain}
+# Restores previous state: stops sandbox-worker, removes nginx site, ${data.keepCerts ? "keeps" : "revokes"} TLS certs.
+set -uo pipefail
+DOMAIN="${subdomain}"
+
+echo "==> 1. Stop & disable sandbox-worker"
+systemctl stop  pluto-sandbox 2>/dev/null || true
+systemctl disable pluto-sandbox 2>/dev/null || true
+rm -f /etc/systemd/system/pluto-sandbox.service
+systemctl daemon-reload || true
+
+echo "==> 2. Remove nginx site"
+rm -f /etc/nginx/sites-enabled/pluto-app.conf
+rm -f /etc/nginx/sites-available/pluto-app.conf
+nginx -t && systemctl reload nginx || true
+
+${data.keepCerts ? `echo "==> 3. Keep TLS cert for $DOMAIN (skipped revoke)"` : `echo "==> 3. Revoke & delete cert for $DOMAIN"
+certbot revoke --cert-name "$DOMAIN" --non-interactive || true
+certbot delete --cert-name "$DOMAIN" --non-interactive || true`}
+
+echo "==> 4. Remove worker files"
+rm -rf /opt/pluto-sandbox /etc/pluto-sandbox
+# Repo checkout at /opt/pluto-baas is left intact — remove manually if desired.
+
+echo "==> 5. Verify"
+systemctl status pluto-sandbox --no-pager 2>&1 | head -n 3 || true
+curl -sS -o /dev/null -w "nginx: HTTP %{http_code}\\n" "https://$DOMAIN/" || true
+echo "Done. Rollback complete."
+`;
+    return { script };
+  });
+
+// ── Preflight checks ───────────────────────────────────────────────────────
+const PreflightInput = z.object({
+  workspaceId: z.string().min(2),
+  domain: z.string().optional(),
+  bundleName: z.string().optional(),
+});
+
+export type PreflightCheck = { name: string; ok: boolean; detail: string; kind: "secret" | "input" | "network" };
+
+export const runPreflight = createServerFn({ method: "POST" })
+  .inputValidator((raw: unknown) => PreflightInput.parse(raw))
+  .handler(async ({ data }): Promise<{ ok: boolean; checks: PreflightCheck[] }> => {
+    const checks: PreflightCheck[] = [];
+
+    // Input validations
+    checks.push({
+      name: "Workspace ID format",
+      ok: /^[a-zA-Z0-9][a-zA-Z0-9_-]{1,127}$/.test(data.workspaceId),
+      detail: data.workspaceId ? `"${data.workspaceId}"` : "empty",
+      kind: "input",
+    });
+    checks.push({
+      name: "Bundle selected",
+      ok: !!data.bundleName,
+      detail: data.bundleName ?? "no bundle uploaded",
+      kind: "input",
+    });
+    if (data.domain) {
+      checks.push({
+        name: "Domain format",
+        ok: /^([a-z0-9-]+\.)+[a-z]{2,}$/i.test(data.domain),
+        detail: data.domain,
+        kind: "input",
+      });
+    }
+
+    // Secret presence
+    const secrets = ["LOVABLE_API_KEY", "PLUTO_SERVICE_ROLE_KEY", "PLUTO_SANDBOX_URL", "PLUTO_SANDBOX_SECRET"] as const;
+    for (const s of secrets) {
+      const present = !!process.env[s];
+      checks.push({
+        name: `Secret ${s}`,
+        ok: present || s === "PLUTO_SANDBOX_URL" || s === "PLUTO_SANDBOX_SECRET" ? present : false,
+        detail: present ? "configured" : (s.startsWith("PLUTO_SANDBOX") ? "missing — required for live serve" : "missing"),
+        kind: "secret",
+      });
+    }
+
+    // Sandbox reachability
+    const sandboxUrl = process.env.PLUTO_SANDBOX_URL;
+    if (sandboxUrl) {
+      const started = Date.now();
+      try {
+        const r = await fetch(sandboxUrl.replace(/\/$/, "") + "/health", { method: "GET" });
+        checks.push({
+          name: "Sandbox /health reachable",
+          ok: r.ok,
+          detail: `HTTP ${r.status} · ${Date.now() - started}ms`,
+          kind: "network",
+        });
+      } catch (e) {
+        checks.push({ name: "Sandbox /health reachable", ok: false, detail: (e as Error).message, kind: "network" });
+      }
+    } else {
+      checks.push({ name: "Sandbox /health reachable", ok: false, detail: "PLUTO_SANDBOX_URL not set — cannot probe", kind: "network" });
+    }
+
+    const ok = checks.filter((c) => c.kind !== "secret" || c.name.includes("SANDBOX")).every((c) => c.ok);
+    return { ok, checks };
+  });
+
+// ── Post-install health checks (against a running VPS) ─────────────────────
+const PostInstallInput = z.object({
+  domain: z.string().min(3),
+});
+
+export type HealthProbe = { name: string; ok: boolean; detail: string };
+
+export const checkPostInstallHealth = createServerFn({ method: "POST" })
+  .inputValidator((raw: unknown) => PostInstallInput.parse(raw))
+  .handler(async ({ data }): Promise<{ ok: boolean; probes: HealthProbe[] }> => {
+    const subdomain = `app.${data.domain}`.replace(/^app\.app\./, "app.");
+    const probes: HealthProbe[] = [];
+
+    // 1. HTTPS reachable (nginx up + certbot success)
+    async function probe(name: string, url: string): Promise<HealthProbe> {
+      const started = Date.now();
+      try {
+        const r = await fetch(url, { method: "GET", redirect: "manual" });
+        return { name, ok: r.status < 500, detail: `HTTP ${r.status} · ${Date.now() - started}ms` };
+      } catch (e) {
+        return { name, ok: false, detail: (e as Error).message };
+      }
+    }
+    probes.push(await probe(`https://${subdomain}/ (nginx + TLS)`, `https://${subdomain}/`));
+    probes.push(await probe(`https://${subdomain}/health (backend)`, `https://${subdomain}/health`));
+    probes.push(await probe(`http://${subdomain}/ (redirect → https)`, `http://${subdomain}/`));
+
+    return { ok: probes.every((p) => p.ok), probes };
+  });
+
+// ── Check which required secrets are set (for wizard) ──────────────────────
+export const checkRequiredSecrets = createServerFn({ method: "GET" })
+  .handler(async (): Promise<{ secrets: { name: string; set: boolean; required: boolean; description: string }[] }> => {
+    const list = [
+      { name: "PLUTO_SANDBOX_URL", required: true, description: "Public HTTPS URL of the VPS sandbox-worker (e.g. https://app.timescar.cloud)" },
+      { name: "PLUTO_SANDBOX_SECRET", required: true, description: "Shared secret from /etc/pluto-sandbox/env — authenticates unpack-serve calls" },
+      { name: "PLUTO_SERVED_SITE_URL", required: false, description: "Optional override for the served-site link shown in the Result panel" },
+    ];
+    return {
+      secrets: list.map((s) => ({ ...s, set: !!process.env[s.name] })),
+    };
+  });
+
+
 // ── helpers ────────────────────────────────────────────────────────────────
 function heuristicPlan(d: z.infer<typeof PlanInput>): DeployPlan {
   const hasDomain = !!d.domain;
