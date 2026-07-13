@@ -10,17 +10,19 @@ import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
 import {
   AlertTriangle, CheckCircle2, Copy, Download, History, KeyRound,
-  Loader2, Rocket, Server, Shield, Sparkles, Trash2, XCircle,
+  Loader2, Rocket, Server, Shield, Sparkles, Trash2, Upload, Wifi, XCircle,
 } from "lucide-react";
 import {
   planDeploy, generateVpsGuide, generateUninstallScript,
   runPreflight, checkPostInstallHealth, checkRequiredSecrets,
-  type DeployPlan, type VpsGuide, type PreflightCheck, type HealthProbe,
+  checkPortsReachable, runFullVerification,
+  type DeployPlan, type VpsGuide, type PreflightCheck, type HealthProbe, type PortProbe,
 } from "@/lib/pluto/ai-deploy-planner.functions";
 import {
   listPlanHistory, savePlan, attachGuide, deletePlan,
   type PlanHistoryEntry,
 } from "@/lib/pluto/deploy-plan-history";
+import { listPresets, savePreset, deletePreset, type EnvPreset } from "@/lib/pluto/env-presets";
 
 const WORKSPACE_ID_RE = /^[a-zA-Z0-9][a-zA-Z0-9_-]{1,127}$/;
 
