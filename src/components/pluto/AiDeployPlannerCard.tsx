@@ -515,7 +515,27 @@ export function AiDeployPlannerCard({ workspaceId, bundleFile, bundleSql }: Prop
             {busy === "posthealth" ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <CheckCircle2 className="h-4 w-4 mr-2" />}
             5. Post-install health
           </Button>
+          <Button size="sm" variant="outline" onClick={doPorts} disabled={busy !== null || !domain.trim()}>
+            {busy === "ports" ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Wifi className="h-4 w-4 mr-2" />}
+            Check ports 80/443
+          </Button>
+          <Button size="sm" variant="secondary" onClick={doFullVerify} disabled={busy !== null || !domain.trim()}>
+            {busy === "verify" ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <CheckCircle2 className="h-4 w-4 mr-2" />}
+            Run full verification
+          </Button>
+          <Label className="inline-flex items-center gap-1 cursor-pointer">
+            <input
+              type="file"
+              accept="application/json,.json"
+              className="hidden"
+              onChange={(e) => { const f = e.target.files?.[0]; if (f) importPlanJson(f); e.currentTarget.value = ""; }}
+            />
+            <span className="inline-flex items-center gap-1 border rounded-md px-3 h-9 text-sm hover:bg-accent">
+              <Upload className="h-4 w-4" /> Import plan JSON
+            </span>
+          </Label>
         </div>
+
 
         {error && (
           <Alert variant="destructive">
