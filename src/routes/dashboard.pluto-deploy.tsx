@@ -10,10 +10,11 @@ import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
-import { AlertTriangle, Activity, Play, RefreshCw, Rocket, ShieldAlert, Wrench } from "lucide-react";
+import { AlertTriangle, Activity, Play, RefreshCw, Rocket, ShieldAlert, Sparkles, Wrench, Server, Copy } from "lucide-react";
 import { plutoApi } from "@/lib/pluto/upstream";
 import { useServerFn } from "@tanstack/react-start";
 import { deployAll, ensureDeployInfra, postDeployHealth, type DeployAllResult, type EnsureInfraResult, type PostDeployHealth } from "@/lib/pluto/vps-deployer.functions";
+import { planDeploy, generateVpsGuide, type DeployPlan, type VpsGuide } from "@/lib/pluto/ai-deploy-planner.functions";
 
 const WORKSPACE_ID_RE = /^[a-zA-Z0-9][a-zA-Z0-9_-]{1,127}$/;
 
@@ -58,11 +59,54 @@ function DeployPage() {
   const [deployError, setDeployError] = useState<string | null>(null);
   const [postHealth, setPostHealth] = useState<PostDeployHealth | null>(null);
 
+  // AI planner + VPS guide
+  const [domain, setDomain] = useState("");
+  const [vpsIp, setVpsIp] = useState("");
+  const [plan, setPlan] = useState<DeployPlan | null>(null);
+  const [guide, setGuide] = useState<VpsGuide | null>(null);
+  const [aiBusy, setAiBusy] = useState<null | "plan" | "guide">(null);
+  const [aiError, setAiError] = useState<string | null>(null);
+
   const workspaceIdValid = WORKSPACE_ID_RE.test(workspaceId.trim());
 
   const ensureInfraFn = useServerFn(ensureDeployInfra);
   const deployAllFn = useServerFn(deployAll);
   const postDeployHealthFn = useServerFn(postDeployHealth);
+  const planDeployFn = useServerFn(planDeploy);
+  const generateVpsGuideFn = useServerFn(generateVpsGuide);
+
+  const runPlan = useCallback(async () => {
+    if (!workspaceIdValid) { setAiError("Enter a valid workspace ID first"); return; }
+    setAiBusy("plan"); setAiError(null);
+    try {
+      const p = await planDeployFn({ data: {
+        workspaceId: workspaceId.trim(),
+        bundleName: bundleFile?.name,
+        bundleSizeKb: bundleFile ? Math.round(bundleFile.size / 1024) : undefined,
+        hasMigrations: !!bundleSql.trim() && bundleSql.trim() !== "select 1;",
+        domain: domain.trim() || undefined,
+      } });
+      setPlan(p);
+      setGuide(null);
+    } catch (e) { setAiError((e as Error).message); }
+    finally { setAiBusy(null); }
+  }, [workspaceId, workspaceIdValid, bundleFile, bundleSql, domain, planDeployFn]);
+
+  const runGuide = useCallback(async () => {
+    if (!domain.trim()) { setAiError("Enter a domain first (e.g. timescar.cloud)"); return; }
+    if (!workspaceIdValid) { setAiError("Enter a valid workspace ID first"); return; }
+    setAiBusy("guide"); setAiError(null);
+    try {
+      const g = await generateVpsGuideFn({ data: {
+        domain: domain.trim(),
+        vpsIp: vpsIp.trim() || undefined,
+        workspaceId: workspaceId.trim(),
+      } });
+      setGuide(g);
+    } catch (e) { setAiError((e as Error).message); }
+    finally { setAiBusy(null); }
+  }, [domain, vpsIp, workspaceId, workspaceIdValid, generateVpsGuideFn]);
+
 
   const refreshPostHealth = useCallback(async () => {
     if (!workspaceIdValid) { setDeployError("Enter a valid workspace ID first"); return; }
@@ -408,6 +452,146 @@ function DeployPage() {
           )}
         </CardContent>
       </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Sparkles className="h-4 w-4" /> AI Deploy Planner
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            Uses Lovable AI Gateway to generate an ordered deploy plan for this workspace + bundle. Once the plan looks right, generate a step-by-step VPS install & DNS guide script.
+          </p>
+          <div className="grid gap-3 md:grid-cols-2">
+            <div className="grid gap-1.5">
+              <Label htmlFor="ai-domain">Domain (optional)</Label>
+              <Input id="ai-domain" value={domain} onChange={(e) => setDomain(e.target.value)} placeholder="timescar.cloud" />
+            </div>
+            <div className="grid gap-1.5">
+              <Label htmlFor="ai-vps">VPS public IP (optional)</Label>
+              <Input id="ai-vps" value={vpsIp} onChange={(e) => setVpsIp(e.target.value)} placeholder="203.0.113.10" />
+            </div>
+          </div>
+          <div className="flex gap-2 flex-wrap">
+            <Button size="sm" onClick={runPlan} disabled={aiBusy !== null || !workspaceIdValid}>
+              <Sparkles className="h-4 w-4 mr-2" /> {aiBusy === "plan" ? "Planning…" : "Generate deploy plan"}
+            </Button>
+            <Button size="sm" variant="outline" onClick={runGuide} disabled={aiBusy !== null || !plan}>
+              <Server className="h-4 w-4 mr-2" /> {aiBusy === "guide" ? "Building…" : "Next: VPS install & DNS guide"}
+            </Button>
+          </div>
+
+          {aiError && (
+            <Alert variant="destructive">
+              <AlertTriangle className="h-4 w-4" />
+              <AlertDescription>{aiError}</AlertDescription>
+            </Alert>
+          )}
+
+          {plan && (
+            <div className="border rounded-md p-3 text-xs space-y-3">
+              <div className="flex items-center gap-2 flex-wrap">
+                <Badge variant="secondary">plan</Badge>
+                <span className="text-muted-foreground">model: <code>{plan.model}</code></span>
+              </div>
+              <p className="text-sm">{plan.summary}</p>
+              <ol className="space-y-1.5">
+                {plan.steps.map((s, i) => (
+                  <li key={s.id} className="flex gap-2">
+                    <Badge variant="outline">{i + 1}</Badge>
+                    <div>
+                      <div><b>{s.title}</b> <span className="text-muted-foreground">· {s.kind} · risk {s.risk}</span></div>
+                      <div className="text-muted-foreground">{s.detail}</div>
+                    </div>
+                  </li>
+                ))}
+              </ol>
+              {plan.preSql?.trim() && (
+                <details>
+                  <summary className="cursor-pointer">Pre-deploy SQL</summary>
+                  <pre className="mt-1 overflow-auto bg-muted p-2 rounded">{plan.preSql}</pre>
+                </details>
+              )}
+              {plan.risks.length > 0 && (
+                <div>
+                  <div className="font-medium mb-1">Risks</div>
+                  <ul className="space-y-1">
+                    {plan.risks.map((r, i) => (
+                      <li key={i} className="flex gap-2">
+                        <Badge variant={r.severity === "high" ? "destructive" : "secondary"}>{r.severity}</Badge>
+                        <span>{r.message}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {plan.postChecks.length > 0 && (
+                <div>
+                  <div className="font-medium mb-1">Post-deploy checks</div>
+                  <ul className="list-disc pl-5 space-y-0.5">
+                    {plan.postChecks.map((c, i) => <li key={i}>{c}</li>)}
+                  </ul>
+                </div>
+              )}
+              <div className="pt-2 border-t">
+                <Button size="sm" variant="secondary" onClick={() => { setSql(plan.preSql || sql); }} disabled={!plan.preSql?.trim()}>
+                  Copy preSql → SQL runner
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {guide && (
+            <div className="border rounded-md p-3 text-xs space-y-3">
+              <div className="flex items-center gap-2 flex-wrap">
+                <Badge variant="secondary">VPS guide</Badge>
+                <span className="text-muted-foreground">{guide.checklist.length} steps · {guide.dnsRecords.length} DNS record(s)</span>
+              </div>
+
+              <div>
+                <div className="font-medium mb-1">DNS records</div>
+                <ul className="space-y-1">
+                  {guide.dnsRecords.map((d, i) => (
+                    <li key={i} className="flex flex-wrap gap-2 items-center">
+                      <Badge variant="outline">{d.type}</Badge>
+                      <code>{d.name}</code>
+                      <span className="text-muted-foreground">→</span>
+                      <code className="break-all">{d.value}</code>
+                      <span className="text-muted-foreground">— {d.note}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
+              <div>
+                <div className="font-medium mb-1">Checklist</div>
+                <ol className="space-y-1.5">
+                  {guide.checklist.map((c) => (
+                    <li key={c.step} className="border-l-2 pl-2 border-muted">
+                      <div><b>{c.step}. {c.title}</b></div>
+                      {c.command && <pre className="mt-1 bg-muted p-2 rounded overflow-auto">{c.command}</pre>}
+                      {c.note && <div className="text-muted-foreground">{c.note}</div>}
+                    </li>
+                  ))}
+                </ol>
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <div className="font-medium">Install script (Bash)</div>
+                  <Button size="sm" variant="outline" onClick={() => navigator.clipboard.writeText(guide.script)}>
+                    <Copy className="h-3 w-3 mr-1" /> Copy
+                  </Button>
+                </div>
+                <pre className="overflow-auto bg-muted p-2 rounded max-h-96">{guide.script}</pre>
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+
 
 
       <Card>
