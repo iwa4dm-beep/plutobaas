@@ -59,53 +59,12 @@ function DeployPage() {
   const [deployError, setDeployError] = useState<string | null>(null);
   const [postHealth, setPostHealth] = useState<PostDeployHealth | null>(null);
 
-  // AI planner + VPS guide
-  const [domain, setDomain] = useState("");
-  const [vpsIp, setVpsIp] = useState("");
-  const [plan, setPlan] = useState<DeployPlan | null>(null);
-  const [guide, setGuide] = useState<VpsGuide | null>(null);
-  const [aiBusy, setAiBusy] = useState<null | "plan" | "guide">(null);
-  const [aiError, setAiError] = useState<string | null>(null);
-
   const workspaceIdValid = WORKSPACE_ID_RE.test(workspaceId.trim());
 
   const ensureInfraFn = useServerFn(ensureDeployInfra);
   const deployAllFn = useServerFn(deployAll);
   const postDeployHealthFn = useServerFn(postDeployHealth);
-  const planDeployFn = useServerFn(planDeploy);
-  const generateVpsGuideFn = useServerFn(generateVpsGuide);
 
-  const runPlan = useCallback(async () => {
-    if (!workspaceIdValid) { setAiError("Enter a valid workspace ID first"); return; }
-    setAiBusy("plan"); setAiError(null);
-    try {
-      const p = await planDeployFn({ data: {
-        workspaceId: workspaceId.trim(),
-        bundleName: bundleFile?.name,
-        bundleSizeKb: bundleFile ? Math.round(bundleFile.size / 1024) : undefined,
-        hasMigrations: !!bundleSql.trim() && bundleSql.trim() !== "select 1;",
-        domain: domain.trim() || undefined,
-      } });
-      setPlan(p);
-      setGuide(null);
-    } catch (e) { setAiError((e as Error).message); }
-    finally { setAiBusy(null); }
-  }, [workspaceId, workspaceIdValid, bundleFile, bundleSql, domain, planDeployFn]);
-
-  const runGuide = useCallback(async () => {
-    if (!domain.trim()) { setAiError("Enter a domain first (e.g. timescar.cloud)"); return; }
-    if (!workspaceIdValid) { setAiError("Enter a valid workspace ID first"); return; }
-    setAiBusy("guide"); setAiError(null);
-    try {
-      const g = await generateVpsGuideFn({ data: {
-        domain: domain.trim(),
-        vpsIp: vpsIp.trim() || undefined,
-        workspaceId: workspaceId.trim(),
-      } });
-      setGuide(g);
-    } catch (e) { setAiError((e as Error).message); }
-    finally { setAiBusy(null); }
-  }, [domain, vpsIp, workspaceId, workspaceIdValid, generateVpsGuideFn]);
 
 
   const refreshPostHealth = useCallback(async () => {
