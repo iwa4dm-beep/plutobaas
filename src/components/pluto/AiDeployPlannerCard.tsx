@@ -120,14 +120,21 @@ export function AiDeployPlannerCard({ workspaceId, bundleFile, bundleSql }: Prop
   const [history, setHistory] = useState<PlanHistoryEntry[]>([]);
   const [activePlanId, setActivePlanId] = useState<string | null>(null);
 
+  const [ports, setPorts] = useState<{ ok: boolean; probes: PortProbe[]; tips: string[] } | null>(null);
+  const [verification, setVerification] = useState<{ ok: boolean; host: string; probes: HealthProbe[]; checkedAt: string } | null>(null);
+  const [presets, setPresets] = useState<EnvPreset[]>([]);
+  const [presetName, setPresetName] = useState("");
+
   const preflightFn = useServerFn(runPreflight);
   const planFn = useServerFn(planDeploy);
   const guideFn = useServerFn(generateVpsGuide);
   const uninstallFn = useServerFn(generateUninstallScript);
   const postHealthFn = useServerFn(checkPostInstallHealth);
   const secretsFn = useServerFn(checkRequiredSecrets);
+  const portsFn = useServerFn(checkPortsReachable);
+  const verifyFn = useServerFn(runFullVerification);
 
-  useEffect(() => { setHistory(listPlanHistory()); }, []);
+  useEffect(() => { setHistory(listPlanHistory()); setPresets(listPresets()); }, []);
 
   const addLog = useCallback((msg: string, level: "info" | "ok" | "warn" | "err" = "info") => {
     setLogs((prev) => [{ ts: new Date().toLocaleTimeString(), msg, level }, ...prev].slice(0, 100));
