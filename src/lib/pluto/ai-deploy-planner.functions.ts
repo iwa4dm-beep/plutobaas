@@ -339,6 +339,93 @@ export const checkPostInstallHealth = createServerFn({ method: "POST" })
     return { ok: probes.every((p) => p.ok), probes };
   });
 
+// ── Port 80 / 443 reachability probe (pre-Certbot) ─────────────────────────
+const PortsInput = z.object({ domain: z.string().min(3) });
+
+export type PortProbe = { port: 80 | 443; ok: boolean; detail: string };
+
+export const checkPortsReachable = createServerFn({ method: "POST" })
+  .inputValidator((raw: unknown) => PortsInput.parse(raw))
+  .handler(async ({ data }): Promise<{ ok: boolean; probes: PortProbe[]; tips: string[] }> => {
+    const host = `app.${data.domain}`.replace(/^app\.app\./, "app.");
+    const probes: PortProbe[] = [];
+
+    async function probe(port: 80 | 443): Promise<PortProbe> {
+      const url = `${port === 443 ? "https" : "http"}://${host}/`;
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), 6000);
+      const started = Date.now();
+      try {
+        const r = await fetch(url, { method: "HEAD", redirect: "manual", signal: ctrl.signal });
+        return { port, ok: true, detail: `HTTP ${r.status} · ${Date.now() - started}ms` };
+      } catch (e) {
+        return { port, ok: false, detail: (e as Error).message.slice(0, 120) };
+      } finally { clearTimeout(t); }
+    }
+
+    probes.push(await probe(80));
+    probes.push(await probe(443));
+
+    const tips: string[] = [];
+    const p80 = probes.find((p) => p.port === 80)!;
+    const p443 = probes.find((p) => p.port === 443)!;
+    if (!p80.ok) {
+      tips.push(`Port 80 unreachable on ${host}. Certbot HTTP-01 challenge WILL fail.`);
+      tips.push(`On VPS: sudo ufw allow 'Nginx Full' && sudo ufw allow 80,443/tcp`);
+      tips.push(`Check nginx is listening: sudo ss -tlnp | grep -E ':80|:443'`);
+      tips.push(`If behind Cloudflare — set DNS record to "DNS only" (grey cloud) until cert issues.`);
+    }
+    if (!p443.ok && p80.ok) {
+      tips.push(`Port 80 open but 443 not — TLS cert not yet issued. Run: sudo certbot --nginx -d ${host}`);
+    }
+    if (!p80.ok && !p443.ok) {
+      tips.push(`Neither port reachable — verify DNS A record for ${host} points at your VPS IP (dig +short ${host}).`);
+      tips.push(`Verify VPS firewall/security group allows inbound 80 & 443.`);
+    }
+    return { ok: p80.ok && p443.ok, probes, tips };
+  });
+
+// ── Consolidated verification (health + ports + DNS hint) ──────────────────
+export const runFullVerification = createServerFn({ method: "POST" })
+  .inputValidator((raw: unknown) => PortsInput.parse(raw))
+  .handler(async ({ data }) => {
+    const host = `app.${data.domain}`.replace(/^app\.app\./, "app.");
+    const probes: HealthProbe[] = [];
+
+    async function probe(name: string, url: string, method: "GET" | "HEAD" = "GET"): Promise<HealthProbe> {
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), 8000);
+      const started = Date.now();
+      try {
+        const r = await fetch(url, { method, redirect: "manual", signal: ctrl.signal });
+        return { name, ok: r.status < 500, detail: `HTTP ${r.status} · ${Date.now() - started}ms` };
+      } catch (e) {
+        return { name, ok: false, detail: (e as Error).message.slice(0, 140) };
+      } finally { clearTimeout(t); }
+    }
+
+    // DNS resolution via Cloudflare DoH
+    let dnsDetail = "unresolved";
+    let dnsOk = false;
+    try {
+      const r = await fetch(`https://1.1.1.1/dns-query?name=${host}&type=A`, { headers: { accept: "application/dns-json" } });
+      const j = (await r.json()) as { Answer?: { data: string; type: number }[] };
+      const ips = (j.Answer ?? []).filter((a) => a.type === 1).map((a) => a.data);
+      dnsOk = ips.length > 0;
+      dnsDetail = ips.length ? `A → ${ips.join(", ")}` : "no A record";
+    } catch (e) { dnsDetail = (e as Error).message; }
+
+    probes.push({ name: `DNS A record for ${host}`, ok: dnsOk, detail: dnsDetail });
+    probes.push(await probe(`Port 80 reachable`, `http://${host}/`, "HEAD"));
+    probes.push(await probe(`Port 443 / TLS`, `https://${host}/`, "HEAD"));
+    probes.push(await probe(`Backend /health`, `https://${host}/health`));
+    probes.push(await probe(`HTTP → HTTPS redirect`, `http://${host}/`));
+    probes.push(await probe(`Nginx serves root`, `https://${host}/`));
+
+    const ok = probes.every((p) => p.ok);
+    return { ok, host, probes, checkedAt: new Date().toISOString() };
+  });
+
 // ── Check which required secrets are set (for wizard) ──────────────────────
 export const checkRequiredSecrets = createServerFn({ method: "GET" })
   .handler(async (): Promise<{ secrets: { name: string; set: boolean; required: boolean; description: string }[] }> => {

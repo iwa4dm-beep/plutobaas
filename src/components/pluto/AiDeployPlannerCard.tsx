@@ -10,17 +10,19 @@ import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
 import {
   AlertTriangle, CheckCircle2, Copy, Download, History, KeyRound,
-  Loader2, Rocket, Server, Shield, Sparkles, Trash2, XCircle,
+  Loader2, Rocket, Server, Shield, Sparkles, Trash2, Upload, Wifi, XCircle,
 } from "lucide-react";
 import {
   planDeploy, generateVpsGuide, generateUninstallScript,
   runPreflight, checkPostInstallHealth, checkRequiredSecrets,
-  type DeployPlan, type VpsGuide, type PreflightCheck, type HealthProbe,
+  checkPortsReachable, runFullVerification,
+  type DeployPlan, type VpsGuide, type PreflightCheck, type HealthProbe, type PortProbe,
 } from "@/lib/pluto/ai-deploy-planner.functions";
 import {
   listPlanHistory, savePlan, attachGuide, deletePlan,
   type PlanHistoryEntry,
 } from "@/lib/pluto/deploy-plan-history";
+import { listPresets, savePreset, deletePreset, type EnvPreset } from "@/lib/pluto/env-presets";
 
 const WORKSPACE_ID_RE = /^[a-zA-Z0-9][a-zA-Z0-9_-]{1,127}$/;
 
@@ -30,7 +32,7 @@ type Props = {
   bundleSql: string;
 };
 
-type BusyKind = "preflight" | "plan" | "guide" | "uninstall" | "posthealth" | "secrets";
+type BusyKind = "preflight" | "plan" | "guide" | "uninstall" | "posthealth" | "secrets" | "ports" | "verify";
 
 type StepStatus = "pending" | "running" | "ok" | "fail";
 type Tracker = { id: string; label: string; status: StepStatus; detail?: string };
@@ -118,14 +120,21 @@ export function AiDeployPlannerCard({ workspaceId, bundleFile, bundleSql }: Prop
   const [history, setHistory] = useState<PlanHistoryEntry[]>([]);
   const [activePlanId, setActivePlanId] = useState<string | null>(null);
 
+  const [ports, setPorts] = useState<{ ok: boolean; probes: PortProbe[]; tips: string[] } | null>(null);
+  const [verification, setVerification] = useState<{ ok: boolean; host: string; probes: HealthProbe[]; checkedAt: string } | null>(null);
+  const [presets, setPresets] = useState<EnvPreset[]>([]);
+  const [presetName, setPresetName] = useState("");
+
   const preflightFn = useServerFn(runPreflight);
   const planFn = useServerFn(planDeploy);
   const guideFn = useServerFn(generateVpsGuide);
   const uninstallFn = useServerFn(generateUninstallScript);
   const postHealthFn = useServerFn(checkPostInstallHealth);
   const secretsFn = useServerFn(checkRequiredSecrets);
+  const portsFn = useServerFn(checkPortsReachable);
+  const verifyFn = useServerFn(runFullVerification);
 
-  useEffect(() => { setHistory(listPlanHistory()); }, []);
+  useEffect(() => { setHistory(listPlanHistory()); setPresets(listPresets()); }, []);
 
   const addLog = useCallback((msg: string, level: "info" | "ok" | "warn" | "err" = "info") => {
     setLogs((prev) => [{ ts: new Date().toLocaleTimeString(), msg, level }, ...prev].slice(0, 100));
@@ -263,6 +272,75 @@ export function AiDeployPlannerCard({ workspaceId, bundleFile, bundleSql }: Prop
     deletePlan(id); setHistory(listPlanHistory());
   };
 
+  // ── Import a previously exported plan JSON ────────────────────
+  const importPlanJson = async (file: File) => {
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text) as Partial<PlanHistoryEntry> & { plan?: DeployPlan };
+      // Accept either a raw DeployPlan or a full PlanHistoryEntry
+      const p = (parsed.plan ?? (parsed as unknown as DeployPlan));
+      if (!p || !Array.isArray((p as DeployPlan).steps)) {
+        throw new Error("Invalid plan JSON — missing 'steps' array.");
+      }
+      const dp = p as DeployPlan;
+      setPlan(dp); setEditingPreSql(dp.preSql ?? "");
+      setGuide(parsed.guide ?? null);
+      setConfirmed(false);
+      if (parsed.domain) setDomain(parsed.domain);
+      setStep("plan", "ok", "imported from JSON");
+      setStep("confirm", "pending", "awaiting confirm");
+      addLog(`Imported plan (${dp.steps.length} steps) — review & confirm to resume`, "ok");
+      setError(null);
+    } catch (e) {
+      setError("Import failed: " + (e as Error).message);
+      addLog("Import failed: " + (e as Error).message, "err");
+    }
+  };
+
+  // ── Port 80/443 pre-Certbot check ─────────────────────────────
+  const doPorts = useCallback(async () => {
+    if (!domain.trim()) { setError("Domain required."); return; }
+    setBusy("ports"); setError(null);
+    addLog(`Probing ports 80/443 on app.${domain.trim()}…`);
+    try {
+      const r = await portsFn({ data: { domain: domain.trim() } });
+      setPorts(r);
+      addLog(`Ports ${r.ok ? "OK" : "FAIL"} — 80:${r.probes[0].ok ? "✓" : "✗"} 443:${r.probes[1].ok ? "✓" : "✗"}`, r.ok ? "ok" : "warn");
+    } catch (e) {
+      setError((e as Error).message);
+    } finally { setBusy(null); }
+  }, [domain, portsFn, addLog]);
+
+  // ── Consolidated full verification ────────────────────────────
+  const doFullVerify = useCallback(async () => {
+    if (!domain.trim()) { setError("Domain required."); return; }
+    setBusy("verify"); setError(null);
+    addLog("Running full verification (DNS · ports · TLS · backend · redirect)…");
+    try {
+      const r = await verifyFn({ data: { domain: domain.trim() } });
+      setVerification(r);
+      addLog(`Full verification ${r.ok ? "PASS" : "FAIL"} — ${r.probes.filter((p) => p.ok).length}/${r.probes.length} checks`, r.ok ? "ok" : "err");
+    } catch (e) {
+      setError((e as Error).message);
+      addLog("Verification error: " + (e as Error).message, "err");
+    } finally { setBusy(null); }
+  }, [domain, verifyFn, addLog]);
+
+  // ── Env presets ───────────────────────────────────────────────
+  const doSavePreset = () => {
+    if (!presetName.trim() || !domain.trim()) { setError("Preset name + domain required."); return; }
+    savePreset({ name: presetName.trim(), domain: domain.trim(), vpsIp: vpsIp.trim() || undefined, workspaceId: workspaceId.trim() || undefined });
+    setPresets(listPresets()); setPresetName("");
+    addLog(`Saved preset "${presetName.trim()}"`, "ok");
+  };
+  const loadPreset = (p: EnvPreset) => {
+    setDomain(p.domain); setVpsIp(p.vpsIp ?? "");
+    addLog(`Loaded preset "${p.name}"`, "info");
+  };
+  const removePreset = (id: string) => { deletePreset(id); setPresets(listPresets()); };
+
+
+
   return (
     <Card>
       <CardHeader>
@@ -291,6 +369,81 @@ export function AiDeployPlannerCard({ workspaceId, bundleFile, bundleSql }: Prop
             <span className="text-xs text-muted-foreground">Uncheck to revoke Let's Encrypt on uninstall.</span>
           </div>
         </div>
+
+        {/* Environment presets */}
+        <div className="border rounded-md p-3 space-y-2">
+          <div className="flex items-center gap-2">
+            <Server className="h-4 w-4" />
+            <span className="font-medium text-sm">Environment presets</span>
+            <span className="text-xs text-muted-foreground">({presets.length} saved · reusable across workspaces)</span>
+          </div>
+          <div className="flex gap-2 flex-wrap items-end">
+            <div className="grid gap-1">
+              <Label htmlFor="preset-name" className="text-xs">Preset name</Label>
+              <Input id="preset-name" value={presetName} onChange={(e) => setPresetName(e.target.value)} placeholder="e.g. prod-hostinger-01" className="h-8 w-56" />
+            </div>
+            <Button size="sm" variant="outline" onClick={doSavePreset} disabled={!presetName.trim() || !domain.trim()}>
+              Save current as preset
+            </Button>
+          </div>
+          {presets.length > 0 && (
+            <ul className="grid gap-1 text-xs">
+              {presets.map((p) => (
+                <li key={p.id} className="flex items-center gap-2 border rounded p-1.5">
+                  <div className="flex-1">
+                    <b>{p.name}</b>
+                    <span className="ml-2 text-muted-foreground">
+                      <code>{p.domain}</code>{p.vpsIp && <> · <code>{p.vpsIp}</code></>}
+                      {p.workspaceId && <> · ws <code>{p.workspaceId}</code></>}
+                    </span>
+                  </div>
+                  <Button size="sm" variant="outline" onClick={() => loadPreset(p)}>Load</Button>
+                  <Button size="sm" variant="ghost" onClick={() => removePreset(p.id)}><Trash2 className="h-3 w-3" /></Button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        {/* Hostinger DNS auto-filled guide */}
+        {domain.trim() && (
+          <div className="border rounded-md p-3 space-y-2">
+            <div className="flex items-center gap-2">
+              <Wifi className="h-4 w-4" />
+              <span className="font-medium text-sm">Hostinger DNS records (auto-filled)</span>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              In Hostinger hPanel → <b>Domains → {domain.trim()} → DNS / Nameservers → Manage DNS records</b>,
+              add the following A record. TTL 3600 is fine. Do NOT enable Cloudflare proxy before TLS is issued.
+            </p>
+            <div className="overflow-auto">
+              <table className="text-xs w-full">
+                <thead className="text-muted-foreground">
+                  <tr className="text-left">
+                    <th className="px-2 py-1">Type</th><th className="px-2 py-1">Name</th>
+                    <th className="px-2 py-1">Points to</th><th className="px-2 py-1">TTL</th><th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr className="border-t">
+                    <td className="px-2 py-1"><Badge variant="outline">A</Badge></td>
+                    <td className="px-2 py-1"><code>app</code></td>
+                    <td className="px-2 py-1"><code>{vpsIp.trim() || "<enter VPS IP above>"}</code></td>
+                    <td className="px-2 py-1"><code>3600</code></td>
+                    <td className="px-2 py-1">
+                      <CopyBtn text={`A\tapp\t${vpsIp.trim() || "<VPS_IP>"}\t3600`} label="Copy row" />
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Verify after ~2 min: <code>dig +short app.{domain.trim()}</code> should return{" "}
+              <code>{vpsIp.trim() || "<VPS_IP>"}</code>. Then run the port check below before Certbot.
+            </p>
+          </div>
+        )}
+
 
         {/* Secrets wizard */}
         <div className="border rounded-md p-3 space-y-2">
@@ -362,7 +515,27 @@ export function AiDeployPlannerCard({ workspaceId, bundleFile, bundleSql }: Prop
             {busy === "posthealth" ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <CheckCircle2 className="h-4 w-4 mr-2" />}
             5. Post-install health
           </Button>
+          <Button size="sm" variant="outline" onClick={doPorts} disabled={busy !== null || !domain.trim()}>
+            {busy === "ports" ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Wifi className="h-4 w-4 mr-2" />}
+            Check ports 80/443
+          </Button>
+          <Button size="sm" variant="secondary" onClick={doFullVerify} disabled={busy !== null || !domain.trim()}>
+            {busy === "verify" ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <CheckCircle2 className="h-4 w-4 mr-2" />}
+            Run full verification
+          </Button>
+          <Label className="inline-flex items-center gap-1 cursor-pointer">
+            <input
+              type="file"
+              accept="application/json,.json"
+              className="hidden"
+              onChange={(e) => { const f = e.target.files?.[0]; if (f) importPlanJson(f); e.currentTarget.value = ""; }}
+            />
+            <span className="inline-flex items-center gap-1 border rounded-md px-3 h-9 text-sm hover:bg-accent">
+              <Upload className="h-4 w-4" /> Import plan JSON
+            </span>
+          </Label>
         </div>
+
 
         {error && (
           <Alert variant="destructive">
@@ -520,6 +693,57 @@ export function AiDeployPlannerCard({ workspaceId, bundleFile, bundleSql }: Prop
                 <LineNumberedPre text={uninstall} maxHeight="max-h-64" />
               </div>
             )}
+          </div>
+        )}
+
+        {/* Ports 80/443 result + tips */}
+        {ports && (
+          <div className="border rounded-md p-3 text-xs space-y-2">
+            <div className="flex items-center gap-2">
+              <Badge variant={ports.ok ? "secondary" : "destructive"}>
+                {ports.ok ? "ports 80 & 443 reachable" : "ports blocked"}
+              </Badge>
+              <span className="text-muted-foreground">pre-Certbot check</span>
+            </div>
+            <ul className="grid gap-1">
+              {ports.probes.map((p) => (
+                <li key={p.port} className="flex items-start gap-2">
+                  {p.ok ? <CheckCircle2 className="h-3.5 w-3.5 text-green-600 mt-0.5" /> : <XCircle className="h-3.5 w-3.5 text-destructive mt-0.5" />}
+                  <div><b>Port {p.port}</b> — <span className="text-muted-foreground">{p.detail}</span></div>
+                </li>
+              ))}
+            </ul>
+            {ports.tips.length > 0 && (
+              <div className="rounded bg-muted p-2 space-y-1">
+                <div className="font-medium">Fix tips</div>
+                <ul className="list-disc pl-5 space-y-0.5">
+                  {ports.tips.map((t, i) => <li key={i}>{t}</li>)}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Consolidated full verification report */}
+        {verification && (
+          <div className="border rounded-md p-3 text-xs space-y-2">
+            <div className="flex items-center gap-2 flex-wrap">
+              <Badge variant={verification.ok ? "secondary" : "destructive"}>
+                {verification.ok ? "full verification PASS" : "full verification FAIL"}
+              </Badge>
+              <span className="text-muted-foreground">{verification.host} · {new Date(verification.checkedAt).toLocaleTimeString()}</span>
+              <Button size="sm" variant="ghost" className="ml-auto" onClick={doFullVerify} disabled={busy !== null}>
+                {busy === "verify" ? <Loader2 className="h-3 w-3 animate-spin" /> : "Retry"}
+              </Button>
+            </div>
+            <ul className="grid gap-1">
+              {verification.probes.map((p, i) => (
+                <li key={i} className="flex items-start gap-2">
+                  {p.ok ? <CheckCircle2 className="h-3.5 w-3.5 text-green-600 mt-0.5" /> : <XCircle className="h-3.5 w-3.5 text-destructive mt-0.5" />}
+                  <div><b>{p.name}</b> — <span className="text-muted-foreground">{p.detail}</span></div>
+                </li>
+              ))}
+            </ul>
           </div>
         )}
 
