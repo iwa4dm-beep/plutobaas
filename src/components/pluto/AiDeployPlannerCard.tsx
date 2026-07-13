@@ -32,7 +32,7 @@ type Props = {
   bundleSql: string;
 };
 
-type BusyKind = "preflight" | "plan" | "guide" | "uninstall" | "posthealth" | "secrets";
+type BusyKind = "preflight" | "plan" | "guide" | "uninstall" | "posthealth" | "secrets" | "ports" | "verify";
 
 type StepStatus = "pending" | "running" | "ok" | "fail";
 type Tracker = { id: string; label: string; status: StepStatus; detail?: string };
