@@ -272,6 +272,75 @@ export function AiDeployPlannerCard({ workspaceId, bundleFile, bundleSql }: Prop
     deletePlan(id); setHistory(listPlanHistory());
   };
 
+  // ── Import a previously exported plan JSON ────────────────────
+  const importPlanJson = async (file: File) => {
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text) as Partial<PlanHistoryEntry> & { plan?: DeployPlan };
+      // Accept either a raw DeployPlan or a full PlanHistoryEntry
+      const p = (parsed.plan ?? (parsed as unknown as DeployPlan));
+      if (!p || !Array.isArray((p as DeployPlan).steps)) {
+        throw new Error("Invalid plan JSON — missing 'steps' array.");
+      }
+      const dp = p as DeployPlan;
+      setPlan(dp); setEditingPreSql(dp.preSql ?? "");
+      setGuide(parsed.guide ?? null);
+      setConfirmed(false);
+      if (parsed.domain) setDomain(parsed.domain);
+      setStep("plan", "ok", "imported from JSON");
+      setStep("confirm", "pending", "awaiting confirm");
+      addLog(`Imported plan (${dp.steps.length} steps) — review & confirm to resume`, "ok");
+      setError(null);
+    } catch (e) {
+      setError("Import failed: " + (e as Error).message);
+      addLog("Import failed: " + (e as Error).message, "err");
+    }
+  };
+
+  // ── Port 80/443 pre-Certbot check ─────────────────────────────
+  const doPorts = useCallback(async () => {
+    if (!domain.trim()) { setError("Domain required."); return; }
+    setBusy("ports"); setError(null);
+    addLog(`Probing ports 80/443 on app.${domain.trim()}…`);
+    try {
+      const r = await portsFn({ data: { domain: domain.trim() } });
+      setPorts(r);
+      addLog(`Ports ${r.ok ? "OK" : "FAIL"} — 80:${r.probes[0].ok ? "✓" : "✗"} 443:${r.probes[1].ok ? "✓" : "✗"}`, r.ok ? "ok" : "warn");
+    } catch (e) {
+      setError((e as Error).message);
+    } finally { setBusy(null); }
+  }, [domain, portsFn, addLog]);
+
+  // ── Consolidated full verification ────────────────────────────
+  const doFullVerify = useCallback(async () => {
+    if (!domain.trim()) { setError("Domain required."); return; }
+    setBusy("verify"); setError(null);
+    addLog("Running full verification (DNS · ports · TLS · backend · redirect)…");
+    try {
+      const r = await verifyFn({ data: { domain: domain.trim() } });
+      setVerification(r);
+      addLog(`Full verification ${r.ok ? "PASS" : "FAIL"} — ${r.probes.filter((p) => p.ok).length}/${r.probes.length} checks`, r.ok ? "ok" : "err");
+    } catch (e) {
+      setError((e as Error).message);
+      addLog("Verification error: " + (e as Error).message, "err");
+    } finally { setBusy(null); }
+  }, [domain, verifyFn, addLog]);
+
+  // ── Env presets ───────────────────────────────────────────────
+  const doSavePreset = () => {
+    if (!presetName.trim() || !domain.trim()) { setError("Preset name + domain required."); return; }
+    savePreset({ name: presetName.trim(), domain: domain.trim(), vpsIp: vpsIp.trim() || undefined, workspaceId: workspaceId.trim() || undefined });
+    setPresets(listPresets()); setPresetName("");
+    addLog(`Saved preset "${presetName.trim()}"`, "ok");
+  };
+  const loadPreset = (p: EnvPreset) => {
+    setDomain(p.domain); setVpsIp(p.vpsIp ?? "");
+    addLog(`Loaded preset "${p.name}"`, "info");
+  };
+  const removePreset = (id: string) => { deletePreset(id); setPresets(listPresets()); };
+
+
+
   return (
     <Card>
       <CardHeader>
