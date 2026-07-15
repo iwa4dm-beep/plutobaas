@@ -208,7 +208,7 @@ function AutoConnectPage() {
         <div className="mt-6 grid gap-6 md:grid-cols-[1fr_360px]">
           <main className="rounded-lg border border-border bg-card p-6">
             {tab === "wizard" && <>
-              {step === 1 && <UploadStep onFile={onFile} busy={busy} inputRef={inputRef} verify={verify} />}
+              {step === 1 && <UploadStep onFile={onFile} busy={busy} inputRef={inputRef} verify={verify} log={log} setBusy={setBusy} />}
               {step === 2 && <AnalyzeStep file={file} onRun={runAnalyze} busy={busy} />}
               {step === 3 && analyze && (
                 <PlanStep analyze={analyze} plan={plan} planModel={planModel} onPlan={runPlan} onNext={() => setStep(4)} busy={busy} />
