@@ -231,6 +231,13 @@ export async function analyzeZip(
       result.backend.rawMigrationFiles += 1;
       result.backend.tables.push(...parseMigration(text));
     }
+    // Supabase / Lovable Cloud migrations (`supabase/migrations/*.sql`)
+    if (/(^|\/)supabase\/migrations\/.+\.sql$/.test(lower)) {
+      result.backend.detected = true;
+      result.backend.rawMigrationFiles += 1;
+      result.backend.tables.push(...parseSupabaseMigration(text));
+      markUsed("supabase migration");
+    }
     if (/app\/models\/.+\.php$/.test(lower)) {
       const mm = parseModel(text, entry.name);
       if (mm) result.backend.models.push(mm);
