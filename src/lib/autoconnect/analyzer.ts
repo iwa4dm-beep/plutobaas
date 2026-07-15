@@ -117,16 +117,59 @@ function parseModel(php: string, file: string) {
 }
 
 // ── Frontend API call site scanner ───────────────────────────────────────
+// Matches axios / fetch AND common Supabase JS client patterns
+// (supabase.from, .rpc, .auth.*, .storage.from, .functions.invoke).
 function scanApiCalls(file: string, src: string) {
   const hits: { file: string; snippet: string; line: number }[] = [];
-  const re = /(axios\.(?:get|post|put|patch|delete)|fetch)\s*\(\s*(['"`])([^'"`]+)\2/g;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(src)) !== null) {
-    const before = src.slice(0, m.index);
-    const line = before.split("\n").length;
-    hits.push({ file, snippet: m[0].slice(0, 160), line });
+  const patterns: RegExp[] = [
+    /(axios\.(?:get|post|put|patch|delete)|fetch)\s*\(\s*(['"`])([^'"`]+)\2/g,
+    /\bsupabase\s*\.\s*(?:from|rpc|storage\.from|functions\.invoke)\s*\(\s*(['"`])([^'"`]+)\1/g,
+    /\bsupabase\s*\.\s*auth\s*\.\s*(\w+)\s*\(/g,
+  ];
+  for (const re of patterns) {
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(src)) !== null) {
+      const before = src.slice(0, m.index);
+      const line = before.split("\n").length;
+      hits.push({ file, snippet: m[0].slice(0, 160), line });
+    }
   }
   return hits;
+}
+
+// ── Supabase SQL migration parser (regex-only, static) ───────────────────
+function parseSupabaseMigration(sql: string): TableDef[] {
+  const tables: TableDef[] = [];
+  const createRe =
+    /create\s+table\s+(?:if\s+not\s+exists\s+)?(?:public\.)?"?(\w+)"?\s*\(([\s\S]*?)\)\s*;/gi;
+  let m: RegExpExecArray | null;
+  while ((m = createRe.exec(sql)) !== null) {
+    const name = m[1];
+    const body = m[2];
+    const cols: Column[] = [];
+    const lines = body.split(/,\s*\n/).map((l) => l.trim()).filter(Boolean);
+    for (const raw of lines) {
+      const line = raw.replace(/,+$/, "").trim();
+      if (!line) continue;
+      if (/^(primary\s+key|foreign\s+key|unique|check|constraint)\b/i.test(line)) continue;
+      const colM = line.match(/^"?(\w+)"?\s+([a-zA-Z][\w \[\]()]*?)(\s|$)/);
+      if (!colM) continue;
+      const col: Column = {
+        name: colM[1],
+        type: colM[2].trim().toLowerCase(),
+        nullable: !/not\s+null/i.test(line),
+        primary: /\bprimary\s+key\b/i.test(line),
+        unique: /\bunique\b/i.test(line) && !/references/i.test(line),
+      };
+      const def = line.match(/default\s+([^\s,]+(?:\([^)]*\))?)/i);
+      if (def) col.default = def[1];
+      const ref = line.match(/references\s+(?:public\.)?"?(\w+)"?\s*\(\s*"?(\w+)"?\s*\)/i);
+      if (ref) col.references = { table: ref[1], column: ref[2] };
+      cols.push(col);
+    }
+    if (cols.length) tables.push({ name, columns: cols });
+  }
+  return tables;
 }
 
 // ── Main entry ───────────────────────────────────────────────────────────
