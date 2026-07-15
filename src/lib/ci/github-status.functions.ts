@@ -58,51 +58,75 @@ export const getCiStatus = createServerFn({ method: "GET" })
       return { ok: false, owner, repo, runs: [], error: "Missing owner/repo. Provide them via query params or set GITHUB_REPO_OWNER / GITHUB_REPO_NAME secrets." };
     }
 
-    const path = data.workflow
-      ? `/repos/${owner}/${repo}/actions/workflows/${encodeURIComponent(data.workflow)}/runs`
-      : `/repos/${owner}/${repo}/actions/runs`;
-    const url = `${GATEWAY_URL}${path}?per_page=${perPage}`;
+    const cacheKey = `${owner}/${repo}::${data.workflow ?? "*"}::${perPage}`;
+    const now = Date.now();
+    const cached = CI_CACHE.get(cacheKey);
 
-    try {
-      const resp = await fetch(url, {
-        headers: {
-          Accept: "application/vnd.github+json",
-          Authorization: `Bearer ${lovableKey}`,
-          "X-Connection-Api-Key": gitHubKey,
-        },
-      });
-      if (!resp.ok) {
-        const body = await resp.text();
-        return { ok: false, owner, repo, runs: [], error: `GitHub API ${resp.status}: ${body.slice(0, 400)}` };
+    const doFetch = async (): Promise<CiStatusResponse> => {
+      const path = data.workflow
+        ? `/repos/${owner}/${repo}/actions/workflows/${encodeURIComponent(data.workflow)}/runs`
+        : `/repos/${owner}/${repo}/actions/runs`;
+      const url = `${GATEWAY_URL}${path}?per_page=${perPage}`;
+      try {
+        const resp = await fetch(url, {
+          headers: {
+            Accept: "application/vnd.github+json",
+            Authorization: `Bearer ${lovableKey}`,
+            "X-Connection-Api-Key": gitHubKey,
+          },
+        });
+        if (!resp.ok) {
+          const body = await resp.text();
+          return { ok: false, owner, repo, runs: [], error: `GitHub API ${resp.status}: ${body.slice(0, 400)}` };
+        }
+        const json: any = await resp.json();
+        const runs: WorkflowRunSummary[] = (json.workflow_runs ?? []).map((r: any) => ({
+          id: r.id,
+          name: r.name,
+          status: r.status,
+          conclusion: r.conclusion,
+          head_branch: r.head_branch,
+          head_sha: r.head_sha,
+          event: r.event,
+          html_url: r.html_url,
+          created_at: r.created_at,
+          updated_at: r.updated_at,
+          run_number: r.run_number,
+          pull_requests: (r.pull_requests ?? []).map((p: any) => ({ number: p.number, url: p.url })),
+        }));
+        return { ok: true, owner, repo, runs };
+      } catch (e: any) {
+        return { ok: false, owner, repo, runs: [], error: e?.message ?? "unknown error" };
       }
-      const json: any = await resp.json();
-      const runs: WorkflowRunSummary[] = (json.workflow_runs ?? []).map((r: any) => ({
-        id: r.id,
-        name: r.name,
-        status: r.status,
-        conclusion: r.conclusion,
-        head_branch: r.head_branch,
-        head_sha: r.head_sha,
-        event: r.event,
-        html_url: r.html_url,
-        created_at: r.created_at,
-        updated_at: r.updated_at,
-        run_number: r.run_number,
-        pull_requests: (r.pull_requests ?? []).map((p: any) => ({ number: p.number, url: p.url })),
-      }));
-      return { ok: true, owner, repo, runs };
-    } catch (e: any) {
-      return { ok: false, owner, repo, runs: [], error: e?.message ?? "unknown error" };
+    };
+
+    // Fresh cache hit
+    if (cached && now - cached.fetchedAt < FRESH_MS) {
+      return cached.data;
     }
+
+    // Stale-while-revalidate: return cached, refresh in background
+    if (cached && now - cached.fetchedAt < MAX_STALE_MS) {
+      if (!cached.refreshing) {
+        cached.refreshing = (async () => {
+          try {
+            const fresh = await doFetch();
+            if (fresh.ok) CI_CACHE.set(cacheKey, { data: fresh, fetchedAt: Date.now() });
+          } finally {
+            const c = CI_CACHE.get(cacheKey);
+            if (c) c.refreshing = undefined;
+          }
+        })();
+      }
+      return cached.data;
+    }
+
+    // No cache or too stale: fetch synchronously
+    const fresh = await doFetch();
+    if (fresh.ok) CI_CACHE.set(cacheKey, { data: fresh, fetchedAt: Date.now() });
+    else if (cached) return cached.data; // fall back to any prior data on error
+    return fresh;
   });
-
-export type PublishStatus = {
-  previewUrl: string;
-  publishedUrl: string;
-  customDomains: string[];
-};
-
-export const getPublishStatus = createServerFn({ method: "GET" }).handler(async (): Promise<PublishStatus> => {
   // Static — Lovable-managed publish URLs are project-level and stable.
   // Custom domains are configured in Project Settings → Domains and echoed
   // here via optional PLUTO_CUSTOM_DOMAINS (comma-separated) secret.
