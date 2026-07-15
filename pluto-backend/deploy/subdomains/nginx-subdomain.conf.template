@@ -35,5 +35,5 @@ server {
     add_header X-Content-Type-Options    "nosniff"                             always;
     add_header Referrer-Policy           "strict-origin-when-cross-origin"     always;
 
-    # __ROUTING_BLOCK__
+    __ROUTING_BLOCK__
 }
