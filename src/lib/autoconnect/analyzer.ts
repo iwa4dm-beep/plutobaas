@@ -205,7 +205,7 @@ export async function analyzeZip(
     const lower = entry.name.toLowerCase();
 
     // Read only reasonable text files
-    const isText = /\.(php|ts|tsx|js|jsx|json|env|md|yml|yaml|blade\.php)$/.test(lower);
+    const isText = /\.(php|ts|tsx|js|jsx|json|env|md|yml|yaml|sql|blade\.php)$/.test(lower);
     let used = false;
     let usedReason: string | undefined;
     const markUsed = (r: string) => { used = true; usedReason = usedReason ?? r; };
