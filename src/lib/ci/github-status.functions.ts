@@ -127,6 +127,14 @@ export const getCiStatus = createServerFn({ method: "GET" })
     else if (cached) return cached.data; // fall back to any prior data on error
     return fresh;
   });
+
+export type PublishStatus = {
+  previewUrl: string;
+  publishedUrl: string;
+  customDomains: string[];
+};
+
+export const getPublishStatus = createServerFn({ method: "GET" }).handler(async (): Promise<PublishStatus> => {
   // Static — Lovable-managed publish URLs are project-level and stable.
   // Custom domains are configured in Project Settings → Domains and echoed
   // here via optional PLUTO_CUSTOM_DOMAINS (comma-separated) secret.
