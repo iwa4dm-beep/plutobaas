@@ -13,6 +13,7 @@ import { validateDbConnection } from "@/lib/autoconnect/db-wizard.functions";
 import { buildStructureReport, groupFiles } from "@/lib/autoconnect/structure-report";
 import { verifyZip, type VerifyResult } from "@/lib/autoconnect/zip-verify";
 import { parseRollbackLog, type LogSummary } from "@/lib/autoconnect/rollback-log";
+import { loadRepoAsFile } from "@/lib/autoconnect/github-loader";
 import { runE2E, type E2EReport } from "@/lib/autoconnect/e2e-runner";
 import { buildAuditJson, buildAuditHtml, buildAuditBundle, type AuditInput, type CancellationRecord } from "@/lib/autoconnect/audit-report";
 import type { AnalyzeResult, DbConfig, IntegrationPlan, SqlStatement } from "@/lib/autoconnect/types";
@@ -207,7 +208,7 @@ function AutoConnectPage() {
         <div className="mt-6 grid gap-6 md:grid-cols-[1fr_360px]">
           <main className="rounded-lg border border-border bg-card p-6">
             {tab === "wizard" && <>
-              {step === 1 && <UploadStep onFile={onFile} busy={busy} inputRef={inputRef} verify={verify} />}
+              {step === 1 && <UploadStep onFile={onFile} busy={busy} inputRef={inputRef} verify={verify} log={log} setBusy={setBusy} />}
               {step === 2 && <AnalyzeStep file={file} onRun={runAnalyze} busy={busy} />}
               {step === 3 && analyze && (
                 <PlanStep analyze={analyze} plan={plan} planModel={planModel} onPlan={runPlan} onNext={() => setStep(4)} busy={busy} />
@@ -286,12 +287,27 @@ function Stepper({ current }: { current: Step }) {
   );
 }
 
-function UploadStep({ onFile, busy, inputRef, verify }: { onFile: (f: File) => void; busy: boolean; inputRef: React.RefObject<HTMLInputElement | null>; verify: VerifyResult | null }) {
+function UploadStep({ onFile, busy, inputRef, verify, log, setBusy }: { onFile: (f: File) => void; busy: boolean; inputRef: React.RefObject<HTMLInputElement | null>; verify: VerifyResult | null; log: (m: string) => void; setBusy: (b: boolean) => void }) {
+  const [repoUrl, setRepoUrl] = useState("");
+  const [ref, setRef] = useState("");
+  const loadFromGithub = async () => {
+    if (!repoUrl.trim()) { toast.error("GitHub URL বা owner/repo দিন"); return; }
+    setBusy(true);
+    log(`Fetching ${repoUrl} from GitHub…`);
+    try {
+      const f = await loadRepoAsFile(repoUrl.trim(), ref.trim() || undefined);
+      log(`✓ Downloaded ${f.name} (${(f.size / 1024 / 1024).toFixed(1)} MB)`);
+      await onFile(f);
+    } catch (e) {
+      toast.error((e as Error).message);
+      log("✘ " + (e as Error).message);
+    } finally { setBusy(false); }
+  };
   return (
     <div>
-      <h2 className="text-lg font-semibold text-foreground">১. প্রজেক্ট ZIP আপলোড</h2>
+      <h2 className="text-lg font-semibold text-foreground">১. প্রজেক্ট ZIP আপলোড বা GitHub থেকে টানুন</h2>
       <p className="mt-1 text-sm text-muted-foreground">
-        React + Vite frontend এবং Laravel backend একই ZIP-এ থাকলেই চলবে। <code>node_modules</code>, <code>vendor</code>, <code>.git</code> auto-skip হবে।
+        React + Vite frontend এবং Laravel/Supabase backend একই source-এ থাকলেই চলবে। <code>node_modules</code>, <code>vendor</code>, <code>.git</code> auto-skip হবে।
       </p>
       <label
         className="mt-6 flex cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed border-border py-16 text-center transition hover:border-primary hover:bg-primary/5"
@@ -308,6 +324,40 @@ function UploadStep({ onFile, busy, inputRef, verify }: { onFile: (f: File) => v
           onChange={(e) => { const f = e.target.files?.[0]; if (f) onFile(f); }} />
         <p className="mt-4 text-xs text-muted-foreground">সর্বোচ্চ ২০০MB</p>
       </label>
+
+      <div className="mt-4 rounded-lg border border-border bg-muted/30 p-4">
+        <div className="flex items-center gap-2 text-sm font-medium">
+          <PlugZap className="h-4 w-4" /> GitHub থেকে সরাসরি লোড করুন
+        </div>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Public repo হলে token লাগবে না। Private হলে GITHUB connector link করুন।
+        </p>
+        <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_160px_auto]">
+          <input
+            type="text"
+            value={repoUrl}
+            onChange={(e) => setRepoUrl(e.target.value)}
+            placeholder="owner/repo বা https://github.com/owner/repo"
+            className="rounded-md border border-border bg-background px-3 py-2 text-sm"
+          />
+          <input
+            type="text"
+            value={ref}
+            onChange={(e) => setRef(e.target.value)}
+            placeholder="branch/tag (optional)"
+            className="rounded-md border border-border bg-background px-3 py-2 text-sm"
+          />
+          <button
+            type="button"
+            onClick={loadFromGithub}
+            disabled={busy}
+            className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+          >
+            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Load"}
+          </button>
+        </div>
+      </div>
+
       {verify && <VerifyPanel verify={verify} />}
     </div>
   );
