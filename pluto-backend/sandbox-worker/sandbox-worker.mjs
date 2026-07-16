@@ -228,6 +228,11 @@ const server = http.createServer(async (req, res) => {
       const ws = decodeURIComponent(req.url.slice("/status/".length));
       return json(res, 200, await status(ws));
     }
+    const resolveMatch = req.method === "GET" && req.url && req.url.startsWith("/resolve/");
+    if (resolveMatch) {
+      const s = decodeURIComponent(req.url.slice("/resolve/".length));
+      return json(res, 200, await resolveSlug(s));
+    }
     return json(res, 404, { error: "not_found" });
   } catch (e) {
     return json(res, 500, { error: e?.message ?? String(e) });
