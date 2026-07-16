@@ -86,6 +86,7 @@ import { Route as DashboardCiStatusRouteImport } from './routes/dashboard.ci-sta
 import { Route as DashboardBranchingRouteImport } from './routes/dashboard.branching'
 import { Route as DashboardBackupsRouteImport } from './routes/dashboard.backups'
 import { Route as DashboardBackendStatusRouteImport } from './routes/dashboard.backend-status'
+import { Route as DashboardAutoDeployRouteImport } from './routes/dashboard.auto-deploy'
 import { Route as DashboardAutoConnectRouteImport } from './routes/dashboard.auto-connect'
 import { Route as DashboardAuditLogRouteImport } from './routes/dashboard.audit-log'
 import { Route as DashboardAuditRouteImport } from './routes/dashboard.audit'
@@ -500,6 +501,11 @@ const DashboardBackendStatusRoute = DashboardBackendStatusRouteImport.update({
   path: '/backend-status',
   getParentRoute: () => DashboardRoute,
 } as any)
+const DashboardAutoDeployRoute = DashboardAutoDeployRouteImport.update({
+  id: '/auto-deploy',
+  path: '/auto-deploy',
+  getParentRoute: () => DashboardRoute,
+} as any)
 const DashboardAutoConnectRoute = DashboardAutoConnectRouteImport.update({
   id: '/auto-connect',
   path: '/auto-connect',
@@ -623,6 +629,7 @@ export interface FileRoutesByFullPath {
   '/dashboard/audit': typeof DashboardAuditRoute
   '/dashboard/audit-log': typeof DashboardAuditLogRoute
   '/dashboard/auto-connect': typeof DashboardAutoConnectRoute
+  '/dashboard/auto-deploy': typeof DashboardAutoDeployRoute
   '/dashboard/backend-status': typeof DashboardBackendStatusRoute
   '/dashboard/backups': typeof DashboardBackupsRoute
   '/dashboard/branching': typeof DashboardBranchingRoute
@@ -721,6 +728,7 @@ export interface FileRoutesByTo {
   '/dashboard/audit': typeof DashboardAuditRoute
   '/dashboard/audit-log': typeof DashboardAuditLogRoute
   '/dashboard/auto-connect': typeof DashboardAutoConnectRoute
+  '/dashboard/auto-deploy': typeof DashboardAutoDeployRoute
   '/dashboard/backend-status': typeof DashboardBackendStatusRoute
   '/dashboard/backups': typeof DashboardBackupsRoute
   '/dashboard/branching': typeof DashboardBranchingRoute
@@ -821,6 +829,7 @@ export interface FileRoutesById {
   '/dashboard/audit': typeof DashboardAuditRoute
   '/dashboard/audit-log': typeof DashboardAuditLogRoute
   '/dashboard/auto-connect': typeof DashboardAutoConnectRoute
+  '/dashboard/auto-deploy': typeof DashboardAutoDeployRoute
   '/dashboard/backend-status': typeof DashboardBackendStatusRoute
   '/dashboard/backups': typeof DashboardBackupsRoute
   '/dashboard/branching': typeof DashboardBranchingRoute
@@ -922,6 +931,7 @@ export interface FileRouteTypes {
     | '/dashboard/audit'
     | '/dashboard/audit-log'
     | '/dashboard/auto-connect'
+    | '/dashboard/auto-deploy'
     | '/dashboard/backend-status'
     | '/dashboard/backups'
     | '/dashboard/branching'
@@ -1020,6 +1030,7 @@ export interface FileRouteTypes {
     | '/dashboard/audit'
     | '/dashboard/audit-log'
     | '/dashboard/auto-connect'
+    | '/dashboard/auto-deploy'
     | '/dashboard/backend-status'
     | '/dashboard/backups'
     | '/dashboard/branching'
@@ -1119,6 +1130,7 @@ export interface FileRouteTypes {
     | '/dashboard/audit'
     | '/dashboard/audit-log'
     | '/dashboard/auto-connect'
+    | '/dashboard/auto-deploy'
     | '/dashboard/backend-status'
     | '/dashboard/backups'
     | '/dashboard/branching'
@@ -1762,6 +1774,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardBackendStatusRouteImport
       parentRoute: typeof DashboardRoute
     }
+    '/dashboard/auto-deploy': {
+      id: '/dashboard/auto-deploy'
+      path: '/auto-deploy'
+      fullPath: '/dashboard/auto-deploy'
+      preLoaderRoute: typeof DashboardAutoDeployRouteImport
+      parentRoute: typeof DashboardRoute
+    }
     '/dashboard/auto-connect': {
       id: '/dashboard/auto-connect'
       path: '/auto-connect'
@@ -1966,6 +1985,7 @@ interface DashboardRouteChildren {
   DashboardAuditRoute: typeof DashboardAuditRoute
   DashboardAuditLogRoute: typeof DashboardAuditLogRoute
   DashboardAutoConnectRoute: typeof DashboardAutoConnectRoute
+  DashboardAutoDeployRoute: typeof DashboardAutoDeployRoute
   DashboardBackendStatusRoute: typeof DashboardBackendStatusRoute
   DashboardBackupsRoute: typeof DashboardBackupsRoute
   DashboardBranchingRoute: typeof DashboardBranchingRoute
@@ -2041,6 +2061,7 @@ const DashboardRouteChildren: DashboardRouteChildren = {
   DashboardAuditRoute: DashboardAuditRoute,
   DashboardAuditLogRoute: DashboardAuditLogRoute,
   DashboardAutoConnectRoute: DashboardAutoConnectRoute,
+  DashboardAutoDeployRoute: DashboardAutoDeployRoute,
   DashboardBackendStatusRoute: DashboardBackendStatusRoute,
   DashboardBackupsRoute: DashboardBackupsRoute,
   DashboardBranchingRoute: DashboardBranchingRoute,
