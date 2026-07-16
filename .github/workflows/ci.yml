@@ -23,3 +23,35 @@ jobs:
         run: bun run test
       - name: Build
         run: bun run build
+
+  auto-connect-e2e:
+    name: Auto-Connect Studio E2E
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - name: Install
+        run: bun install --frozen-lockfile
+      - name: Install Playwright browsers
+        run: bunx playwright install --with-deps chromium
+      - name: Workspace provisioner unit tests (no PLUTO_SERVICE_ROLE_KEY)
+        run: bunx vitest run src/lib/pluto/workspace-provisioner.spec.ts
+        env:
+          # Deliberately unset — the signup-full endpoint must succeed
+          # without a service role key.
+          PLUTO_SERVICE_ROLE_KEY: ""
+      - name: Auto-Connect Studio Playwright e2e
+        run: bunx playwright test e2e/auto-connect-provisioner.spec.ts e2e/workspaces-create.spec.ts
+      - name: Upload Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          if-no-files-found: ignore
+          retention-days: 7
