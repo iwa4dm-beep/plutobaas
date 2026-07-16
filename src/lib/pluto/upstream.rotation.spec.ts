@@ -38,7 +38,14 @@ const FRESH = "fresh.session.jwt";
 
 function seedRotationScenario() {
   localStorage.clear();
+  // Only the stale legacy operator token is present initially — this is
+  // what makes plutoApi actually attempt the request with STALE (session
+  // token takes priority when it exists). A fresh session appears only
+  // AFTER a login/refresh happens post-rotation, which we simulate below.
   localStorage.setItem(LS_TOKEN, STALE);
+}
+
+function installFreshSession() {
   localStorage.setItem(
     SESSION_KEY,
     JSON.stringify({ access_token: FRESH, token_type: "bearer" }),
