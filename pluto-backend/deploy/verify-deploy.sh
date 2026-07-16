@@ -27,6 +27,10 @@ FAIL=0
 step "1/5  Worker /healthz on 127.0.0.1:8787"
 if OUT="$(curl -fsS --max-time 5 http://127.0.0.1:8787/healthz)"; then
   ok "worker responded"; echo "$OUT" | head -c 300; echo
+  if ! echo "$OUT" | grep -q 'v1-static-serve'; then
+    bad "worker is stale — /healthz has no v1-static-serve marker"
+    echo "     Fix now: sudo bash deploy/refresh-worker.sh"
+  fi
 else
   bad "worker unreachable — check: sudo systemctl status pluto-sandbox-worker"
 fi
@@ -49,6 +53,10 @@ if [ "$code" = "200" ]; then
   echo
 else
   bad "site-status → HTTP ${code}"
+  if [ "$code" = "401" ]; then
+    echo "     401 here means the old worker is still running and treating public routes as secret-protected."
+    echo "     Fix now: sudo bash deploy/refresh-worker.sh && bash deploy/verify-deploy.sh ${SLUG}"
+  fi
 fi
 
 step "4/5  Required HTTPS /sites/${SLUG}/ probe"
@@ -57,6 +65,10 @@ if [ "$code" = "200" ]; then
   ok "https://${API}/sites/${SLUG}/ → 200"
 else
   bad "https://${API}/sites/${SLUG}/ → HTTP ${code}"
+  if [ "$code" = "401" ]; then
+    echo "     401 here is not a missing bundle; it means stale worker code is active."
+    echo "     Fix now: sudo bash deploy/refresh-worker.sh"
+  fi
   echo "     If worker health is OK, check slug disk state: ls -la /var/lib/pluto/sites/${SLUG}"
 fi
 

@@ -19,6 +19,8 @@
 #   KEEP        space-separated paths safe-pull.sh must restore after stash
 #   SKIP_PULL=1 skip git pull step
 #   SKIP_SSL=1  pass through to install-sites-proxy.sh (no cert issuance)
+#   UPSTREAM    required on first install; existing env value is preserved later
+#   SERVICE_KEY required on first install for /sandbox/unpack; existing value is preserved later
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -56,6 +58,13 @@ else
   install -d /opt/pluto/sandbox-worker
   cp sandbox-worker/sandbox-worker.mjs /opt/pluto/sandbox-worker/
   systemctl restart pluto-sandbox-worker 2>/dev/null || systemctl restart pluto-sandbox
+fi
+
+log "force-refresh running worker code"
+if [ -x "$DEPLOY/refresh-worker.sh" ]; then
+  bash "$DEPLOY/refresh-worker.sh" || die "worker refresh failed"
+else
+  die "missing $DEPLOY/refresh-worker.sh — git pull did not bring the current deploy scripts"
 fi
 
 # 3) nginx sites-proxy

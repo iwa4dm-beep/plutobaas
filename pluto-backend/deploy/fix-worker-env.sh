@@ -13,7 +13,8 @@
 #   UNIT       default auto-detects pluto-sandbox-worker, then pluto-sandbox
 #   PORT       default 8787
 #   SITES_ROOT default /var/lib/pluto/sites
-#   UPSTREAM   default http://127.0.0.1:8000
+#   UPSTREAM   required unless already present in ENV_FILE
+#   ALLOW_LOCAL_UPSTREAM=1 allows http://127.0.0.1:8000 explicitly
 
 set -uo pipefail
 
@@ -42,10 +43,14 @@ if [ -z "$UPSTREAM" ] && [ -f "$ENV_FILE" ]; then
   UPSTREAM="$(grep -E '^PLUTO_UPSTREAM_URL=' "$ENV_FILE" | tail -1 | cut -d= -f2- || true)"
 fi
 if [ -z "$UPSTREAM" ]; then
-  UPSTREAM="http://127.0.0.1:8000"
-  echo "⚠ UPSTREAM not set — defaulting to $UPSTREAM."
-  echo "   POST /unpack will fail with 'fetch failed' until you set UPSTREAM to your"
-  echo "   Supabase project URL (e.g. https://xxxx.supabase.co) and rerun this script."
+  if [ "${ALLOW_LOCAL_UPSTREAM:-0}" = "1" ]; then
+    UPSTREAM="http://127.0.0.1:8000"
+  else
+    echo "✗ UPSTREAM is required and no existing PLUTO_UPSTREAM_URL was found in $ENV_FILE."
+    echo "   Re-run with: UPSTREAM='https://<project-ref>.supabase.co'"
+    echo "   If you intentionally run a local Pluto API on 127.0.0.1:8000, add ALLOW_LOCAL_UPSTREAM=1."
+    exit 2
+  fi
 fi
 
 if [ -z "$UNIT" ]; then
@@ -98,8 +103,15 @@ else
 fi
 
 echo "▶ Probing worker healthz…"
-if curl -fsS --max-time 5 "http://127.0.0.1:${PORT}/healthz" | head -c 400; then
-  echo; echo "✓ worker healthy on 127.0.0.1:${PORT}"
+HEALTH="$(curl -fsS --max-time 5 "http://127.0.0.1:${PORT}/healthz" || true)"
+if [ -n "$HEALTH" ]; then
+  echo "$HEALTH" | head -c 400; echo
+  if ! echo "$HEALTH" | grep -q 'v1-static-serve'; then
+    echo "✗ worker is reachable, but stale code is still running (missing v1-static-serve)."
+    echo "   Run: sudo bash deploy/refresh-worker.sh"
+    exit 1
+  fi
+  echo "✓ worker healthy on 127.0.0.1:${PORT}"
 else
   echo "✗ worker did not respond on 127.0.0.1:${PORT}"
   exit 1

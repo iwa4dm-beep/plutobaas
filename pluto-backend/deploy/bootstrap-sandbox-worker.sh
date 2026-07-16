@@ -13,7 +13,8 @@
 # Optional env:
 #   PORT=8787
 #   SITES_ROOT=/var/lib/pluto/sites
-#   UPSTREAM=http://127.0.0.1:8000
+#   UPSTREAM=https://<project-ref>.supabase.co   (preserves existing value if omitted)
+#   ALLOW_LOCAL_UPSTREAM=1                        (only if a local Pluto API really listens on 127.0.0.1)
 #   UNIT=pluto-sandbox-worker
 #   ENV_FILE=/etc/pluto/sandbox-worker.env
 
@@ -30,11 +31,28 @@ WORKER_SRC="$REPO_ROOT/sandbox-worker/sandbox-worker.mjs"
 
 PORT="${PORT:-8787}"
 SITES_ROOT="${SITES_ROOT:-/var/lib/pluto/sites}"
-UPSTREAM="${UPSTREAM:-http://127.0.0.1:8000}"
 UNIT="${UNIT:-pluto-sandbox-worker}"
 ENV_FILE="${ENV_FILE:-/etc/pluto/sandbox-worker.env}"
 SECRET="${SECRET:-${SANDBOX_SHARED_SECRET:-${PLUTO_SANDBOX_WORKER_SECRET:-}}}"
 SERVICE_KEY="${SERVICE_KEY:-${PLUTO_SERVICE_ROLE_KEY:-}}"
+UPSTREAM="${UPSTREAM:-${PLUTO_UPSTREAM_URL:-}}"
+
+# Preserve a known-good upstream from the existing env file. This prevents a
+# re-bootstrap from silently reverting storage fetches to 127.0.0.1:8000.
+if [ -z "$UPSTREAM" ] && [ -f "$ENV_FILE" ]; then
+  UPSTREAM="$(grep -E '^PLUTO_UPSTREAM_URL=' "$ENV_FILE" | tail -1 | cut -d= -f2- || true)"
+fi
+
+if [ -z "$UPSTREAM" ]; then
+  if [ "${ALLOW_LOCAL_UPSTREAM:-0}" = "1" ]; then
+    UPSTREAM="http://127.0.0.1:8000"
+  else
+    echo "✗ UPSTREAM is required for a working /sandbox/unpack."
+    echo "  Re-run with: UPSTREAM='https://<project-ref>.supabase.co'"
+    echo "  If you intentionally run a local Pluto API on 127.0.0.1:8000, add ALLOW_LOCAL_UPSTREAM=1."
+    exit 2
+  fi
+fi
 
 if [ ! -f "$WORKER_SRC" ]; then
   echo "✗ missing worker source: $WORKER_SRC"
@@ -122,7 +140,13 @@ if [ "$STATE" != "active" ]; then
 fi
 
 echo "▶ Probing http://127.0.0.1:${PORT}/healthz"
-curl -fsS --max-time 5 "http://127.0.0.1:${PORT}/healthz"; echo
+HEALTH="$(curl -fsS --max-time 5 "http://127.0.0.1:${PORT}/healthz")"
+echo "$HEALTH"; echo
+if ! echo "$HEALTH" | grep -q 'v1-static-serve'; then
+  echo "✗ worker responded, but the static-serving version marker is missing."
+  echo "  The running service is stale; run: sudo bash deploy/refresh-worker.sh"
+  exit 1
+fi
 
 echo "✓ ${UNIT}.service is active and healthy"
 if [ "$GENERATED" = "1" ]; then
