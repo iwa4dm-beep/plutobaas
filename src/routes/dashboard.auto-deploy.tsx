@@ -16,7 +16,7 @@ import {
   XCircle, Copy, ExternalLink, RefreshCw, Globe, Sparkles,
   ChevronRight, ChevronDown, ScrollText, History, Undo2, KeyRound,
   Plus, Trash2, Eye, EyeOff, ShieldCheck, Activity, AlertCircle,
-  Download, UserCheck, Radio,
+  Download, UserCheck, Radio, Bell, Webhook,
 } from "lucide-react";
 
 import { analyzeZip } from "@/lib/autoconnect/analyzer";
@@ -32,7 +32,25 @@ import {
   extractHealth, downloadAutoDeployReport,
   type AutoDeployHistoryEntry, type HealthSummary, type EndpointCheck, type StepEvent,
 } from "@/lib/pluto/auto-deploy-history";
+import {
+  ALL_EVENTS, dispatchWebhookEvent, loadWebhooks, saveWebhooks,
+  loadWebhookLog, newWebhookId,
+  type WebhookConfig, type WebhookEvent, type WebhookLogEntry,
+} from "@/lib/pluto/auto-deploy-webhooks";
 import { useAuth } from "@/lib/pluto/auth-context";
+
+// Self-healing: max auto-retry attempts on transient deploy failure
+const MAX_AUTO_RETRIES = 1;
+// Heuristics: which error messages are worth an automatic retry
+function isTransientDeployError(msg: string): boolean {
+  const m = msg.toLowerCase();
+  return (
+    m.includes("timeout") || m.includes("network") || m.includes("fetch") ||
+    m.includes("econnreset") || m.includes("503") || m.includes("502") ||
+    m.includes("504") || m.includes("temporarily") || m.includes("unavailable") ||
+    m.includes("health check failed")
+  );
+}
 
 export const Route = createFileRoute("/dashboard/auto-deploy")({
   head: () => ({
