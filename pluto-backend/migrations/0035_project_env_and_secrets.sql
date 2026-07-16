@@ -14,6 +14,27 @@
 
 begin;
 
+-- Self-heal older/partial installs before policies reference workspace owner.
+create table if not exists admin.workspaces (
+  id           uuid primary key default gen_random_uuid(),
+  slug         text unique not null check (slug ~ '^[a-z][a-z0-9-]{1,62}$'),
+  name         text not null,
+  owner_id     uuid references auth.users(id) on delete set null,
+  archived_at  timestamptz,
+  created_at   timestamptz not null default now(),
+  updated_at   timestamptz not null default now()
+);
+
+alter table if exists admin.projects
+  add column if not exists workspace_id uuid references admin.workspaces(id) on delete set null,
+  add column if not exists owner_id uuid references auth.users(id) on delete set null;
+
+alter table if exists admin.workspaces
+  add column if not exists owner_id uuid references auth.users(id) on delete set null,
+  add column if not exists archived_at timestamptz,
+  add column if not exists created_at timestamptz not null default now(),
+  add column if not exists updated_at timestamptz not null default now();
+
 -- ---------------------------------------------------------------
 -- 1. Public runtime env (safe to ship to the browser)
 -- ---------------------------------------------------------------

@@ -8,6 +8,7 @@ import { logAudit, timed } from '../audit/logger.js';
 
 const createBody = z.object({
   project_id: z.string().uuid().optional(),
+  workspace_id: z.string().uuid().optional(),
   name: z.string().min(1).max(200),
   up_sql: z.string().min(1),
   down_sql: z.string().min(0).default(''),
@@ -15,6 +16,7 @@ const createBody = z.object({
 
 const listQ = z.object({
   project_id: z.string().uuid().optional(),
+  workspace_id: z.string().uuid().optional(),
   status: z.enum(['pending', 'applied', 'rolled_back']).optional(),
   limit: z.coerce.number().int().min(1).max(500).optional().default(100),
 });
@@ -54,6 +56,42 @@ async function loadFileChecksums(): Promise<Map<string, { checksum: string; byte
 function parseVersion(name: string): string | null {
   const m = name.match(/^(\d{4}[a-z0-9_]*)/i);
   return m ? m[1] : null;
+}
+
+async function ensureWorkspaceOwnerColumns(sql: any) {
+  await sql.unsafe(`
+    create schema if not exists admin;
+
+    create table if not exists admin.workspaces (
+      id           uuid primary key default gen_random_uuid(),
+      slug         text unique not null check (slug ~ '^[a-z][a-z0-9-]{1,62}$'),
+      name         text not null,
+      owner_id     uuid references auth.users(id) on delete set null,
+      archived_at  timestamptz,
+      created_at   timestamptz not null default now(),
+      updated_at   timestamptz not null default now()
+    );
+
+    create table if not exists admin.workspace_members (
+      workspace_id uuid not null references admin.workspaces(id) on delete cascade,
+      user_id      uuid not null references auth.users(id)      on delete cascade,
+      role         text not null check (role in ('owner','admin','developer','viewer')),
+      created_at   timestamptz not null default now(),
+      primary key (workspace_id, user_id)
+    );
+
+    alter table if exists admin.projects
+      add column if not exists owner_id uuid references auth.users(id) on delete set null,
+      add column if not exists created_at timestamptz default now();
+
+    alter table if exists admin.workspaces
+      add column if not exists owner_id uuid references auth.users(id) on delete set null,
+      add column if not exists archived_at timestamptz,
+      add column if not exists created_at timestamptz not null default now(),
+      add column if not exists updated_at timestamptz not null default now();
+
+    create index if not exists workspaces_owner_idx on admin.workspaces(owner_id);
+  `);
 }
 
 export async function migrationsRoutes(app: FastifyInstance, cfg: Config) {
@@ -106,6 +144,11 @@ export async function migrationsRoutes(app: FastifyInstance, cfg: Config) {
     const actor = await requireAuth(req, cfg);
     const q = listQ.parse(req.query);
     const sql = getSql(cfg);
+    let projectIdsForWorkspace: string[] | null = null;
+    if (q.workspace_id) {
+      const projectRows = await sql<any[]>`select id from admin.projects where workspace_id = ${q.workspace_id}`;
+      projectIdsForWorkspace = projectRows.map((r: any) => r.id);
+    }
     const rows = await sql`
       select id, project_id, version, name, checksum,
              applied_at, applied_by, rolled_back_at, rolled_back_by,
@@ -117,6 +160,7 @@ export async function migrationsRoutes(app: FastifyInstance, cfg: Config) {
              end as status
         from admin.migrations
        where (${q.project_id ?? null}::uuid is null or project_id = ${q.project_id ?? null})
+          and (${q.workspace_id ?? null}::uuid is null or project_id = any(${projectIdsForWorkspace ?? []}::uuid[]))
          and (
            ${actor.isSuperadmin || actor.role === 'service_role'}::boolean
            or project_id in (select project_id from admin.project_members where user_id = ${actor.userId})
@@ -142,16 +186,26 @@ export async function migrationsRoutes(app: FastifyInstance, cfg: Config) {
   app.post('/admin/v1/migrations', async (req, reply) => {
     const actor = await requireAuth(req, cfg);
     const body = createBody.parse(req.body);
-    await assertRole(cfg, body.project_id ?? null, actor);
     const sql = getSql(cfg);
+    let projectId = body.project_id ?? null;
+    if (!projectId && body.workspace_id) {
+      await ensureWorkspaceOwnerColumns(sql);
+      const [project] = await sql<any[]>`
+        select id from admin.projects
+         where workspace_id = ${body.workspace_id}
+         order by created_at asc nulls last, id asc
+         limit 1`;
+      projectId = project?.id ?? null;
+    }
+    await assertRole(cfg, projectId, actor);
     const version = BigInt(Date.now());
     const checksum = createHash('sha256').update(body.up_sql).digest('hex').slice(0, 32);
     const [row] = await sql<any[]>`
       insert into admin.migrations (project_id, version, name, up_sql, down_sql, checksum, created_by)
-      values (${body.project_id ?? null}, ${version}, ${body.name}, ${body.up_sql}, ${body.down_sql}, ${checksum}, ${actor.userId})
+      values (${projectId}, ${version}, ${body.name}, ${body.up_sql}, ${body.down_sql}, ${checksum}, ${actor.userId})
       returning id, project_id, version, name, checksum, created_at`;
     await logAudit(cfg, {
-      actor_id: actor.userId, project_id: body.project_id ?? null,
+      actor_id: actor.userId, project_id: projectId,
       action: 'migration.create', resource_type: 'migration', resource_id: row.id,
       params: { name: body.name, version: String(row.version) }, result: 'ok',
     });
@@ -166,6 +220,7 @@ export async function migrationsRoutes(app: FastifyInstance, cfg: Config) {
     if (m.applied_at && !m.rolled_back_at) return reply.code(409).send({ error: 'already applied' });
     await assertRole(cfg, m.project_id, actor);
     try {
+      await ensureWorkspaceOwnerColumns(sql);
       const t = await timed(async () => {
         await sql.begin(async (tx) => { await tx.unsafe(m.up_sql); });
       });

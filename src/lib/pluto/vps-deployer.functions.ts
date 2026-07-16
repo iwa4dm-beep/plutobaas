@@ -62,11 +62,24 @@ function sanitizeMigrationSql(sql: string): string {
   out = out.replace(/'\s*uuid_generate_v4\s*\(\s*\)\s*'/gi, "gen_random_uuid()");
   out = out.replace(/\buuid_generate_v4\s*\(\s*\)/gi, "gen_random_uuid()");
   out = out.replace(/\bCREATE\s+SEQUENCE\s+(?!IF\s+NOT\s+EXISTS)(public\.invoice_number_seq\b)/gi, "CREATE SEQUENCE IF NOT EXISTS $1");
+  out = addOwnerIdPolicyGuards(out);
   if (/\bDEFAULT\s+(?:public\.)?generate_invoice_number\s*\(\s*\)/i.test(out)
     && !/\bCREATE\s+(?:OR\s+REPLACE\s+)?FUNCTION\s+public\.generate_invoice_number\s*\(/i.test(out)) {
     out = `${buildInvoiceNumberHelperSql()}\n\n${out}`;
   }
   return out;
+}
+
+function addOwnerIdPolicyGuards(sql: string): string {
+  const policyStatement = /(^|\n)(\s*(?:DROP\s+POLICY\s+IF\s+EXISTS\s+[^;]+;\s*)?CREATE\s+POLICY\s+[^;]+\s+ON\s+((?:(?:"(?:[^"]|"")+")|[a-zA-Z_][\w$]*)(?:\s*\.\s*(?:(?:"(?:[^"]|"")+")|[a-zA-Z_][\w$]*))?)\s+[^;]*owner_id[^;]*;)/gi;
+  return sql.replace(policyStatement, (match, prefix: string, statement: string, tableName: string) => {
+    const guard = `ALTER TABLE ${tableName} ADD COLUMN IF NOT EXISTS owner_id uuid;`;
+    const before = sql.slice(Math.max(0, sql.indexOf(match) - 240), sql.indexOf(match));
+    if (new RegExp(`ALTER\\s+TABLE\\s+${escapeRegExp(tableName)}\\s+ADD\\s+COLUMN\\s+IF\\s+NOT\\s+EXISTS\\s+owner_id`, "i").test(before)) {
+      return match;
+    }
+    return `${prefix}${guard}\n${statement}`;
+  });
 }
 
 function buildInvoiceNumberHelperSql(): string {

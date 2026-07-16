@@ -13,6 +13,17 @@ create table if not exists admin.workspaces (
   created_at   timestamptz not null default now(),
   updated_at   timestamptz not null default now()
 );
+
+-- Self-heal older/partial installs where admin.workspaces existed before this
+-- migration but did not yet have the Phase 15 columns. CREATE TABLE IF NOT
+-- EXISTS does not add missing columns, so every referenced column must be
+-- asserted before indexes, policies, and later migrations use it.
+alter table admin.workspaces
+  add column if not exists owner_id uuid references auth.users(id) on delete set null,
+  add column if not exists archived_at timestamptz,
+  add column if not exists created_at timestamptz not null default now(),
+  add column if not exists updated_at timestamptz not null default now();
+
 create index if not exists workspaces_owner_idx on admin.workspaces(owner_id);
 
 create table if not exists admin.workspace_members (

@@ -224,7 +224,20 @@ if [ "$STATE" != "active" ]; then
 fi
 
 echo "▶ Probing http://127.0.0.1:${PORT}/healthz"
-HEALTH="$(curl -fsS --max-time 5 "http://127.0.0.1:${PORT}/healthz")"
+HEALTH=""
+for i in $(seq 1 30); do
+  if HEALTH="$(curl -fsS --max-time 3 "http://127.0.0.1:${PORT}/healthz" 2>/dev/null)"; then
+    break
+  fi
+  STATE_NOW="$(systemctl is-active "$UNIT" 2>/dev/null || echo unknown)"
+  if [ "$STATE_NOW" = "failed" ]; then
+    echo "✗ $UNIT failed while waiting for /healthz"
+    journalctl -u "$UNIT" --no-pager -n 80 || true
+    exit 1
+  fi
+  sleep 1
+done
+[ -n "$HEALTH" ] || { echo "✗ worker never responded on 127.0.0.1:${PORT}/healthz"; systemctl status "$UNIT" --no-pager -l || true; journalctl -u "$UNIT" --no-pager -n 80 || true; exit 1; }
 echo "$HEALTH"; echo
 if ! echo "$HEALTH" | grep -q 'v1-static-serve'; then
   echo "✗ worker responded, but the static-serving version marker is missing."
