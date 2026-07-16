@@ -65,8 +65,19 @@ function safeSlug(s) {
 async function fetchBundle(bucket, key) {
   if (!SERVICE_KEY) throw new Error("PLUTO_SERVICE_ROLE_KEY is required for POST /unpack");
   const url = `${UPSTREAM}/storage/v1/object/${encodeURIComponent(bucket)}/${key.split("/").map(encodeURIComponent).join("/")}`;
-  const res = await fetch(url, { headers: { apikey: SERVICE_KEY, authorization: `Bearer ${SERVICE_KEY}` } });
-  if (!res.ok) throw new Error(`storage GET HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  let res;
+  try {
+    res = await fetch(url, { headers: { apikey: SERVICE_KEY, authorization: `Bearer ${SERVICE_KEY}` } });
+  } catch (e) {
+    // undici throws a generic TypeError('fetch failed') on ECONNREFUSED / DNS / TLS
+    // errors. Surface the URL and root cause so operators can see the misconfig.
+    const cause = e?.cause?.code || e?.cause?.message || e?.cause || e?.message || String(e);
+    const hint = /127\.0\.0\.1|localhost/.test(UPSTREAM)
+      ? ` — PLUTO_UPSTREAM_URL points at ${UPSTREAM}, which likely has no Supabase Storage listening. Set PLUTO_UPSTREAM_URL in /etc/pluto/sandbox-worker.env to your real Supabase project URL (e.g. https://<project-ref>.supabase.co) and restart the worker.`
+      : "";
+    throw new Error(`storage GET network error for ${url}: ${cause}${hint}`);
+  }
+  if (!res.ok) throw new Error(`storage GET HTTP ${res.status} from ${url}: ${(await res.text()).slice(0, 200)}`);
   const buf = Buffer.from(await res.arrayBuffer());
   return buf;
 }

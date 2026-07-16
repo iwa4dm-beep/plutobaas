@@ -23,16 +23,29 @@ ENV_FILE="${ENV_FILE:-/etc/pluto/sandbox-worker.env}"
 UNIT="${UNIT:-}"
 PORT="${PORT:-8787}"
 SITES_ROOT="${SITES_ROOT:-/var/lib/pluto/sites}"
-UPSTREAM="${UPSTREAM:-http://127.0.0.1:8000}"
+UPSTREAM="${UPSTREAM:-}"
 
 SECRET="${SECRET:-}"
 SERVICE_KEY="${SERVICE_KEY:-}"
 
 if [ -z "$SECRET" ]; then
   echo "✗ SECRET is required. Pass it inline:"
-  echo "   sudo SECRET='<PLUTO_SANDBOX_WORKER_SECRET value>' \\"
-  echo "        SERVICE_KEY='<service role key>' bash $0"
+  echo "   sudo SECRET='<PLUTO_SANDBOX_WORKER_SECRET>' \\"
+  echo "        SERVICE_KEY='<supabase service role key>' \\"
+  echo "        UPSTREAM='https://<project-ref>.supabase.co' \\"
+  echo "        bash $0"
   exit 2
+fi
+
+# Try to preserve existing UPSTREAM if the caller didn't override it.
+if [ -z "$UPSTREAM" ] && [ -f "$ENV_FILE" ]; then
+  UPSTREAM="$(grep -E '^PLUTO_UPSTREAM_URL=' "$ENV_FILE" | tail -1 | cut -d= -f2- || true)"
+fi
+if [ -z "$UPSTREAM" ]; then
+  UPSTREAM="http://127.0.0.1:8000"
+  echo "⚠ UPSTREAM not set — defaulting to $UPSTREAM."
+  echo "   POST /unpack will fail with 'fetch failed' until you set UPSTREAM to your"
+  echo "   Supabase project URL (e.g. https://xxxx.supabase.co) and rerun this script."
 fi
 
 if [ -z "$UNIT" ]; then
