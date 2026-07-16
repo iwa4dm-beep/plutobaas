@@ -36,7 +36,7 @@ PUBLIC_BASE="${PUBLIC_URL%/}"
 SYSTEMD_UNIT="/etc/systemd/system/${SERVICE}.service"
 NGINX_AVAILABLE="/etc/nginx/sites-available/${DOMAIN}"
 NGINX_ENABLED="/etc/nginx/sites-enabled/${DOMAIN}"
-NGINX_CONF_D="/etc/nginx/conf.d/${DOMAIN}.conf"
+NGINX_CONF_D="/etc/nginx/conf.d/00-${DOMAIN}.conf"
 NGINX_SITE=""
 SUDO=""
 [ "$(id -u)" = "0" ] || SUDO="sudo"
@@ -62,12 +62,15 @@ select_nginx_site_path() {
   local dump
   dump="$(nginx_dump)"
 
-  if printf '%s\n' "$dump" | grep -qE '(/etc/nginx/sites-enabled/|include[[:space:]]+/etc/nginx/sites-enabled/)'; then
+  if printf '%s\n' "$dump" | grep -qE 'include[[:space:]]+/etc/nginx/conf\.d/\*\.conf'; then
+    NGINX_SITE="$NGINX_CONF_D"
+    ok "nginx includes conf.d/*.conf; using first-class per-domain config ${NGINX_SITE}"
+  elif printf '%s\n' "$dump" | grep -qE 'include[[:space:]]+/etc/nginx/sites-enabled/\*'; then
     NGINX_SITE="$NGINX_AVAILABLE"
     ok "nginx includes sites-enabled; using ${NGINX_SITE}"
   else
     NGINX_SITE="$NGINX_CONF_D"
-    warn "nginx does not appear to load sites-enabled; using loaded conf.d path ${NGINX_SITE}"
+    warn "Could not detect nginx include path; using standard loaded conf.d path ${NGINX_SITE}"
   fi
 }
 
@@ -83,7 +86,7 @@ install_nginx_site_link() {
 
   if [ "$NGINX_SITE" = "$NGINX_AVAILABLE" ]; then
     $SUDO ln -sf "$NGINX_AVAILABLE" "$NGINX_ENABLED"
-    $SUDO rm -f "$NGINX_CONF_D"
+    $SUDO rm -f "$NGINX_CONF_D" "/etc/nginx/conf.d/${DOMAIN}.conf"
   else
     $SUDO rm -f "$NGINX_AVAILABLE" "$NGINX_ENABLED"
   fi
@@ -112,7 +115,8 @@ remove_conflicting_nginx_configs() {
   # managed file as the single source of truth for this hostname.
   $SUDO rm -f "/etc/nginx/sites-enabled/${DOMAIN}-le-ssl.conf" \
     "/etc/nginx/sites-available/${DOMAIN}-le-ssl.conf" \
-    "/etc/nginx/conf.d/${DOMAIN}-le-ssl.conf"
+    "/etc/nginx/conf.d/${DOMAIN}-le-ssl.conf" \
+    "/etc/nginx/conf.d/${DOMAIN}.conf"
 }
 
 show_tls_diagnostics() {
