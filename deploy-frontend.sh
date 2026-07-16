@@ -24,6 +24,13 @@ public_host() {
   printf '%s' "${url%%:*}"
 }
 
+is_https_public_url() {
+  case "$PUBLIC_URL" in
+    https://*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 DOMAIN="${DOMAIN:-$(public_host)}"
 PUBLIC_BASE="${PUBLIC_URL%/}"
 SYSTEMD_UNIT="/etc/systemd/system/${SERVICE}.service"
@@ -36,6 +43,71 @@ log() { printf "\n\033[1;36m▶ %s\033[0m\n" "$*"; }
 ok()  { printf "\033[1;32m✔ %s\033[0m\n" "$*"; }
 warn(){ printf "\033[1;33m! %s\033[0m\n" "$*"; }
 fail(){ printf "\033[1;31m❌ %s\033[0m\n" "$*"; exit 1; }
+
+tls_cert_matches_domain() {
+  local cert="/etc/letsencrypt/live/${DOMAIN}/fullchain.pem"
+  local key="/etc/letsencrypt/live/${DOMAIN}/privkey.pem"
+  [ -f "$cert" ] && [ -f "$key" ] || return 1
+  command -v openssl >/dev/null 2>&1 || return 0
+  openssl x509 -in "$cert" -noout -checkhost "$DOMAIN" 2>/dev/null | grep -qi 'does match'
+}
+
+write_nginx_http_site() {
+  $SUDO mkdir -p /var/www/certbot
+  $SUDO tee "$NGINX_AVAILABLE" >/dev/null <<EOF
+server {
+    listen 80;
+    listen [::]:80;
+    server_name ${DOMAIN};
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+
+    root ${APP_DIR}/.output/public;
+    location ^~ /assets/ {
+        try_files \$uri =404;
+        access_log off;
+        expires 1y;
+        add_header Cache-Control "public, max-age=31536000, immutable" always;
+    }
+
+    location / {
+        proxy_pass         http://127.0.0.1:${PORT};
+        proxy_http_version 1.1;
+        proxy_set_header   Host              \$host;
+        proxy_set_header   X-Real-IP         \$remote_addr;
+        proxy_set_header   X-Forwarded-For   \$proxy_add_x_forwarded_for;
+        proxy_set_header   X-Forwarded-Proto \$scheme;
+        proxy_set_header   Upgrade           \$http_upgrade;
+        proxy_set_header   Connection        \$http_connection;
+    }
+}
+EOF
+}
+
+ensure_tls_certificate() {
+  tls_cert_matches_domain && return 0
+
+  command -v certbot >/dev/null 2>&1 || {
+    fail "Valid TLS certificate missing for ${DOMAIN}. Install certbot, then re-run this script; Chrome HSTS will not allow HTTPS with the current certificate."
+  }
+
+  warn "Valid TLS certificate missing for ${DOMAIN}; requesting Let's Encrypt certificate"
+  write_nginx_http_site
+  $SUDO ln -sf "$NGINX_AVAILABLE" "$NGINX_ENABLED"
+  $SUDO nginx -t
+  $SUDO systemctl reload nginx 2>/dev/null || $SUDO systemctl restart nginx
+
+  $SUDO certbot certonly \
+    --webroot -w /var/www/certbot \
+    -d "$DOMAIN" \
+    --cert-name "$DOMAIN" \
+    --agree-tos --non-interactive --register-unsafely-without-email \
+    --force-renewal || fail "Could not issue TLS certificate for ${DOMAIN}. Check DNS A record and port 80 access, then re-run."
+
+  tls_cert_matches_domain || fail "Issued certificate does not match ${DOMAIN}. Check nginx/certbot certificate paths."
+}
 
 write_systemd_unit() {
   log "Installing systemd service: ${SERVICE}"
@@ -95,7 +167,9 @@ write_nginx_site() {
     done
   fi
 
-  if [ -f "$cert" ] && [ -f "$key" ]; then
+  if is_https_public_url; then
+    ensure_tls_certificate
+
     $SUDO tee "$NGINX_AVAILABLE" >/dev/null <<EOF
 server {
     listen 80;
@@ -157,37 +231,8 @@ server {
 }
 EOF
   else
-    warn "TLS certificate not found for ${DOMAIN}; installing HTTP proxy only. Run certbot after DNS is ready."
-    $SUDO tee "$NGINX_AVAILABLE" >/dev/null <<EOF
-server {
-    listen 80;
-    listen [::]:80;
-    server_name ${DOMAIN};
-
-    location /.well-known/acme-challenge/ {
-        root /var/www/certbot;
-    }
-
-    root ${APP_DIR}/.output/public;
-    location ^~ /assets/ {
-        try_files \$uri =404;
-        access_log off;
-        expires 1y;
-        add_header Cache-Control "public, max-age=31536000, immutable" always;
-    }
-
-    location / {
-        proxy_pass         http://127.0.0.1:${PORT};
-        proxy_http_version 1.1;
-        proxy_set_header   Host              \$host;
-        proxy_set_header   X-Real-IP         \$remote_addr;
-        proxy_set_header   X-Forwarded-For   \$proxy_add_x_forwarded_for;
-        proxy_set_header   X-Forwarded-Proto \$scheme;
-        proxy_set_header   Upgrade           \$http_upgrade;
-        proxy_set_header   Connection        \$http_connection;
-    }
-}
-EOF
+    warn "PUBLIC_URL is not HTTPS; installing HTTP proxy only."
+    write_nginx_http_site
   fi
 
   $SUDO ln -sf "$NGINX_AVAILABLE" "$NGINX_ENABLED"
@@ -317,13 +362,14 @@ wait_for_http "http://127.0.0.1:${PORT}/" "local dashboard" || {
 }
 
 curl -fsS -o /dev/null -w "  users  :${PORT}  → HTTP %{http_code}\n" "http://127.0.0.1:${PORT}/dashboard/users" || warn "local /dashboard/users check failed"
-curl -fsS -o /dev/null -w "  public :443    → HTTP %{http_code}\n" -k "$PUBLIC_BASE/" || warn "public check failed"
+curl -fsS -o /dev/null -w "  public :443    → HTTP %{http_code}\n" "$PUBLIC_BASE/" || warn "public check failed"
 
 CSS_FILE="$(ls .output/public/assets/*.css 2>/dev/null | head -1 || true)"
 if [ -n "$CSS_FILE" ]; then
   CSS_PATH="/assets/$(basename "$CSS_FILE")"
-  echo "  asset  :css   → $(curl -ksSI "$PUBLIC_BASE$CSS_PATH" | awk 'BEGIN{ORS=" "} /^HTTP\//{print $2} /^content-type:/ {print $0}' | sed 's/[[:space:]]*$//')"
-  if ! curl -ksSI "$PUBLIC_BASE$CSS_PATH" | grep -qiE '^content-type: *text/css'; then
+  CSS_HEADERS="$(curl -sSI "$PUBLIC_BASE$CSS_PATH" || true)"
+  echo "  asset  :css   → $(printf '%s\n' "$CSS_HEADERS" | awk 'BEGIN{ORS=" "} /^HTTP\//{print $2} /^content-type:/ {print $0}' | sed 's/[[:space:]]*$//')"
+  if ! printf '%s\n' "$CSS_HEADERS" | grep -qiE '^content-type: *text/css'; then
     fail "CSS asset is not served as text/css. Check nginx config for ${DOMAIN}."
   fi
 fi
