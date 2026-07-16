@@ -341,7 +341,7 @@ function AutoDeployInner() {
 
         <div className="flex items-center justify-between pt-2 border-t border-border">
           <div className="text-xs text-muted-foreground">
-            Workspace: <span className="font-mono">{workspace?.slug ?? "—"}</span>
+            Workspace: <span className="font-mono">{active?.slug ?? "—"}</span>
           </div>
           <button
             onClick={run}
