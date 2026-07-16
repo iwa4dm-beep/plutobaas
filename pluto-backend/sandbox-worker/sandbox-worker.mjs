@@ -442,7 +442,65 @@ async function handleStatic(req, res, prefix, linkName) {
   const r = await resolveSlug(slug);
   if (!r.ok) return json(res, 404, { error: r.error });
   const wsDir = path.join(SITES_ROOT, r.workspaceId);
-  return serveStatic(res, wsDir, linkName, m[2] || "");
+  return serveStatic(req, res, wsDir, linkName, m[2] || "");
+}
+
+// Public readiness endpoint — no shared secret. Answers "is <slug> ready to serve?"
+// Reports: bundle upload (zip fetched + unpacked), migration status (best-effort
+// from manifest.migrations if the deployer wrote it), and static serving state.
+async function siteStatus(slug) {
+  const s = String(slug || "").trim().toLowerCase();
+  if (!s || !SLUG_RE.test(s)) return { ok: false, error: "invalid_slug" };
+  const slugPath = path.join(SITES_ROOT, s);
+  let workspaceId = null;
+  try {
+    const st = await fsp.lstat(slugPath);
+    if (!st.isSymbolicLink()) {
+      return { ok: false, slug: s, error: "slug_not_linked",
+               bundleUploaded: false, migrationsApplied: null, staticServing: false };
+    }
+    const target = await fsp.readlink(slugPath);
+    const wsDir = path.isAbsolute(target) ? target : path.join(SITES_ROOT, target);
+    workspaceId = path.basename(wsDir);
+    const readManifest = async (name) => {
+      try { return JSON.parse(await fsp.readFile(path.join(wsDir, name), "utf-8")); }
+      catch { return null; }
+    };
+    const current = await readManifest("current.json");
+    const preview = await readManifest("preview.json");
+    const anyManifest = current || preview;
+    // Confirm the current symlink resolves to a real directory with index.html.
+    let staticServing = false;
+    try {
+      const real = await fsp.realpath(path.join(wsDir, "current"));
+      const idx = await fsp.stat(path.join(real, "index.html"));
+      staticServing = idx.isFile();
+    } catch { /* not deployed to production channel yet */ }
+    let previewServing = false;
+    try {
+      const real = await fsp.realpath(path.join(wsDir, "preview"));
+      const idx = await fsp.stat(path.join(real, "index.html"));
+      previewServing = idx.isFile();
+    } catch { /* no preview */ }
+    return {
+      ok: true,
+      slug: s,
+      workspaceId,
+      bundleUploaded: Boolean(anyManifest),
+      migrationsApplied: anyManifest?.migrations ?? null, // filled by deployer if wired
+      staticServing,
+      previewServing,
+      channel: staticServing ? "production" : (previewServing ? "preview" : "none"),
+      servedAt: current?.servedAt ?? preview?.servedAt ?? null,
+      sizeBytes: current?.sizeBytes ?? preview?.sizeBytes ?? null,
+      envInjected: Boolean(anyManifest?.envInjected),
+      ready: Boolean(staticServing),
+      ts: new Date().toISOString(),
+    };
+  } catch {
+    return { ok: false, slug: s, error: "slug_not_found",
+             bundleUploaded: false, migrationsApplied: null, staticServing: false };
+  }
 }
 
 const server = http.createServer(async (req, res) => {
