@@ -5,6 +5,18 @@
 
 create schema if not exists admin;
 
+-- Repair schema drift before this migration reads/writes owner_id. Some VPS
+-- installs had admin.workspaces created by an early dashboard build without
+-- owner_id; CREATE TABLE IF NOT EXISTS in 0016 would have skipped adding it.
+alter table if exists admin.projects
+  add column if not exists owner_id uuid references auth.users(id) on delete set null;
+
+alter table if exists admin.workspaces
+  add column if not exists owner_id uuid references auth.users(id) on delete set null,
+  add column if not exists archived_at timestamptz,
+  add column if not exists created_at timestamptz not null default now(),
+  add column if not exists updated_at timestamptz not null default now();
+
 alter table if exists admin.projects
   add column if not exists workspace_id uuid references admin.workspaces(id) on delete set null;
 

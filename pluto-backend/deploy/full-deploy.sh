@@ -59,7 +59,12 @@ if [ -f "$DEPLOY/bootstrap-sandbox-worker.sh" ]; then
   if ! SECRET="$SECRET" SERVICE_KEY="${SERVICE_KEY:-}" UPSTREAM="${UPSTREAM:-}" bash "$DEPLOY/bootstrap-sandbox-worker.sh"; then
     log "bootstrap failed; running emergency worker repair"
     [ -f "$DEPLOY/repair-sandbox-worker.sh" ] || die "worker bootstrap failed and repair script is missing"
-    SECRET="$SECRET" SERVICE_KEY="${SERVICE_KEY:-}" UPSTREAM="${UPSTREAM:-}" bash "$DEPLOY/repair-sandbox-worker.sh" || die "worker repair failed"
+    if ! SECRET="$SECRET" SERVICE_KEY="${SERVICE_KEY:-}" UPSTREAM="${UPSTREAM:-}" bash "$DEPLOY/repair-sandbox-worker.sh"; then
+      log "worker repair failed; nuking and rebuilding sandbox worker from scratch"
+      [ -f "$DEPLOY/nuke-and-rebuild-sandbox.sh" ] || die "worker repair failed and nuke script is missing"
+      KEEP_SITES="${KEEP_SITES:-1}" SECRET="$SECRET" SERVICE_KEY="${SERVICE_KEY:-}" UPSTREAM="${UPSTREAM:-}" WILDCARD="$WILDCARD" ACME_EMAIL="$ACME_EMAIL" SLUG="${SLUG:-}" \
+        bash "$DEPLOY/nuke-and-rebuild-sandbox.sh" || die "sandbox nuke/rebuild failed"
+    fi
   fi
 else
   # fallback: refresh env + copy mjs + restart
