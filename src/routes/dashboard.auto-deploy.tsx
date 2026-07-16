@@ -202,6 +202,16 @@ function AutoDeployInner() {
     return () => window.removeEventListener("pluto:auto-deploy-history:changed", on);
   }, []);
 
+  // Prevent stream interval leak on unmount
+  useEffect(() => {
+    return () => {
+      if (streamTimerRef.current) {
+        clearInterval(streamTimerRef.current);
+        streamTimerRef.current = null;
+      }
+    };
+  }, []);
+
   const log = useCallback((m: string) => {
     setLogs((l) => [...l, `[${new Date().toLocaleTimeString()}] ${m}`]);
   }, []);
