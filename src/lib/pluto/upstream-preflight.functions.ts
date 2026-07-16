@@ -34,25 +34,32 @@ async function probe(url: string, headers: Record<string, string>, label: string
 }
 
 export const pingUpstream = createServerFn({ method: "GET" })
-  .inputValidator((_: unknown) => ({}))
-  .handler(async (): Promise<UpstreamPreflight> => {
+  .inputValidator((d: unknown) => {
+    const v = (d && typeof d === "object" ? (d as { operatorToken?: unknown }).operatorToken : undefined);
+    return { operatorToken: typeof v === "string" && v.length > 0 ? v : undefined };
+  })
+  .handler(async ({ data }): Promise<UpstreamPreflight> => {
   const base = getVpsBaseUrl();
   const storedRaw = (process.env.PLUTO_SERVICE_ROLE_KEY ?? "").trim();
   const jwtSecret = (process.env.PLUTO_JWT_SECRET ?? "").trim();
-  const token = getServiceRoleKey();
-  const tokenSource: UpstreamPreflight["tokenSource"] = !token
-    ? "none"
-    : storedRaw && storedRaw.split(".").length === 3
-      ? "stored-jwt"
-      : jwtSecret
-        ? "minted-from-jwt-secret"
-        : "stored-opaque";
+  const operatorToken = data.operatorToken?.trim();
+  const token = operatorToken || getServiceRoleKey();
+  const tokenSource: UpstreamPreflight["tokenSource"] = operatorToken
+    ? "operator-token"
+    : !token
+      ? "none"
+      : storedRaw && storedRaw.split(".").length === 3
+        ? "stored-jwt"
+        : jwtSecret
+          ? "minted-from-jwt-secret"
+          : "stored-opaque";
 
   const headers: Record<string, string> = { accept: "application/json" };
   if (token) { headers.apikey = token; headers.authorization = `Bearer ${token}`; }
 
   const c1 = await probe(`${base}/admin/v1/health`, { accept: "application/json" }, "admin health (public)");
   const c2 = await probe(`${base}/admin/v1/workspaces?limit=1`, headers, "admin workspaces (auth)");
+
 
   let hint: string | null = null;
   if (tokenSource === "none") {
