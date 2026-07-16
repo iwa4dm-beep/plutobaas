@@ -210,6 +210,19 @@ function AutoDeployInner() {
     return () => window.removeEventListener("pluto:auto-deploy-history:changed", on);
   }, []);
 
+  const runPreflight = useCallback(async () => {
+    setPreflightBusy(true);
+    try {
+      const r = await pingUpstreamFn();
+      setPreflight(r);
+    } catch (e) {
+      setPreflight({ ok: false, baseUrl: "", tokenSource: "none", checks: [], hint: (e as Error).message });
+    } finally { setPreflightBusy(false); }
+  }, [pingUpstreamFn]);
+
+  // Auto-run preflight on mount so misconfig surfaces before the user tries to deploy.
+  useEffect(() => { runPreflight(); }, [runPreflight]);
+
   // Prevent stream interval leak on unmount
   useEffect(() => {
     return () => {
