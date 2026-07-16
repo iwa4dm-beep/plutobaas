@@ -34,9 +34,13 @@ import {
 } from "@/lib/pluto/auto-deploy-history";
 import {
   ALL_EVENTS, dispatchWebhookEvent, loadWebhooks, saveWebhooks,
-  loadWebhookLog, newWebhookId,
+  loadWebhookLog, loadEndpointStatus, newWebhookId,
   type WebhookConfig, type WebhookEvent, type WebhookLogEntry,
+  type EndpointStatus,
 } from "@/lib/pluto/auto-deploy-webhooks";
+import {
+  PAYLOAD_SCHEMAS, buildSchemaBundle,
+} from "@/lib/pluto/auto-deploy-webhook-schemas";
 import { useAuth } from "@/lib/pluto/auth-context";
 
 // Self-healing: max auto-retry attempts on transient deploy failure
