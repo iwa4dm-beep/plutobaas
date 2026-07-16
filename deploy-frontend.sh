@@ -78,6 +78,23 @@ write_nginx_site() {
     "/etc/nginx/sites-available/${DOMAIN}.conf" \
     "/etc/nginx/conf.d/${DOMAIN}.conf"
 
+  # Scan the entire nginx tree for ANY other files that also declare
+  # `server_name <domain>`. A stale/duplicate server block wins the match
+  # and proxies /assets/*.css to the Node app, which returns JSON 404
+  # (breaking CSS/JS in the browser). Remove them, keeping only the file
+  # we are about to write.
+  local conflicts
+  conflicts="$($SUDO grep -RlE "server_name[[:space:]]+[^;]*(^|[[:space:]])${DOMAIN}([[:space:]]|;)" \
+      /etc/nginx/sites-enabled /etc/nginx/sites-available /etc/nginx/conf.d 2>/dev/null | sort -u || true)"
+  if [ -n "$conflicts" ]; then
+    for f in $conflicts; do
+      [ "$f" = "$NGINX_AVAILABLE" ] && continue
+      [ "$f" = "$NGINX_ENABLED" ] && continue
+      warn "Removing conflicting nginx config for ${DOMAIN}: $f"
+      $SUDO rm -f "$f"
+    done
+  fi
+
   if [ -f "$cert" ] && [ -f "$key" ]; then
     $SUDO tee "$NGINX_AVAILABLE" >/dev/null <<EOF
 server {
