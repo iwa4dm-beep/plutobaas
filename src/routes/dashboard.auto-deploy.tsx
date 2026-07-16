@@ -137,7 +137,9 @@ function AutoDeployPage() {
 
 function AutoDeployInner() {
   const { active } = useWorkspace();
+  const { session } = useAuth();
   const workspaceId = active?.id ?? "";
+  const approverEmail = session?.user?.email ?? "operator";
   const deploy = useServerFn(deployAll);
 
   // Source form
@@ -164,6 +166,11 @@ function AutoDeployInner() {
   const [health, setHealth] = useState<HealthSummary | null>(null);
   const [history, setHistory] = useState<AutoDeployHistoryEntry[]>([]);
   const [showHistory, setShowHistory] = useState(false);
+
+  // Real-time streaming
+  const [streamEvents, setStreamEvents] = useState<StepEvent[]>([]);
+  const [runningStepIdx, setRunningStepIdx] = useState<number>(-1);
+  const streamTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // In-memory rollback anchor — bundle bytes for last successful deploy in this session.
   const lastSuccessRef = useRef<PendingDeploy | null>(null);
