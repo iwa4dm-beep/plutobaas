@@ -446,6 +446,7 @@ log "Testing & reloading nginx"
 $SUDO nginx -t
 $SUDO systemctl reload nginx
 ok "nginx reloaded"
+verify_served_tls_san
 
 # ---------- 7. Smoke test ----------
 log "Smoke test"
