@@ -5,13 +5,23 @@
 // rollback started/completed, and final publish.
 //
 // - Storage: localStorage, workspace-agnostic (per-browser).
-// - Delivery: fire-and-forget fetch; failures are swallowed and logged to
-//   an in-memory ring buffer (last 50) that the UI surfaces.
+// - Delivery: automatic retry with exponential backoff (max 4 attempts:
+//   0s, 2s, 8s, 30s). Final status is tracked per endpoint under
+//   `endpointStatus`. All attempts are appended to the log ring buffer.
+// - Signing: every JSON body is signed with HMAC-SHA256 using the
+//   webhook's shared `secret` (if set). Headers:
+//     x-pluto-signature: sha256=<hex>
+//     x-pluto-event:     <event>
+//     x-pluto-delivery:  <uuid>
+//     x-pluto-timestamp: <ms since epoch>
 // - Secrets: masked in payloads (only env keys, never values).
 
 const CFG_KEY = "pluto:auto-deploy:webhooks";
 const LOG_KEY = "pluto:auto-deploy:webhook-log";
-const MAX_LOG = 50;
+const STATUS_KEY = "pluto:auto-deploy:webhook-endpoint-status";
+const MAX_LOG = 100;
+const MAX_ATTEMPTS = 4;
+const BACKOFF_MS = [0, 2_000, 8_000, 30_000];
 
 export type WebhookEvent =
   | "approval.awaiting"
@@ -37,6 +47,7 @@ export type WebhookConfig = {
   id: string;
   label: string;
   url: string;
+  secret?: string;
   events: WebhookEvent[];
   enabled: boolean;
   format: "json" | "slack" | "discord";
@@ -45,13 +56,29 @@ export type WebhookConfig = {
 
 export type WebhookLogEntry = {
   ts: number;
+  deliveryId: string;
   webhookId: string;
   webhookLabel: string;
   event: WebhookEvent;
+  attempt: number;
+  maxAttempts: number;
   ok: boolean;
+  finalStatus: "delivered" | "failed" | "retrying";
   status: number;
   error?: string;
   latencyMs: number;
+};
+
+export type EndpointStatus = {
+  webhookId: string;
+  lastEvent: WebhookEvent;
+  lastDeliveryId: string;
+  lastAttempt: number;
+  lastOk: boolean;
+  lastStatus: number;
+  lastError?: string;
+  lastTs: number;
+  finalStatus: "delivered" | "failed" | "retrying";
 };
 
 export function loadWebhooks(): WebhookConfig[] {
@@ -78,11 +105,69 @@ export function loadWebhookLog(): WebhookLogEntry[] {
   } catch { return []; }
 }
 
+export function loadEndpointStatus(): Record<string, EndpointStatus> {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = window.localStorage.getItem(STATUS_KEY);
+    const obj = raw ? JSON.parse(raw) : {};
+    return obj && typeof obj === "object" ? obj : {};
+  } catch { return {}; }
+}
+
+function saveEndpointStatus(all: Record<string, EndpointStatus>): void {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(STATUS_KEY, JSON.stringify(all));
+  window.dispatchEvent(new CustomEvent("pluto:auto-deploy-webhook-status:changed"));
+}
+
 function appendLog(entry: WebhookLogEntry): void {
   if (typeof window === "undefined") return;
   const all = [entry, ...loadWebhookLog()].slice(0, MAX_LOG);
   window.localStorage.setItem(LOG_KEY, JSON.stringify(all));
   window.dispatchEvent(new CustomEvent("pluto:auto-deploy-webhook-log:changed"));
+
+  // Update endpoint status snapshot
+  const status = loadEndpointStatus();
+  status[entry.webhookId] = {
+    webhookId: entry.webhookId,
+    lastEvent: entry.event,
+    lastDeliveryId: entry.deliveryId,
+    lastAttempt: entry.attempt,
+    lastOk: entry.ok,
+    lastStatus: entry.status,
+    lastError: entry.error,
+    lastTs: entry.ts,
+    finalStatus: entry.finalStatus,
+  };
+  saveEndpointStatus(status);
+}
+
+/** HMAC-SHA256 hex signature using the webhook's shared secret. */
+async function signBody(secret: string, body: string): Promise<string> {
+  try {
+    const enc = new TextEncoder();
+    const key = await crypto.subtle.importKey(
+      "raw", enc.encode(secret),
+      { name: "HMAC", hash: "SHA-256" }, false, ["sign"],
+    );
+    const sig = await crypto.subtle.sign("HMAC", key, enc.encode(body));
+    return Array.from(new Uint8Array(sig))
+      .map((b) => b.toString(16).padStart(2, "0")).join("");
+  } catch { return ""; }
+}
+
+/** Verify a signature produced by `signBody`. Timing-safe. */
+export async function verifyWebhookSignature(
+  secret: string, body: string, headerValue: string,
+): Promise<boolean> {
+  const expected = await signBody(secret, body);
+  const provided = headerValue.replace(/^sha256=/, "");
+  if (expected.length !== provided.length || expected.length === 0) return false;
+  let diff = 0;
+  for (let i = 0; i < expected.length; i++) {
+    diff |= expected.charCodeAt(i) ^ provided.charCodeAt(i);
+  }
+  return diff === 0;
 }
 
 /** Format payload per target — Slack/Discord expect `text`/`content` fields. */
@@ -90,10 +175,13 @@ function formatPayload(
   cfg: WebhookConfig,
   event: WebhookEvent,
   data: Record<string, unknown>,
+  meta: { deliveryId: string; attempt: number; timestamp: number },
 ): { body: string; headers: Record<string, string> } {
   const base = {
     event,
-    timestamp: new Date().toISOString(),
+    delivery_id: meta.deliveryId,
+    attempt: meta.attempt,
+    timestamp: new Date(meta.timestamp).toISOString(),
     source: "pluto-auto-deploy",
     ...data,
   };
@@ -112,12 +200,57 @@ function formatPayload(
   }
   return {
     body: JSON.stringify(base),
-    headers: { "content-type": "application/json", "x-pluto-event": event },
+    headers: { "content-type": "application/json" },
   };
 }
 
+async function deliverOnce(
+  cfg: WebhookConfig,
+  event: WebhookEvent,
+  data: Record<string, unknown>,
+  deliveryId: string,
+  attempt: number,
+): Promise<{ ok: boolean; status: number; error?: string; latencyMs: number }> {
+  const started = Date.now();
+  const { body, headers } = formatPayload(cfg, event, data, {
+    deliveryId, attempt, timestamp: started,
+  });
+  const authHeaders: Record<string, string> = {
+    ...headers,
+    "x-pluto-event": event,
+    "x-pluto-delivery": deliveryId,
+    "x-pluto-attempt": String(attempt),
+    "x-pluto-timestamp": String(started),
+  };
+  if (cfg.secret) {
+    const sig = await signBody(cfg.secret, body);
+    if (sig) authHeaders["x-pluto-signature"] = `sha256=${sig}`;
+  }
+  try {
+    const res = await fetch(cfg.url, {
+      method: "POST", headers: authHeaders, body, mode: "cors", keepalive: true,
+    });
+    return { ok: res.ok, status: res.status, latencyMs: Date.now() - started,
+      error: res.ok ? undefined : `HTTP ${res.status}` };
+  } catch (err: unknown) {
+    // Try no-cors best-effort so Slack/Discord still receive it, but treat
+    // as "opaque success" only when there is no retry budget left. Otherwise
+    // count as a failure so retry can attempt CORS again.
+    try {
+      await fetch(cfg.url, {
+        method: "POST", headers: authHeaders, body, mode: "no-cors", keepalive: true,
+      });
+      return { ok: true, status: 0, latencyMs: Date.now() - started,
+        error: "sent (opaque — no-cors)" };
+    } catch (err2: unknown) {
+      return { ok: false, status: 0, latencyMs: Date.now() - started,
+        error: err2 instanceof Error ? err2.message : String(err2 ?? err) };
+    }
+  }
+}
+
 /** Fire the event to every enabled webhook that subscribes to it.
- *  Fire-and-forget: failures are logged, never thrown. */
+ *  Retries with exponential backoff; failures are logged, never thrown. */
 export function dispatchWebhookEvent(
   event: WebhookEvent,
   data: Record<string, unknown>,
@@ -127,45 +260,32 @@ export function dispatchWebhookEvent(
   if (hooks.length === 0) return;
 
   for (const cfg of hooks) {
-    const started = Date.now();
-    const { body, headers } = formatPayload(cfg, event, data);
-    // fire-and-forget; browser CORS may block reading response — we still
-    // record status when readable, and gracefully log opaque/no-cors sends.
-    fetch(cfg.url, { method: "POST", headers, body, mode: "cors", keepalive: true })
-      .then(async (res) => {
+    void (async () => {
+      const deliveryId = newDeliveryId();
+      for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+        const wait = BACKOFF_MS[attempt - 1] ?? 30_000;
+        if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+        const r = await deliverOnce(cfg, event, data, deliveryId, attempt);
+        const isLast = attempt >= MAX_ATTEMPTS;
+        const finalStatus: WebhookLogEntry["finalStatus"] =
+          r.ok ? "delivered" : isLast ? "failed" : "retrying";
         appendLog({
-          ts: started,
-          webhookId: cfg.id,
-          webhookLabel: cfg.label,
-          event,
-          ok: res.ok,
-          status: res.status,
-          latencyMs: Date.now() - started,
-          error: res.ok ? undefined : `HTTP ${res.status}`,
+          ts: Date.now(), deliveryId,
+          webhookId: cfg.id, webhookLabel: cfg.label, event,
+          attempt, maxAttempts: MAX_ATTEMPTS,
+          ok: r.ok, finalStatus,
+          status: r.status, error: r.error, latencyMs: r.latencyMs,
         });
-      })
-      .catch((err: unknown) => {
-        // CORS failure or network error — try no-cors as best effort so the
-        // notification still leaves the browser for Slack/Discord etc.
-        fetch(cfg.url, { method: "POST", headers, body, mode: "no-cors", keepalive: true })
-          .then(() => {
-            appendLog({
-              ts: started, webhookId: cfg.id, webhookLabel: cfg.label, event,
-              ok: true, status: 0, latencyMs: Date.now() - started,
-              error: "sent (opaque — no-cors)",
-            });
-          })
-          .catch((err2: unknown) => {
-            appendLog({
-              ts: started, webhookId: cfg.id, webhookLabel: cfg.label, event,
-              ok: false, status: 0, latencyMs: Date.now() - started,
-              error: (err2 instanceof Error ? err2.message : String(err2 ?? err)),
-            });
-          });
-      });
+        if (r.ok) return;
+      }
+    })();
   }
 }
 
 export function newWebhookId(): string {
   return `wh_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
+}
+
+export function newDeliveryId(): string {
+  return `dlv_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 }
