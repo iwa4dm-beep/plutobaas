@@ -64,6 +64,12 @@ if [ -z "$UNIT" ]; then
 fi
 
 stop_worker_units_and_free_port() {
+  HERE="$(cd "$(dirname "$0")" && pwd)"
+  if [ -f "$HERE/reset-sandbox-worker-port.sh" ]; then
+    $SUDO bash "$HERE/reset-sandbox-worker-port.sh" "$PORT"
+    return
+  fi
+
   echo "▶ Stopping duplicate sandbox worker units and freeing 127.0.0.1:${PORT}"
   for u in pluto-sandbox-worker pluto-sandbox; do
     if $SUDO systemctl list-unit-files "${u}.service" >/dev/null 2>&1; then
@@ -114,8 +120,11 @@ echo "  keys: $(grep -c '=' "$ENV_FILE") lines"
 stop_worker_units_and_free_port
 echo "▶ Starting $UNIT"
 $SUDO systemctl start "$UNIT" || { echo "✗ start failed"; $SUDO systemctl status "$UNIT" --no-pager -l; exit 1; }
-
-sleep 2
+for i in 1 2 3 4 5; do
+  sleep 1
+  STATE="$($SUDO systemctl is-active "$UNIT" 2>/dev/null || echo unknown)"
+  [ "$STATE" = "activating" ] || break
+done
 STATE="$($SUDO systemctl is-active "$UNIT" 2>/dev/null || echo unknown)"
 if [ "$STATE" = "active" ]; then
   echo "✓ $UNIT is active"
