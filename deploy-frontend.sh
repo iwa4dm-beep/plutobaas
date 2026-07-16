@@ -112,17 +112,37 @@ install_nginx_site_link() {
 assert_nginx_site_loaded() {
   [ -n "$NGINX_SITE" ] || select_nginx_site_path
 
-  local dump
+  local dump marker_path loaded_path expected_paths
   dump="$(nginx_dump)"
-  if ! printf '%s\n' "$dump" | grep -qF "# configuration file: ${NGINX_SITE}:"; then
-    show_tls_diagnostics
-    fail "nginx is not loading ${NGINX_SITE}. Fix nginx include patterns, then re-run."
+
+  # nginx -T reports the path from the include directive. When sites-enabled
+  # contains a symlink to sites-available, the active dump marker is usually
+  # /etc/nginx/sites-enabled/<domain>.conf, not the symlink target we write.
+  expected_paths="${NGINX_SITE}"
+  if [ "$NGINX_SITE" = "$NGINX_AVAILABLE" ]; then
+    expected_paths="${NGINX_ENABLED} ${NGINX_AVAILABLE}"
+  elif [ "$NGINX_SITE" = "$NGINX_ENABLED" ]; then
+    expected_paths="${NGINX_ENABLED} ${NGINX_AVAILABLE}"
   fi
-  if ! printf '%s\n' "$dump" | grep -A80 -F "# configuration file: ${NGINX_SITE}:" | grep -qE "server_name[[:space:]]+${DOMAIN}([[:space:];]|$)"; then
+
+  loaded_path=""
+  for marker_path in $expected_paths; do
+    if printf '%s\n' "$dump" | grep -qF "# configuration file: ${marker_path}:"; then
+      loaded_path="$marker_path"
+      break
+    fi
+  done
+
+  if [ -z "$loaded_path" ]; then
     show_tls_diagnostics
-    fail "nginx loaded ${NGINX_SITE}, but no active server_name ${DOMAIN} was found."
+    fail "nginx is not loading the dashboard site. Expected one of: ${expected_paths}. Fix nginx include patterns, then re-run."
   fi
-  ok "nginx is loading the managed server block for ${DOMAIN}: ${NGINX_SITE}"
+
+  if ! printf '%s\n' "$dump" | grep -A80 -F "# configuration file: ${loaded_path}:" | grep -qE "server_name[[:space:]]+${DOMAIN}([[:space:];]|$)"; then
+    show_tls_diagnostics
+    fail "nginx loaded ${loaded_path}, but no active server_name ${DOMAIN} was found."
+  fi
+  ok "nginx is loading the managed server block for ${DOMAIN}: ${loaded_path}"
 }
 
 remove_conflicting_nginx_configs() {
