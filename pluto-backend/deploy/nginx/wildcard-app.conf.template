@@ -23,7 +23,7 @@ server {
     http2 on;
 
     # Match <slug>-dev.__APEX__ specifically (captured into $slug).
-    server_name ~^(?<slug>[a-z0-9](?:[a-z0-9-]{0,37}[a-z0-9])?)-dev\.__APEX__$;
+    server_name "~^(?<slug>[a-z0-9](?:[a-z0-9-]{0,37}[a-z0-9])?)-dev\.__APEX_RE__$";
 
     ssl_certificate     /etc/letsencrypt/live/__APEX__/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/__APEX__/privkey.pem;
@@ -55,7 +55,7 @@ server {
     # Match <slug>.__APEX__ (but NOT <slug>-dev.__APEX__ — handled above).
     # nginx picks the first matching server_name regex, and the -dev block
     # is declared first, so it wins for -dev hosts.
-    server_name ~^(?<slug>[a-z0-9](?:[a-z0-9-]{0,37}[a-z0-9])?)\.__APEX__$;
+    server_name "~^(?<slug>[a-z0-9](?:[a-z0-9-]{0,37}[a-z0-9])?)\.__APEX_RE__$";
 
     ssl_certificate     /etc/letsencrypt/live/__APEX__/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/__APEX__/privkey.pem;

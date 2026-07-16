@@ -119,9 +119,11 @@ if [ -n "$WILDCARD_APEX" ]; then
   DST="/etc/nginx/sites-available/pluto-wildcard-${WILDCARD_APEX}.conf"
   LINK="/etc/nginx/sites-enabled/pluto-wildcard-${WILDCARD_APEX}.conf"
   $SUDO mkdir -p /etc/nginx/sites-available /etc/nginx/sites-enabled
-  $SUDO sed "s/__APEX__/${WILDCARD_APEX//./\\.}/g" "$TPL" | $SUDO tee "$DST" >/dev/null
-  # sed replacement above accidentally escapes dots too much — redo simply:
-  $SUDO sed -i "s/__APEX__/${WILDCARD_APEX}/g" "$DST"
+  APEX_RE="${WILDCARD_APEX//./\\\\.}"
+  $SUDO sed \
+    -e "s/__APEX_RE__/${APEX_RE}/g" \
+    -e "s/__APEX__/${WILDCARD_APEX}/g" \
+    "$TPL" | $SUDO tee "$DST" >/dev/null
   $SUDO ln -sfn "$DST" "$LINK"
 
   CERT_LIVE="/etc/letsencrypt/live/${WILDCARD_APEX}"
