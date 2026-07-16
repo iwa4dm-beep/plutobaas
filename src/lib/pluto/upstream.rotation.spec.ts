@@ -1,21 +1,33 @@
-// Node vitest env — stub a minimal localStorage on globalThis before
-// importing plutoApi (its `typeof window` gate accepts any defined global).
-import { afterAll, beforeAll } from "vitest";
 // E2E-style unit test for the JWT-rotation self-healing path in plutoApi.
 //
 // Scenario: operator rotated PLUTO_JWT_SECRET on the backend. The browser
 // still has the old operator-pasted token in localStorage
 // (`pluto.upstream.token`) alongside a fresh Supabase-style session token
-// in `pluto.session.v1`. The database-import page hits `/dbio/*` endpoints
-// via plutoApi. First call must:
+// in `pluto.session.v1`. First plutoApi call must:
 //   1. attempt with the stale legacy token and receive 401
 //      FST_JWT_AUTHORIZATION_TOKEN_INVALID,
 //   2. purge the stale legacy token from localStorage,
 //   3. retry once with the fresh session access_token,
 //   4. return the 200 payload transparently to the caller.
+//
+// Root vitest env is "node" — install a minimal window+localStorage shim
+// on globalThis before importing the module under test.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { plutoApi } from "./upstream";
+
+class MemoryStorage {
+  private m = new Map<string, string>();
+  get length() { return this.m.size; }
+  clear() { this.m.clear(); }
+  getItem(k: string) { return this.m.has(k) ? this.m.get(k)! : null; }
+  setItem(k: string, v: string) { this.m.set(k, String(v)); }
+  removeItem(k: string) { this.m.delete(k); }
+  key(i: number) { return Array.from(this.m.keys())[i] ?? null; }
+}
+(globalThis as unknown as { window: unknown }).window = globalThis;
+(globalThis as unknown as { localStorage: MemoryStorage }).localStorage = new MemoryStorage();
+
+const { plutoApi } = await import("./upstream");
 
 const LS_TOKEN   = "pluto.upstream.token";
 const LS_URL     = "pluto.upstream.url";
