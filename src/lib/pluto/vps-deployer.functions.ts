@@ -98,7 +98,16 @@ export const pushMigrations = createServerFn({ method: "POST" })
     const id = parsed.id ?? "";
     if (!id) return { ok: false, error: "Upstream did not return migration id", status: 500, debug: created.debug };
     const applied = await rawFetch(`${base}/admin/v1/migrations/${encodeURIComponent(id)}/apply`, "POST", headers, "{}", "{}", 60_000);
-    if (!applied.ok) return { ok: false, error: applied.text || `HTTP ${applied.status}`, status: applied.status, debug: applied.debug };
+    if (!applied.ok) {
+      // Idempotency: treat "already exists" apply errors as success. The
+      // migration record is created; the underlying objects are already there
+      // from a prior run of the same bundle, so subsequent steps can proceed.
+      const alreadyExists = /already exists/i.test(applied.text);
+      if (alreadyExists) {
+        return { ok: true, migrationId: id, applied: 0, debug: applied.debug };
+      }
+      return { ok: false, error: applied.text || `HTTP ${applied.status}`, status: applied.status, debug: applied.debug };
+    }
     return { ok: true, migrationId: id, applied: 1, debug: applied.debug };
   });
 
@@ -440,15 +449,40 @@ export const deployAll = createServerFn({ method: "POST" })
         };
       }
       const body = JSON.stringify({ workspaceId: data.workspaceId, bucket: data.bucket, key: cleanPath });
-      const r = await rawFetch(
-        `${sandboxUrl}/unpack`,
-        "POST",
-        { "content-type": "application/json", "x-sandbox-secret": sandboxSecret, accept: "application/json" },
-        body,
-        body,
-        180_000,
-      );
-      if (!r.ok) return { ok: false, detail: `unpack HTTP ${r.status}: ${r.text.slice(0, 240)}`, debug: r.debug, result: null };
+      // The sandbox worker is nginx-proxied under /sandbox/* on api.timescard.cloud.
+      // Operators sometimes set PLUTO_SANDBOX_URL to the bare host, which routes
+      // POST /unpack into the main app and returns "Only HTML requests are supported here".
+      // Try both shapes and use whichever answers with JSON.
+      const candidates = /\/sandbox$/i.test(sandboxUrl)
+        ? [`${sandboxUrl}/unpack`]
+        : [`${sandboxUrl}/sandbox/unpack`, `${sandboxUrl}/unpack`];
+      let r: Awaited<ReturnType<typeof rawFetch>> | null = null;
+      let triedList = "";
+      for (const url of candidates) {
+        r = await rawFetch(
+          url,
+          "POST",
+          { "content-type": "application/json", "x-sandbox-secret": sandboxSecret, accept: "application/json" },
+          body,
+          body,
+          180_000,
+        );
+        triedList = triedList ? `${triedList}, ${url}` : url;
+        if (r.ok) break;
+        // If the response looks like it hit the wrong service (HTML page or the
+        // "Only HTML requests are supported here" message), fall through to the
+        // next candidate. Otherwise, stop and report.
+        const wrongService = /Only HTML requests|<!DOCTYPE html/i.test(r.text);
+        if (!wrongService) break;
+      }
+      if (!r || !r.ok) {
+        return {
+          ok: false,
+          detail: `unpack HTTP ${r?.status ?? 0}: ${(r?.text ?? "").slice(0, 240)} (tried: ${triedList}). Set PLUTO_SANDBOX_URL to the full sandbox path (e.g. https://api.timescard.cloud/sandbox).`,
+          debug: r?.debug ?? null,
+          result: null,
+        };
+      }
       let parsed: { webRoot?: string; releaseDir?: string; servedAt?: string; sizeBytes?: number; durationMs?: number } = {};
       try { parsed = JSON.parse(r.text); } catch { /* ignore */ }
       servedSiteFromWorker.url = parsed.webRoot;
