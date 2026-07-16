@@ -105,6 +105,7 @@ import { Route as ApiPlutoMonitorRouteImport } from './routes/api/pluto.monitor'
 import { Route as ApiPlutoDeployRouteImport } from './routes/api/pluto/deploy'
 import { Route as ApiPlutoAuditRouteImport } from './routes/api/pluto.audit'
 import { Route as ApiPlutoSplatRouteImport } from './routes/api/pluto.$'
+import { Route as DashboardProjectsSlugEnvRouteImport } from './routes/dashboard.projects.$slug.env'
 
 const StatusRoute = StatusRouteImport.update({
   id: '/status',
@@ -596,6 +597,12 @@ const ApiPlutoSplatRoute = ApiPlutoSplatRouteImport.update({
   path: '/api/pluto/$',
   getParentRoute: () => rootRouteImport,
 } as any)
+const DashboardProjectsSlugEnvRoute =
+  DashboardProjectsSlugEnvRouteImport.update({
+    id: '/$slug/env',
+    path: '/$slug/env',
+    getParentRoute: () => DashboardProjectsRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -665,7 +672,7 @@ export interface FileRoutesByFullPath {
   '/dashboard/pluto-studio': typeof DashboardPlutoStudioRoute
   '/dashboard/pluto-vault': typeof DashboardPlutoVaultRoute
   '/dashboard/pluto-webhooks': typeof DashboardPlutoWebhooksRoute
-  '/dashboard/projects': typeof DashboardProjectsRoute
+  '/dashboard/projects': typeof DashboardProjectsRouteWithChildren
   '/dashboard/rbac': typeof DashboardRbacRoute
   '/dashboard/realtime': typeof DashboardRealtimeRoute
   '/dashboard/scaling': typeof DashboardScalingRoute
@@ -694,6 +701,7 @@ export interface FileRoutesByFullPath {
   '/dashboard/custom-domains/audit': typeof DashboardCustomDomainsAuditRoute
   '/dashboard/integrations/lovable-frontend': typeof DashboardIntegrationsLovableFrontendRoute
   '/sdk/download/$file': typeof SdkDownloadFileRoute
+  '/dashboard/projects/$slug/env': typeof DashboardProjectsSlugEnvRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -762,7 +770,7 @@ export interface FileRoutesByTo {
   '/dashboard/pluto-studio': typeof DashboardPlutoStudioRoute
   '/dashboard/pluto-vault': typeof DashboardPlutoVaultRoute
   '/dashboard/pluto-webhooks': typeof DashboardPlutoWebhooksRoute
-  '/dashboard/projects': typeof DashboardProjectsRoute
+  '/dashboard/projects': typeof DashboardProjectsRouteWithChildren
   '/dashboard/rbac': typeof DashboardRbacRoute
   '/dashboard/realtime': typeof DashboardRealtimeRoute
   '/dashboard/scaling': typeof DashboardScalingRoute
@@ -791,6 +799,7 @@ export interface FileRoutesByTo {
   '/dashboard/custom-domains/audit': typeof DashboardCustomDomainsAuditRoute
   '/dashboard/integrations/lovable-frontend': typeof DashboardIntegrationsLovableFrontendRoute
   '/sdk/download/$file': typeof SdkDownloadFileRoute
+  '/dashboard/projects/$slug/env': typeof DashboardProjectsSlugEnvRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -861,7 +870,7 @@ export interface FileRoutesById {
   '/dashboard/pluto-studio': typeof DashboardPlutoStudioRoute
   '/dashboard/pluto-vault': typeof DashboardPlutoVaultRoute
   '/dashboard/pluto-webhooks': typeof DashboardPlutoWebhooksRoute
-  '/dashboard/projects': typeof DashboardProjectsRoute
+  '/dashboard/projects': typeof DashboardProjectsRouteWithChildren
   '/dashboard/rbac': typeof DashboardRbacRoute
   '/dashboard/realtime': typeof DashboardRealtimeRoute
   '/dashboard/scaling': typeof DashboardScalingRoute
@@ -890,6 +899,7 @@ export interface FileRoutesById {
   '/dashboard/custom-domains/audit': typeof DashboardCustomDomainsAuditRoute
   '/dashboard/integrations/lovable-frontend': typeof DashboardIntegrationsLovableFrontendRoute
   '/sdk/download/$file': typeof SdkDownloadFileRoute
+  '/dashboard/projects/$slug/env': typeof DashboardProjectsSlugEnvRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -990,6 +1000,7 @@ export interface FileRouteTypes {
     | '/dashboard/custom-domains/audit'
     | '/dashboard/integrations/lovable-frontend'
     | '/sdk/download/$file'
+    | '/dashboard/projects/$slug/env'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -1087,6 +1098,7 @@ export interface FileRouteTypes {
     | '/dashboard/custom-domains/audit'
     | '/dashboard/integrations/lovable-frontend'
     | '/sdk/download/$file'
+    | '/dashboard/projects/$slug/env'
   id:
     | '__root__'
     | '/'
@@ -1185,6 +1197,7 @@ export interface FileRouteTypes {
     | '/dashboard/custom-domains/audit'
     | '/dashboard/integrations/lovable-frontend'
     | '/sdk/download/$file'
+    | '/dashboard/projects/$slug/env'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -1882,6 +1895,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPlutoSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/dashboard/projects/$slug/env': {
+      id: '/dashboard/projects/$slug/env'
+      path: '/$slug/env'
+      fullPath: '/dashboard/projects/$slug/env'
+      preLoaderRoute: typeof DashboardProjectsSlugEnvRouteImport
+      parentRoute: typeof DashboardProjectsRoute
+    }
   }
 }
 
@@ -1928,6 +1948,17 @@ const DashboardIntegrationsRouteWithChildren =
   DashboardIntegrationsRoute._addFileChildren(
     DashboardIntegrationsRouteChildren,
   )
+
+interface DashboardProjectsRouteChildren {
+  DashboardProjectsSlugEnvRoute: typeof DashboardProjectsSlugEnvRoute
+}
+
+const DashboardProjectsRouteChildren: DashboardProjectsRouteChildren = {
+  DashboardProjectsSlugEnvRoute: DashboardProjectsSlugEnvRoute,
+}
+
+const DashboardProjectsRouteWithChildren =
+  DashboardProjectsRoute._addFileChildren(DashboardProjectsRouteChildren)
 
 interface DashboardRouteChildren {
   DashboardAiRoute: typeof DashboardAiRoute
@@ -1984,7 +2015,7 @@ interface DashboardRouteChildren {
   DashboardPlutoStudioRoute: typeof DashboardPlutoStudioRoute
   DashboardPlutoVaultRoute: typeof DashboardPlutoVaultRoute
   DashboardPlutoWebhooksRoute: typeof DashboardPlutoWebhooksRoute
-  DashboardProjectsRoute: typeof DashboardProjectsRoute
+  DashboardProjectsRoute: typeof DashboardProjectsRouteWithChildren
   DashboardRbacRoute: typeof DashboardRbacRoute
   DashboardRealtimeRoute: typeof DashboardRealtimeRoute
   DashboardScalingRoute: typeof DashboardScalingRoute
@@ -2059,7 +2090,7 @@ const DashboardRouteChildren: DashboardRouteChildren = {
   DashboardPlutoStudioRoute: DashboardPlutoStudioRoute,
   DashboardPlutoVaultRoute: DashboardPlutoVaultRoute,
   DashboardPlutoWebhooksRoute: DashboardPlutoWebhooksRoute,
-  DashboardProjectsRoute: DashboardProjectsRoute,
+  DashboardProjectsRoute: DashboardProjectsRouteWithChildren,
   DashboardRbacRoute: DashboardRbacRoute,
   DashboardRealtimeRoute: DashboardRealtimeRoute,
   DashboardScalingRoute: DashboardScalingRoute,

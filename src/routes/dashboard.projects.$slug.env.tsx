@@ -93,7 +93,7 @@ function ProjectEnvPage() {
     <div className="mx-auto max-w-5xl p-4">
       <PageHeader
         title={`Env & Secrets — ${slug}`}
-        subtitle={<>Live site: <a className="font-mono underline" href={previewSubdomainUrl(slug)} target="_blank" rel="noreferrer">{previewSubdomainUrl(slug)}</a></>}
+        description={`Live site: ${previewSubdomainUrl(slug)}`}
       />
       <ErrorBanner error={err} onRetry={() => void load()} onDismiss={() => setErr(null)} />
 
