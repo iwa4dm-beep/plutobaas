@@ -79,8 +79,8 @@ function AutoDeployPage() {
 }
 
 function AutoDeployInner() {
-  const { workspace } = useWorkspace();
-  const workspaceId = workspace?.id ?? "";
+  const { active } = useWorkspace();
+  const workspaceId = active?.id ?? "";
   const deploy = useServerFn(deployAll);
 
   const [source, setSource] = useState<SourceKind>("github");
