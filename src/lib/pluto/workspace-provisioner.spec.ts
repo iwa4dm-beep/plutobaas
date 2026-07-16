@@ -51,8 +51,9 @@ describe("provisionWorkspace (Auto-Connect Studio)", () => {
       keys: { anon: "pk_anon_xxx", service_role: "sk_service_yyy" },
     });
 
-    const result = await provisionWorkspace(
-      data: { projectName: "e2e-test", adminEmail: "auto@test.dev" },
+    const result = await provisionWorkspace({
+      projectName: "e2e-test",
+      adminEmail: "auto@test.dev",
     });
 
     expect(calls).toHaveLength(1);
