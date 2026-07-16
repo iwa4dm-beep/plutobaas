@@ -258,7 +258,7 @@ async function sqlExec(sql: string, headers: Record<string, string>): Promise<{ 
 }
 
 // ---------- ensureDeployInfra: idempotently create service user + deployments bucket ----------
-const EnsureInfraInput = z.object({ bucket: z.string().min(1).max(64).default("deployments") });
+const EnsureInfraInput = z.object({ bucket: z.string().min(1).max(64).default("deployments"), operatorToken: z.string().optional() });
 
 export type EnsureInfraStep = { key: string; label: string; ok: boolean; detail: string; debug: StepDebug | null };
 export type EnsureInfraResult = { ok: boolean; steps: EnsureInfraStep[] };
@@ -266,8 +266,9 @@ export type EnsureInfraResult = { ok: boolean; steps: EnsureInfraStep[] };
 export const ensureDeployInfra = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => EnsureInfraInput.parse(d))
   .handler(async ({ data }): Promise<EnsureInfraResult> => {
-    const headers = serviceHeaders();
+    const headers = serviceHeaders({}, data.operatorToken);
     if ("error" in headers) return { ok: false, steps: [{ key: "auth", label: "Auth", ok: false, detail: headers.error, debug: null }] };
+
     const base = getVpsBaseUrl();
     const steps: EnsureInfraStep[] = [];
 
