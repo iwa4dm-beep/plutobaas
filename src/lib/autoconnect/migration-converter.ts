@@ -62,7 +62,14 @@ function q(id: string): string {
   return /^[a-z_][a-z0-9_]*$/i.test(id) ? id : `"${id.replace(/"/g, '""')}"`;
 }
 function wrapDefault(v: string, type: string): string {
-  if (/^(now\(\)|gen_random_uuid\(\)|current_timestamp)$/i.test(v)) return v;
+  const trimmed = v.trim();
+  // Normalize legacy Laravel/uuid-ossp default to pgcrypto's built-in.
+  // Prevents "invalid input syntax for type uuid: uuid_generate_v4()" when the
+  // uuid-ossp extension is not installed on the target Postgres instance.
+  if (/^uuid_generate_v4\s*\(\s*\)$/i.test(trimmed)) return "gen_random_uuid()";
+  // Any SQL function call (identifier(...)) or common keyword: pass through unquoted.
+  if (/^[a-zA-Z_][\w.]*\s*\([^)]*\)$/.test(trimmed)) return trimmed;
+  if (/^(current_timestamp|current_date|current_time|null|true|false)$/i.test(trimmed)) return trimmed;
   if (type.includes("int") || type === "numeric" || type === "double precision" || type === "boolean") return v;
   return `'${v.replace(/'/g, "''")}'`;
 }

@@ -50,6 +50,20 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+/** Normalize SQL to fix common Laravel→Postgres issues that reject at APPLY time.
+ *  - Convert quoted `'uuid_generate_v4()'` (a string literal) into the actual
+ *    function call `gen_random_uuid()` so Postgres does not try to cast a
+ *    string to uuid ("invalid input syntax for type uuid").
+ *  - Replace `uuid_generate_v4()` with `gen_random_uuid()` (pgcrypto is
+ *    already required by our base migration; uuid-ossp is not).
+ */
+function sanitizeMigrationSql(sql: string): string {
+  let out = sql;
+  out = out.replace(/'\s*uuid_generate_v4\s*\(\s*\)\s*'/gi, "gen_random_uuid()");
+  out = out.replace(/\buuid_generate_v4\s*\(\s*\)/gi, "gen_random_uuid()");
+  return out;
+}
+
 async function rawFetch(
   url: string,
   method: string,
@@ -116,7 +130,7 @@ export const pushMigrations = createServerFn({ method: "POST" })
     //   POST /admin/v1/migrations/{id}/apply                        -> 200 { ok, migration }
     const base = getVpsBaseUrl();
     const name = (data.label ?? `auto-${Date.now()}`).replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 120);
-    const body = JSON.stringify({ name, up_sql: makePolicyCreatesIdempotent(data.sql), workspace_id: data.workspaceId });
+    const body = JSON.stringify({ name, up_sql: makePolicyCreatesIdempotent(sanitizeMigrationSql(data.sql)), workspace_id: data.workspaceId });
     const created = await rawFetch(`${base}/admin/v1/migrations`, "POST", headers, body, body, 60_000);
     if (!created.ok) return { ok: false, error: created.text || `HTTP ${created.status}`, status: created.status, debug: created.debug };
     let parsed: { id?: string } = {};
@@ -431,7 +445,7 @@ export const deployAll = createServerFn({ method: "POST" })
     // Step 1: push migrations (create + apply)
     const migName = ((data.label ?? `deploy-${Date.now()}`)).replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 120);
     const migStep = await withRetry("push-migrations", "Push migrations (create + apply)", data.maxRetries, async () => {
-      const body = JSON.stringify({ name: migName, up_sql: makePolicyCreatesIdempotent(data.sql), workspace_id: data.workspaceId });
+      const body = JSON.stringify({ name: migName, up_sql: makePolicyCreatesIdempotent(sanitizeMigrationSql(data.sql)), workspace_id: data.workspaceId });
       const created = await rawFetch(`${base}/admin/v1/migrations`, "POST", headers, body, body, 60_000);
       if (!created.ok) return { ok: false, detail: `create HTTP ${created.status}: ${created.text.slice(0, 200)}`, debug: created.debug, result: null };
       let parsed: { id?: string } = {}; try { parsed = JSON.parse(created.text); } catch { /* ignore */ }
@@ -615,17 +629,44 @@ export const deployAll = createServerFn({ method: "POST" })
     //         Non-fatal for overall deploy: reports upstream runtime status
     //         even when the sandbox worker is not yet installed on the VPS.
     const servedSiteUrl = (process.env.PLUTO_SERVED_SITE_URL ?? "").replace(/\/+$/, "");
+
+    // Auto-derive a per-deploy site URL when PLUTO_SERVED_SITE_URL is not set.
+    // Priority for the auto-derived value:
+    //   1. Sandbox worker's returned webRoot (authoritative — the worker just unpacked it)
+    //   2. `${PLUTO_SANDBOX_URL}/sites/<slug>/` (worker convention)
+    //   3. `${VPS_BASE}/sandbox/sites/<slug>/` (nginx location convention)
+    // The slug is derived from the bundle filename (without .zip).
+    const deploySlug = (filename.replace(/\.zip$/i, "") || data.workspaceId).replace(/[^a-zA-Z0-9._-]/g, "-");
+    const sandboxBase = (process.env.PLUTO_SANDBOX_URL ?? "").replace(/\/+$/, "");
+    const autoDerivedCandidates: string[] = [];
+    if (sandboxBase) autoDerivedCandidates.push(`${sandboxBase}/sites/${deploySlug}`);
+    autoDerivedCandidates.push(`${base}/sandbox/sites/${deploySlug}`);
+
     const healthStep = await withRetry("health-check", "Health check (functions runtime + bootstrap + served site)", data.maxRetries, async () => {
       const healthUrl = `${base}/functions/v1/health`;
       const h = await rawFetch(healthUrl, "GET", { accept: "application/json" }, null, null, 10_000);
       const invokeUrl = `${base}/functions/v1/invoke/bootstrap`;
       const inv = await rawFetch(invokeUrl, "POST", { ...headers, "content-type": "application/json" }, "{}", "{}", 15_000);
-      let siteLine = "served site: (PLUTO_SERVED_SITE_URL not set)";
+
+      // Resolve the site URL: explicit env → worker webRoot → auto-derived probe.
+      let effectiveSite = servedSiteUrl || servedSiteFromWorker.url || "";
+      let autoSource: "env" | "worker" | "auto-derived" | "none" = servedSiteUrl ? "env" : (servedSiteFromWorker.url ? "worker" : "none");
       let siteResult: { status: number; url: string; snippet: string } | null = null;
-      if (servedSiteUrl) {
-        const s = await rawFetch(`${servedSiteUrl}/`, "GET", { accept: "text/html" }, null, null, 15_000);
-        siteResult = { status: s.status, url: `${servedSiteUrl}/`, snippet: s.text.slice(0, 240) };
-        siteLine = `served site: ${s.ok ? `✓ HTTP ${s.status}` : `✗ HTTP ${s.status}`} @ ${servedSiteUrl}`;
+
+      if (!effectiveSite) {
+        for (const candidate of autoDerivedCandidates) {
+          const probe = await rawFetch(`${candidate}/`, "GET", { accept: "text/html" }, null, null, 8_000);
+          if (probe.ok) { effectiveSite = candidate; autoSource = "auto-derived"; break; }
+        }
+      }
+
+      let siteLine = "served site: (auto-detect failed — set PLUTO_SERVED_SITE_URL or install sandbox worker with /sites/<slug>/ vhost)";
+      if (effectiveSite) {
+        const s = await rawFetch(`${effectiveSite}/`, "GET", { accept: "text/html" }, null, null, 15_000);
+        siteResult = { status: s.status, url: `${effectiveSite}/`, snippet: s.text.slice(0, 240) };
+        siteLine = `served site (${autoSource}): ${s.ok ? `✓ HTTP ${s.status}` : `✗ HTTP ${s.status}`} @ ${effectiveSite}`;
+        // Cache the auto-derived URL for the resolvedSite block below.
+        if (autoSource === "auto-derived") servedSiteFromWorker.url = servedSiteFromWorker.url ?? effectiveSite;
       }
       const runtimeOk = h.ok;
       const invokeOk = inv.ok;
@@ -634,18 +675,13 @@ export const deployAll = createServerFn({ method: "POST" })
         `bootstrap invoke: ${invokeOk ? `✓ HTTP ${inv.status}` : `✗ HTTP ${inv.status}`} (${inv.text.slice(0, 160)})`,
         siteLine,
       ].join(" | ");
-      // Consider the step "ok" if the runtime endpoint is up. Invoke / served-site failure
-      // is diagnostic, not a deploy-blocking regression from our side.
-      return { ok: runtimeOk, detail, debug: h.debug, result: { runtime: { status: h.status, body: h.text.slice(0, 400) }, invoke: { status: inv.status, body: inv.text.slice(0, 400) }, site: siteResult } };
+      return { ok: runtimeOk, detail, debug: h.debug, result: { runtime: { status: h.status, body: h.text.slice(0, 400) }, invoke: { status: inv.status, body: inv.text.slice(0, 400) }, site: siteResult, autoSource, autoDerivedCandidates } };
     });
     steps.push(healthStep);
 
     // Resolve the best-effort served-site URL and actually probe it. Priority:
     //   1. Operator-configured PLUTO_SERVED_SITE_URL (explicit)
-    //   2. Sandbox worker's returned webRoot (from unpack step)
-    // The fabricated `<slug>.apps.timescard.cloud` hostname is intentionally
-    // NOT included here — those hostnames have no DNS/nginx wiring and would
-    // mislead the UI into showing a fake "live" link.
+    //   2. Sandbox worker's returned webRoot (from unpack step, or auto-derived above)
     const resolvedSite = servedSiteUrl || servedSiteFromWorker.url || undefined;
     let servedSiteProbe: LiveUrlProbe | undefined;
     let served = false;
@@ -653,8 +689,6 @@ export const deployAll = createServerFn({ method: "POST" })
     if (resolvedSite) {
       const probeUrl = resolvedSite.endsWith("/") ? resolvedSite : `${resolvedSite}/`;
       const p = await rawFetch(probeUrl, "GET", { accept: "text/html,*/*" }, null, null, 12_000);
-      const ct = p.debug ? null : null;
-      // rawFetch doesn't expose response headers; infer from body.
       const looksHtml = /<!DOCTYPE|<html/i.test(p.text);
       servedSiteProbe = {
         url: probeUrl,
@@ -666,10 +700,10 @@ export const deployAll = createServerFn({ method: "POST" })
       };
       served = p.ok;
       if (!p.ok) {
-        servedHint = `Bundle uploaded, but ${probeUrl} returned HTTP ${p.status}. The hostname is not yet wired to nginx / a vhost, or the sandbox worker did not unpack the release. Configure PLUTO_SERVED_SITE_URL or install a sandbox worker with a working /unpack endpoint.`;
+        servedHint = `Bundle uploaded, but ${probeUrl} returned HTTP ${p.status}. The hostname is not yet wired to nginx / a vhost, or the sandbox worker did not unpack the release. Configure PLUTO_SERVED_SITE_URL or install a sandbox worker with a working /unpack endpoint that serves /sites/<slug>/.`;
       }
     } else {
-      servedHint = "No served-site URL is configured. Set PLUTO_SERVED_SITE_URL to the public https:// origin that nginx serves the unpacked release from, or install the sandbox worker so it returns a webRoot after unpack.";
+      servedHint = `Auto-detect could not find a reachable served site. Tried: ${autoDerivedCandidates.join(", ")}. To fix permanently: (1) install pluto-backend/sandbox-worker on the VPS with an nginx location that serves /sandbox/sites/<slug>/ from the unpacked bundle, OR (2) set PLUTO_SERVED_SITE_URL to the public origin that serves the release.`;
     }
 
     const liveUrls = {
