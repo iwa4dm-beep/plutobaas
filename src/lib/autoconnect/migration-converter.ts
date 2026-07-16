@@ -25,14 +25,15 @@ export function tableToSql(t: TableDef): string {
     cols.push(line);
   }
   // owner column for RLS if not present
-  if (!t.columns.some((c) => c.name === "user_id" || c.name === "owner_id")) {
+  const hasCol = (name: string) => t.columns.some((c) => c.name === name);
+  if (!hasCol("user_id") && !hasCol("owner_id")) {
     cols.push(`  owner_id uuid`);
   }
   if (t.timestamps) {
-    cols.push(`  created_at timestamptz NOT NULL DEFAULT now()`);
-    cols.push(`  updated_at timestamptz NOT NULL DEFAULT now()`);
+    if (!hasCol("created_at")) cols.push(`  created_at timestamptz NOT NULL DEFAULT now()`);
+    if (!hasCol("updated_at")) cols.push(`  updated_at timestamptz NOT NULL DEFAULT now()`);
   }
-  if (t.softDeletes) {
+  if (t.softDeletes && !hasCol("deleted_at")) {
     cols.push(`  deleted_at timestamptz`);
   }
 
