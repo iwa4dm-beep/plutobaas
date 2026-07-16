@@ -291,6 +291,11 @@ const server = http.createServer(async (req, res) => {
       const s = decodeURIComponent(req.url.slice("/resolve/".length));
       return json(res, 200, await resolveSlug(s));
     }
+    if (req.method === "POST" && req.url === "/env") {
+      const body = await readJson(req);
+      const r = await rotateEnv(body);
+      return json(res, 200, r);
+    }
     return json(res, 404, { error: "not_found" });
   } catch (e) {
     return json(res, 500, { error: e?.message ?? String(e) });
