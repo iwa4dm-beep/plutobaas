@@ -189,6 +189,9 @@ function AutoDeployInner() {
   const [health, setHealth] = useState<HealthSummary | null>(null);
   const [history, setHistory] = useState<AutoDeployHistoryEntry[]>([]);
   const [showHistory, setShowHistory] = useState(false);
+  const [preflight, setPreflight] = useState<UpstreamPreflight | null>(null);
+  const [preflightBusy, setPreflightBusy] = useState(false);
+  const pingUpstreamFn = useServerFn(pingUpstream);
 
   // Real-time streaming
   const [streamEvents, setStreamEvents] = useState<StepEvent[]>([]);
