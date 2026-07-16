@@ -228,6 +228,37 @@ async function resolveSlug(slug) {
   }
 }
 
+// Hot env rotation — rewrite env.js in the live `current/` dir without a redeploy.
+async function rotateEnv({ workspaceId, slug, env, merge }) {
+  let wsDir;
+  if (slug) {
+    const r = await resolveSlug(slug);
+    if (!r.ok) throw new Error(r.error);
+    wsDir = path.join(SITES_ROOT, r.workspaceId);
+  } else if (workspaceId) {
+    wsDir = path.join(SITES_ROOT, safeSlug(workspaceId));
+  } else {
+    throw new Error("slug or workspaceId is required");
+  }
+  const currentLink = path.join(wsDir, "current");
+  const currentReal = await fsp.realpath(currentLink).catch(() => null);
+  if (!currentReal) throw new Error("no current release to update");
+
+  const envPath = path.join(currentReal, "env.js");
+  let next = env && typeof env === "object" ? { ...env } : {};
+  if (merge) {
+    // Best-effort merge — parse existing env.js by evaluating in a sandbox-safe way:
+    // we only support the exact shape we write, so a regex extraction is enough.
+    try {
+      const existing = await fsp.readFile(envPath, "utf-8");
+      const m = existing.match(/window\.__PLUTO_ENV__\s*=\s*(\{[\s\S]*?\});?/);
+      if (m) next = { ...JSON.parse(m[1]), ...next };
+    } catch { /* no prior env.js — treat as empty */ }
+  }
+  await fsp.writeFile(envPath, serializeEnvJs(next));
+  return { ok: true, envPath, keys: Object.keys(next).sort() };
+}
+
 async function status(workspaceId) {
   const wsRoot = path.join(SITES_ROOT, safeSlug(workspaceId));
   try {
