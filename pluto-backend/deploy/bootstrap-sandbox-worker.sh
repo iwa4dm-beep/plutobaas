@@ -68,6 +68,11 @@ else
 fi
 
 stop_worker_units_and_free_port() {
+  if [ -f "$HERE/reset-sandbox-worker-port.sh" ]; then
+    bash "$HERE/reset-sandbox-worker-port.sh" "$PORT"
+    return
+  fi
+
   echo "▶ Stopping duplicate sandbox worker units and freeing 127.0.0.1:${PORT}"
   for u in pluto-sandbox-worker pluto-sandbox; do
     if systemctl list-unit-files "${u}.service" >/dev/null 2>&1; then
@@ -95,7 +100,7 @@ stop_worker_units_and_free_port() {
 echo "▶ Installing OS dependencies"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -y >/dev/null
-apt-get install -y --no-install-recommends curl ca-certificates unzip >/dev/null
+apt-get install -y --no-install-recommends curl ca-certificates unzip psmisc iproute2 procps >/dev/null
 if ! command -v node >/dev/null 2>&1 || [ "$(node -v | sed 's/^v//' | cut -d. -f1)" -lt 20 ]; then
   curl -fsSL https://deb.nodesource.com/setup_20.x | bash - >/dev/null
   apt-get install -y nodejs >/dev/null
@@ -138,6 +143,7 @@ Type=simple
 User=www-data
 Group=www-data
 EnvironmentFile=${ENV_FILE}
+ExecStartPre=+/bin/sh -c 'if command -v fuser >/dev/null 2>&1; then fuser -k ${PORT}/tcp 2>/dev/null || true; fi; if command -v pkill >/dev/null 2>&1; then pkill -f "node .*sandbox-worker\\.mjs" 2>/dev/null || true; fi; exit 0'
 ExecStart=/usr/bin/node /opt/pluto/sandbox-worker/sandbox-worker.mjs
 Restart=on-failure
 RestartSec=3s
@@ -156,7 +162,11 @@ systemctl daemon-reload
 stop_worker_units_and_free_port
 systemctl enable "$UNIT"
 systemctl start "$UNIT"
-sleep 2
+for i in 1 2 3 4 5; do
+  sleep 1
+  STATE="$(systemctl is-active "$UNIT" 2>/dev/null || echo unknown)"
+  [ "$STATE" = "activating" ] || break
+done
 
 STATE="$(systemctl is-active "$UNIT" 2>/dev/null || echo unknown)"
 if [ "$STATE" != "active" ]; then
