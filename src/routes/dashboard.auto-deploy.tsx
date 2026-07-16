@@ -584,8 +584,21 @@ function AutoDeployInner() {
             <a href="/dashboard/logs-explorer" className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 hover:bg-accent">
               <ScrollText className="h-3.5 w-3.5" /> View logs
             </a>
+            {history[0] && (
+              <button
+                data-testid="export-report-live"
+                onClick={() => { downloadAutoDeployReport(history[0]); toast.success("Report downloaded"); }}
+                className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 hover:bg-accent">
+                <Download className="h-3.5 w-3.5" /> Export report
+              </button>
+            )}
           </div>
         </section>
+      )}
+
+      {/* Real-time streaming panel — while deploying */}
+      {(phase === "deploying" || (streamEvents.length > 0 && phase !== "live")) && (
+        <StreamPanel events={streamEvents} runningIdx={runningStepIdx} />
       )}
 
       {/* Error banner */}
