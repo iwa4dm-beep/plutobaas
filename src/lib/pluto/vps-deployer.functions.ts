@@ -6,6 +6,11 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { getVpsBaseUrl, getServiceRoleKey } from "./vps-client";
 
+/** Version tag embedded into the bootstrap function code. Bump when the
+ *  bootstrap handler shape changes so `verifyBootstrap` can confirm the VPS
+ *  is running the current code. */
+export const BOOTSTRAP_VERSION = "v2-handler-assign-2026-07-16";
+
 export type StepDebug = {
   url: string;
   method: string;
