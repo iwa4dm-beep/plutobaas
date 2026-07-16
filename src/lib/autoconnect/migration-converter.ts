@@ -100,6 +100,36 @@ END $$;`,
     );
   }
 
+  const usesInvoiceNumber = tables.some((t) =>
+    t.columns.some((c) => /^(?:public\.)?generate_invoice_number\s*\(\s*\)$/i.test((c.default ?? "").trim()))
+  );
+  if (usesInvoiceNumber) {
+    preamble.push(buildInvoiceNumberHelperSql(), "");
+  }
+
   const footer = ["COMMIT;", ""];
   return [...header, ...preamble, ...tables.map(tableToSql), ...footer].join("\n");
+}
+
+function buildInvoiceNumberHelperSql(): string {
+  return `-- Helper required by invoice_number DEFAULT public.generate_invoice_number()
+CREATE SEQUENCE IF NOT EXISTS public.invoice_number_seq START 1000;
+
+CREATE OR REPLACE FUNCTION public.generate_invoice_number()
+RETURNS text
+LANGUAGE plpgsql
+SET search_path = public
+AS $$
+DECLARE
+  next_num bigint;
+BEGIN
+  next_num := nextval('public.invoice_number_seq');
+  RETURN 'INV-' || to_char(now(), 'YYYYMMDD') || '-' || lpad(next_num::text, 6, '0');
+END;
+$$;
+
+GRANT USAGE, SELECT ON SEQUENCE public.invoice_number_seq TO authenticated;
+GRANT ALL ON SEQUENCE public.invoice_number_seq TO service_role;
+REVOKE EXECUTE ON FUNCTION public.generate_invoice_number() FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.generate_invoice_number() TO authenticated, service_role;`;
 }

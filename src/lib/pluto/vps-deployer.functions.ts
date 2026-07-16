@@ -61,7 +61,35 @@ function sanitizeMigrationSql(sql: string): string {
   let out = sql;
   out = out.replace(/'\s*uuid_generate_v4\s*\(\s*\)\s*'/gi, "gen_random_uuid()");
   out = out.replace(/\buuid_generate_v4\s*\(\s*\)/gi, "gen_random_uuid()");
+  out = out.replace(/\bCREATE\s+SEQUENCE\s+(?!IF\s+NOT\s+EXISTS)(public\.invoice_number_seq\b)/gi, "CREATE SEQUENCE IF NOT EXISTS $1");
+  if (/\bDEFAULT\s+(?:public\.)?generate_invoice_number\s*\(\s*\)/i.test(out)
+    && !/\bCREATE\s+(?:OR\s+REPLACE\s+)?FUNCTION\s+public\.generate_invoice_number\s*\(/i.test(out)) {
+    out = `${buildInvoiceNumberHelperSql()}\n\n${out}`;
+  }
   return out;
+}
+
+function buildInvoiceNumberHelperSql(): string {
+  return `-- Auto-added by deploy sanitizer: required by DEFAULT public.generate_invoice_number()
+CREATE SEQUENCE IF NOT EXISTS public.invoice_number_seq START 1000;
+
+CREATE OR REPLACE FUNCTION public.generate_invoice_number()
+RETURNS text
+LANGUAGE plpgsql
+SET search_path = public
+AS $$
+DECLARE
+  next_num bigint;
+BEGIN
+  next_num := nextval('public.invoice_number_seq');
+  RETURN 'INV-' || to_char(now(), 'YYYYMMDD') || '-' || lpad(next_num::text, 6, '0');
+END;
+$$;
+
+GRANT USAGE, SELECT ON SEQUENCE public.invoice_number_seq TO authenticated;
+GRANT ALL ON SEQUENCE public.invoice_number_seq TO service_role;
+REVOKE EXECUTE ON FUNCTION public.generate_invoice_number() FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.generate_invoice_number() TO authenticated, service_role;`;
 }
 
 async function rawFetch(
