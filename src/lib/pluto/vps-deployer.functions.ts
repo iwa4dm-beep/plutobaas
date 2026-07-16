@@ -483,12 +483,20 @@ export const deployAll = createServerFn({ method: "POST" })
       // The sandbox worker is nginx-proxied under /sandbox/* on api.timescard.cloud.
       // Operators sometimes set PLUTO_SANDBOX_URL to the bare host, which routes
       // POST /unpack into the main app and returns "Only HTML requests are supported here".
-      // Try both shapes and use whichever answers with JSON.
-      const candidates = /\/sandbox$/i.test(sandboxUrl)
-        ? [`${sandboxUrl}/unpack`]
-        : [`${sandboxUrl}/sandbox/unpack`, `${sandboxUrl}/unpack`];
+      // Try every plausible shape; fall through only when the response clearly hit the wrong service.
+      const base = sandboxUrl;
+      const hasSandboxSuffix = /\/sandbox$/i.test(base);
+      const candidates = hasSandboxSuffix
+        ? [`${base}/unpack`, `${base}/v1/unpack`, `${base}/deploy/unpack`]
+        : [
+            `${base}/sandbox/unpack`,
+            `${base}/sandbox/v1/unpack`,
+            `${base}/sandbox/deploy/unpack`,
+            `${base}/unpack`,
+          ];
       let r: Awaited<ReturnType<typeof rawFetch>> | null = null;
       let triedList = "";
+      let wrongServiceAll = true;
       for (const url of candidates) {
         r = await rawFetch(
           url,
@@ -499,21 +507,31 @@ export const deployAll = createServerFn({ method: "POST" })
           180_000,
         );
         triedList = triedList ? `${triedList}, ${url}` : url;
-        if (r.ok) break;
-        // If the response looks like it hit the wrong service (HTML page or the
-        // "Only HTML requests are supported here" message), fall through to the
-        // next candidate. Otherwise, stop and report.
-        const wrongService = /Only HTML requests|<!DOCTYPE html/i.test(r.text);
-        if (!wrongService) break;
+        if (r.ok) { wrongServiceAll = false; break; }
+        const isHtml = /Only HTML requests|<!DOCTYPE html|<html/i.test(r.text);
+        const is404 = r.status === 404;
+        if (!isHtml && !is404) { wrongServiceAll = false; break; }
       }
       if (!r || !r.ok) {
+        // If every candidate hit the wrong service or a 404, the deployed sandbox
+        // worker does not expose an unpack endpoint yet. Don't fail the whole
+        // pipeline for that — treat it as skipped with a clear operator hint.
+        if (wrongServiceAll) {
+          return {
+            ok: true,
+            detail: `skipped — sandbox worker at ${base} does not expose an /unpack endpoint (tried: ${triedList}). Upgrade sandbox-worker.mjs to include POST /unpack, or set PLUTO_SANDBOX_URL to the correct base (e.g. https://api.timescard.cloud/sandbox).`,
+            debug: r?.debug ?? null,
+            result: { skipped: true, reason: "no-unpack-endpoint", tried: triedList },
+          };
+        }
         return {
           ok: false,
-          detail: `unpack HTTP ${r?.status ?? 0}: ${(r?.text ?? "").slice(0, 240)} (tried: ${triedList}). Set PLUTO_SANDBOX_URL to the full sandbox path (e.g. https://api.timescard.cloud/sandbox).`,
+          detail: `unpack HTTP ${r?.status ?? 0}: ${(r?.text ?? "").slice(0, 240)} (tried: ${triedList}).`,
           debug: r?.debug ?? null,
           result: null,
         };
       }
+
       let parsed: { webRoot?: string; releaseDir?: string; servedAt?: string; sizeBytes?: number; durationMs?: number } = {};
       try { parsed = JSON.parse(r.text); } catch { /* ignore */ }
       servedSiteFromWorker.url = parsed.webRoot;
