@@ -57,7 +57,7 @@ async function rawFetch(
   }
 }
 
-function serviceHeaders(extra: Record<string, string> = {}, override?: string): Record<string, string> | { error: string } {
+async function serviceHeaders(extra: Record<string, string> = {}, override?: string): Promise<Record<string, string> | { error: string }> {
   const key = (override && override.trim()) || (await getServiceRoleKey());
   if (!key) return { error: "PLUTO_SERVICE_ROLE_KEY not configured" };
   return { apikey: key, authorization: `Bearer ${key}`, accept: "application/json", ...extra };
@@ -78,7 +78,7 @@ export type PushMigrationResult =
 export const pushMigrations = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => MigrationInput.parse(d))
   .handler(async ({ data }): Promise<PushMigrationResult> => {
-    const headers = serviceHeaders({ "content-type": "application/json" });
+    const headers = await serviceHeaders({ "content-type": "application/json" });
     if ("error" in headers) return { ok: false, error: headers.error, status: 500, debug: null };
     // Upstream shape (verified against api.timescard.cloud openapi + probe):
     //   POST /admin/v1/migrations  { name, up_sql, workspace_id }  -> 201 { id, ... }
@@ -115,7 +115,7 @@ export type UploadBundleResult =
 export const uploadBundle = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => UploadInput.parse(d))
   .handler(async ({ data }): Promise<UploadBundleResult> => {
-    const headers = serviceHeaders({
+    const headers = await serviceHeaders({
       "x-workspace-id": data.workspaceId,
       "x-upsert": "true",
     });
@@ -147,7 +147,7 @@ export type VerifyDeployResult =
 export const verifyDeploy = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => VerifyInput.parse(d))
   .handler(async ({ data }): Promise<VerifyDeployResult> => {
-    const headers = serviceHeaders();
+    const headers = await serviceHeaders();
     if ("error" in headers) return { ok: false, error: headers.error, status: 500, debug: null };
     // Upstream has no /workspaces/:id/deployments route. Use the migrations
     // list filtered by workspace as the source of truth for "latest deploy".
@@ -213,7 +213,7 @@ export const dryRunDeploy = createServerFn({ method: "POST" })
     }
 
     // 2. Storage reachability via HEAD (list bucket)
-    const headers = serviceHeaders();
+    const headers = await serviceHeaders();
     if ("error" in headers) {
       steps.push({ key: "check-storage", label: "Check storage reachability", ok: false, detail: headers.error, debug: null });
       steps.push({ key: "check-verify", label: "Verify admin API", ok: false, detail: headers.error, debug: null });
@@ -266,7 +266,7 @@ export type EnsureInfraResult = { ok: boolean; steps: EnsureInfraStep[] };
 export const ensureDeployInfra = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => EnsureInfraInput.parse(d))
   .handler(async ({ data }): Promise<EnsureInfraResult> => {
-    const headers = serviceHeaders({}, data.operatorToken);
+    const headers = await serviceHeaders({}, data.operatorToken);
     if ("error" in headers) return { ok: false, steps: [{ key: "auth", label: "Auth", ok: false, detail: headers.error, debug: null }] };
 
     const base = getVpsBaseUrl();
@@ -351,7 +351,7 @@ export const deployAll = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => DeployAllInput.parse(d))
   .handler(async ({ data }): Promise<DeployAllResult> => {
     const t0 = Date.now();
-    const headers = serviceHeaders({ "content-type": "application/json" }, data.operatorToken);
+    const headers = await serviceHeaders({ "content-type": "application/json" }, data.operatorToken);
     if ("error" in headers) {
       return { ok: false, workspaceId: data.workspaceId, totalMs: 0, steps: [{ key: "ensure-infra", label: "Auth", ok: false, attempts: [{ attempt: 1, ok: false, detail: headers.error, debug: null, startedAt: nowIso(), latencyMs: 0 }], result: null }] };
     }
@@ -394,7 +394,7 @@ export const deployAll = createServerFn({ method: "POST" })
     const uplStep = await withRetry("upload-bundle", "Upload bundle to storage", data.maxRetries, async () => {
       const form = new FormData();
       form.append("file", new Blob([bytes], { type: "application/zip" }), filename);
-      const uplHeaders = serviceHeaders({ "x-workspace-id": data.workspaceId, "x-upsert": "true" }, data.operatorToken);
+      const uplHeaders = await serviceHeaders({ "x-workspace-id": data.workspaceId, "x-upsert": "true" }, data.operatorToken);
       if ("error" in uplHeaders) return { ok: false, detail: uplHeaders.error, debug: null, result: null };
       const url = `${base}/storage/v1/object/${encodeURIComponent(data.bucket)}/${cleanPath}`;
       const preview = `(multipart upload ${bytes.length} bytes)`;
@@ -552,7 +552,7 @@ export type PostDeployHealth = {
 export const postDeployHealth = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => PostDeployHealthInput.parse(d))
   .handler(async (): Promise<PostDeployHealth> => {
-    const headers = serviceHeaders({ "content-type": "application/json" });
+    const headers = await serviceHeaders({ "content-type": "application/json" });
     if ("error" in headers) {
       const now = new Date().toISOString();
       return { ok: false, runtime: { url: "", status: 0, body: headers.error, latencyMs: 0 }, invoke: { url: "", status: 0, body: headers.error, latencyMs: 0 }, checkedAt: now };
