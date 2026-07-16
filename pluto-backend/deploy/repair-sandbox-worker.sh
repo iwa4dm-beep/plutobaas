@@ -174,10 +174,34 @@ if [ "$STATE" != "active" ]; then
   exit 1
 fi
 
-HEALTH="$(curl -fsS --max-time 5 "http://127.0.0.1:${PORT}/healthz")"
+# Wait for the worker to actually bind ${PORT} — Type=simple flips to active
+# as soon as ExecStart is invoked, well before node listens.
+HEALTH=""
+for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
+  if HEALTH="$(curl -fsS --max-time 3 "http://127.0.0.1:${PORT}/healthz" 2>/dev/null)"; then
+    break
+  fi
+  STATE_NOW="$(systemctl is-active "$UNIT" 2>/dev/null || echo unknown)"
+  if [ "$STATE_NOW" = "failed" ]; then
+    echo "✗ ${UNIT} failed while waiting for /healthz"
+    journalctl -u "$UNIT" --no-pager -n 60 || true
+    exit 1
+  fi
+  sleep 1
+done
+
+if [ -z "$HEALTH" ]; then
+  echo "✗ worker did not respond on 127.0.0.1:${PORT}/healthz within 15s"
+  systemctl status "$UNIT" --no-pager -l || true
+  journalctl -u "$UNIT" --no-pager -n 80 || true
+  ss -ltnp "sport = :${PORT}" 2>/dev/null || true
+  exit 1
+fi
+
 echo "  /healthz: $HEALTH"
 if ! echo "$HEALTH" | grep -q 'v1-static-serve'; then
   echo "✗ worker is active, but stale code is still running (missing v1-static-serve)"
+  echo "  Try: sudo rm -rf /opt/pluto/sandbox-worker && sudo bash deploy/repair-sandbox-worker.sh"
   exit 1
 fi
 
