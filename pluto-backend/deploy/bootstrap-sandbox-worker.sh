@@ -98,6 +98,42 @@ stop_worker_units_and_free_port() {
   fi
 }
 
+install_free_port_helper() {
+  install -d -m 0755 /opt/pluto/sandbox-worker
+  if [ -f "$HERE/reset-sandbox-worker-port.sh" ]; then
+    install -m 0755 "$HERE/reset-sandbox-worker-port.sh" /opt/pluto/sandbox-worker/reset-sandbox-worker-port.sh
+    cat > /opt/pluto/sandbox-worker/free-port.sh <<'EOF'
+#!/usr/bin/env bash
+set -uo pipefail
+PORT="${SANDBOX_WORKER_PORT:-${PORT:-8787}}"
+UNIT="${UNIT:-pluto-sandbox-worker}"
+SKIP_TARGET_STOP=1 exec /opt/pluto/sandbox-worker/reset-sandbox-worker-port.sh "$PORT"
+EOF
+  else
+    cat > /opt/pluto/sandbox-worker/free-port.sh <<'EOF'
+#!/usr/bin/env bash
+set -uo pipefail
+PORT="${SANDBOX_WORKER_PORT:-${PORT:-8787}}"
+if command -v ss >/dev/null 2>&1; then
+  PIDS="$(ss -H -ltnp "sport = :${PORT}" 2>/dev/null | grep -oE 'pid=[0-9]+' | cut -d= -f2 | sort -u || true)"
+  for pid in $PIDS; do
+    args="$(ps -o args= -p "$pid" 2>/dev/null || true)"
+    if printf '%s' "$args" | grep -Eq 'node .*sandbox-worker\.mjs|/opt/pluto/sandbox-worker'; then
+      kill "$pid" 2>/dev/null || true
+      sleep 1
+      kill -9 "$pid" 2>/dev/null || true
+    else
+      echo "port ${PORT} is busy by non-Pluto pid=${pid}: ${args}" >&2
+      exit 1
+    fi
+  done
+fi
+exit 0
+EOF
+  fi
+  chmod 0755 /opt/pluto/sandbox-worker/free-port.sh
+}
+
 echo "▶ Installing OS dependencies"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -y >/dev/null
@@ -110,6 +146,7 @@ fi
 echo "▶ Installing sandbox worker files"
 install -d -m 0755 /opt/pluto/sandbox-worker
 install -m 0755 "$WORKER_SRC" /opt/pluto/sandbox-worker/sandbox-worker.mjs
+install_free_port_helper
 install -d -o www-data -g www-data -m 0755 "$SITES_ROOT"
 install -d -m 0750 "$(dirname "$ENV_FILE")"
 
@@ -152,7 +189,7 @@ Type=simple
 User=www-data
 Group=www-data
 EnvironmentFile=${ENV_FILE}
-ExecStartPre=+/bin/sh -c 'if command -v fuser >/dev/null 2>&1; then fuser -k ${PORT}/tcp 2>/dev/null || true; fi; if command -v pkill >/dev/null 2>&1; then pkill -f "node .*sandbox-worker\\.mjs" 2>/dev/null || true; fi; exit 0'
+ExecStartPre=+/opt/pluto/sandbox-worker/free-port.sh
 ExecStart=/usr/bin/node /opt/pluto/sandbox-worker/sandbox-worker.mjs
 Restart=on-failure
 RestartSec=3s
