@@ -141,8 +141,11 @@ export function WorkspaceProvisionCard({
           </div>
 
           <Field label="Workspace ID" value={result.workspaceId} onCopy={copy} />
+          <Field label="Project ID" value={result.projectId} onCopy={copy} />
           <Field label="User ID" value={result.userId} onCopy={copy} />
           <Field label="Admin email" value={result.adminEmail} onCopy={copy} />
+          <Field label="Anon key (publishable)" value={result.anonKey} onCopy={copy} />
+          <Field label="Service role key (secret)" value={result.serviceKey} onCopy={copy} />
 
           <div>
             <label className="text-xs font-medium block mb-1">Admin password</label>
