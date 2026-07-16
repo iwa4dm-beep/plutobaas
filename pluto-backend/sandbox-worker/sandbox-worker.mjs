@@ -140,12 +140,27 @@ function serializeEnvJs(envObj) {
   return `window.__PLUTO_ENV__ = ${JSON.stringify(clean)};\n`;
 }
 
-async function unpack({ workspaceId, slug, bucket, key, env }) {
+// Phase E — channel routing:
+//   "preview"    → symlink `preview`  (served on <slug>-dev.app.<apex>)
+//   "production" → symlink `current`  (served on <slug>.app.<apex>)
+// Default channel is "preview" so unpacks never auto-publish; a separate
+// /publish call flips preview → current atomically.
+const VALID_CHANNELS = new Set(["preview", "production"]);
+function channelLinkName(ch) { return ch === "production" ? "current" : "preview"; }
+
+async function atomicSymlink(linkPath, targetRelPath) {
+  const tmp = `${linkPath}.tmp-${randomUUID().slice(0, 6)}`;
+  await fsp.symlink(targetRelPath, tmp);
+  await fsp.rename(tmp, linkPath);
+}
+
+async function unpack({ workspaceId, slug, bucket, key, env, channel }) {
   const ws = safeSlug(workspaceId);
   if (!ws) throw new Error("invalid workspaceId");
   if (!bucket || !key) throw new Error("bucket and key are required");
   const normalizedSlug = typeof slug === "string" ? slug.trim().toLowerCase() : "";
   if (normalizedSlug && !SLUG_RE.test(normalizedSlug)) throw new Error("invalid slug");
+  const ch = VALID_CHANNELS.has(channel) ? channel : "preview";
 
   const started = Date.now();
   const wsRoot = path.join(SITES_ROOT, ws);
@@ -165,29 +180,25 @@ async function unpack({ workspaceId, slug, bucket, key, env }) {
   const promoted = await pickWebRoot(releaseDir);
   const webRoot = await findServable(promoted);
 
-
-  // Inject runtime env into the release BEFORE the atomic flip. Doing it
-  // pre-flip guarantees old bundle never sees new env, and vice versa.
+  // Inject runtime env into the release BEFORE the atomic flip.
   let envInjected = false;
   if (env && typeof env === "object") {
     await fsp.writeFile(path.join(webRoot, "env.js"), serializeEnvJs(env));
     envInjected = true;
   }
 
-  // Atomic symlink flip: current -> releaseDir (relative)
-  const currentLink = path.join(wsRoot, "current");
-  const tmpLink = path.join(wsRoot, `.current-${randomUUID().slice(0, 6)}`);
-  await fsp.symlink(path.relative(wsRoot, webRoot), tmpLink);
-  await fsp.rename(tmpLink, currentLink);
+  // Atomic symlink flip for the requested channel only.
+  const channelLink = path.join(wsRoot, channelLinkName(ch));
+  await atomicSymlink(channelLink, path.relative(wsRoot, webRoot));
 
   // Slug → workspace symlink so nginx wildcard can resolve <slug>.app.<apex>.
   const slugLink = normalizedSlug ? await ensureSlugSymlink(wsRoot, normalizedSlug) : null;
 
-  // Write manifest
   const manifest = {
     workspaceId: ws,
     slug: normalizedSlug || null,
     slugLink,
+    channel: ch,
     envInjected,
     bucket,
     key,
@@ -197,9 +208,12 @@ async function unpack({ workspaceId, slug, bucket, key, env }) {
     sizeBytes: zipBytes.length,
     durationMs: Date.now() - started,
   };
+  // Per-channel manifest, plus a legacy `current.json` that mirrors the
+  // last write (backward compat with earlier /status callers).
+  await fsp.writeFile(path.join(wsRoot, `${channelLinkName(ch)}.json`), JSON.stringify(manifest, null, 2));
   await fsp.writeFile(path.join(wsRoot, "current.json"), JSON.stringify(manifest, null, 2));
 
-  // Prune old releases (keep 5 most recent)
+  // Prune old releases (keep 5 most recent).
   const releases = (await fsp.readdir(wsRoot, { withFileTypes: true }))
     .filter(d => d.isDirectory() && d.name.startsWith("release-"))
     .map(d => d.name).sort().reverse();
@@ -208,6 +222,51 @@ async function unpack({ workspaceId, slug, bucket, key, env }) {
   }
 
   return manifest;
+}
+
+// Phase E — publish: flip preview → current atomically. Idempotent.
+async function publish({ workspaceId, slug }) {
+  let wsDir;
+  if (slug) {
+    const r = await resolveSlug(slug);
+    if (!r.ok) throw new Error(r.error);
+    wsDir = path.join(SITES_ROOT, r.workspaceId);
+  } else if (workspaceId) {
+    wsDir = path.join(SITES_ROOT, safeSlug(workspaceId));
+  } else {
+    throw new Error("slug or workspaceId is required");
+  }
+  const previewLink = path.join(wsDir, "preview");
+  const previewReal = await fsp.realpath(previewLink).catch(() => null);
+  if (!previewReal) throw new Error("no preview build to publish");
+  const currentLink = path.join(wsDir, "current");
+  await atomicSymlink(currentLink, path.relative(wsDir, previewReal));
+  const publishedAt = new Date().toISOString();
+  // Copy preview manifest → current manifest, stamping channel.
+  try {
+    const raw = await fsp.readFile(path.join(wsDir, "preview.json"), "utf-8");
+    const m = { ...JSON.parse(raw), channel: "production", publishedAt };
+    await fsp.writeFile(path.join(wsDir, "current.json"), JSON.stringify(m, null, 2));
+  } catch { /* no preview manifest — that's fine */ }
+  return { ok: true, publishedAt, target: previewReal };
+}
+
+// Phase E — unpublish: remove the `current` symlink so <slug>.app returns
+// the "not deployed" page while the preview stays live for the owner.
+async function unpublish({ workspaceId, slug }) {
+  let wsDir;
+  if (slug) {
+    const r = await resolveSlug(slug);
+    if (!r.ok) throw new Error(r.error);
+    wsDir = path.join(SITES_ROOT, r.workspaceId);
+  } else if (workspaceId) {
+    wsDir = path.join(SITES_ROOT, safeSlug(workspaceId));
+  } else {
+    throw new Error("slug or workspaceId is required");
+  }
+  await fsp.unlink(path.join(wsDir, "current")).catch(() => {});
+  await fsp.unlink(path.join(wsDir, "current.json")).catch(() => {});
+  return { ok: true, unpublishedAt: new Date().toISOString() };
 }
 
 async function resolveSlug(slug) {
@@ -294,6 +353,14 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "POST" && req.url === "/env") {
       const body = await readJson(req);
       const r = await rotateEnv(body);
+      return json(res, 200, r);
+    }
+    if (req.method === "POST" && req.url === "/publish") {
+      const r = await publish(await readJson(req));
+      return json(res, 200, r);
+    }
+    if (req.method === "POST" && req.url === "/unpublish") {
+      const r = await unpublish(await readJson(req));
       return json(res, 200, r);
     }
     return json(res, 404, { error: "not_found" });
