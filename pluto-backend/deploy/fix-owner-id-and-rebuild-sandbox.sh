@@ -54,7 +54,7 @@ normalize_worker_upstream() {
 }
 
 log "1/6 preflight env + compose services"
-AUTO_FIX_ENV=1 WILDCARD="$WILDCARD" UPSTREAM="$UPSTREAM" bash "$HERE/check-env.sh"
+AUTO_FIX_ENV=1 WILDCARD="$WILDCARD" UPSTREAM="${UPSTREAM:-}" bash "$HERE/check-env.sh"
 # Reload because check-env may have appended JWT_ISSUER/PUBLIC_API_URL.
 # shellcheck disable=SC1090
 set -a; . "$ENV_FILE"; set +a
@@ -106,7 +106,7 @@ docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" build api
 docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d api
 
 log "4/6 apply pending backend migrations"
-AUTO_FIX_ENV=1 WILDCARD="$WILDCARD" UPSTREAM="$UPSTREAM" bash "$HERE/run-migrator.sh"
+AUTO_FIX_ENV=1 WILDCARD="$WILDCARD" UPSTREAM="${UPSTREAM:-}" bash "$HERE/run-migrator.sh"
 
 log "5/6 nuke and rebuild sandbox worker on port 8787"
 KEEP_SITES="${KEEP_SITES:-1}" TAKEOVER_PORT="${TAKEOVER_PORT:-1}" \
