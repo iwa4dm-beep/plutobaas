@@ -484,7 +484,9 @@ export const deployAll = createServerFn({ method: "POST" })
 
       // 4c. Small JS handler that echoes deploy metadata. verify_jwt:false so
       //     the health probe can reach it without a per-request user token.
-      const code = `export default async (req) => new Response(JSON.stringify({ ok: true, service: "pluto-bootstrap", workspace: ${JSON.stringify(data.workspaceId)}, bundle: ${JSON.stringify(bundleKey)}, ts: Date.now() }), { headers: { "content-type": "application/json" } });`;
+      // Sandbox worker uses vm.runInContext (classic script, no ESM). Assign
+      // to `handler` — the runner picks it up via `typeof handler !== 'undefined'`.
+      const code = `handler = async (req) => new Response(JSON.stringify({ ok: true, service: "pluto-bootstrap", workspace: ${JSON.stringify(data.workspaceId)}, bundle: ${JSON.stringify(bundleKey)}, ts: Date.now() }), { headers: { "content-type": "application/json" } });`;
 
       if (existing) {
         const patchUrl = `${base}/functions/v1/${encodeURIComponent(existing.id)}`;
