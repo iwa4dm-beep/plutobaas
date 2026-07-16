@@ -50,6 +50,20 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+/** Normalize SQL to fix common Laravel→Postgres issues that reject at APPLY time.
+ *  - Convert quoted `'uuid_generate_v4()'` (a string literal) into the actual
+ *    function call `gen_random_uuid()` so Postgres does not try to cast a
+ *    string to uuid ("invalid input syntax for type uuid").
+ *  - Replace `uuid_generate_v4()` with `gen_random_uuid()` (pgcrypto is
+ *    already required by our base migration; uuid-ossp is not).
+ */
+function sanitizeMigrationSql(sql: string): string {
+  let out = sql;
+  out = out.replace(/'\s*uuid_generate_v4\s*\(\s*\)\s*'/gi, "gen_random_uuid()");
+  out = out.replace(/\buuid_generate_v4\s*\(\s*\)/gi, "gen_random_uuid()");
+  return out;
+}
+
 async function rawFetch(
   url: string,
   method: string,
