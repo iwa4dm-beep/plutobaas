@@ -16,7 +16,7 @@ import {
   XCircle, Copy, ExternalLink, RefreshCw, Globe, Sparkles,
   ChevronRight, ChevronDown, ScrollText, History, Undo2, KeyRound,
   Plus, Trash2, Eye, EyeOff, ShieldCheck, Activity, AlertCircle,
-  Download, UserCheck, Radio,
+  Download, UserCheck, Radio, Bell, Webhook,
 } from "lucide-react";
 
 import { analyzeZip } from "@/lib/autoconnect/analyzer";
@@ -32,7 +32,25 @@ import {
   extractHealth, downloadAutoDeployReport,
   type AutoDeployHistoryEntry, type HealthSummary, type EndpointCheck, type StepEvent,
 } from "@/lib/pluto/auto-deploy-history";
+import {
+  ALL_EVENTS, dispatchWebhookEvent, loadWebhooks, saveWebhooks,
+  loadWebhookLog, newWebhookId,
+  type WebhookConfig, type WebhookEvent, type WebhookLogEntry,
+} from "@/lib/pluto/auto-deploy-webhooks";
 import { useAuth } from "@/lib/pluto/auth-context";
+
+// Self-healing: max auto-retry attempts on transient deploy failure
+const MAX_AUTO_RETRIES = 1;
+// Heuristics: which error messages are worth an automatic retry
+function isTransientDeployError(msg: string): boolean {
+  const m = msg.toLowerCase();
+  return (
+    m.includes("timeout") || m.includes("network") || m.includes("fetch") ||
+    m.includes("econnreset") || m.includes("503") || m.includes("502") ||
+    m.includes("504") || m.includes("temporarily") || m.includes("unavailable") ||
+    m.includes("health check failed")
+  );
+}
 
 export const Route = createFileRoute("/dashboard/auto-deploy")({
   head: () => ({
@@ -184,6 +202,16 @@ function AutoDeployInner() {
     return () => window.removeEventListener("pluto:auto-deploy-history:changed", on);
   }, []);
 
+  // Prevent stream interval leak on unmount
+  useEffect(() => {
+    return () => {
+      if (streamTimerRef.current) {
+        clearInterval(streamTimerRef.current);
+        streamTimerRef.current = null;
+      }
+    };
+  }, []);
+
   const log = useCallback((m: string) => {
     setLogs((l) => [...l, `[${new Date().toLocaleTimeString()}] ${m}`]);
   }, []);
@@ -273,35 +301,44 @@ function AutoDeployInner() {
       });
       setPhase("awaiting-approval");
       log("⏸ Awaiting approval — review and confirm to deploy.");
+      dispatchWebhookEvent("approval.awaiting", {
+        slug: finalSlug, source, sourceRef,
+        tables: a.backend.tables.length, routes: a.backend.routes.length,
+        envKeys: envVars.filter((e) => e.key.trim()).map((e) => e.key.trim()),
+        message: "Deploy is awaiting operator approval",
+      });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       setErrorMsg(msg); log(`✗ ${msg}`); setPhase("error");
+      dispatchWebhookEvent("deploy.failed", { message: msg, phase: "prepare" });
     }
   };
 
-  /** Phase 5: confirm & deploy. */
-  const confirmDeploy = async (payload: PendingDeploy) => {
-    setPhase("deploying");
-    const approvedAt = Date.now();
-    log(payload.isRollback
-      ? `▶ Rollback confirmed by ${approverEmail} — redeploying previous bundle…`
-      : `▶ Approved by ${approverEmail} — deploying…`);
-
-    // Start real-time step progression stream. We don't have server-side
-    // SSE for deployAll, so drive an optimistic timeline that advances
-    // through the known pipeline while the RPC is in-flight. When the
-    // real result arrives, we reconcile with actual step outcomes.
+  /** One attempt of the deploy pipeline (used both for initial run and self-healing retry). */
+  const runDeployAttempt = async (payload: PendingDeploy, attempt: number): Promise<DeployAllResult> => {
+    // Start real-time step progression stream. `deployAll` is a single RPC,
+    // so we drive an optimistic timeline that advances through the known
+    // pipeline while it's in-flight, and reconcile with real results below.
     const events: StepEvent[] = [];
     const pushEvent = (ev: StepEvent) => {
       events.push(ev);
       setStreamEvents([...events]);
+      if (ev.status === "running") {
+        dispatchWebhookEvent("step.running", { slug: payload.slug, step: ev.key, label: ev.label, attempt });
+      }
     };
     setStreamEvents([]);
     setRunningStepIdx(0);
     pushEvent({ ts: Date.now(), key: PIPELINE_STEPS[0].key, label: PIPELINE_STEPS[0].label, status: "running" });
     let idx = 0;
+    // Clear any dangling timer before starting a fresh interval
+    if (streamTimerRef.current) { clearInterval(streamTimerRef.current); streamTimerRef.current = null; }
     streamTimerRef.current = setInterval(() => {
-      if (idx >= PIPELINE_STEPS.length - 1) return;
+      if (idx >= PIPELINE_STEPS.length - 1) {
+        // Reached the last step — stop the interval so it doesn't leak
+        if (streamTimerRef.current) { clearInterval(streamTimerRef.current); streamTimerRef.current = null; }
+        return;
+      }
       const prev = PIPELINE_STEPS[idx];
       pushEvent({ ts: Date.now(), key: prev.key, label: prev.label, status: "ok", detail: "in-progress" });
       idx += 1;
@@ -317,7 +354,7 @@ function AutoDeployInner() {
           bundlePath: payload.bundlePath,
           contentBase64: payload.contentBase64,
           bucket: "deployments",
-          label: `${payload.isRollback ? "rollback" : "auto-deploy"}-${payload.slug}`,
+          label: `${payload.isRollback ? "rollback" : "auto-deploy"}-${payload.slug}${attempt > 1 ? `-retry${attempt - 1}` : ""}`,
           maxRetries: 2,
           ensureInfra: true,
         },
@@ -335,19 +372,85 @@ function AutoDeployInner() {
       }));
       setStreamEvents(realEvents);
       setRunningStepIdx(-1);
-
-      setDeployResult(result);
       for (const s of result.steps) {
-        log(`${s.ok ? "✓" : "✗"} ${s.label}${s.attempts.at(-1)?.detail ? ` — ${s.attempts.at(-1)!.detail}` : ""}`);
+        dispatchWebhookEvent(s.ok ? "step.ok" : "step.fail", {
+          slug: payload.slug, step: s.key, label: s.label, attempt,
+          detail: s.attempts.at(-1)?.detail ?? "",
+        });
       }
-      const h = extractHealth(result);
-      setHealth(h);
-      if (!result.ok) throw new Error("Deploy pipeline reported failure");
-      if (h && !h.overallOk) throw new Error(`Health check failed — ${h.endpoints.filter(e => !e.ok).length} endpoint(s) unhealthy`);
-      log(`✅ Live in ${(result.totalMs / 1000).toFixed(1)}s`);
-      setPhase("live");
+      return result;
+    } catch (e) {
+      if (streamTimerRef.current) { clearInterval(streamTimerRef.current); streamTimerRef.current = null; }
+      // Mark the currently-running step as failed in the stream.
+      if (events.length > 0) {
+        const last = events[events.length - 1];
+        if (last.status === "running") {
+          last.status = "fail";
+          last.detail = e instanceof Error ? e.message : String(e);
+          setStreamEvents([...events]);
+          dispatchWebhookEvent("step.fail", {
+            slug: payload.slug, step: last.key, label: last.label, attempt,
+            detail: last.detail,
+          });
+        }
+      }
+      setRunningStepIdx(-1);
+      throw e;
+    }
+  };
 
+  /** Phase 5: confirm & deploy — with self-healing retry on transient errors. */
+  const confirmDeploy = async (payload: PendingDeploy) => {
+    setPhase("deploying");
+    const approvedAt = Date.now();
+    log(payload.isRollback
+      ? `▶ Rollback confirmed by ${approverEmail} — redeploying previous bundle…`
+      : `▶ Approved by ${approverEmail} — deploying…`);
+    dispatchWebhookEvent(payload.isRollback ? "rollback.started" : "approval.confirmed", {
+      slug: payload.slug, approver: approverEmail, source: payload.source, sourceRef: payload.sourceRef,
+    });
+
+    let attempt = 0;
+    let result: DeployAllResult | null = null;
+    let h: HealthSummary | null = null;
+    let lastError: Error | null = null;
+
+    while (attempt <= MAX_AUTO_RETRIES) {
+      attempt += 1;
+      try {
+        if (attempt > 1) {
+          log(`↻ Self-healing retry #${attempt - 1}…`);
+          dispatchWebhookEvent("deploy.retry", { slug: payload.slug, attempt, reason: lastError?.message });
+          await new Promise((r) => setTimeout(r, 1500 * attempt));
+        }
+        result = await runDeployAttempt(payload, attempt);
+        setDeployResult(result);
+        for (const s of result.steps) {
+          log(`${s.ok ? "✓" : "✗"} ${s.label}${s.attempts.at(-1)?.detail ? ` — ${s.attempts.at(-1)!.detail}` : ""}`);
+        }
+        h = extractHealth(result);
+        setHealth(h);
+        if (!result.ok) throw new Error("Deploy pipeline reported failure");
+        if (h && !h.overallOk) throw new Error(`Health check failed — ${h.endpoints.filter(e => !e.ok).length} endpoint(s) unhealthy`);
+        lastError = null;
+        break; // success
+      } catch (e) {
+        lastError = e instanceof Error ? e : new Error(String(e));
+        const canRetry = attempt <= MAX_AUTO_RETRIES && isTransientDeployError(lastError.message);
+        if (!canRetry) break;
+        log(`⚠ Attempt ${attempt} failed (${lastError.message}) — auto-retrying…`);
+      }
+    }
+
+    if (result && !lastError) {
+      log(`✅ Live in ${(result.totalMs / 1000).toFixed(1)}s${attempt > 1 ? ` (after ${attempt - 1} auto-retry)` : ""}`);
+      setPhase("live");
       const liveUrl = `https://${payload.slug}.apps.timescard.cloud`;
+      const realEvents: StepEvent[] = result.steps.map((s) => ({
+        ts: Date.now(), key: s.key, label: s.label,
+        status: s.ok ? "ok" : "fail",
+        detail: s.attempts.at(-1)?.detail ?? "",
+      }));
       saveAutoDeployEntry({
         id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
         timestamp: Date.now(),
@@ -375,21 +478,17 @@ function AutoDeployInner() {
         stepEvents: realEvents,
       });
       lastSuccessRef.current = payload;
-    } catch (e) {
-      if (streamTimerRef.current) { clearInterval(streamTimerRef.current); streamTimerRef.current = null; }
-      // Mark the currently-running step as failed in the stream.
-      if (events.length > 0) {
-        const last = events[events.length - 1];
-        if (last.status === "running") {
-          last.status = "fail";
-          last.detail = e instanceof Error ? e.message : String(e);
-          setStreamEvents([...events]);
-        }
-      }
-      setRunningStepIdx(-1);
-      const msg = e instanceof Error ? e.message : String(e);
+      dispatchWebhookEvent(payload.isRollback ? "rollback.completed" : "deploy.published", {
+        slug: payload.slug, liveUrl, totalMs: result.totalMs, attempts: attempt,
+        approver: approverEmail,
+      });
+    } else {
+      const msg = lastError?.message ?? "Deploy failed";
       setErrorMsg(msg); log(`✗ ${msg}`); setPhase("error");
-      // Persist failed run too for visibility
+      dispatchWebhookEvent("deploy.failed", {
+        slug: payload.slug, message: msg, attempts: attempt,
+        isRollback: payload.isRollback,
+      });
       saveAutoDeployEntry({
         id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
         timestamp: Date.now(),
@@ -405,11 +504,15 @@ function AutoDeployInner() {
         bundlePath: payload.bundlePath,
         sqlPreview: payload.sql.slice(0, 2048),
         envKeys: payload.envVars.filter((e) => e.key.trim()).map((e) => e.key.trim()),
-        steps: [], health: null, isRollback: payload.isRollback,
+        steps: result?.steps.map((s) => ({
+          key: s.key, label: s.label, ok: s.ok, attempts: s.attempts.length,
+          detail: s.attempts.at(-1)?.detail ?? "",
+        })) ?? [],
+        health: h, isRollback: payload.isRollback,
         approver: approverEmail,
         approvedAt,
         rollbackOf: payload.isRollback ? lastSuccessRef.current?.slug ?? null : null,
-        stepEvents: events,
+        stepEvents: [],
       });
     }
   };
@@ -417,13 +520,17 @@ function AutoDeployInner() {
   const rollback = () => {
     const prev = lastSuccessRef.current;
     if (!prev) { toast.error("এই session-এ আগের সফল deploy নেই"); return; }
-    // Confirm + redeploy the same bundle
     setPending({ ...prev, isRollback: true });
     setPhase("awaiting-approval");
     setSlug(prev.slug);
     setAnalyze(prev.analyze); setPlan(prev.plan);
     log(`↶ Rollback prepared → ${prev.slug}`);
+    dispatchWebhookEvent("approval.awaiting", {
+      slug: prev.slug, message: "Rollback awaiting approval", isRollback: true,
+    });
   };
+
+
 
   const liveUrl = useMemo(() => slug ? `https://${slug}.apps.timescard.cloud` : null, [slug]);
   const busy = phase === "analyzing" || phase === "planning" || phase === "bundling" || phase === "deploying";
@@ -546,7 +653,10 @@ function AutoDeployInner() {
       {phase === "awaiting-approval" && pending && (
         <ApprovalPanel
           pending={pending}
-          onCancel={() => { setPending(null); setPhase("source"); log("✗ Deploy cancelled by user"); }}
+          onCancel={() => {
+            setPending(null); setPhase("source"); log("✗ Deploy cancelled by user");
+            dispatchWebhookEvent("approval.cancelled", { slug: pending.slug, approver: approverEmail });
+          }}
           onConfirm={() => confirmDeploy(pending)}
         />
       )}
@@ -646,6 +756,9 @@ function AutoDeployInner() {
 
       {/* Audit trail panel — always visible when there is history */}
       {history.length > 0 && <AuditTrailPanel history={history} />}
+
+      {/* Configurable webhooks — notifications for approval / steps / failures / rollback / publish */}
+      <WebhooksSection />
 
       {/* History panel */}
       {showHistory && <HistoryPanel history={history} onClear={() => { clearAutoDeployHistory(); toast.success("History cleared"); }} />}
@@ -1035,6 +1148,162 @@ function AuditTrailPanel({ history }: { history: AutoDeployHistoryEntry[] }) {
           );
         })}
       </ul>
+    </section>
+  );
+}
+
+// ─── Configurable webhooks ────────────────────────────────────────────────
+function WebhooksSection() {
+  const [hooks, setHooks] = useState<WebhookConfig[]>([]);
+  const [log, setLog] = useState<WebhookLogEntry[]>([]);
+  const [showLog, setShowLog] = useState(false);
+  const [draftUrl, setDraftUrl] = useState("");
+  const [draftLabel, setDraftLabel] = useState("");
+  const [draftFormat, setDraftFormat] = useState<"json" | "slack" | "discord">("json");
+  const [draftEvents, setDraftEvents] = useState<WebhookEvent[]>([...ALL_EVENTS]);
+
+  useEffect(() => {
+    setHooks(loadWebhooks());
+    setLog(loadWebhookLog());
+    const on1 = () => setHooks(loadWebhooks());
+    const on2 = () => setLog(loadWebhookLog());
+    window.addEventListener("pluto:auto-deploy-webhooks:changed", on1);
+    window.addEventListener("pluto:auto-deploy-webhook-log:changed", on2);
+    return () => {
+      window.removeEventListener("pluto:auto-deploy-webhooks:changed", on1);
+      window.removeEventListener("pluto:auto-deploy-webhook-log:changed", on2);
+    };
+  }, []);
+
+  const persist = (list: WebhookConfig[]) => { saveWebhooks(list); setHooks(list); };
+
+  const addHook = () => {
+    if (!draftUrl.trim() || !/^https?:\/\//.test(draftUrl)) { toast.error("Valid https URL দিন"); return; }
+    if (draftEvents.length === 0) { toast.error("অন্তত একটি event select করুন"); return; }
+    const cfg: WebhookConfig = {
+      id: newWebhookId(),
+      label: draftLabel.trim() || new URL(draftUrl).host,
+      url: draftUrl.trim(),
+      events: [...draftEvents],
+      enabled: true,
+      format: draftFormat,
+      createdAt: Date.now(),
+    };
+    persist([cfg, ...hooks]);
+    setDraftUrl(""); setDraftLabel(""); setDraftFormat("json"); setDraftEvents([...ALL_EVENTS]);
+    toast.success("Webhook added");
+  };
+
+  const testHook = (cfg: WebhookConfig) => {
+    // Force-dispatch a synthetic event on this hook only
+    const saved = loadWebhooks();
+    saveWebhooks([{ ...cfg, events: ["deploy.published"], enabled: true }, ...saved.filter(h => h.id !== cfg.id).map(h => ({ ...h, enabled: false }))]);
+    dispatchWebhookEvent("deploy.published", {
+      slug: "test-slug", liveUrl: "https://example.test", totalMs: 0,
+      message: "Test webhook from Auto-Deploy Studio", approver: "operator",
+    });
+    // Restore full config
+    setTimeout(() => saveWebhooks(saved), 100);
+    toast.success(`Test event sent to ${cfg.label}`);
+  };
+
+  const toggleEvent = (ev: WebhookEvent) => {
+    setDraftEvents((cur) => cur.includes(ev) ? cur.filter((x) => x !== ev) : [...cur, ev]);
+  };
+
+  return (
+    <section className="rounded-xl border border-border bg-card">
+      <div className="border-b border-border px-4 py-3 text-sm font-medium flex items-center gap-2">
+        <Webhook className="h-4 w-4" /> Realtime notification webhooks
+        <span className="text-xs text-muted-foreground">({hooks.length} configured)</span>
+        <button
+          onClick={() => setShowLog((v) => !v)}
+          className="ml-auto inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
+          <Bell className="h-3.5 w-3.5" /> Delivery log ({log.length})
+        </button>
+      </div>
+
+      {/* Add form */}
+      <div className="p-4 space-y-3 border-b border-border">
+        <div className="grid grid-cols-1 sm:grid-cols-[1fr_1fr_auto] gap-2">
+          <input value={draftLabel} onChange={(e) => setDraftLabel(e.target.value)}
+            placeholder="Label (e.g. #deploys)" className="rounded-md border border-input bg-background px-2.5 py-1.5 text-sm"/>
+          <input value={draftUrl} onChange={(e) => setDraftUrl(e.target.value)}
+            placeholder="https://hooks.slack.com/... or custom endpoint" className="rounded-md border border-input bg-background px-2.5 py-1.5 text-sm font-mono"/>
+          <select value={draftFormat} onChange={(e) => setDraftFormat(e.target.value as "json" | "slack" | "discord")}
+            className="rounded-md border border-input bg-background px-2.5 py-1.5 text-sm">
+            <option value="json">JSON</option>
+            <option value="slack">Slack</option>
+            <option value="discord">Discord</option>
+          </select>
+        </div>
+        <div className="flex flex-wrap gap-1.5">
+          {ALL_EVENTS.map((ev) => (
+            <button key={ev} onClick={() => toggleEvent(ev)}
+              className={`text-[10px] font-mono px-2 py-0.5 rounded border ${draftEvents.includes(ev) ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground hover:bg-accent"}`}>
+              {ev}
+            </button>
+          ))}
+        </div>
+        <div className="flex justify-end">
+          <button onClick={addHook} className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs text-primary-foreground hover:bg-primary/90">
+            <Plus className="h-3.5 w-3.5" /> Add webhook
+          </button>
+        </div>
+      </div>
+
+      {/* Existing hooks */}
+      {hooks.length === 0 ? (
+        <div className="p-4 text-xs text-muted-foreground italic">এখনো কোনো webhook যোগ করা হয়নি।</div>
+      ) : (
+        <ul className="divide-y divide-border">
+          {hooks.map((h) => (
+            <li key={h.id} className="px-4 py-3 text-xs space-y-1.5">
+              <div className="flex items-center gap-2 flex-wrap">
+                <input type="checkbox" checked={h.enabled}
+                  onChange={(e) => persist(hooks.map((x) => x.id === h.id ? { ...x, enabled: e.target.checked } : x))}/>
+                <span className="font-medium">{h.label}</span>
+                <span className="text-[10px] uppercase px-1.5 py-0.5 rounded bg-muted">{h.format}</span>
+                <span className="text-muted-foreground font-mono truncate flex-1 min-w-0">{h.url}</span>
+                <button onClick={() => testHook(h)}
+                  className="rounded-md border border-border px-2 py-0.5 text-[11px] hover:bg-accent">Test</button>
+                <button onClick={() => persist(hooks.filter((x) => x.id !== h.id))}
+                  className="rounded-md border border-border p-1 hover:bg-destructive/10 hover:text-destructive">
+                  <Trash2 className="h-3 w-3" />
+                </button>
+              </div>
+              <div className="flex flex-wrap gap-1 pl-6">
+                {h.events.map((ev) => (
+                  <span key={ev} className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-background border border-border text-muted-foreground">{ev}</span>
+                ))}
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {/* Delivery log */}
+      {showLog && (
+        <div className="border-t border-border">
+          <div className="px-4 py-2 text-[11px] font-medium text-muted-foreground">Recent deliveries</div>
+          {log.length === 0 ? (
+            <div className="px-4 pb-3 text-xs text-muted-foreground italic">No deliveries yet.</div>
+          ) : (
+            <ul className="divide-y divide-border max-h-64 overflow-auto">
+              {log.map((e, i) => (
+                <li key={i} className="px-4 py-1.5 text-[11px] flex items-center gap-2 font-mono">
+                  {e.ok ? <CheckCircle2 className="h-3 w-3 text-emerald-500 shrink-0" /> : <XCircle className="h-3 w-3 text-destructive shrink-0" />}
+                  <span className="text-muted-foreground">{new Date(e.ts).toLocaleTimeString()}</span>
+                  <span className="font-semibold">{e.event}</span>
+                  <span className="text-muted-foreground truncate">→ {e.webhookLabel}</span>
+                  <span className="ml-auto text-muted-foreground">{e.status || "—"} · {e.latencyMs}ms</span>
+                  {e.error && <span className="text-destructive truncate">{e.error}</span>}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
     </section>
   );
 }
