@@ -16,7 +16,7 @@ import {
   XCircle, Copy, ExternalLink, RefreshCw, Globe, Sparkles,
   ChevronRight, ChevronDown, ScrollText, History, Undo2, KeyRound,
   Plus, Trash2, Eye, EyeOff, ShieldCheck, Activity, AlertCircle,
-  Download, UserCheck, Radio, Bell, Webhook,
+  Download, UserCheck, Radio, Bell, Webhook, FileJson,
 } from "lucide-react";
 
 import { analyzeZip } from "@/lib/autoconnect/analyzer";
