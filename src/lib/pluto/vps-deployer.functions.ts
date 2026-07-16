@@ -640,10 +640,46 @@ export const deployAll = createServerFn({ method: "POST" })
     });
     steps.push(healthStep);
 
+    // Resolve the best-effort served-site URL and actually probe it. Priority:
+    //   1. Operator-configured PLUTO_SERVED_SITE_URL (explicit)
+    //   2. Sandbox worker's returned webRoot (from unpack step)
+    // The fabricated `<slug>.apps.timescard.cloud` hostname is intentionally
+    // NOT included here — those hostnames have no DNS/nginx wiring and would
+    // mislead the UI into showing a fake "live" link.
+    const resolvedSite = servedSiteUrl || servedSiteFromWorker.url || undefined;
+    let servedSiteProbe: LiveUrlProbe | undefined;
+    let served = false;
+    let servedHint: string | undefined;
+    if (resolvedSite) {
+      const probeUrl = resolvedSite.endsWith("/") ? resolvedSite : `${resolvedSite}/`;
+      const p = await rawFetch(probeUrl, "GET", { accept: "text/html,*/*" }, null, null, 12_000);
+      const ct = p.debug ? null : null;
+      // rawFetch doesn't expose response headers; infer from body.
+      const looksHtml = /<!DOCTYPE|<html/i.test(p.text);
+      servedSiteProbe = {
+        url: probeUrl,
+        status: p.status,
+        reachable: p.ok,
+        contentType: looksHtml ? "text/html" : null,
+        snippet: p.text.slice(0, 240),
+        latencyMs: p.debug.latencyMs,
+      };
+      served = p.ok;
+      if (!p.ok) {
+        servedHint = `Bundle uploaded, but ${probeUrl} returned HTTP ${p.status}. The hostname is not yet wired to nginx / a vhost, or the sandbox worker did not unpack the release. Configure PLUTO_SERVED_SITE_URL or install a sandbox worker with a working /unpack endpoint.`;
+      }
+    } else {
+      servedHint = "No served-site URL is configured. Set PLUTO_SERVED_SITE_URL to the public https:// origin that nginx serves the unpacked release from, or install the sandbox worker so it returns a webRoot after unpack.";
+    }
+
     const liveUrls = {
       functionsHealth: `${base}/functions/v1/health`,
       bootstrapInvoke: `${base}/functions/v1/invoke/bootstrap`,
       ...(servedSiteUrl ? { servedSite: `${servedSiteUrl}/` } : {}),
+      ...(resolvedSite ? { resolvedSite } : {}),
+      ...(servedSiteProbe ? { servedSiteProbe } : {}),
+      served,
+      ...(servedHint ? { servedHint } : {}),
     };
     return { ok: steps.every(s => s.ok), workspaceId: data.workspaceId, totalMs: Date.now() - t0, steps, liveUrls };
   });
