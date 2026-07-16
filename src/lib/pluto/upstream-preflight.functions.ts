@@ -32,7 +32,9 @@ async function probe(url: string, headers: Record<string, string>, label: string
   }
 }
 
-export const pingUpstream = createServerFn({ method: "GET" }).handler(async (): Promise<UpstreamPreflight> => {
+export const pingUpstream = createServerFn({ method: "GET" })
+  .inputValidator((_: unknown) => ({}))
+  .handler(async (): Promise<UpstreamPreflight> => {
   const base = getVpsBaseUrl();
   const storedRaw = (process.env.PLUTO_SERVICE_ROLE_KEY ?? "").trim();
   const jwtSecret = (process.env.PLUTO_JWT_SECRET ?? "").trim();
