@@ -362,7 +362,7 @@ export const deployAll = createServerFn({ method: "POST" })
     // Step 0: infra
     if (data.ensureInfra) {
       const infra = await withRetry("ensure-infra", "Ensure infra (service user + bucket)", data.maxRetries, async () => {
-        const r = await ensureDeployInfra({ data: { bucket: data.bucket } });
+        const r = await ensureDeployInfra({ data: { bucket: data.bucket, operatorToken: data.operatorToken } });
         return { ok: r.ok, detail: r.steps.map(s => `${s.ok ? "✓" : "✗"} ${s.label}: ${s.detail}`).join(" | "), debug: null, result: r };
       });
       steps.push(infra);
