@@ -47,12 +47,12 @@ After=network.target
 [Service]
 Type=simple
 WorkingDirectory=${APP_DIR}
+EnvironmentFile=-${APP_DIR}/.env
 Environment=NODE_ENV=production
 Environment=HOST=127.0.0.1
 Environment=NITRO_HOST=127.0.0.1
 Environment=PORT=${PORT}
 Environment=NITRO_PORT=${PORT}
-EnvironmentFile=-${APP_DIR}/.env
 ExecStart=${NODE_BIN} ${APP_DIR}/.output/server/index.mjs
 Restart=always
 RestartSec=3
@@ -73,7 +73,10 @@ write_nginx_site() {
   local key="/etc/letsencrypt/live/${DOMAIN}/privkey.pem"
 
   # Remove duplicate .conf variants; duplicate server blocks were serving stale static roots.
-  $SUDO rm -f "/etc/nginx/sites-enabled/${DOMAIN}.conf" "/etc/nginx/sites-available/${DOMAIN}.conf"
+  $SUDO rm -f \
+    "/etc/nginx/sites-enabled/${DOMAIN}.conf" \
+    "/etc/nginx/sites-available/${DOMAIN}.conf" \
+    "/etc/nginx/conf.d/${DOMAIN}.conf"
 
   if [ -f "$cert" ] && [ -f "$key" ]; then
     $SUDO tee "$NGINX_AVAILABLE" >/dev/null <<EOF
