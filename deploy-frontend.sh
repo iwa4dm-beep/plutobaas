@@ -37,6 +37,9 @@ SYSTEMD_UNIT="/etc/systemd/system/${SERVICE}.service"
 NGINX_AVAILABLE="/etc/nginx/sites-available/${DOMAIN}.conf"
 NGINX_ENABLED="/etc/nginx/sites-enabled/${DOMAIN}.conf"
 NGINX_CONF_D="/etc/nginx/conf.d/00-${DOMAIN}.conf"
+NGINX_MANAGED_DIR="/etc/nginx/lovable-sites"
+NGINX_MANAGED_SITE="${NGINX_MANAGED_DIR}/${DOMAIN}.conf"
+NGINX_MANAGED_INCLUDE="include /etc/nginx/lovable-sites/*.conf;"
 NGINX_SITE=""
 SUDO=""
 [ "$(id -u)" = "0" ] || SUDO="sudo"
@@ -58,14 +61,39 @@ nginx_dump() {
   $SUDO nginx -T 2>&1 || true
 }
 
+ensure_nginx_managed_include() {
+  $SUDO mkdir -p "$NGINX_MANAGED_DIR"
+
+  # Final fallback for VPS setups where sites-enabled/conf.d include patterns
+  # are missing or unreliable. We add one dedicated include inside nginx's
+  # http{} block, then keep this dashboard in that managed directory only.
+  if $SUDO grep -qF "$NGINX_MANAGED_INCLUDE" /etc/nginx/nginx.conf 2>/dev/null; then
+    return 0
+  fi
+
+  $SUDO grep -qE '^[[:space:]]*http[[:space:]]*\{' /etc/nginx/nginx.conf 2>/dev/null || {
+    fail "Could not find http { } in /etc/nginx/nginx.conf; cannot add dashboard include safely."
+  }
+
+  local backup="/etc/nginx/nginx.conf.bak.$(date +%Y%m%d-%H%M%S)"
+  warn "nginx dashboard include is missing; backing up nginx.conf to ${backup} and adding ${NGINX_MANAGED_INCLUDE}"
+  $SUDO cp -a /etc/nginx/nginx.conf "$backup"
+  $SUDO sed -i "/^[[:space:]]*http[[:space:]]*{/a\\    ${NGINX_MANAGED_INCLUDE}" /etc/nginx/nginx.conf
+}
+
 select_nginx_site_path() {
+  ensure_nginx_managed_include
+
   local dump
   dump="$(nginx_dump)"
 
   # Pick a path that nginx actually includes, and always use a .conf suffix.
   # Some servers include only `sites-enabled/*.conf`; files without .conf are
   # silently ignored, causing nginx to fall back to another domain's 443 block.
-  if printf '%s\n' "$dump" | grep -qE 'include[[:space:]]+/etc/nginx/conf\.d/\*\.conf'; then
+  if printf '%s\n' "$dump" | grep -qE 'include[[:space:]]+/etc/nginx/lovable-sites/\*\.conf'; then
+    NGINX_SITE="$NGINX_MANAGED_SITE"
+    ok "nginx includes lovable-sites/*.conf; using ${NGINX_SITE}"
+  elif printf '%s\n' "$dump" | grep -qE 'include[[:space:]]+/etc/nginx/conf\.d/\*\.conf'; then
     NGINX_SITE="$NGINX_CONF_D"
     ok "nginx includes conf.d/*.conf; using ${NGINX_SITE}"
   elif printf '%s\n' "$dump" | grep -qE 'include[[:space:]]+/etc/nginx/sites-enabled/\*\.conf'; then
@@ -88,6 +116,8 @@ select_nginx_site_path() {
     "/etc/nginx/sites-available/${DOMAIN}.conf" \
     "/etc/nginx/sites-enabled/${DOMAIN}-le-ssl.conf" \
     "/etc/nginx/sites-available/${DOMAIN}-le-ssl.conf" \
+    "/etc/nginx/conf.d/00-${DOMAIN}.conf" \
+    "/etc/nginx/conf.d/${DOMAIN}.conf" \
     2>/dev/null || true
 }
 
@@ -104,6 +134,9 @@ install_nginx_site_link() {
   if [ "$NGINX_SITE" = "$NGINX_AVAILABLE" ]; then
     $SUDO ln -sf "$NGINX_AVAILABLE" "$NGINX_ENABLED"
     $SUDO rm -f "$NGINX_CONF_D" "/etc/nginx/conf.d/${DOMAIN}.conf"
+  elif [ "$NGINX_SITE" = "$NGINX_MANAGED_SITE" ]; then
+    $SUDO mkdir -p "$NGINX_MANAGED_DIR"
+    $SUDO rm -f "$NGINX_AVAILABLE" "$NGINX_ENABLED" "$NGINX_CONF_D" "/etc/nginx/conf.d/${DOMAIN}.conf"
   else
     $SUDO rm -f "$NGINX_AVAILABLE" "$NGINX_ENABLED"
   fi
