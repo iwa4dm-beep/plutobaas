@@ -131,7 +131,7 @@ ok "cleanup done"
 # ---------------------------------------------------------------------------
 if [ -f "$GIT_ROOT/deploy-frontend.sh" ]; then
   log "Deploying VPS dashboard frontend (Auth & Users page)"
-  APP_DIR="$GIT_ROOT" bash "$GIT_ROOT/deploy-frontend.sh" || warn "frontend deploy failed — run: APP_DIR=$GIT_ROOT bash $GIT_ROOT/deploy-frontend.sh"
+  APP_DIR="$GIT_ROOT" bash "$GIT_ROOT/deploy-frontend.sh" || fail "frontend deploy failed — run: APP_DIR=$GIT_ROOT bash $GIT_ROOT/deploy-frontend.sh"
 else
   warn "deploy-frontend.sh not found at $GIT_ROOT — backend updated only"
 fi
@@ -146,6 +146,5 @@ echo "────────────────────────�
 echo "Next steps:"
 echo "  • VPS dashboard: open /dashboard/users and hard-refresh (Ctrl+F5)"
 echo "  • Lovable hosted dashboard: click Publish → Update if you use backend-joy.lovable.app"
-echo "  • Verify via nginx:  curl -s -o /dev/null -w '%{http_code}\\n' \\"
-echo "      https://YOUR-DOMAIN/api/pluto/admissions/v1/search?q=ab"
+echo "  • Verify dashboard assets: curl -I https://dashboard.timescard.cloud/assets/<latest-css>.css"
 echo "───────────────────────────────────────────────"
