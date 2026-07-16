@@ -5,6 +5,7 @@
 -- members; writes are service-role only (populated by the log parser).
 
 create schema if not exists admin;
+create extension if not exists citext;
 
 -- =========================================================================
 -- 1. Daily traffic rollups per slug.
