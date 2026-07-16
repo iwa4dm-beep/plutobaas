@@ -409,7 +409,37 @@ async function handleStatic(req, res, prefix, linkName) {
 const server = http.createServer(async (req, res) => {
   try {
     if (req.method === "GET" && req.url === "/healthz") {
-      return json(res, 200, { ok: true, service: "pluto-sandbox-worker", uptime: process.uptime() });
+      // Detailed liveness — safe to expose publicly (no secrets, no PII).
+      let siteCount = 0; let slugCount = 0; let lastServedAt = null;
+      try {
+        const entries = await fsp.readdir(SITES_ROOT, { withFileTypes: true });
+        for (const e of entries) {
+          if (e.isSymbolicLink()) slugCount++;
+          else if (e.isDirectory()) {
+            siteCount++;
+            try {
+              const m = JSON.parse(await fsp.readFile(path.join(SITES_ROOT, e.name, "current.json"), "utf-8"));
+              if (!lastServedAt || (m.servedAt && m.servedAt > lastServedAt)) lastServedAt = m.servedAt;
+            } catch { /* skip */ }
+          }
+        }
+      } catch { /* SITES_ROOT missing */ }
+      const mem = process.memoryUsage();
+      return json(res, 200, {
+        ok: true,
+        service: "pluto-sandbox-worker",
+        version: "v1-static-serve-2026-07-16",
+        uptimeSec: Math.round(process.uptime()),
+        sitesRoot: SITES_ROOT,
+        workspaces: siteCount,
+        slugs: slugCount,
+        lastServedAt,
+        memoryMB: { rss: Math.round(mem.rss / 1e6), heapUsed: Math.round(mem.heapUsed / 1e6) },
+        upstream: UPSTREAM,
+        nodeVersion: process.version,
+        pid: process.pid,
+        ts: new Date().toISOString(),
+      });
     }
     // Public static routes — no shared secret, safe to expose behind nginx.
     if (req.method === "GET" && req.url && req.url.startsWith("/sites/")) {
