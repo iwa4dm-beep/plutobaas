@@ -30,7 +30,7 @@ grant all    on admin.project_usage to service_role;
 alter table admin.project_usage enable row level security;
 
 -- Members of the workspace that owns <slug> can read their own usage.
--- Reuses public.workspaces(slug) added in migration 0034.
+-- Reuses admin.workspaces(slug) hardened in migration 0034.
 drop policy if exists project_usage_read on admin.project_usage;
 create policy project_usage_read on admin.project_usage
   for select
@@ -38,8 +38,8 @@ create policy project_usage_read on admin.project_usage
   using (
     exists (
       select 1
-      from public.workspaces w
-      join public.workspace_members m on m.workspace_id = w.id
+      from admin.workspaces w
+      join admin.workspace_members m on m.workspace_id = w.id
       where w.slug = admin.project_usage.slug
         and m.user_id = auth.uid()
     )
@@ -72,8 +72,8 @@ create policy project_quotas_read on admin.project_quotas
   using (
     exists (
       select 1
-      from public.workspaces w
-      join public.workspace_members m on m.workspace_id = w.id
+      from admin.workspaces w
+      join admin.workspace_members m on m.workspace_id = w.id
       where w.slug = admin.project_quotas.slug
         and m.user_id = auth.uid()
     )
@@ -118,8 +118,8 @@ create policy abuse_events_read on admin.abuse_events
   using (
     exists (
       select 1
-      from public.workspaces w
-      join public.workspace_members m on m.workspace_id = w.id
+      from admin.workspaces w
+      join admin.workspace_members m on m.workspace_id = w.id
       where w.slug = admin.abuse_events.slug
         and m.user_id = auth.uid()
     )
