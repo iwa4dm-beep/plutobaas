@@ -94,17 +94,14 @@ ZONE_NAME=""
 while read -r candidate; do
   [ -n "$candidate" ] || continue
   body="$(api GET "/zones?name=${candidate}&status=active" 2>/dev/null || true)"
-  parsed="$(printf '%s' "$body" | python3 - <<'PY' 2>/dev/null || true
-import json,sys
+  parsed="$(python3 -c 'import json,sys
 try:
-    j=json.load(sys.stdin)
-    r=(j.get('result') or [])
+    j=json.loads(sys.argv[1] or "{}")
+    r=(j.get("result") or [])
     if r:
-        print(r[0].get('id','') + ' ' + r[0].get('name',''))
+        print((r[0].get("id") or "") + " " + (r[0].get("name") or ""))
 except Exception:
-    pass
-PY
-)"
+    pass' "$body" 2>/dev/null || true)"
   if [ -n "$parsed" ]; then
     ZONE_ID="${parsed%% *}"
     ZONE_NAME="${parsed#* }"
@@ -124,18 +121,15 @@ json_escape() { python3 -c 'import json,sys; print(json.dumps(sys.argv[1]))' "$1
 upsert_a_record() {
   local name="$1" record_id existing proxied payload list
   list="$(api GET "/zones/${ZONE_ID}/dns_records?type=A&name=${name}" 2>/dev/null || true)"
-  existing="$(printf '%s' "$list" | python3 - <<'PY' 2>/dev/null || true
-import json,sys
+  existing="$(python3 -c 'import json,sys
 try:
-    j=json.load(sys.stdin)
-    r=(j.get('result') or [])
+    j=json.loads(sys.argv[1] or "{}")
+    r=(j.get("result") or [])
     if r:
         x=r[0]
-        print((x.get('id') or '') + ' ' + (x.get('content') or '') + ' ' + str(x.get('proxied', False)).lower())
+        print((x.get("id") or "") + " " + (x.get("content") or "") + " " + str(x.get("proxied", False)).lower())
 except Exception:
-    pass
-PY
-)"
+    pass' "$list" 2>/dev/null || true)"
   if [ -n "$existing" ]; then
     record_id="$(printf '%s' "$existing" | awk '{print $1}')"
     proxied="$(printf '%s' "$existing" | awk '{print $3}')"
