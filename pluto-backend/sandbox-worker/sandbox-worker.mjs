@@ -550,8 +550,10 @@ const server = http.createServer(async (req, res) => {
       const s = decodeURIComponent(req.url.slice("/site-status/".length).split("?")[0]);
       const r = await siteStatus(s);
       return json(res, r.ok ? 200 : 404, r);
+    }
 
     if (!checkSecret(req)) return json(res, 401, { error: "invalid or missing x-sandbox-secret" });
+
 
 
     if (req.method === "POST" && req.url === "/unpack") {
