@@ -7,7 +7,7 @@
 // and then clears them from React state when "Provision another workspace"
 // is clicked — they are never persisted anywhere else in the client.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { provisionWorkspace } from "./workspace-provisioner.functions";
+import { provisionWorkspaceCore as provisionWorkspace } from "./workspace-provisioner.functions";
 
 type FetchArgs = { url: string; init: RequestInit | undefined };
 
@@ -51,7 +51,7 @@ describe("provisionWorkspace (Auto-Connect Studio)", () => {
       keys: { anon: "pk_anon_xxx", service_role: "sk_service_yyy" },
     });
 
-    const result = await provisionWorkspace({
+    const result = await provisionWorkspace(
       data: { projectName: "e2e-test", adminEmail: "auto@test.dev" },
     });
 
@@ -77,7 +77,7 @@ describe("provisionWorkspace (Auto-Connect Studio)", () => {
 
   it("surfaces backend failures without leaking service key requirement", async () => {
     stubFetch({ error: "email already registered" }, 409);
-    const result = await provisionWorkspace({
+    const result = await provisionWorkspace(
       data: { projectName: "e2e-dup", adminEmail: "dup@test.dev" },
     });
     expect(result.ok).toBe(false);
