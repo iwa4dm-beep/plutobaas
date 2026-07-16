@@ -101,6 +101,7 @@ import { Route as DashboardIntegrationsLovableFrontendRouteImport } from './rout
 import { Route as DashboardCustomDomainsAuditRouteImport } from './routes/dashboard.custom-domains.audit'
 import { Route as DashboardAdminInviteRouteImport } from './routes/dashboard.admin.invite'
 import { Route as ApiPublicPlutoMigrateRouteImport } from './routes/api/public/pluto-migrate'
+import { Route as ApiPublicAutoDeployWebhookRouteImport } from './routes/api/public/auto-deploy-webhook'
 import { Route as ApiPlutoStatusRouteImport } from './routes/api/pluto.status'
 import { Route as ApiPlutoMonitorRouteImport } from './routes/api/pluto.monitor'
 import { Route as ApiPlutoDeployRouteImport } from './routes/api/pluto/deploy'
@@ -578,6 +579,12 @@ const ApiPublicPlutoMigrateRoute = ApiPublicPlutoMigrateRouteImport.update({
   path: '/api/public/pluto-migrate',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicAutoDeployWebhookRoute =
+  ApiPublicAutoDeployWebhookRouteImport.update({
+    id: '/api/public/auto-deploy-webhook',
+    path: '/api/public/auto-deploy-webhook',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiPlutoStatusRoute = ApiPlutoStatusRouteImport.update({
   id: '/api/pluto/status',
   path: '/api/pluto/status',
@@ -703,6 +710,7 @@ export interface FileRoutesByFullPath {
   '/api/pluto/deploy': typeof ApiPlutoDeployRoute
   '/api/pluto/monitor': typeof ApiPlutoMonitorRoute
   '/api/pluto/status': typeof ApiPlutoStatusRoute
+  '/api/public/auto-deploy-webhook': typeof ApiPublicAutoDeployWebhookRoute
   '/api/public/pluto-migrate': typeof ApiPublicPlutoMigrateRoute
   '/dashboard/admin/invite': typeof DashboardAdminInviteRoute
   '/dashboard/custom-domains/audit': typeof DashboardCustomDomainsAuditRoute
@@ -802,6 +810,7 @@ export interface FileRoutesByTo {
   '/api/pluto/deploy': typeof ApiPlutoDeployRoute
   '/api/pluto/monitor': typeof ApiPlutoMonitorRoute
   '/api/pluto/status': typeof ApiPlutoStatusRoute
+  '/api/public/auto-deploy-webhook': typeof ApiPublicAutoDeployWebhookRoute
   '/api/public/pluto-migrate': typeof ApiPublicPlutoMigrateRoute
   '/dashboard/admin/invite': typeof DashboardAdminInviteRoute
   '/dashboard/custom-domains/audit': typeof DashboardCustomDomainsAuditRoute
@@ -903,6 +912,7 @@ export interface FileRoutesById {
   '/api/pluto/deploy': typeof ApiPlutoDeployRoute
   '/api/pluto/monitor': typeof ApiPlutoMonitorRoute
   '/api/pluto/status': typeof ApiPlutoStatusRoute
+  '/api/public/auto-deploy-webhook': typeof ApiPublicAutoDeployWebhookRoute
   '/api/public/pluto-migrate': typeof ApiPublicPlutoMigrateRoute
   '/dashboard/admin/invite': typeof DashboardAdminInviteRoute
   '/dashboard/custom-domains/audit': typeof DashboardCustomDomainsAuditRoute
@@ -1005,6 +1015,7 @@ export interface FileRouteTypes {
     | '/api/pluto/deploy'
     | '/api/pluto/monitor'
     | '/api/pluto/status'
+    | '/api/public/auto-deploy-webhook'
     | '/api/public/pluto-migrate'
     | '/dashboard/admin/invite'
     | '/dashboard/custom-domains/audit'
@@ -1104,6 +1115,7 @@ export interface FileRouteTypes {
     | '/api/pluto/deploy'
     | '/api/pluto/monitor'
     | '/api/pluto/status'
+    | '/api/public/auto-deploy-webhook'
     | '/api/public/pluto-migrate'
     | '/dashboard/admin/invite'
     | '/dashboard/custom-domains/audit'
@@ -1204,6 +1216,7 @@ export interface FileRouteTypes {
     | '/api/pluto/deploy'
     | '/api/pluto/monitor'
     | '/api/pluto/status'
+    | '/api/public/auto-deploy-webhook'
     | '/api/public/pluto-migrate'
     | '/dashboard/admin/invite'
     | '/dashboard/custom-domains/audit'
@@ -1229,6 +1242,7 @@ export interface RootRouteChildren {
   ApiPlutoDeployRoute: typeof ApiPlutoDeployRoute
   ApiPlutoMonitorRoute: typeof ApiPlutoMonitorRoute
   ApiPlutoStatusRoute: typeof ApiPlutoStatusRoute
+  ApiPublicAutoDeployWebhookRoute: typeof ApiPublicAutoDeployWebhookRoute
   ApiPublicPlutoMigrateRoute: typeof ApiPublicPlutoMigrateRoute
   SdkDownloadFileRoute: typeof SdkDownloadFileRoute
 }
@@ -1879,6 +1893,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicPlutoMigrateRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/auto-deploy-webhook': {
+      id: '/api/public/auto-deploy-webhook'
+      path: '/api/public/auto-deploy-webhook'
+      fullPath: '/api/public/auto-deploy-webhook'
+      preLoaderRoute: typeof ApiPublicAutoDeployWebhookRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/pluto/status': {
       id: '/api/pluto/status'
       path: '/api/pluto/status'
@@ -2152,6 +2173,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPlutoDeployRoute: ApiPlutoDeployRoute,
   ApiPlutoMonitorRoute: ApiPlutoMonitorRoute,
   ApiPlutoStatusRoute: ApiPlutoStatusRoute,
+  ApiPublicAutoDeployWebhookRoute: ApiPublicAutoDeployWebhookRoute,
   ApiPublicPlutoMigrateRoute: ApiPublicPlutoMigrateRoute,
   SdkDownloadFileRoute: SdkDownloadFileRoute,
 }
