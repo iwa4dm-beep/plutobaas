@@ -91,7 +91,15 @@ systemctl reload nginx || die "nginx reload failed"
 # 5) verify
 if [ -n "${SLUG:-}" ]; then
   log "verify deploy for slug=$SLUG"
-  bash "$DEPLOY/verify-deploy.sh" "$SLUG" || die "verify-deploy reported failures"
+  if ! bash "$DEPLOY/verify-deploy.sh" "$SLUG"; then
+    log "verify failed; attempting worker + site recovery"
+    if [ -f "$DEPLOY/repair-sandbox-worker-and-site.sh" ]; then
+      SECRET="$SECRET" SERVICE_KEY="${SERVICE_KEY:-}" UPSTREAM="${UPSTREAM:-}" SLUG="$SLUG" WILDCARD="$WILDCARD" ACME_EMAIL="$ACME_EMAIL" \
+        bash "$DEPLOY/repair-sandbox-worker-and-site.sh" || die "worker/site recovery failed"
+    else
+      die "verify-deploy reported failures and recovery script is missing"
+    fi
+  fi
 else
   log "no SLUG given — skipping end-to-end verification"
   echo "  (rerun: bash deploy/verify-deploy.sh <slug>)"
