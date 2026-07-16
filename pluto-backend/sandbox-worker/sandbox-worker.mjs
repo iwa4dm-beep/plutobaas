@@ -355,6 +355,14 @@ const server = http.createServer(async (req, res) => {
       const r = await rotateEnv(body);
       return json(res, 200, r);
     }
+    if (req.method === "POST" && req.url === "/publish") {
+      const r = await publish(await readJson(req));
+      return json(res, 200, r);
+    }
+    if (req.method === "POST" && req.url === "/unpublish") {
+      const r = await unpublish(await readJson(req));
+      return json(res, 200, r);
+    }
     return json(res, 404, { error: "not_found" });
   } catch (e) {
     return json(res, 500, { error: e?.message ?? String(e) });
