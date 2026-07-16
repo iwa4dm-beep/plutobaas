@@ -115,6 +115,14 @@ KEEP_SITES="${KEEP_SITES:-1}" TAKEOVER_PORT="${TAKEOVER_PORT:-1}" \
   bash "$HERE/nuke-and-rebuild-sandbox.sh"
 
 log "6/6 verify served site"
+bash "$HERE/ensure-wildcard-dns.sh" "$WILDCARD" || true
+if [ -f "$HERE/seed-slug.sh" ]; then
+  status_code="$(curl -s -o /tmp/_site_status_before_verify.json -w '%{http_code}' --max-time 8 "https://api.${WILDCARD#*.}/site-status/${SLUG}" || echo 000)"
+  if [ "$status_code" != "200" ]; then
+    echo "  site-status is HTTP ${status_code}; seeding placeholder so the project is reachable before the next real Auto Deploy"
+    bash "$HERE/seed-slug.sh" "$SLUG"
+  fi
+fi
 bash "$HERE/verify-deploy.sh" "$SLUG" || {
   echo
   echo "⚠ sandbox/API are repaired, but no bundle is live for '$SLUG' yet."

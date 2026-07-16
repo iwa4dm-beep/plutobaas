@@ -24,6 +24,14 @@ function truncate(s: string, n = 4000): string {
   return s.length > n ? s.slice(0, n) + `\n… (+${s.length - n} chars)` : s;
 }
 
+function firstNonEmptyEnv(...keys: string[]): string {
+  for (const key of keys) {
+    const value = (process.env[key] ?? "").trim();
+    if (value) return value;
+  }
+  return "";
+}
+
 function isAlreadyExistsApplyError(text: string): boolean {
   let message = text;
   try {
@@ -541,11 +549,8 @@ export const deployAll = createServerFn({ method: "POST" })
     //           If unset, we log a "skipped" attempt and keep going — this makes
     //           the pipeline safe to run on hosts where the worker isn't installed.
     const bundleKey = `${data.bucket}/${cleanPath}`;
-    const sandboxUrl = (process.env.PLUTO_SANDBOX_URL ?? `${base}/sandbox`).replace(/\/+$/, "");
-    const sandboxSecret = process.env.PLUTO_SANDBOX_SECRET
-      ?? process.env.PLUTO_SANDBOX_WORKER_SECRET
-      ?? process.env.SANDBOX_SHARED_SECRET
-      ?? "";
+    const sandboxUrl = (firstNonEmptyEnv("PLUTO_SANDBOX_URL") || `${base}/sandbox`).replace(/\/+$/, "");
+    const sandboxSecret = firstNonEmptyEnv("PLUTO_SANDBOX_SECRET", "PLUTO_SANDBOX_WORKER_SECRET", "SANDBOX_SHARED_SECRET");
     const servedSiteFromWorker: { url?: string } = {};
     const deploySlug = (filename.replace(/\.zip$/i, "") || data.workspaceId).replace(/[^a-zA-Z0-9._-]/g, "-").toLowerCase();
     const unpackStep = await withRetry("unpack-serve", "Unpack bundle + serve (sandbox worker)", data.maxRetries, async () => {
@@ -562,15 +567,15 @@ export const deployAll = createServerFn({ method: "POST" })
       // Operators sometimes set PLUTO_SANDBOX_URL to the bare host, which routes
       // POST /unpack into the main app and returns "Only HTML requests are supported here".
       // Try every plausible shape; fall through only when the response clearly hit the wrong service.
-      const base = sandboxUrl;
-      const hasSandboxSuffix = /\/sandbox$/i.test(base);
+      const sandboxBaseForUnpack = sandboxUrl;
+      const hasSandboxSuffix = /\/sandbox$/i.test(sandboxBaseForUnpack);
       const candidates = hasSandboxSuffix
-        ? [`${base}/unpack`, `${base}/v1/unpack`, `${base}/deploy/unpack`]
+        ? [`${sandboxBaseForUnpack}/unpack`, `${sandboxBaseForUnpack}/v1/unpack`, `${sandboxBaseForUnpack}/deploy/unpack`]
         : [
-            `${base}/sandbox/unpack`,
-            `${base}/sandbox/v1/unpack`,
-            `${base}/sandbox/deploy/unpack`,
-            `${base}/unpack`,
+            `${sandboxBaseForUnpack}/sandbox/unpack`,
+            `${sandboxBaseForUnpack}/sandbox/v1/unpack`,
+            `${sandboxBaseForUnpack}/sandbox/deploy/unpack`,
+            `${sandboxBaseForUnpack}/unpack`,
           ];
       let r: Awaited<ReturnType<typeof rawFetch>> | null = null;
       let triedList = "";
@@ -597,7 +602,7 @@ export const deployAll = createServerFn({ method: "POST" })
         if (wrongServiceAll) {
           return {
             ok: true,
-            detail: `skipped — sandbox worker at ${base} does not expose an /unpack endpoint (tried: ${triedList}). Upgrade sandbox-worker.mjs to include POST /unpack, or set PLUTO_SANDBOX_URL to the correct base (e.g. https://api.timescard.cloud/sandbox).`,
+            detail: `skipped — sandbox worker at ${sandboxBaseForUnpack} does not expose an /unpack endpoint (tried: ${triedList}). Upgrade sandbox-worker.mjs to include POST /unpack, or set PLUTO_SANDBOX_URL to the correct base (e.g. https://api.timescard.cloud/sandbox).`,
             debug: r?.debug ?? null,
             result: { skipped: true, reason: "no-unpack-endpoint", tried: triedList },
           };
