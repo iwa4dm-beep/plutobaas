@@ -897,6 +897,18 @@ function HistoryRow({ entry }: { entry: AutoDeployHistoryEntry }) {
               ))}
             </div>
           )}
+          <div className="flex items-center gap-2 pt-1">
+            <button
+              onClick={() => { downloadAutoDeployReport(entry); toast.success("Report downloaded"); }}
+              className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-[11px] hover:bg-accent">
+              <Download className="h-3 w-3" /> Export report
+            </button>
+            {entry.approver && (
+              <span className="text-[11px] text-muted-foreground inline-flex items-center gap-1">
+                <UserCheck className="h-3 w-3" /> {entry.approver}
+              </span>
+            )}
+          </div>
         </div>
       )}
     </li>
