@@ -29,6 +29,31 @@ done
 [ -n "$UNIT" ] || { echo "✗ no pluto-sandbox[-worker] unit found"; exit 2; }
 echo "▶ unit: $UNIT"
 
+PORT="$(grep -E '^(SANDBOX_WORKER_)?PORT=' /etc/pluto/sandbox-worker.env 2>/dev/null | tail -1 | cut -d= -f2)"
+PORT="${PORT:-8787}"
+
+stop_worker_units_and_free_port() {
+  echo "▶ Stopping duplicate sandbox worker units and freeing 127.0.0.1:${PORT}"
+  for u in pluto-sandbox-worker pluto-sandbox; do
+    if systemctl list-unit-files "${u}.service" >/dev/null 2>&1; then
+      systemctl stop "$u" 2>/dev/null || true
+      systemctl reset-failed "$u" 2>/dev/null || true
+    fi
+  done
+  if command -v fuser >/dev/null 2>&1; then
+    fuser -k "${PORT}/tcp" 2>/dev/null || true
+  elif command -v ss >/dev/null 2>&1; then
+    PIDS="$(ss -ltnp "sport = :${PORT}" 2>/dev/null | grep -oE 'pid=[0-9]+' | cut -d= -f2 | sort -u || true)"
+    if [ -n "$PIDS" ]; then
+      echo "$PIDS" | xargs -r kill 2>/dev/null || true
+      sleep 1
+      echo "$PIDS" | xargs -r kill -9 2>/dev/null || true
+    fi
+  else
+    pkill -f 'node .*sandbox-worker\.mjs' 2>/dev/null || true
+  fi
+}
+
 # 2. Read ExecStart.
 EXEC="$(systemctl show -p ExecStart --value "$UNIT" 2>/dev/null | tr -d '\n')"
 echo "  ExecStart raw: $EXEC"
@@ -38,6 +63,7 @@ RUN_MJS="$(printf '%s' "$EXEC" | grep -oE '/[^ ;{}]+sandbox-worker\.mjs' | head 
 echo "  running mjs:  $RUN_MJS"
 
 # 3. Copy to both the running location and the canonical one.
+stop_worker_units_and_free_port
 mkdir -p "$(dirname "$RUN_MJS")" /opt/pluto/sandbox-worker
 install -m 0755 "$REPO_MJS" "$RUN_MJS"
 install -m 0755 "$REPO_MJS" /opt/pluto/sandbox-worker/sandbox-worker.mjs
@@ -62,10 +88,8 @@ if [ -n "$STRAY" ]; then
 fi
 
 # 6. Restart + probe.
-systemctl restart "$UNIT" || { echo "✗ restart failed"; systemctl status "$UNIT" --no-pager -l; exit 1; }
+systemctl start "$UNIT" || { echo "✗ start failed"; systemctl status "$UNIT" --no-pager -l; exit 1; }
 sleep 2
-PORT="$(grep -E '^(SANDBOX_WORKER_)?PORT=' /etc/pluto/sandbox-worker.env 2>/dev/null | tail -1 | cut -d= -f2)"
-PORT="${PORT:-8787}"
 BODY="$(curl -fsS --max-time 5 "http://127.0.0.1:${PORT}/healthz" || echo '')"
 echo "  /healthz: $BODY"
 if echo "$BODY" | grep -q 'v1-static-serve'; then

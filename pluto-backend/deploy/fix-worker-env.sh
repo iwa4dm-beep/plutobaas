@@ -63,6 +63,28 @@ if [ -z "$UNIT" ]; then
   fi
 fi
 
+stop_worker_units_and_free_port() {
+  echo "▶ Stopping duplicate sandbox worker units and freeing 127.0.0.1:${PORT}"
+  for u in pluto-sandbox-worker pluto-sandbox; do
+    if $SUDO systemctl list-unit-files "${u}.service" >/dev/null 2>&1; then
+      $SUDO systemctl stop "$u" 2>/dev/null || true
+      $SUDO systemctl reset-failed "$u" 2>/dev/null || true
+    fi
+  done
+  if command -v fuser >/dev/null 2>&1; then
+    $SUDO fuser -k "${PORT}/tcp" 2>/dev/null || true
+  elif command -v ss >/dev/null 2>&1; then
+    PIDS="$(ss -ltnp "sport = :${PORT}" 2>/dev/null | grep -oE 'pid=[0-9]+' | cut -d= -f2 | sort -u || true)"
+    if [ -n "$PIDS" ]; then
+      echo "$PIDS" | $SUDO xargs -r kill 2>/dev/null || true
+      sleep 1
+      echo "$PIDS" | $SUDO xargs -r kill -9 2>/dev/null || true
+    fi
+  else
+    $SUDO pkill -f 'node .*sandbox-worker\.mjs' 2>/dev/null || true
+  fi
+}
+
 $SUDO mkdir -p "$(dirname "$ENV_FILE")"
 TMP="$(mktemp)"
 cat > "$TMP" <<EOF
@@ -89,8 +111,9 @@ rm -f "$TMP"
 echo "✓ wrote $ENV_FILE"
 echo "  keys: $(grep -c '=' "$ENV_FILE") lines"
 
-echo "▶ Restarting $UNIT"
-$SUDO systemctl restart "$UNIT" || { echo "✗ restart failed"; $SUDO systemctl status "$UNIT" --no-pager -l; exit 1; }
+stop_worker_units_and_free_port
+echo "▶ Starting $UNIT"
+$SUDO systemctl start "$UNIT" || { echo "✗ start failed"; $SUDO systemctl status "$UNIT" --no-pager -l; exit 1; }
 
 sleep 2
 STATE="$($SUDO systemctl is-active "$UNIT" 2>/dev/null || echo unknown)"

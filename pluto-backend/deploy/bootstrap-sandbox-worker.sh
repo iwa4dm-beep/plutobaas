@@ -67,6 +67,31 @@ else
   GENERATED=0
 fi
 
+stop_worker_units_and_free_port() {
+  echo "▶ Stopping duplicate sandbox worker units and freeing 127.0.0.1:${PORT}"
+  for u in pluto-sandbox-worker pluto-sandbox; do
+    if systemctl list-unit-files "${u}.service" >/dev/null 2>&1; then
+      systemctl stop "$u" 2>/dev/null || true
+      systemctl reset-failed "$u" 2>/dev/null || true
+    fi
+  done
+
+  # Prefer fuser when present; fall back to ss parsing. This fixes EADDRINUSE
+  # caused by an old unit or manually-started node process still holding 8787.
+  if command -v fuser >/dev/null 2>&1; then
+    fuser -k "${PORT}/tcp" 2>/dev/null || true
+  elif command -v ss >/dev/null 2>&1; then
+    PIDS="$(ss -ltnp "sport = :${PORT}" 2>/dev/null | grep -oE 'pid=[0-9]+' | cut -d= -f2 | sort -u || true)"
+    if [ -n "$PIDS" ]; then
+      echo "$PIDS" | xargs -r kill 2>/dev/null || true
+      sleep 1
+      echo "$PIDS" | xargs -r kill -9 2>/dev/null || true
+    fi
+  else
+    pkill -f 'node .*sandbox-worker\.mjs' 2>/dev/null || true
+  fi
+}
+
 echo "▶ Installing OS dependencies"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -y >/dev/null
@@ -128,8 +153,9 @@ WantedBy=multi-user.target
 EOF
 
 systemctl daemon-reload
-systemctl enable --now "$UNIT"
-systemctl restart "$UNIT"
+stop_worker_units_and_free_port
+systemctl enable "$UNIT"
+systemctl start "$UNIT"
 sleep 2
 
 STATE="$(systemctl is-active "$UNIT" 2>/dev/null || echo unknown)"
