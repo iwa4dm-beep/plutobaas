@@ -951,7 +951,11 @@ function openSocket(
 ): () => void {
   const cfg = liveConfig();
   if (!cfg) return () => {};
-  const wsUrl = cfg.url.replace(/^http/, "ws").replace(/\/$/, "") +
+  // WebSocket must target the upstream API origin directly. The same-origin
+  // `/api/pluto` proxy only forwards HTTP — nginx on the dashboard host does
+  // not upgrade WS, so `/api/pluto/realtime/v1/` returns 404.
+  const wsBase = (cfg.upstreamUrl || cfg.url).replace(/^http/, "ws").replace(/\/$/, "");
+  const wsUrl = wsBase +
     `/realtime/v1/?apikey=${encodeURIComponent(cfg.serviceKey ?? cfg.anonKey)}`;
   let ws: WebSocket | null = null;
   let closed = false;
