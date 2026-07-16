@@ -62,16 +62,27 @@ select_nginx_site_path() {
   local dump
   dump="$(nginx_dump)"
 
+  # Always prefer /etc/nginx/conf.d/*.conf. sites-enabled include patterns
+  # vary — some servers use `sites-enabled/*.conf`, silently ignoring files
+  # without the .conf suffix. That exact bug caused dashboard.timescard.cloud
+  # to fall back to the api.timescard.cloud default_server certificate.
+  NGINX_SITE="$NGINX_CONF_D"
   if printf '%s\n' "$dump" | grep -qE 'include[[:space:]]+/etc/nginx/conf\.d/\*\.conf'; then
-    NGINX_SITE="$NGINX_CONF_D"
-    ok "nginx includes conf.d/*.conf; using first-class per-domain config ${NGINX_SITE}"
-  elif printf '%s\n' "$dump" | grep -qE 'include[[:space:]]+/etc/nginx/sites-enabled/\*'; then
-    NGINX_SITE="$NGINX_AVAILABLE"
-    ok "nginx includes sites-enabled; using ${NGINX_SITE}"
+    ok "nginx includes conf.d/*.conf; using ${NGINX_SITE}"
   else
-    NGINX_SITE="$NGINX_CONF_D"
-    warn "Could not detect nginx include path; using standard loaded conf.d path ${NGINX_SITE}"
+    warn "nginx.conf does not obviously include conf.d/*.conf; still writing ${NGINX_SITE} (standard path)"
   fi
+
+  # Delete stale copies in sites-enabled/sites-available so the wrong
+  # server block cannot win SNI matching.
+  $SUDO rm -f \
+    "/etc/nginx/sites-enabled/${DOMAIN}" \
+    "/etc/nginx/sites-enabled/${DOMAIN}.conf" \
+    "/etc/nginx/sites-available/${DOMAIN}" \
+    "/etc/nginx/sites-available/${DOMAIN}.conf" \
+    "/etc/nginx/sites-enabled/${DOMAIN}-le-ssl.conf" \
+    "/etc/nginx/sites-available/${DOMAIN}-le-ssl.conf" \
+    2>/dev/null || true
 }
 
 same_nginx_file() {
