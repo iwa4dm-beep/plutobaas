@@ -23,7 +23,7 @@ import { analyzeZip } from "@/lib/autoconnect/analyzer";
 import { verifyZip } from "@/lib/autoconnect/zip-verify";
 import { buildBundle } from "@/lib/autoconnect/bundler";
 import { loadRepoAsFile } from "@/lib/autoconnect/github-loader";
-import { deployAll, type DeployAllResult, type DeployStepLog } from "@/lib/pluto/vps-deployer.functions";
+import { deployAll, probeLiveUrl, type DeployAllResult, type DeployStepLog, type LiveUrlProbe } from "@/lib/pluto/vps-deployer.functions";
 import { getUpstream } from "@/lib/pluto/upstream";
 
 import { RequireWorkspace } from "@/components/pluto/RequireWorkspace";
@@ -471,9 +471,16 @@ function AutoDeployInner() {
     }
 
     if (result && !lastError) {
-      log(`✅ Live in ${(result.totalMs / 1000).toFixed(1)}s${attempt > 1 ? ` (after ${attempt - 1} auto-retry)` : ""}`);
+      log(`✅ Pipeline complete in ${(result.totalMs / 1000).toFixed(1)}s${attempt > 1 ? ` (after ${attempt - 1} auto-retry)` : ""}`);
       setPhase("live");
-      const liveUrl = `https://${payload.slug}.apps.timescard.cloud`;
+      // Prefer the URL the backend actually resolved + probed. Fall back to the
+      // legacy fabricated slug host only for display continuity, and mark it
+      // clearly as "not-served-yet" when the backend confirms it isn't reachable.
+      const resolvedLiveUrl =
+        result.liveUrls?.resolvedSite ||
+        result.liveUrls?.servedSite ||
+        `https://${payload.slug}.apps.timescard.cloud`;
+      const liveUrl = resolvedLiveUrl;
       const realEvents: StepEvent[] = result.steps.map((s) => ({
         ts: Date.now(), key: s.key, label: s.label,
         status: s.ok ? "ok" : "fail",
@@ -560,7 +567,38 @@ function AutoDeployInner() {
 
 
 
-  const liveUrl = useMemo(() => slug ? `https://${slug}.apps.timescard.cloud` : null, [slug]);
+  // The URL displayed after "Live". Prefer the backend-resolved served-site URL
+  // (from PLUTO_SERVED_SITE_URL or the sandbox worker's unpack webRoot) — only
+  // fall back to the slug-based hostname (which has no DNS/nginx wiring today).
+  const liveUrl = useMemo(() => {
+    const fromResult = deployResult?.liveUrls?.resolvedSite || deployResult?.liveUrls?.servedSite;
+    if (fromResult) return fromResult;
+    return slug ? `https://${slug}.apps.timescard.cloud` : null;
+  }, [slug, deployResult]);
+  const bootstrapInvokeUrl = deployResult?.liveUrls?.bootstrapInvoke ?? null;
+  // Backend probe outcome (populated during deployAll). Client re-probes on demand.
+  const initialProbe = deployResult?.liveUrls?.servedSiteProbe ?? null;
+  const [liveProbe, setLiveProbe] = useState<LiveUrlProbe | null>(initialProbe);
+  const [probing, setProbing] = useState(false);
+  useEffect(() => { setLiveProbe(deployResult?.liveUrls?.servedSiteProbe ?? null); }, [deployResult]);
+  const probeLiveUrlFn = useServerFn(probeLiveUrl);
+  const runProbe = useCallback(async () => {
+    if (!liveUrl) return;
+    setProbing(true);
+    try {
+      const r = await probeLiveUrlFn({ data: { url: liveUrl } });
+      setLiveProbe(r);
+      if (r.reachable) toast.success(`Live URL reachable — HTTP ${r.status}`);
+      else toast.error(`Live URL unreachable — HTTP ${r.status || "network error"}`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Probe failed");
+    } finally {
+      setProbing(false);
+    }
+  }, [liveUrl, probeLiveUrlFn]);
+  const servedHint = deployResult?.liveUrls?.servedHint ?? null;
+  const backendSaysServed = deployResult?.liveUrls?.served === true;
+  const isReachable = liveProbe ? liveProbe.reachable : backendSaysServed;
   const busy = phase === "analyzing" || phase === "planning" || phase === "bundling" || phase === "deploying";
   const canRun = !busy && phase !== "awaiting-approval";
 
@@ -734,31 +772,74 @@ function AutoDeployInner() {
 
       {/* Live URL card */}
       {phase === "live" && liveUrl && (
-        <section className="rounded-xl border border-emerald-500/40 bg-emerald-500/5 p-5 space-y-3">
-          <div className="flex items-center gap-2 text-emerald-500">
-            <CheckCircle2 className="h-5 w-5" />
+        <section
+          className={`rounded-xl border p-5 space-y-3 ${
+            isReachable
+              ? "border-emerald-500/40 bg-emerald-500/5"
+              : "border-amber-500/40 bg-amber-500/5"
+          }`}
+        >
+          <div className={`flex items-center gap-2 ${isReachable ? "text-emerald-500" : "text-amber-500"}`}>
+            {isReachable ? <CheckCircle2 className="h-5 w-5" /> : <AlertCircle className="h-5 w-5" />}
             <span className="font-semibold">
-              ✅ {pending?.isRollback ? "Rollback সফল" : "Live — deploy সফল"}
+              {isReachable
+                ? (pending?.isRollback ? "✅ Rollback সফল — সাইট live" : "✅ Live — deploy সফল")
+                : (pending?.isRollback
+                    ? "⚠ Rollback pipeline সফল — কিন্তু সাইট এখনো served হয়নি"
+                    : "⚠ Deploy pipeline সফল — কিন্তু সাইট এখনো served হয়নি")}
             </span>
           </div>
+
+          {!isReachable && (
+            <div className="text-xs text-amber-600 dark:text-amber-400 leading-relaxed">
+              Bundle upload, migrations, bootstrap সব সফল — কিন্তু নিচের URL-এ এখনো কোনো frontend serve হচ্ছে না
+              {liveProbe ? ` (HTTP ${liveProbe.status || "network"})` : ""}.
+              {servedHint ? ` ${servedHint}` : ""}
+            </div>
+          )}
+
           <div className="flex flex-wrap items-center gap-2">
             <code className="flex-1 min-w-0 rounded-md bg-background px-3 py-2 text-sm font-mono truncate border border-border">{liveUrl}</code>
             <button onClick={() => { navigator.clipboard.writeText(liveUrl); toast.success("Copied"); }}
               className="rounded-md border border-border px-3 py-2 text-sm hover:bg-accent flex items-center gap-1.5">
               <Copy className="h-3.5 w-3.5" /> Copy
             </button>
+            <button
+              onClick={runProbe}
+              disabled={probing}
+              className="rounded-md border border-border px-3 py-2 text-sm hover:bg-accent flex items-center gap-1.5 disabled:opacity-60">
+              <RefreshCw className={`h-3.5 w-3.5 ${probing ? "animate-spin" : ""}`} /> Re-check
+            </button>
             <a href={liveUrl} target="_blank" rel="noreferrer"
-              className="rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground hover:bg-primary/90 flex items-center gap-1.5">
+              className={`rounded-md px-3 py-2 text-sm flex items-center gap-1.5 ${
+                isReachable
+                  ? "bg-primary text-primary-foreground hover:bg-primary/90"
+                  : "border border-border hover:bg-accent"
+              }`}>
               <ExternalLink className="h-3.5 w-3.5" /> Open
             </a>
           </div>
+
+          {liveProbe && (
+            <div className="text-[11px] text-muted-foreground font-mono">
+              Probe: HTTP {liveProbe.status || "-"} · {liveProbe.latencyMs}ms · {liveProbe.contentType ?? "non-html"} · checked just now
+              {liveProbe.snippet ? ` · ${liveProbe.snippet.slice(0, 120)}` : ""}
+            </div>
+          )}
+
+          {bootstrapInvokeUrl && (
+            <div className="text-xs text-muted-foreground">
+              Verifiable backend endpoint: <a href={bootstrapInvokeUrl} target="_blank" rel="noreferrer" className="underline font-mono">{bootstrapInvokeUrl}</a>
+            </div>
+          )}
+
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2 text-xs">
             <Stat label="Tables" value={analyze?.backend.tables.length ?? 0} />
             <Stat label="Routes" value={analyze?.backend.routes.length ?? 0} />
             <Stat label="Deploy time" value={`${((deployResult?.totalMs ?? 0) / 1000).toFixed(1)}s`} />
             <Stat label="Steps ok" value={`${deployResult?.steps.filter((s) => s.ok).length ?? 0}/${deployResult?.steps.length ?? 0}`} />
           </div>
-          <div className="pt-2 border-t border-emerald-500/20 flex flex-wrap gap-2 text-xs">
+          <div className="pt-2 border-t border-border/50 flex flex-wrap gap-2 text-xs">
             <a href="/dashboard/custom-domains" className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 hover:bg-accent">
               <Globe className="h-3.5 w-3.5" /> Attach custom domain
             </a>
@@ -776,6 +857,7 @@ function AutoDeployInner() {
           </div>
         </section>
       )}
+
 
       {/* Real-time streaming panel — while deploying */}
       {(phase === "deploying" || (streamEvents.length > 0 && phase !== "live")) && (

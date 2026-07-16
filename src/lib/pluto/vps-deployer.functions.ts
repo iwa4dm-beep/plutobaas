@@ -356,7 +356,26 @@ const DeployAllInput = z.object({
 export type DeployStepKey = "ensure-infra" | "push-migrations" | "upload-bundle" | "verify-deploy" | "unpack-serve" | "activate-service" | "health-check";
 export type DeployStepAttempt = { attempt: number; ok: boolean; detail: string; debug: StepDebug | null; startedAt: string; latencyMs: number };
 export type DeployStepLog = { key: DeployStepKey; label: string; ok: boolean; attempts: DeployStepAttempt[]; result: string | null };
-export type DeployAllResult = { ok: boolean; workspaceId: string; totalMs: number; steps: DeployStepLog[]; liveUrls?: { functionsHealth: string; bootstrapInvoke: string; servedSite?: string } };
+export type LiveUrlProbe = { url: string; status: number; reachable: boolean; contentType: string | null; snippet: string; latencyMs: number };
+export type DeployAllResult = {
+  ok: boolean;
+  workspaceId: string;
+  totalMs: number;
+  steps: DeployStepLog[];
+  liveUrls?: {
+    functionsHealth: string;
+    bootstrapInvoke: string;
+    servedSite?: string;
+    /** Best-effort served frontend URL that was actually probed (may be undefined if none configured). */
+    resolvedSite?: string;
+    /** Probe outcome for resolvedSite. reachable=false ⇒ hostname not yet wired to nginx / no vhost / DNS missing. */
+    servedSiteProbe?: LiveUrlProbe;
+    /** True when the deploy artifact has an actually reachable frontend URL. */
+    served?: boolean;
+    /** Operator-facing hint when served=false. */
+    servedHint?: string;
+  };
+};
 
 function nowIso(): string { return new Date().toISOString(); }
 
@@ -621,10 +640,46 @@ export const deployAll = createServerFn({ method: "POST" })
     });
     steps.push(healthStep);
 
+    // Resolve the best-effort served-site URL and actually probe it. Priority:
+    //   1. Operator-configured PLUTO_SERVED_SITE_URL (explicit)
+    //   2. Sandbox worker's returned webRoot (from unpack step)
+    // The fabricated `<slug>.apps.timescard.cloud` hostname is intentionally
+    // NOT included here — those hostnames have no DNS/nginx wiring and would
+    // mislead the UI into showing a fake "live" link.
+    const resolvedSite = servedSiteUrl || servedSiteFromWorker.url || undefined;
+    let servedSiteProbe: LiveUrlProbe | undefined;
+    let served = false;
+    let servedHint: string | undefined;
+    if (resolvedSite) {
+      const probeUrl = resolvedSite.endsWith("/") ? resolvedSite : `${resolvedSite}/`;
+      const p = await rawFetch(probeUrl, "GET", { accept: "text/html,*/*" }, null, null, 12_000);
+      const ct = p.debug ? null : null;
+      // rawFetch doesn't expose response headers; infer from body.
+      const looksHtml = /<!DOCTYPE|<html/i.test(p.text);
+      servedSiteProbe = {
+        url: probeUrl,
+        status: p.status,
+        reachable: p.ok,
+        contentType: looksHtml ? "text/html" : null,
+        snippet: p.text.slice(0, 240),
+        latencyMs: p.debug.latencyMs,
+      };
+      served = p.ok;
+      if (!p.ok) {
+        servedHint = `Bundle uploaded, but ${probeUrl} returned HTTP ${p.status}. The hostname is not yet wired to nginx / a vhost, or the sandbox worker did not unpack the release. Configure PLUTO_SERVED_SITE_URL or install a sandbox worker with a working /unpack endpoint.`;
+      }
+    } else {
+      servedHint = "No served-site URL is configured. Set PLUTO_SERVED_SITE_URL to the public https:// origin that nginx serves the unpacked release from, or install the sandbox worker so it returns a webRoot after unpack.";
+    }
+
     const liveUrls = {
       functionsHealth: `${base}/functions/v1/health`,
       bootstrapInvoke: `${base}/functions/v1/invoke/bootstrap`,
       ...(servedSiteUrl ? { servedSite: `${servedSiteUrl}/` } : {}),
+      ...(resolvedSite ? { resolvedSite } : {}),
+      ...(servedSiteProbe ? { servedSiteProbe } : {}),
+      served,
+      ...(servedHint ? { servedHint } : {}),
     };
     return { ok: steps.every(s => s.ok), workspaceId: data.workspaceId, totalMs: Date.now() - t0, steps, liveUrls };
   });
@@ -707,3 +762,23 @@ export const verifyBootstrap = createServerFn({ method: "POST" })
 
 
 
+
+// ---------- Standalone live-URL reachability probe ----------
+const ProbeLiveUrlInput = z.object({ url: z.string().url() });
+
+export const probeLiveUrl = createServerFn({ method: "POST" })
+  .inputValidator((d: unknown) => ProbeLiveUrlInput.parse(d))
+  .handler(async ({ data }): Promise<LiveUrlProbe & { checkedAt: string }> => {
+    const probeUrl = data.url.endsWith("/") ? data.url : `${data.url}/`;
+    const r = await rawFetch(probeUrl, "GET", { accept: "text/html,*/*" }, null, null, 12_000);
+    const looksHtml = /<!DOCTYPE|<html/i.test(r.text);
+    return {
+      url: probeUrl,
+      status: r.status,
+      reachable: r.ok,
+      contentType: looksHtml ? "text/html" : null,
+      snippet: r.text.slice(0, 400),
+      latencyMs: r.debug.latencyMs,
+      checkedAt: new Date().toISOString(),
+    };
+  });
