@@ -1,12 +1,9 @@
 // Server function: automatically provision a workspace + admin user on VPS.
 //
-// Flow:
-//   1. Create workspace via POST /admin/v1/workspaces
-//   2. Create admin user via POST /auth/v1/admin/users (auto email + password)
-//   3. Assign admin role via POST /admin/v1/workspaces/:id/members
-//
-// Returns generated credentials ONCE — caller must show them to the user
-// and never store them plaintext.
+// Uses the backend's transactional `POST /auth/v1/signup-full` which creates
+// user + workspace + project + api keys in a single atomic call and returns
+// the keys ONCE. This replaces the previous 3-step flow that relied on a
+// non-existent `/auth/v1/admin/users` endpoint.
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { vpsFetch, VpsError } from "./vps-client";
@@ -19,19 +16,18 @@ const InputSchema = z.object({
 export type ProvisionResult = {
   ok: true;
   workspaceId: string;
+  projectId: string;
   adminEmail: string;
   adminPassword: string;
   userId: string;
+  anonKey: string;
+  serviceKey: string;
 } | {
   ok: false;
-  step: "workspace" | "user" | "member";
+  step: "signup";
   error: string;
   status: number;
 };
-
-function slugify(s: string): string {
-  return s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 32) || "workspace";
-}
 
 function genPassword(): string {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789!@#%&*";
@@ -40,54 +36,41 @@ function genPassword(): string {
   return Array.from(bytes, (b) => chars[b % chars.length]).join("");
 }
 
+type SignupFullResponse = {
+  user: { id: string; email: string };
+  workspace: { id: string; slug: string; name: string };
+  project: { id: string; slug: string; name: string };
+  keys: { anon: string; service_role: string };
+};
+
 export const provisionWorkspace = createServerFn({ method: "POST" })
   .inputValidator((data: unknown) => InputSchema.parse(data))
   .handler(async ({ data }): Promise<ProvisionResult> => {
-    const slug = slugify(data.projectName);
-    const adminEmail = data.adminEmail ?? `admin+${slug}-${Date.now().toString(36)}@timescard.cloud`;
+    const adminEmail = data.adminEmail ?? `admin+${Date.now().toString(36)}@timescard.cloud`;
     const adminPassword = genPassword();
 
-    // Step 1 — workspace
-    let workspaceId = "";
     try {
-      const ws = await vpsFetch<{ id: string }>("/admin/v1/workspaces", {
-        method: "POST",
-        body: { name: data.projectName, slug },
-      });
-      workspaceId = ws.id;
-    } catch (e) {
-      const err = e instanceof VpsError ? e : new VpsError(String(e), 500, null);
-      return { ok: false, step: "workspace", error: err.message, status: err.status };
-    }
-
-    // Step 2 — admin user
-    let userId = "";
-    try {
-      const user = await vpsFetch<{ id: string }>("/auth/v1/admin/users", {
+      const res = await vpsFetch<SignupFullResponse>("/auth/v1/signup-full", {
         method: "POST",
         body: {
           email: adminEmail,
           password: adminPassword,
-          email_confirm: true,
-          user_metadata: { source: "auto-connect", workspace_id: workspaceId },
+          workspace_name: data.projectName,
+          seed_demo: false,
         },
       });
-      userId = user.id;
+      return {
+        ok: true,
+        workspaceId: res.workspace.id,
+        projectId: res.project.id,
+        adminEmail: res.user.email,
+        adminPassword,
+        userId: res.user.id,
+        anonKey: res.keys.anon,
+        serviceKey: res.keys.service_role,
+      };
     } catch (e) {
       const err = e instanceof VpsError ? e : new VpsError(String(e), 500, null);
-      return { ok: false, step: "user", error: err.message, status: err.status };
+      return { ok: false, step: "signup", error: err.message, status: err.status };
     }
-
-    // Step 3 — attach as admin
-    try {
-      await vpsFetch(`/admin/v1/workspaces/${workspaceId}/members`, {
-        method: "POST",
-        body: { user_id: userId, role: "admin" },
-      });
-    } catch (e) {
-      const err = e instanceof VpsError ? e : new VpsError(String(e), 500, null);
-      return { ok: false, step: "member", error: err.message, status: err.status };
-    }
-
-    return { ok: true, workspaceId, adminEmail, adminPassword, userId };
   });
