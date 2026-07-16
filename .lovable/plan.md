@@ -1,113 +1,57 @@
+## Goal
 
-# Pluto Auto-Deploy Studio — 360° One-Click Import, Wire & Go-Live
+তুমি বলেছো: Auto-Deploy Studio পুরো test করবো, issue fix করবো, `https://github.com/ctgpost/musafirdesk` live করবো, এবং ভবিষ্যতের যেকোনো GitHub project যাতে auto-deploy হয় সেটা নিশ্চিত করবো — সব credential/env AI নিজেই set করবে।
 
-একটি নতুন পেজ `/dashboard/auto-deploy` তৈরি করা হবে যেখানে user তিনটি উপায়ে project দিতে পারবে (GitHub connect / Git repo URL / ZIP upload) এবং শেষ পর্যন্ত একটি live URL পাবে — Pluto BaaS backend সহ পুরোপুরি wired ও deployed। বেশিরভাগ building blocks (analyzer, frontend-rewriter, migration-converter, github-loader, vps-deployer, sandbox-worker, custom-domain reconciler) already project-এ আছে — এই phase সেগুলোকে একটি single guided wizard-এ stitch করবে।
+কাজটা বড়, তাই প্রথমে আমি সমস্যা খুঁজে বের করবো (headless browser দিয়ে সত্যিকারের deploy চালিয়ে), তারপর তালিকা ধরে fix করবো — অন্ধভাবে refactor নয়।
 
-## User Flow (page-level)
+## Phase 1 — Diagnose (কোথায় কোথায় ভাঙে দেখা)
 
-```text
-Step 1  Source        → GitHub connect | Git URL | ZIP upload
-Step 2  Analyze       → framework, tables, routes, env, risks
-Step 3  Plan          → tables, endpoints, rewrites, RLS (editable)
-Step 4  Wire Backend  → migrations apply + secrets + anon key
-Step 5  Build+Deploy  → frontend rewrite → build → sandbox host
-Step 6  Live          → https://<slug>.apps.timescard.cloud  ✅
-                        (+ optional custom domain wizard)
-```
+1. Playwright script দিয়ে `/dashboard/auto-deploy` এ যাবো, workspace select করবো, GitHub source-এ `ctgpost/musafirdesk` দিয়ে run করবো, প্রতিটা phase-এ screenshot + console + network capture করবো:
+   - GitHub loader (server fn → codeload/gateway)
+   - `analyzeZip` (frontend + Laravel/PHP backend detection — musafirdesk is likely Laravel/PHP)
+   - `ai-deploy-planner` (LOVABLE_API_KEY দিয়ে SQL/env plan তৈরি)
+   - Approval modal → env vars → `deployAll` → health check → live URL
+2. প্রতিটা failure এর জন্য root cause note করবো (missing secret, wrong request shape, analyzer edge case, timeout, ইত্যাদি)।
+3. Existing secrets একবারে check: DBH_VPS_*, PLUTO_* সব আছে; missing কিছু (যেমন GitHub token scope, planner model access) দেখলে সেই মুহূর্তে `add_secret`/`generate_secret`/`set_secret` call করবো। User-obtained secret লাগলে জিজ্ঞেস করবো, নয়তো auto-provision।
 
-প্রতিটি step একটি stepper UI-তে থাকবে, retry/cancel/logs stream সহ (SSE)।
+## Phase 2 — Fix (শুধু যা ভাঙে সেটাই)
 
-## What Gets Built
+Diagnose থেকে পাওয়া issue-গুলো টার্গেট করে fix — যেমন সাধারণত এই জায়গাগুলোতে সমস্যা হয়:
 
-### 1. New route & UI (`src/routes/dashboard/auto-deploy.tsx`)
-- 6-step stepper (Source → Analyze → Plan → Wire → Deploy → Live)
-- Real-time log panel (SSE from deploy endpoint)
-- Editable plan preview (tables, RLS, endpoint mapping)
-- Final "Live URL" card with copy, open, redeploy, add custom domain buttons
+- **GitHub loader**: private/large repo, non-`main` default branch, redirect handling, gateway auth mismatch।
+- **Analyzer**: musafirdesk-এর মতো Laravel repo-তে migrations/routes parse fail, `.env.example` env-key detection।
+- **AI planner**: prompt খুব বড় হলে truncate, JSON parse fail, model rate-limit।
+- **Env auto-fill**: `.env.example` থেকে key তুলে UI-তে prefill, sensitive key মাস্ক, Pluto-provided (SUPABASE_URL, ANON_KEY, JWT_SECRET) auto-inject।
+- **deployAll pipeline**: step timeout, health-check false negative, rollback bundle-bytes cache।
+- **Real-time streaming**: `stepEvents` UI update rate, stuck spinner।
 
-### 2. Source adapters (reuse existing)
-- **GitHub connector**: `standard_connectors--connect` → `github-loader.functions.ts` (already exists) — private repo support via gateway
-- **Git URL**: same `fetchGithubZip` server fn accepts `owner/repo` or full URL + optional ref
-- **ZIP upload**: direct File → existing `analyzeZip()` pipeline
+প্রতিটা fix-এর পর same Playwright script re-run করে regression check।
 
-### 3. Orchestrator server function (`src/lib/pluto/auto-deploy.functions.ts` — new)
-Single `runAutoDeploy({ source, workspaceId, options })` server fn that internally chains:
-1. `analyzeZip` (existing) → `AnalyzeResult`
-2. `buildIntegrationPlan` (existing) → tables + endpoints + rewrites
-3. `buildBundle` (existing `autoconnect/bundler.ts`) → frontend.zip + migrations.zip
-4. `deployAll` (existing `vps-deployer.functions.ts`) → ensureInfra + pushMigrations + uploadBundle + verifyDeploy
-5. Register slug + emit final URL
+## Phase 3 — Deploy musafirdesk
 
-Progress streamed via existing `serve-progress.sh` pattern or SSE route.
+Fix-গুলো passing হলে UI থেকে সরাসরি (headless-এ automate করে) musafirdesk deploy করবো, live URL capture করে তোমাকে দেবো + screenshot।
 
-### 4. Slug + subdomain provisioning
-- Auto-generate slug (`<repo>-<hash>`) unique per workspace
-- Insert row in existing `admin.projects` table
-- Sandbox worker (already installed) picks up the extracted bundle at `/var/lib/pluto/sites/<slug>/`
-- Nginx `wildcard-app.conf` (already deployed in Phase E) serves `https://<slug>.apps.timescard.cloud` automatically
+## Phase 4 — Ensure future GitHub URLs "just work"
 
-### 5. Auto-wired Pluto backend
-- Migrations applied via `deployAll` → real Postgres schema + RLS + GRANTs
-- Anon key minted from `admin.api_keys` (existing table) and injected into deployed frontend as `VITE_PLUTO_ANON_KEY`
-- `VITE_PLUTO_URL=https://api.timescard.cloud` baked in at build time
-- Storage buckets / edge functions provisioned if the plan requires them
+- `github-loader` এ default-branch discovery যোগ করবো (`main` → `master` → `HEAD` fallback ইতিমধ্যে আছে, কিন্তু API দিয়ে সঠিক branch resolve করবো)।
+- Common env-var preset (Laravel `APP_KEY`, `DB_*`, Node `PORT`, ইত্যাদি) auto-generate: random হলে `generate_secret`-এর মতো client-side crypto, Pluto-issued হলে workspace থেকে auto-fill।
+- Analyzer-এ Laravel/Node/Next/Vite detector শক্ত করবো যাতে unknown stack-এও একটা কাজ-করা bundle তৈরি হয়।
+- Documentation snippet `docs/AUTO-DEPLOY-STUDIO.md`-এ update।
 
-### 6. Optional custom domain step
-- After live URL works, offer "Attach custom domain" — reuses Phase D `pluto-domain-reconciler` (already installed)
-- User adds A/TXT records → reconciler picks up within 60s → HTTPS auto-issued
+## Technical notes
 
-### 7. Public API (already exists, wire into UI)
-- `POST /api/pluto/deploy` (already present) — used as the actual worker endpoint
-- New `GET /api/pluto/deploy/status?jobId=…` SSE stream for the UI progress panel
+- Playwright script `/tmp/browser/auto-deploy/` এ, session `LOVABLE_BROWSER_SUPABASE_*` env থেকে restore।
+- Server fn call chain: `fetchGithubZip` → client `analyzeZip` → `planIntegration` (AI) → `deployAll` (VPS)।
+- Secrets already available: `DBH_VPS_*`, `PLUTO_*`, `GITHUB_API_KEY`, `LOVABLE_API_KEY` — এগুলোই deploy চালাতে যথেষ্ট হওয়ার কথা; কোনো নতুন secret দরকার হলে turn-এ জানিয়ে add করবো।
+- musafirdesk যেহেতু Laravel + সম্ভবত Vue/Blade — bundler এটাকে static bundle বানাতে পারবে কিনা সেটা Phase 1-এই দেখা যাবে; না পারলে সেটা biggest fix।
 
-## Technical Details
+## Deliverables
 
-**Files to create**
-```
-src/routes/dashboard/auto-deploy.tsx              # main page (stepper UI)
-src/routes/dashboard/auto-deploy.$jobId.tsx       # resumable job view
-src/routes/api/pluto/deploy-status.ts             # SSE progress endpoint
-src/lib/pluto/auto-deploy.functions.ts            # orchestrator server fn
-src/lib/pluto/auto-deploy-jobs.ts                 # in-DB job state helper
-src/components/pluto/AutoDeployStepper.tsx        # step UI
-src/components/pluto/AutoDeployLogs.tsx           # SSE log panel
-src/components/pluto/PlanEditor.tsx               # editable plan (reuses types)
-pluto-backend/migrations/0038_auto_deploy_jobs.sql # jobs + live_sites tables
-docs/AUTO-DEPLOY-STUDIO.md                        # user + operator runbook
-e2e/auto-deploy.spec.ts                           # full pipeline E2E
-```
-
-**Files to edit (small)**
-```
-src/components/pluto/Sidebar.tsx        # add "Auto-Deploy Studio" entry
-src/lib/pluto/vps-deployer.functions.ts # emit progress events per step
-```
-
-**Migration `0038_auto_deploy_jobs.sql`** — creates `admin.auto_deploy_jobs` (id, workspace_id, source_kind, source_ref, status, step, logs jsonb, live_url, created_at) and `admin.live_sites` (slug, workspace_id, bundle_path, deployed_at, custom_domain). Full GRANTs + RLS per project rule.
-
-**Reuse (no changes needed)**
-- `autoconnect/analyzer.ts`, `frontend-rewriter.ts`, `migration-converter.ts`, `bundler.ts`, `env-mapper.ts`
-- `pluto/vps-deployer.functions.ts` (`deployAll`)
-- `github-loader.functions.ts` (GitHub + Git URL)
-- Phase D reconciler, Phase E wildcard nginx, Phase F quotas
-- `sandbox-worker.mjs` (ZIP unpacker + host)
-
-**Security**
-- All server fns use `requireSupabaseAuth` + workspace-role check
-- Signed bundle uploads (SHA256 manifest, already produced by `zip-verify.ts`)
-- Per-workspace quota check (Phase F `project_usage_and_quotas`) before deploy starts
-- ZIP size cap 200 MB (existing)
-
-## Verification
-- New `e2e/auto-deploy.spec.ts` drives all 3 source types end-to-end against localhost
-- Unit tests for orchestrator step sequencing + failure/rollback
-- Manual smoke: import a small Vite+Laravel repo → live URL responds 200 within ~2 min
-
-## Out of Scope (future phases)
-- Multi-region deploy
-- Blue/green preview environments per PR
-- Non-Node runtimes (Python/Go apps)
+1. Auto-Deploy Studio-র bug list + প্রতিটার fix (code diff)।
+2. musafirdesk live URL।
+3. Future GitHub deploy hardening (loader + analyzer + env auto-fill)।
+4. Screenshots + short report।
 
 ---
 
-Approve করলে এই plan অনুযায়ী implementation শুরু করব।
+**Approve করলে Phase 1 (diagnose run) শুরু করছি।** কোনো ধাপে user-only secret (যেমন musafirdesk repo যদি private হয় তাহলে extra scoped token) লাগলে তখন `add_secret` দিয়ে জিজ্ঞেস করবো — নয়তো fully auto।
