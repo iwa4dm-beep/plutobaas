@@ -42,6 +42,7 @@ import {
   PAYLOAD_SCHEMAS, buildSchemaBundle,
 } from "@/lib/pluto/auto-deploy-webhook-schemas";
 import { useAuth } from "@/lib/pluto/auth-context";
+import { pingUpstream, type UpstreamPreflight } from "@/lib/pluto/upstream-preflight.functions";
 
 // Self-healing: max auto-retry attempts on transient deploy failure
 const MAX_AUTO_RETRIES = 1;
