@@ -356,7 +356,26 @@ const DeployAllInput = z.object({
 export type DeployStepKey = "ensure-infra" | "push-migrations" | "upload-bundle" | "verify-deploy" | "unpack-serve" | "activate-service" | "health-check";
 export type DeployStepAttempt = { attempt: number; ok: boolean; detail: string; debug: StepDebug | null; startedAt: string; latencyMs: number };
 export type DeployStepLog = { key: DeployStepKey; label: string; ok: boolean; attempts: DeployStepAttempt[]; result: string | null };
-export type DeployAllResult = { ok: boolean; workspaceId: string; totalMs: number; steps: DeployStepLog[]; liveUrls?: { functionsHealth: string; bootstrapInvoke: string; servedSite?: string } };
+export type LiveUrlProbe = { url: string; status: number; reachable: boolean; contentType: string | null; snippet: string; latencyMs: number };
+export type DeployAllResult = {
+  ok: boolean;
+  workspaceId: string;
+  totalMs: number;
+  steps: DeployStepLog[];
+  liveUrls?: {
+    functionsHealth: string;
+    bootstrapInvoke: string;
+    servedSite?: string;
+    /** Best-effort served frontend URL that was actually probed (may be undefined if none configured). */
+    resolvedSite?: string;
+    /** Probe outcome for resolvedSite. reachable=false ⇒ hostname not yet wired to nginx / no vhost / DNS missing. */
+    servedSiteProbe?: LiveUrlProbe;
+    /** True when the deploy artifact has an actually reachable frontend URL. */
+    served?: boolean;
+    /** Operator-facing hint when served=false. */
+    servedHint?: string;
+  };
+};
 
 function nowIso(): string { return new Date().toISOString(); }
 
