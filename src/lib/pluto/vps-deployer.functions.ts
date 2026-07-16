@@ -762,3 +762,23 @@ export const verifyBootstrap = createServerFn({ method: "POST" })
 
 
 
+
+// ---------- Standalone live-URL reachability probe ----------
+const ProbeLiveUrlInput = z.object({ url: z.string().url() });
+
+export const probeLiveUrl = createServerFn({ method: "POST" })
+  .inputValidator((d: unknown) => ProbeLiveUrlInput.parse(d))
+  .handler(async ({ data }): Promise<LiveUrlProbe & { checkedAt: string }> => {
+    const probeUrl = data.url.endsWith("/") ? data.url : `${data.url}/`;
+    const r = await rawFetch(probeUrl, "GET", { accept: "text/html,*/*" }, null, null, 12_000);
+    const looksHtml = /<!DOCTYPE|<html/i.test(r.text);
+    return {
+      url: probeUrl,
+      status: r.status,
+      reachable: r.ok,
+      contentType: looksHtml ? "text/html" : null,
+      snippet: r.text.slice(0, 400),
+      latencyMs: r.debug.latencyMs,
+      checkedAt: new Date().toISOString(),
+    };
+  });
