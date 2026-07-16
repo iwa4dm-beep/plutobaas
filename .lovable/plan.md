@@ -1,88 +1,145 @@
-## Repo audit (already done)
+# সাবডোমেইন হোস্টিং + অটো-ব্যাকেন্ড অ্যাটাচ — অডিট ও প্ল্যান
 
-`iwa4dm-beep/dubaiborkahouse` = Lovable-generated Vite + React + shadcn e-commerce app.
+লক্ষ্য: `lovable.dev` / `vercel.com`-এর মতো প্রতিটি নতুন প্রজেক্ট নিজস্ব `<slug>.app.timescard.cloud` (এবং কাস্টম ডোমেইন) সাবডোমেইনে সার্ভ হবে, এবং Lovable Cloud-এর মতো ব্যাকেন্ড (DB/Auth/Storage/Functions) এক ক্লিকে অ্যাটাচ হবে।
 
-| Piece | Count | Note |
-|---|---|---|
-| SQL migrations | 28 files, ~1,381 lines | `supabase/migrations/` — tables, RLS, functions, triggers |
-| Edge functions | 10 | admin-ai-agent, customer-chat, generate-invoice, google-merchant-feed, send-* (email/whatsapp/campaigns) |
-| Frontend | Vite + React + shadcn | Uses `@lovable.dev/cloud-auth-js` + `@supabase/supabase-js` |
-| Target subdomain | `app2.timescard.cloud` | User-owned, DNS control needed |
+---
 
-## Scope check — what "migrate to Pluto BaaS" means
+## এখন কী আছে (Audit — ✅ Present)
 
-Pluto BaaS = this app. It provides Postgres + Auth + Data API + Storage + Edge Functions + Realtime. Migration = point the cloned repo at **your** Pluto backend instead of the original Lovable Cloud/Supabase project.
+**Hosting/Deploy পাইপলাইন**
+- `pluto-backend/sandbox-worker/` — ZIP আপলোড → unzip → `/var/lib/pluto/sites/<workspaceId>/current/` → nginx সার্ভ (atomic symlink flip, last-5 releases retained, `/healthz`, `/status/:ws`, shared-secret protected)
+- `nginx-app.conf` — একটি হার্ডকোডেড `<WORKSPACE_ID>` টেমপ্লেট, SPA fallback (`try_files ... /index.html`), asset caching
+- `deploy/install-nginx-site.sh` — এক-ডোমেইন করে nginx site ইনস্টল + certbot
+- `dashboard.pluto-deploy.tsx`, `deployment-history`, `deployment-compare` — bundle upload/deploy UI
+- Custom domains — `dashboard.custom-domains.tsx` + backend migrations (`0060_phase64_domain_wildcards`, `0061_phase65_domain_admins`) — per-workspace domain, primary flag, webhook, wildcard support, admins
 
-**Two parts, both required for "live":**
+**Backend (Pluto/Lovable-Cloud-alike)**
+- Full Pluto stack: Postgres + Auth + Storage(S3/MinIO) + Realtime + Edge Functions + Vector — migrations 0001–0033
+- Workspace provisioner (`workspace-provisioner.functions.ts`) — নতুন workspace-এ schema/keys তৈরি করে
+- Multi-tenant JWT (`PLUTO_JWT_SECRET`), anon/service keys per workspace
+- Auto-Connect Studio (analyzer/planner/rewriter/bundler) — external repo import পর্যন্ত
 
-**A. Backend (Pluto BaaS side — new tenant on your instance)**
-1. Create a new workspace/project inside Pluto for this tenant.
-2. Run all 28 SQL migrations against that workspace's Postgres — table order preserved, RLS policies attached, functions/triggers created.
-3. Port each of the 10 edge functions to Pluto Edge Functions v7 (Deno → runtime shim); wire their secrets (Resend, WhatsApp, Google Merchant, OpenAI, etc.) via Pluto's secret store.
-4. Assign backend a stable subdomain: `api.app2.timescard.cloud` (recommended) or `app2-api.plutobaas.app`.
-5. Point DNS: `api.app2.timescard.cloud` CNAME → Pluto ingress.
+**Ops**
+- `deploy.sh --check` (drafted), env sync `docker/.env ↔ repo-root .env`
+- API healthz, sandbox healthz, VPS health probes
 
-**B. Frontend (the cloned Vite app — deployed separately)**
-1. Fork / clone the repo into a new Lovable project (or reuse an existing hosting flow).
-2. Swap Supabase client bootstrap → point `VITE_SUPABASE_URL` + `VITE_SUPABASE_PUBLISHABLE_KEY` to the new Pluto workspace's URL + anon key.
-3. Replace `@lovable.dev/cloud-auth-js` calls with Pluto's compatible auth SDK (drop-in shim exists in this codebase under `src/lib/pluto/`).
-4. Build + publish to `app2.timescard.cloud`.
-5. Add both `app2.timescard.cloud` A record and TXT verification to user's DNS.
+---
 
-## What's already possible today vs what's missing
+## যা এখনো নেই / দুর্বল (Gaps — ❌ / ⚠️)
 
-| Step | Today | Gap |
-|---|---|---|
-| Analyzer (`analyzeZip`) reads Supabase migrations + API sites | ✅ done last turn | — |
-| Analyzer reads from **GitHub URL** (not just ZIP) | ❌ | Add `analyzeGitHub(owner, repo, ref)` — clones via API, feeds bytes into existing analyzer |
-| Planner → apply chain (migrations → new workspace) | ✅ exists for ZIP | Needs to accept GitHub source too |
-| Edge-function port (Deno → Pluto runtime) | ⚠️ manual per-function today | Add `portEdgeFunction()` transformer, tested on 10 fns |
-| Frontend repo swap (env + auth shim) | ❌ no automation | Add "Frontend Bootstrap" step that writes `.env` + patches `src/integrations/supabase/client.ts` |
-| Subdomain provisioning (`api.<domain>` + `<domain>`) | ⚠️ manual DNS today | Instructions surface only |
-| Deploy trigger to Lovable + Pluto | ⚠️ Lovable publish is manual UI, Pluto side scriptable | Provide runbook + one-click apply where possible |
+### 1. Wildcard subdomain routing (`*.app.timescard.cloud`)
+- ❌ nginx টেমপ্লেট **এক workspace = এক নতুন site file**; slug → workspaceId ম্যাপ নেই
+- ❌ Wildcard DNS (`*.app.timescard.cloud A → VPS IP`) সেট করার গাইড নেই
+- ❌ Wildcard TLS (Let's Encrypt DNS-01 via Cloudflare/Hostinger) automation নেই
+- ❌ `Host` হেডার → workspace/slug রুটিং লজিক (dynamic nginx `map` বা Caddy on-demand) নেই
 
-## Delivery plan
+### 2. Slug/Project registry
+- ⚠️ `workspaces` টেবিল আছে কিন্তু public-facing `slug` (URL segment) কলাম/ইনডেক্স নেই
+- ❌ Slug ইউনিকনেস + reserved-words guard + rename history নেই
+- ❌ `slug → sites_root path` resolver API নেই (worker এখনো workspaceId নেয়)
 
-**Milestone 1 — GitHub source support** (~2h)
-- `src/lib/autoconnect/github-loader.ts`: clone shallow via GitHub REST tarball, feed into existing analyzer/planner.
-- UI: add "GitHub URL" tab next to "Upload ZIP" on `/dashboard/auto-connect`.
-- Requires `GITHUB_API_KEY` connector (only if repo private — this one is public, so optional now).
+### 3. Auto backend attach (Lovable Cloud parity)
+- ⚠️ Provisioner আছে, কিন্তু **নতুন প্রজেক্ট create → auto-provision DB schema + issue anon/service keys + inject env** end-to-end wired নেই
+- ❌ Deploy bundle-এ `PLUTO_URL` / `PLUTO_ANON_KEY` runtime injection (build-time `.env` বা `window.__PLUTO__`) নেই
+- ❌ Per-project secret vault (encrypted at rest, revealed to owner only) নেই
+- ❌ "Attach existing DB" vs "Fresh Cloud" chooser UI নেই
 
-**Milestone 2 — Live analyze + plan on `dubaiborkahouse`** (immediate)
-- Run analyzer on cloned repo, verify 28 tables + 10 edge fns detected.
-- Auto-generate migration plan targeting new Pluto workspace.
+### 4. Custom domain attach (per-project)
+- ⚠️ `custom_domains` টেবিল আছে, কিন্তু sandbox-worker/nginx-এ live wire-up নেই (verify → issue cert → add server block → reload) automation অসম্পূর্ণ
+- ❌ Domain verification webhook → nginx reconcile loop নেই
 
-**Milestone 3 — Apply DB migrations** (~1h)
-- Create new Pluto workspace `dubaiborkahouse`.
-- Execute the 28 migrations in order, capture errors, retry idempotently.
-- Verify RLS policies match.
+### 5. Preview vs Production
+- ❌ Lovable-এর মতো `<slug>-dev.app.timescard.cloud` (preview) বনাম `<slug>.app.timescard.cloud` (published) split নেই — worker-এ `release-*` আছে কিন্তু "publish" gate নেই
 
-**Milestone 4 — Port edge functions** (~3–4h; 10 functions, provider secrets needed)
-- User must provide: Resend API key, WhatsApp Business token, Google Merchant creds, OpenAI key (whichever the functions call).
-- Each function ported + smoke-tested via `invoke-server-function`.
+### 6. Observability & limits
+- ⚠️ Per-project request logs / bandwidth / storage quota নেই
+- ❌ Abuse/rate-limit per subdomain নেই
 
-**Milestone 5 — Frontend swap + publish** (~1h)
-- Bootstrap script rewrites `.env` and auth imports.
-- Publish frontend; user connects `app2.timescard.cloud` A record + TXT in DNS.
+---
 
-**Milestone 6 — Backend subdomain** (~30min + DNS wait)
-- Assign backend to `api.app2.timescard.cloud`, output DNS record for user.
-- Wait for propagation, verify SSL.
+## প্রস্তাবিত ফেজ প্ল্যান (Phased Roadmap)
 
-## What I need from you before starting
+### Phase A — Wildcard Subdomain Hosting (foundation)
+A1. DNS: `*.app.timescard.cloud A → VPS_IP` (Hostinger) — user manual step + docs
+A2. Wildcard TLS: `certbot certonly --dns-cloudflare -d '*.app.timescard.cloud' -d 'app.timescard.cloud'` (বা Caddy on-demand TLS) — script
+A3. Dynamic nginx: `map $host $ws_slug { ... }` OR single server_block + `root /var/lib/pluto/sites/$ws_slug/current;` + fallback 404 page
+A4. Reserved slug list (`www`, `api`, `admin`, `app`, ইত্যাদি)
 
-1. **`GITHUB_API_KEY` connector** — recommended even for public repos (higher rate limits, and future private-repo support). One-click link.
-2. **Provider secrets for the 10 edge functions** — I'll list which each needs after Milestone 3; you paste them one by one.
-3. **DNS access to `timescard.cloud`** — you'll add ~3 records when I show them (root A, `api` CNAME, `_lovable` TXT).
-4. **Confirm target Pluto instance** — this project (`plutobaas.lovable.app`) is the control plane; migrated tenants land as new workspaces inside it. Correct?
+### Phase B — Slug Registry & Worker v2
+B1. Migration: `workspaces.slug` (unique, citext, 3–40 chars, `^[a-z0-9-]+$`) + rename audit
+B2. Sandbox-worker: accept `slug` (ও workspaceId fallback), `/resolve/:slug` endpoint
+B3. `dashboard.projects.tsx`-এ slug edit + availability check + live preview URL
+B4. Worker sites path: `/var/lib/pluto/sites/<slug>/current/` (symlink from workspaceId path for backward-compat)
 
-## Risk / caveats (plain)
+### Phase C — Auto Backend Attach (Cloud parity)
+C1. "Create Project" wizard: name → slug → **Attach Cloud?** (Yes = auto-provision schema + anon/service keys; No = BYO DB URL)
+C2. Provisioner: per-project Postgres schema (`ws_<slug>`), RLS templates, storage bucket, function runtime slot
+C3. Runtime env injection into deployed bundle: build step writes `/env.js` (`window.__PLUTO_ENV__ = {...}`) into `current/` — no rebuild needed on key rotation
+C4. SDK auto-config: `@pluto/client` reads `window.__PLUTO_ENV__` first, then `import.meta.env`
+C5. Secret vault UI (`dashboard.projects/<slug>/secrets`) — reveal-once, rotate, delete
 
-- 28 migrations may reference `auth.users` / `storage.buckets` — Pluto has equivalents but naming may differ; I'll patch on-the-fly and log every rewrite.
-- Edge functions using **Lovable AI Gateway** (`LOVABLE_API_KEY`) auto-carry over. Third-party (Resend/WhatsApp) need new keys in Pluto's secret store.
-- `app2.timescard.cloud` = subdomain of a domain you own. Lovable custom-domain flow supports subdomains directly; no need to move the root.
-- Frontend + backend on same subdomain is not possible — they must split: `app2` = frontend, `api.app2` (or `app2-api`) = backend. Confirm you're OK with the API on `api.app2.timescard.cloud`.
+### Phase D — Custom Domain Auto-Wire
+D1. Domain add flow: verify TXT → issue cert (certbot/lego) → write `/etc/nginx/sites-available/<domain>.conf` (template) → reload
+D2. Reconciler daemon: periodically diff `custom_domains` DB rows ↔ nginx site files (add/remove/renew)
+D3. Failure surface: `last_error` already in schema — pipe into UI
 
-## Approve to proceed
+### Phase E — Preview vs Production
+E1. Two symlinks per project: `current` (published) + `preview` (latest)
+E2. nginx: `<slug>-dev.app.timescard.cloud` → `preview/`, `<slug>.app.timescard.cloud` → `current/`
+E3. "Publish" button flips preview → current atomically
 
-Say "go" and I'll start Milestone 1 (GitHub loader) immediately, then run Milestone 2 (live analyze on dubaiborkahouse) in the same turn. Milestones 3–6 need your secrets and DNS records as I flag them.
+### Phase F — Quotas, Logs, Abuse
+F1. nginx access-log → per-slug parser → `project_usage` table (bytes, requests)
+F2. Rate limit map per slug
+F3. Dashboard usage panel
+
+---
+
+## Technical highlights (details section)
+
+**Wildcard nginx skeleton (Phase A3):**
+```nginx
+map $host $ws_slug {
+    default "";
+    "~^(?<slug>[a-z0-9-]+)\.app\.timescard\.cloud$" $slug;
+}
+server {
+    listen 443 ssl http2;
+    server_name *.app.timescard.cloud;
+    ssl_certificate     /etc/letsencrypt/live/app.timescard.cloud-wild/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/app.timescard.cloud-wild/privkey.pem;
+
+    if ($ws_slug = "") { return 404; }
+    root /var/lib/pluto/sites/$ws_slug/current;
+    index index.html;
+    location / { try_files $uri $uri/ /index.html; }
+}
+```
+
+**Slug migration sketch (Phase B1):**
+```sql
+create extension if not exists citext;
+alter table public.workspaces
+  add column if not exists slug citext unique
+    check (slug ~ '^[a-z0-9](?:[a-z0-9-]{1,38}[a-z0-9])?$');
+create index workspaces_slug_idx on public.workspaces(slug);
+```
+
+**Runtime env injection (Phase C3):**
+Worker `unpack` step writes:
+```
+/var/lib/pluto/sites/<slug>/current/env.js
+  → window.__PLUTO_ENV__ = { url:"https://api.timescard.cloud", anonKey:"pk_..." };
+```
+Frontend `index.html` loads `<script src="/env.js"></script>` before app bundle.
+
+---
+
+## ডেলিভারেবল ধাপে ধাপে (আপনি কোন Phase আগে?)
+
+- **A + B** = "সাবডোমেইনে নতুন প্রজেক্ট বসে" (minimum viable Vercel-clone)
+- **C** = "Lovable Cloud-এর মতো অটো-ব্যাকেন্ড" (biggest UX win)
+- **D** = কাস্টম ডোমেইন (customer-facing sites)
+- **E, F** = polish + scale
+
+**অনুগ্রহ করে জানান কোন Phase থেকে শুরু করবো** — আমি সেই Phase-এর সব কোড/মাইগ্রেশন/nginx/systemd/UI একসাথে ডেলিভার করবো।
