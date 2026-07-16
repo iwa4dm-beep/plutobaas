@@ -117,20 +117,24 @@ describe("plutoApi — JWT rotation self-healing (database-import scenario)", ()
   });
 
   it("subsequent calls after self-heal go straight to the fresh session token", async () => {
-    const fetchMock = vi
-      .fn(async (): Promise<Response> => jsonResponse(200, { ok: true }))
-      .mockImplementationOnce(async () =>
-        jsonResponse(401, {
+    let calls = 0;
+    const fetchMock = vi.fn(async () => {
+      calls += 1;
+      if (calls === 1) {
+        // Rotation moment: fresh session appears, stale token about to be rejected.
+        installFreshSession();
+        return jsonResponse(401, {
           code: "FST_JWT_AUTHORIZATION_TOKEN_INVALID",
           message: "invalid signature",
-        }),
-      );
+        });
+      }
+      return jsonResponse(200, { ok: true });
+    });
     vi.stubGlobal("fetch", fetchMock);
 
-    await plutoApi("/dbio/whoami"); // triggers heal
-    await plutoApi("/dbio/jobs");   // should be single-shot, fresh token
+    await plutoApi("/dbio/whoami"); // triggers heal: 1 stale + 1 retry
+    await plutoApi("/dbio/jobs");   // single-shot, fresh token
 
-    // 1st call: stale attempt + retry = 2, 2nd call: 1 → total 3
     expect(fetchMock).toHaveBeenCalledTimes(3);
     const thirdInit = (fetchMock.mock.calls[2] as unknown[])[1] as RequestInit;
     const thirdAuth = (thirdInit.headers as Record<string, string>)["Authorization"];
