@@ -130,7 +130,7 @@ export const pushMigrations = createServerFn({ method: "POST" })
     //   POST /admin/v1/migrations/{id}/apply                        -> 200 { ok, migration }
     const base = getVpsBaseUrl();
     const name = (data.label ?? `auto-${Date.now()}`).replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 120);
-    const body = JSON.stringify({ name, up_sql: makePolicyCreatesIdempotent(data.sql), workspace_id: data.workspaceId });
+    const body = JSON.stringify({ name, up_sql: makePolicyCreatesIdempotent(sanitizeMigrationSql(data.sql)), workspace_id: data.workspaceId });
     const created = await rawFetch(`${base}/admin/v1/migrations`, "POST", headers, body, body, 60_000);
     if (!created.ok) return { ok: false, error: created.text || `HTTP ${created.status}`, status: created.status, debug: created.debug };
     let parsed: { id?: string } = {};
@@ -445,7 +445,7 @@ export const deployAll = createServerFn({ method: "POST" })
     // Step 1: push migrations (create + apply)
     const migName = ((data.label ?? `deploy-${Date.now()}`)).replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 120);
     const migStep = await withRetry("push-migrations", "Push migrations (create + apply)", data.maxRetries, async () => {
-      const body = JSON.stringify({ name: migName, up_sql: makePolicyCreatesIdempotent(data.sql), workspace_id: data.workspaceId });
+      const body = JSON.stringify({ name: migName, up_sql: makePolicyCreatesIdempotent(sanitizeMigrationSql(data.sql)), workspace_id: data.workspaceId });
       const created = await rawFetch(`${base}/admin/v1/migrations`, "POST", headers, body, body, 60_000);
       if (!created.ok) return { ok: false, detail: `create HTTP ${created.status}: ${created.text.slice(0, 200)}`, debug: created.debug, result: null };
       let parsed: { id?: string } = {}; try { parsed = JSON.parse(created.text); } catch { /* ignore */ }
