@@ -119,7 +119,7 @@ if [ -n "$WILDCARD_APEX" ]; then
   DST="/etc/nginx/sites-available/pluto-wildcard-${WILDCARD_APEX}.conf"
   LINK="/etc/nginx/sites-enabled/pluto-wildcard-${WILDCARD_APEX}.conf"
   $SUDO mkdir -p /etc/nginx/sites-available /etc/nginx/sites-enabled
-  APEX_RE="${WILDCARD_APEX//./\\.}"
+  APEX_RE="${WILDCARD_APEX//./\\\\.}"
   $SUDO sed \
     -e "s/__APEX_RE__/${APEX_RE}/g" \
     -e "s/__APEX__/${WILDCARD_APEX}/g" \
