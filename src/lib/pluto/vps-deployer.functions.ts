@@ -351,10 +351,11 @@ export const deployAll = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => DeployAllInput.parse(d))
   .handler(async ({ data }): Promise<DeployAllResult> => {
     const t0 = Date.now();
-    const headers = serviceHeaders({ "content-type": "application/json" });
+    const headers = serviceHeaders({ "content-type": "application/json" }, data.operatorToken);
     if ("error" in headers) {
       return { ok: false, workspaceId: data.workspaceId, totalMs: 0, steps: [{ key: "ensure-infra", label: "Auth", ok: false, attempts: [{ attempt: 1, ok: false, detail: headers.error, debug: null, startedAt: nowIso(), latencyMs: 0 }], result: null }] };
     }
+
     const base = getVpsBaseUrl();
     const steps: DeployStepLog[] = [];
 
