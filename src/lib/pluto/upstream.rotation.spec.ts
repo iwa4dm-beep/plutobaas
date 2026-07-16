@@ -72,6 +72,9 @@ describe("plutoApi — JWT rotation self-healing (database-import scenario)", ()
     const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
       const auth = (init?.headers as Record<string, string> | undefined)?.["Authorization"];
       if (auth === `Bearer ${STALE}`) {
+        // Simulate the user's session getting refreshed between the failed
+        // stale-token call and plutoApi's retry (e.g. Supabase auto-refresh).
+        installFreshSession();
         return jsonResponse(401, {
           statusCode: 401,
           code: "FST_JWT_AUTHORIZATION_TOKEN_INVALID",
