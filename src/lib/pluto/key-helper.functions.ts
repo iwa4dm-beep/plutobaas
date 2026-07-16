@@ -21,7 +21,7 @@ export type KeyInspectResult = {
 
 export const inspectServiceKey = createServerFn({ method: "GET" })
   .handler(async (): Promise<KeyInspectResult> => {
-    const key = getServiceRoleKey() ?? "";
+    const key = (await getServiceRoleKey()) ?? "";
     const fmt = detectKeyFormat(key);
     return {
       hasKey: key.length > 0,
@@ -113,7 +113,7 @@ export const getAdminUpstreamConfig = createServerFn({ method: "GET" })
     // api.timescard.cloud directly (avoids CORS + preview fetch-proxy
     // interference). The proxy forwards Authorization / apikey headers.
     const url = "/api/pluto";
-    const configured = getServiceRoleKey() ?? "";
+    const configured = (await getServiceRoleKey()) ?? "";
     if (configured && configured.split(".").length === 3) {
       let exp: number | null = null;
       try {
@@ -157,7 +157,7 @@ export const probeAdminKey = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => ProbeInput.parse(d))
   .handler(async ({ data }): Promise<ProbeResult> => {
     const base = getVpsBaseUrl();
-    const key = data.token ?? getServiceRoleKey() ?? "";
+    const key = data.token ?? (await getServiceRoleKey()) ?? "";
     const url = `${base}${data.path.startsWith("/") ? "" : "/"}${data.path}`;
     const started = Date.now();
     try {

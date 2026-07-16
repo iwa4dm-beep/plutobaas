@@ -43,7 +43,7 @@ export const pingUpstream = createServerFn({ method: "GET" })
   const storedRaw = (process.env.PLUTO_SERVICE_ROLE_KEY ?? "").trim();
   const jwtSecret = (process.env.PLUTO_JWT_SECRET ?? "").trim();
   const operatorToken = data.operatorToken?.trim();
-  const token = operatorToken || getServiceRoleKey();
+  const token = operatorToken || (await getServiceRoleKey());
   const tokenSource: UpstreamPreflight["tokenSource"] = operatorToken
     ? "operator-token"
     : !token

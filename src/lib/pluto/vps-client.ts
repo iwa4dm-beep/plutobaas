@@ -2,7 +2,12 @@
 //
 // Reads PLUTO_UPSTREAM_URL + PLUTO_SERVICE_ROLE_KEY from process.env inside
 // server functions / route handlers. Never import this from client bundles.
-import { createHmac } from "node:crypto";
+//
+// NOTE: This file is imported at module scope by `*.functions.ts` modules whose
+// module scope is included in the client bundle (only handler bodies are
+// stripped). We must therefore avoid any static `node:*` imports here — use
+// Web Crypto (globalThis.crypto.subtle), which works in Node 20+, Workers,
+// and browsers, so the module can safely load in either environment.
 
 export type VpsMode = "service" | "user" | "anon";
 
@@ -26,15 +31,23 @@ function looksLikeJwt(s: string): boolean {
   return parts.every((p) => p.length > 0 && /^[A-Za-z0-9_-]+$/.test(p));
 }
 
-/** Mint an HS256 service-role JWT from PLUTO_JWT_SECRET. Payload matches the
- *  upstream admin API expectations (see pluto-backend/scripts/mint-and-probe-admin.sh). */
-function mintServiceRoleJwt(secret: string, ttlSeconds = 3600): string {
-  const b64url = (s: string) =>
-    Buffer.from(s).toString("base64")
-      .replace(/=+$/, "").replace(/\+/g, "-").replace(/\//g, "_");
+function b64urlFromBytes(bytes: Uint8Array): string {
+  let bin = "";
+  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+  const b64 = (typeof btoa !== "undefined")
+    ? btoa(bin)
+    : Buffer.from(bytes).toString("base64");
+  return b64.replace(/=+$/, "").replace(/\+/g, "-").replace(/\//g, "_");
+}
+function b64urlFromString(s: string): string {
+  return b64urlFromBytes(new TextEncoder().encode(s));
+}
+
+/** Mint an HS256 service-role JWT from PLUTO_JWT_SECRET using Web Crypto. */
+async function mintServiceRoleJwt(secret: string, ttlSeconds = 3600): Promise<string> {
   const now = Math.floor(Date.now() / 1000);
-  const header = b64url(JSON.stringify({ alg: "HS256", typ: "JWT" }));
-  const payload = b64url(JSON.stringify({
+  const header = b64urlFromString(JSON.stringify({ alg: "HS256", typ: "JWT" }));
+  const payload = b64urlFromString(JSON.stringify({
     sub: "00000000-0000-0000-0000-000000000000",
     role: "service_role",
     iss: process.env.PLUTO_JWT_ISSUER ?? "pluto",
@@ -42,8 +55,16 @@ function mintServiceRoleJwt(secret: string, ttlSeconds = 3600): string {
     iat: now,
     exp: now + ttlSeconds,
   }));
-  const sig = createHmac("sha256", secret).update(`${header}.${payload}`)
-    .digest("base64").replace(/=+$/, "").replace(/\+/g, "-").replace(/\//g, "_");
+  const data = new TextEncoder().encode(`${header}.${payload}`);
+  const key = await globalThis.crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const sigBuf = await globalThis.crypto.subtle.sign("HMAC", key, data);
+  const sig = b64urlFromBytes(new Uint8Array(sigBuf));
   return `${header}.${payload}.${sig}`;
 }
 
@@ -54,13 +75,10 @@ let cachedMintedJwt: { token: string; exp: number } | null = null;
  *
  *  Priority:
  *   1. If PLUTO_SERVICE_ROLE_KEY looks like a compact JWT, use it as-is.
- *   2. Otherwise (blank / opaque `sk_service_…` / anything else), auto-mint
- *      an HS256 JWT from PLUTO_JWT_SECRET so deploys don't hit
- *      "Authorization token is invalid: The token is malformed." at runtime.
- *   3. Fall back to whatever was stored (best-effort) so misconfig surfaces
- *      as a clean 401 instead of a silent "undefined" header.
+ *   2. Otherwise auto-mint an HS256 JWT from PLUTO_JWT_SECRET.
+ *   3. Fall back to whatever was stored (best-effort).
  */
-export function getServiceRoleKey(): string | undefined {
+export async function getServiceRoleKey(): Promise<string | undefined> {
   const stored = (process.env.PLUTO_SERVICE_ROLE_KEY ?? "").trim();
   if (stored && looksLikeJwt(stored)) return stored;
 
@@ -68,7 +86,7 @@ export function getServiceRoleKey(): string | undefined {
   if (secret) {
     const now = Math.floor(Date.now() / 1000);
     if (cachedMintedJwt && cachedMintedJwt.exp - now > 60) return cachedMintedJwt.token;
-    const token = mintServiceRoleJwt(secret, 3600);
+    const token = await mintServiceRoleJwt(secret, 3600);
     cachedMintedJwt = { token, exp: now + 3600 };
     return token;
   }
@@ -98,7 +116,7 @@ export async function vpsFetch<T = unknown>(path: string, opts: VpsFetchOpts = {
   if (opts.body != null) headers["content-type"] = "application/json";
 
   if (mode === "service") {
-    const key = getServiceRoleKey();
+    const key = await getServiceRoleKey();
     if (!key) throw new VpsError("PLUTO_SERVICE_ROLE_KEY not configured", 500, null);
     headers.apikey = key;
     headers.authorization = `Bearer ${key}`;
