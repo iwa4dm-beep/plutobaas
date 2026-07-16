@@ -968,3 +968,73 @@ function StepRow({ step, open, onToggle }: { step: DeployStepLog; open: boolean;
     </li>
   );
 }
+
+// ─── Real-time streaming panel ────────────────────────────────────────────
+function StreamPanel({ events, runningIdx }: { events: StepEvent[]; runningIdx: number }) {
+  return (
+    <section className="rounded-xl border border-primary/30 bg-primary/5">
+      <div className="border-b border-primary/20 px-4 py-3 text-sm font-medium flex items-center gap-2">
+        <Radio className={`h-4 w-4 ${runningIdx >= 0 ? "text-primary animate-pulse" : "text-muted-foreground"}`} />
+        Real-time deployment stream
+        <span className="ml-auto text-xs text-muted-foreground">{events.length} event{events.length === 1 ? "" : "s"}</span>
+      </div>
+      <ul className="divide-y divide-primary/10" data-testid="stream-events">
+        {events.map((ev, i) => (
+          <li key={i} className="px-4 py-2 flex items-center gap-3 text-sm">
+            {ev.status === "running" && <Loader2 className="h-4 w-4 text-primary animate-spin" />}
+            {ev.status === "ok" && <CheckCircle2 className="h-4 w-4 text-emerald-500" />}
+            {ev.status === "fail" && <XCircle className="h-4 w-4 text-destructive" />}
+            <span className="font-medium">{ev.label}</span>
+            {ev.detail && <span className="text-xs text-muted-foreground truncate">— {ev.detail}</span>}
+            <span className="ml-auto text-[10px] text-muted-foreground font-mono">{new Date(ev.ts).toLocaleTimeString()}</span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+// ─── Audit trail panel ────────────────────────────────────────────────────
+function AuditTrailPanel({ history }: { history: AutoDeployHistoryEntry[] }) {
+  const entries = history.slice(0, 10);
+  return (
+    <section className="rounded-xl border border-border bg-card" data-testid="audit-trail">
+      <div className="border-b border-border px-4 py-3 text-sm font-medium flex items-center gap-2">
+        <ShieldCheck className="h-4 w-4" /> Audit trail
+        <span className="text-xs text-muted-foreground">— approvals, env vars used (masked), rollback actions</span>
+      </div>
+      <ul className="divide-y divide-border">
+        {entries.map((e) => {
+          const when = new Date(e.approvedAt ?? e.timestamp);
+          const kind = e.isRollback ? "rollback" : "deploy";
+          return (
+            <li key={e.id} className="px-4 py-3 text-xs space-y-1">
+              <div className="flex items-center gap-2 flex-wrap">
+                {e.ok ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" /> : <XCircle className="h-3.5 w-3.5 text-destructive" />}
+                <span className={`text-[10px] px-1.5 py-0.5 rounded ${e.isRollback ? "bg-amber-500/15 text-amber-600" : "bg-primary/15 text-primary"} uppercase`}>{kind}</span>
+                <span className="font-mono">{e.slug}</span>
+                {e.rollbackOf && <span className="text-muted-foreground">← <span className="font-mono">{e.rollbackOf}</span></span>}
+                <span className="text-muted-foreground">·</span>
+                <span className="inline-flex items-center gap-1 text-muted-foreground">
+                  <UserCheck className="h-3 w-3" /> {e.approver ?? "unknown"}
+                </span>
+                <span className="ml-auto text-muted-foreground font-mono">{when.toLocaleString()}</span>
+              </div>
+              <div className="flex flex-wrap gap-1 pl-5">
+                <span className="text-muted-foreground">Env:</span>
+                {e.envKeys.length === 0
+                  ? <span className="text-muted-foreground italic">none</span>
+                  : e.envKeys.map((k) => (
+                      <span key={k} className="inline-flex items-center gap-1 rounded bg-background border border-border px-1.5 py-0.5 font-mono">
+                        <KeyRound className="h-2.5 w-2.5" /> {k}=<span className="text-muted-foreground">•••</span>
+                      </span>
+                    ))
+                }
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
+}
