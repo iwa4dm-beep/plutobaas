@@ -57,11 +57,12 @@ async function rawFetch(
   }
 }
 
-function serviceHeaders(extra: Record<string, string> = {}): Record<string, string> | { error: string } {
-  const key = getServiceRoleKey();
+function serviceHeaders(extra: Record<string, string> = {}, override?: string): Record<string, string> | { error: string } {
+  const key = (override && override.trim()) || getServiceRoleKey();
   if (!key) return { error: "PLUTO_SERVICE_ROLE_KEY not configured" };
   return { apikey: key, authorization: `Bearer ${key}`, accept: "application/json", ...extra };
 }
+
 
 // ---------- Step 1: push migrations ----------
 const MigrationInput = z.object({
