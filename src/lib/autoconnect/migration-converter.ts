@@ -75,6 +75,23 @@ export function buildMigrationBundle(tables: TableDef[]): string {
     "BEGIN;",
     "",
   ];
+
+  // Ensure referenced enum types exist before any CREATE TABLE uses them.
+  const preamble: string[] = [];
+  const usesAppRole = tables.some((t) =>
+    t.columns.some((c) => /\bapp_role\b/i.test(c.type))
+  );
+  if (usesAppRole) {
+    preamble.push(
+      `DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'app_role') THEN
+    CREATE TYPE public.app_role AS ENUM ('admin', 'moderator', 'user');
+  END IF;
+END $$;`,
+      ""
+    );
+  }
+
   const footer = ["COMMIT;", ""];
-  return [...header, ...tables.map(tableToSql), ...footer].join("\n");
+  return [...header, ...preamble, ...tables.map(tableToSql), ...footer].join("\n");
 }
