@@ -52,6 +52,7 @@ export const provisionWorkspace = createServerFn({ method: "POST" })
     try {
       const res = await vpsFetch<SignupFullResponse>("/auth/v1/signup-full", {
         method: "POST",
+        mode: "anon",
         body: {
           email: adminEmail,
           password: adminPassword,
