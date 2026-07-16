@@ -17,6 +17,36 @@ fi
 set -a; . "$ENV_FILE"; set +a
 echo "▶ loaded $ENV_FILE"
 
+append_env_default() {
+  key="$1"
+  value="$2"
+  [ -n "$value" ] || return 0
+  if grep -qE "^[[:space:]]*${key}=" "$ENV_FILE"; then
+    return 0
+  fi
+  printf '\n%s=%s\n' "$key" "$value" >> "$ENV_FILE"
+  export "$key=$value"
+  echo "  ↻ added missing $key=$value to $ENV_FILE"
+}
+
+derive_public_api_url() {
+  if [ -n "${PUBLIC_API_URL:-}" ]; then printf '%s' "$PUBLIC_API_URL"; return 0; fi
+  if [ -n "${JWT_ISSUER:-}" ] && [[ "$JWT_ISSUER" == http*://* ]]; then printf '%s' "$JWT_ISSUER"; return 0; fi
+  if [ -n "${API:-}" ]; then printf 'https://%s' "${API#https://}" | sed 's#^https://http://#http://#'; return 0; fi
+  if [ -n "${WILDCARD:-}" ]; then
+    apex="${WILDCARD#*.}"
+    [ -n "$apex" ] && [ "$apex" != "$WILDCARD" ] && { printf 'https://api.%s' "$apex"; return 0; }
+  fi
+  if [ -n "${UPSTREAM:-}" ]; then printf '%s' "$UPSTREAM"; return 0; fi
+  return 1
+}
+
+if [ "${AUTO_FIX_ENV:-0}" = "1" ]; then
+  DERIVED_PUBLIC_API_URL="$(derive_public_api_url || true)"
+  [ -z "${PUBLIC_API_URL:-}" ] && append_env_default PUBLIC_API_URL "$DERIVED_PUBLIC_API_URL"
+  [ -z "${JWT_ISSUER:-}" ] && append_env_default JWT_ISSUER "${PUBLIC_API_URL:-$DERIVED_PUBLIC_API_URL}"
+fi
+
 REQUIRED=(
   DATABASE_URL
   POSTGRES_PASSWORD

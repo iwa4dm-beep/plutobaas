@@ -25,7 +25,6 @@ placeholder(){ case "${1:-}" in ""|*"<"*">"*) return 0;; *) return 1;; esac; }
 [ -n "$SLUG" ] || die "SLUG required: sudo SLUG='dbhstock-8myjt4' ..."
 placeholder "${SECRET:-}" && die "SECRET required and must be the real sandbox shared secret, not <placeholder>"
 placeholder "${SERVICE_KEY:-}" && die "SERVICE_KEY required and must be the real service key, not <placeholder>"
-placeholder "${UPSTREAM:-}" && die "UPSTREAM required, e.g. https://your-project-ref.supabase.co"
 
 cd "$ROOT"
 # shellcheck disable=SC1090
@@ -33,8 +32,35 @@ set -a; . "$ENV_FILE"; set +a
 : "${POSTGRES_USER:=pluto}"
 : "${POSTGRES_DB:=pluto}"
 
+derive_api_upstream() {
+  if [ -n "${PUBLIC_API_URL:-}" ]; then printf '%s' "$PUBLIC_API_URL"; return 0; fi
+  if [ -n "${JWT_ISSUER:-}" ] && [[ "$JWT_ISSUER" == http*://* ]]; then printf '%s' "$JWT_ISSUER"; return 0; fi
+  if [ -n "${WILDCARD:-}" ]; then
+    apex="${WILDCARD#*.}"
+    [ -n "$apex" ] && [ "$apex" != "$WILDCARD" ] && { printf 'https://api.%s' "$apex"; return 0; }
+  fi
+  if [ -n "${UPSTREAM:-}" ]; then printf '%s' "$UPSTREAM"; return 0; fi
+  return 1
+}
+
+normalize_worker_upstream() {
+  candidate="${1:-}"
+  apex="${WILDCARD#*.}"
+  if [ -n "$candidate" ] && { echo "$candidate" | grep -Eq "https?://(dashboard\.|app\.)?${apex//./\.}(/|$)"; }; then
+    printf 'https://api.%s' "$apex"
+    return 0
+  fi
+  printf '%s' "$candidate"
+}
+
 log "1/6 preflight env + compose services"
-bash "$HERE/check-env.sh"
+AUTO_FIX_ENV=1 WILDCARD="$WILDCARD" UPSTREAM="${UPSTREAM:-}" bash "$HERE/check-env.sh"
+# Reload because check-env may have appended JWT_ISSUER/PUBLIC_API_URL.
+# shellcheck disable=SC1090
+set -a; . "$ENV_FILE"; set +a
+EFFECTIVE_UPSTREAM="$(normalize_worker_upstream "$(derive_api_upstream || true)")"
+placeholder "$EFFECTIVE_UPSTREAM" && die "Could not derive Pluto API URL for worker upstream. Set PUBLIC_API_URL=https://api.<your-domain> in .env"
+echo "  ✔ worker upstream: $EFFECTIVE_UPSTREAM"
 docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d postgres redis minio
 
 log "2/6 direct schema self-heal for owner_id drift"
@@ -80,11 +106,11 @@ docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" build api
 docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d api
 
 log "4/6 apply pending backend migrations"
-bash "$HERE/run-migrator.sh"
+AUTO_FIX_ENV=1 WILDCARD="$WILDCARD" UPSTREAM="${UPSTREAM:-}" bash "$HERE/run-migrator.sh"
 
 log "5/6 nuke and rebuild sandbox worker on port 8787"
 KEEP_SITES="${KEEP_SITES:-1}" TAKEOVER_PORT="${TAKEOVER_PORT:-1}" \
-  SECRET="$SECRET" SERVICE_KEY="$SERVICE_KEY" UPSTREAM="$UPSTREAM" \
+  SECRET="$SECRET" SERVICE_KEY="$SERVICE_KEY" UPSTREAM="$EFFECTIVE_UPSTREAM" \
   WILDCARD="$WILDCARD" ACME_EMAIL="$ACME_EMAIL" SLUG="$SLUG" \
   bash "$HERE/nuke-and-rebuild-sandbox.sh"
 
