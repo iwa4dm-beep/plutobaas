@@ -98,7 +98,16 @@ export const pushMigrations = createServerFn({ method: "POST" })
     const id = parsed.id ?? "";
     if (!id) return { ok: false, error: "Upstream did not return migration id", status: 500, debug: created.debug };
     const applied = await rawFetch(`${base}/admin/v1/migrations/${encodeURIComponent(id)}/apply`, "POST", headers, "{}", "{}", 60_000);
-    if (!applied.ok) return { ok: false, error: applied.text || `HTTP ${applied.status}`, status: applied.status, debug: applied.debug };
+    if (!applied.ok) {
+      // Idempotency: treat "already exists" apply errors as success. The
+      // migration record is created; the underlying objects are already there
+      // from a prior run of the same bundle, so subsequent steps can proceed.
+      const alreadyExists = /already exists/i.test(applied.text);
+      if (alreadyExists) {
+        return { ok: true, migrationId: id, applied: 0, debug: applied.debug };
+      }
+      return { ok: false, error: applied.text || `HTTP ${applied.status}`, status: applied.status, debug: applied.debug };
+    }
     return { ok: true, migrationId: id, applied: 1, debug: applied.debug };
   });
 
