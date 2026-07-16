@@ -100,10 +100,35 @@ async function findServable(root) {
   return root;
 }
 
-async function unpack({ workspaceId, bucket, key }) {
+// Slug format must match src/lib/pluto/reserved-slugs.ts and migration 0034.
+const SLUG_RE = /^[a-z0-9](?:[a-z0-9-]{1,38}[a-z0-9])?$/;
+
+async function ensureSlugSymlink(wsDir, slug) {
+  if (!slug || !SLUG_RE.test(slug)) return null;
+  const slugPath = path.join(SITES_ROOT, slug);
+  // Reject if a real directory already sits there under a different owner.
+  try {
+    const st = await fsp.lstat(slugPath);
+    if (st.isSymbolicLink()) {
+      const target = await fsp.readlink(slugPath);
+      const abs = path.isAbsolute(target) ? target : path.join(SITES_ROOT, target);
+      if (path.resolve(abs) === path.resolve(wsDir)) return slugPath; // already correct
+      await fsp.unlink(slugPath);
+    } else {
+      // A concrete directory / file at this slug — refuse to clobber.
+      return null;
+    }
+  } catch { /* not exist, fine */ }
+  await fsp.symlink(path.relative(SITES_ROOT, wsDir), slugPath);
+  return slugPath;
+}
+
+async function unpack({ workspaceId, slug, bucket, key }) {
   const ws = safeSlug(workspaceId);
   if (!ws) throw new Error("invalid workspaceId");
   if (!bucket || !key) throw new Error("bucket and key are required");
+  const normalizedSlug = typeof slug === "string" ? slug.trim().toLowerCase() : "";
+  if (normalizedSlug && !SLUG_RE.test(normalizedSlug)) throw new Error("invalid slug");
 
   const started = Date.now();
   const wsRoot = path.join(SITES_ROOT, ws);
@@ -129,9 +154,14 @@ async function unpack({ workspaceId, bucket, key }) {
   await fsp.symlink(path.relative(wsRoot, webRoot), tmpLink);
   await fsp.rename(tmpLink, currentLink);
 
+  // Slug → workspace symlink so nginx wildcard can resolve <slug>.app.<apex>.
+  const slugLink = normalizedSlug ? await ensureSlugSymlink(wsRoot, normalizedSlug) : null;
+
   // Write manifest
   const manifest = {
     workspaceId: ws,
+    slug: normalizedSlug || null,
+    slugLink,
     bucket,
     key,
     releaseDir,
@@ -151,6 +181,24 @@ async function unpack({ workspaceId, bucket, key }) {
   }
 
   return manifest;
+}
+
+async function resolveSlug(slug) {
+  const s = String(slug || "").trim().toLowerCase();
+  if (!s || !SLUG_RE.test(s)) return { ok: false, error: "invalid slug" };
+  const slugPath = path.join(SITES_ROOT, s);
+  try {
+    const st = await fsp.lstat(slugPath);
+    if (!st.isSymbolicLink()) return { ok: false, error: "slug not linked" };
+    const target = await fsp.readlink(slugPath);
+    const wsDir = path.isAbsolute(target) ? target : path.join(SITES_ROOT, target);
+    const workspaceId = path.basename(wsDir);
+    let manifest = null;
+    try { manifest = JSON.parse(await fsp.readFile(path.join(wsDir, "current.json"), "utf-8")); } catch { /* no bundle yet */ }
+    return { ok: true, slug: s, workspaceId, servedAt: manifest?.servedAt ?? null, sizeBytes: manifest?.sizeBytes ?? null };
+  } catch {
+    return { ok: false, error: "slug not found" };
+  }
 }
 
 async function status(workspaceId) {
@@ -179,6 +227,11 @@ const server = http.createServer(async (req, res) => {
     if (statusMatch) {
       const ws = decodeURIComponent(req.url.slice("/status/".length));
       return json(res, 200, await status(ws));
+    }
+    const resolveMatch = req.method === "GET" && req.url && req.url.startsWith("/resolve/");
+    if (resolveMatch) {
+      const s = decodeURIComponent(req.url.slice("/resolve/".length));
+      return json(res, 200, await resolveSlug(s));
     }
     return json(res, 404, { error: "not_found" });
   } catch (e) {

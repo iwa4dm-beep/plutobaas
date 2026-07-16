@@ -1,10 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useCallback, useEffect, useState } from "react";
-import { Copy, FolderKanban, KeyRound, Plus, Trash2 } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Copy, ExternalLink, FolderKanban, KeyRound, Plus, Trash2 } from "lucide-react";
 import { PageHeader } from "@/components/pluto/PageHeader";
 import { HelpPanel } from "@/components/help/HelpPanel";
 import { dashboardProjectsHelp } from "@/content/help/dashboard.projects";
 import { ErrorBanner } from "@/components/pluto/ErrorBanner";
+import { checkSlug, coerceSlug, previewSubdomainUrl, slugReasonMessage } from "@/lib/pluto/reserved-slugs";
 import { isLive, live, type Workspace, type WorkspaceKey } from "@/lib/pluto/live";
 
 export const Route = createFileRoute("/dashboard/projects")({
@@ -24,6 +25,7 @@ function ProjectsPage() {
   const [newKind, setNewKind] = useState<"anon" | "service_role">("anon");
   const [projectName, setProjectName] = useState("");
   const [projectSlug, setProjectSlug] = useState("");
+  const slugStatus = useMemo(() => checkSlug(projectSlug), [projectSlug]);
 
   const loadTop = useCallback(async () => {
     if (!isLive()) return;
@@ -139,33 +141,50 @@ function ProjectsPage() {
           <input
             placeholder="project-slug"
             value={projectSlug}
-            onChange={(e) => setProjectSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "-"))}
+            onChange={(e) => setProjectSlug(coerceSlug(e.target.value))}
             className="min-w-48 flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm font-mono"
           />
           <button
             onClick={createProject}
-            disabled={!wsId || !projectName.trim() || !projectSlug.trim()}
+            disabled={!wsId || !projectName.trim() || !slugStatus.ok}
             className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground hover:opacity-90 disabled:opacity-50"
           >
             <Plus className="h-3.5 w-3.5" /> Create
           </button>
         </div>
+        {projectSlug && !slugStatus.ok && (
+          <p className="mt-2 text-xs text-destructive">{slugReasonMessage(slugStatus.reason)}</p>
+        )}
+        {projectSlug && slugStatus.ok && (
+          <p className="mt-2 text-xs text-muted-foreground">
+            Preview URL: <a href={previewSubdomainUrl(projectSlug)} target="_blank" rel="noreferrer" className="font-mono text-foreground underline underline-offset-2">{previewSubdomainUrl(projectSlug)}</a>
+          </p>
+        )}
         <div className="mt-4 overflow-hidden rounded-md border border-border">
           <table className="w-full text-sm">
             <thead className="bg-muted/40">
               <tr>
                 <th className="text-left px-3 py-2 text-xs font-medium text-muted-foreground">Project</th>
                 <th className="text-left px-3 py-2 text-xs font-medium text-muted-foreground">Slug</th>
+                <th className="text-left px-3 py-2 text-xs font-medium text-muted-foreground">Live URL</th>
               </tr>
             </thead>
             <tbody>
-              {visibleProjects.length === 0 && <tr><td colSpan={2} className="px-3 py-4 text-center text-xs text-muted-foreground">No projects in this workspace yet.</td></tr>}
-              {visibleProjects.map((p) => (
-                <tr key={p.id} className="border-t border-border">
-                  <td className="px-3 py-2">{p.name}</td>
-                  <td className="px-3 py-2 font-mono text-xs">{p.slug}</td>
-                </tr>
-              ))}
+              {visibleProjects.length === 0 && <tr><td colSpan={3} className="px-3 py-4 text-center text-xs text-muted-foreground">No projects in this workspace yet.</td></tr>}
+              {visibleProjects.map((p) => {
+                const url = previewSubdomainUrl(p.slug);
+                return (
+                  <tr key={p.id} className="border-t border-border">
+                    <td className="px-3 py-2">{p.name}</td>
+                    <td className="px-3 py-2 font-mono text-xs">{p.slug}</td>
+                    <td className="px-3 py-2 text-xs">
+                      <a href={url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-mono text-foreground underline underline-offset-2">
+                        {url} <ExternalLink className="h-3 w-3" />
+                      </a>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
