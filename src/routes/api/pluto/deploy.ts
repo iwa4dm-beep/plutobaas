@@ -10,20 +10,16 @@
 // logs so a failed step can be inspected and retried with the same bundle.
 import { createFileRoute } from "@tanstack/react-router";
 import { deployAll } from "@/lib/pluto/vps-deployer.functions";
-import { getServiceRoleKey } from "@/lib/pluto/vps-client";
+import { isValidServiceToken } from "@/lib/pluto/vps-client";
 
 export const Route = createFileRoute("/api/pluto/deploy")({
   server: {
     handlers: {
       POST: async ({ request }) => {
-        const configuredKey = (process.env.PLUTO_SERVICE_ROLE_KEY ?? "").trim();
-        const resolvedKey = (await getServiceRoleKey())?.trim() ?? "";
-        if (!configuredKey && !resolvedKey) return Response.json({ ok: false, error: "PLUTO_SERVICE_ROLE_KEY not configured" }, { status: 500 });
         const auth = request.headers.get("authorization") ?? "";
         const provided = auth.replace(/^Bearer\s+/i, "").trim();
-        const acceptedKeys = new Set([configuredKey, resolvedKey].filter(Boolean));
-        if (!provided || !acceptedKeys.has(provided)) {
-          return Response.json({ ok: false, error: "Unauthorized", hint: "Use the current PLUTO_SERVICE_ROLE_KEY or a service-role JWT minted from PLUTO_JWT_SECRET." }, { status: 401 });
+        if (!(await isValidServiceToken(provided))) {
+          return Response.json({ ok: false, error: "Unauthorized", hint: "Send Bearer <PLUTO_SERVICE_ROLE_KEY> or a service-role HS256 JWT signed with PLUTO_JWT_SECRET." }, { status: 401 });
         }
 
         let body: unknown;

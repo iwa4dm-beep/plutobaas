@@ -6,6 +6,11 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { getVpsBaseUrl, getServiceRoleKey } from "./vps-client";
 
+/** Version tag embedded into the bootstrap function code. Bump when the
+ *  bootstrap handler shape changes so `verifyBootstrap` can confirm the VPS
+ *  is running the current code. */
+export const BOOTSTRAP_VERSION = "v2-handler-assign-2026-07-16";
+
 export type StepDebug = {
   url: string;
   method: string;
@@ -486,7 +491,7 @@ export const deployAll = createServerFn({ method: "POST" })
       //     the health probe can reach it without a per-request user token.
       // Sandbox worker uses vm.runInContext (classic script, no ESM). Assign
       // to `handler` — the runner picks it up via `typeof handler !== 'undefined'`.
-      const code = `handler = async (req) => new Response(JSON.stringify({ ok: true, service: "pluto-bootstrap", workspace: ${JSON.stringify(data.workspaceId)}, bundle: ${JSON.stringify(bundleKey)}, ts: Date.now() }), { headers: { "content-type": "application/json" } });`;
+      const code = `handler = async (req) => new Response(JSON.stringify({ ok: true, service: "pluto-bootstrap", version: ${JSON.stringify(BOOTSTRAP_VERSION)}, workspace: ${JSON.stringify(data.workspaceId)}, bundle: ${JSON.stringify(bundleKey)}, ts: Date.now() }), { headers: { "content-type": "application/json" } });`;
 
       if (existing) {
         const patchUrl = `${base}/functions/v1/${encodeURIComponent(existing.id)}`;
@@ -571,5 +576,51 @@ export const postDeployHealth = createServerFn({ method: "POST" })
       checkedAt: new Date().toISOString(),
     };
   });
+
+// ---------- Verify bootstrap version is live on the VPS ----------
+export type VerifyBootstrapResult = {
+  ok: boolean;
+  expectedVersion: string;
+  liveVersion: string | null;
+  match: boolean;
+  invoke: { url: string; status: number; body: string; latencyMs: number };
+  checkedAt: string;
+  hint?: string;
+};
+
+export const verifyBootstrap = createServerFn({ method: "POST" })
+  .handler(async (): Promise<VerifyBootstrapResult> => {
+    const headers = await serviceHeaders({ "content-type": "application/json" });
+    const base = getVpsBaseUrl();
+    const invokeUrl = `${base}/functions/v1/invoke/bootstrap`;
+    const now = new Date().toISOString();
+    if ("error" in headers) {
+      return { ok: false, expectedVersion: BOOTSTRAP_VERSION, liveVersion: null, match: false, invoke: { url: invokeUrl, status: 0, body: headers.error, latencyMs: 0 }, checkedAt: now, hint: headers.error };
+    }
+    const inv = await rawFetch(invokeUrl, "POST", headers, "{}", "{}", 15_000);
+    let liveVersion: string | null = null;
+    try {
+      const parsed = JSON.parse(inv.text) as { version?: unknown };
+      if (typeof parsed.version === "string") liveVersion = parsed.version;
+    } catch { /* non-JSON response (e.g. "Function error: ...") */ }
+    const match = liveVersion === BOOTSTRAP_VERSION;
+    const hint = !inv.ok
+      ? `Bootstrap invoke failed (HTTP ${inv.status}). Re-run deploy to patch the function.`
+      : !liveVersion
+        ? "Live bootstrap returned no version field — old handler is still active. Re-run deploy."
+        : !match
+          ? `Live version ${liveVersion} ≠ expected ${BOOTSTRAP_VERSION}. Re-run deploy.`
+          : undefined;
+    return {
+      ok: inv.ok && match,
+      expectedVersion: BOOTSTRAP_VERSION,
+      liveVersion,
+      match,
+      invoke: { url: invokeUrl, status: inv.status, body: inv.text.slice(0, 800), latencyMs: inv.debug.latencyMs },
+      checkedAt: now,
+      hint,
+    };
+  });
+
 
 

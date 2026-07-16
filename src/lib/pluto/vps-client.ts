@@ -97,6 +97,62 @@ export function getAnonKey(): string | undefined {
   return process.env.PLUTO_ANON_KEY || undefined;
 }
 
+/** Base64url decode → bytes. */
+function b64urlToBytes(s: string): Uint8Array {
+  const pad = s.length % 4 === 0 ? "" : "=".repeat(4 - (s.length % 4));
+  const b64 = (s + pad).replace(/-/g, "+").replace(/_/g, "/");
+  if (typeof atob !== "undefined") {
+    const bin = atob(b64);
+    const out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
+  }
+  return new Uint8Array(Buffer.from(b64, "base64"));
+}
+
+/** Verify an HS256 JWT against PLUTO_JWT_SECRET. Returns claims if valid, else null. */
+export async function verifyServiceJwt(token: string): Promise<Record<string, unknown> | null> {
+  const secret = (process.env.PLUTO_JWT_SECRET ?? "").trim();
+  if (!secret || !looksLikeJwt(token)) return null;
+  const [h, p, s] = token.split(".");
+  try {
+    const key = await globalThis.crypto.subtle.importKey(
+      "raw",
+      new TextEncoder().encode(secret),
+      { name: "HMAC", hash: "SHA-256" },
+      false,
+      ["verify"],
+    );
+    const ok = await globalThis.crypto.subtle.verify(
+      "HMAC",
+      key,
+      b64urlToBytes(s).buffer as ArrayBuffer,
+      new TextEncoder().encode(`${h}.${p}`),
+    );
+    if (!ok) return null;
+    const claims = JSON.parse(new TextDecoder().decode(b64urlToBytes(p))) as Record<string, unknown>;
+    const exp = typeof claims.exp === "number" ? claims.exp : 0;
+    if (exp && exp < Math.floor(Date.now() / 1000)) return null;
+    return claims;
+  } catch {
+    return null;
+  }
+}
+
+/** True if `token` is a valid service-role credential: matches the stored key,
+ *  matches the auto-minted JWT, or is an HS256 JWT with role=service_role
+ *  signed by PLUTO_JWT_SECRET. */
+export async function isValidServiceToken(token: string): Promise<boolean> {
+  const t = (token ?? "").trim();
+  if (!t) return false;
+  const stored = (process.env.PLUTO_SERVICE_ROLE_KEY ?? "").trim();
+  if (stored && t === stored) return true;
+  const resolved = ((await getServiceRoleKey()) ?? "").trim();
+  if (resolved && t === resolved) return true;
+  const claims = await verifyServiceJwt(t);
+  return !!claims && claims.role === "service_role";
+}
+
 export class VpsError extends Error {
   status: number;
   body: unknown;
