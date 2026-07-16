@@ -644,6 +644,9 @@ function AutoDeployInner() {
         </section>
       )}
 
+      {/* Audit trail panel — always visible when there is history */}
+      {history.length > 0 && <AuditTrailPanel history={history} />}
+
       {/* History panel */}
       {showHistory && <HistoryPanel history={history} onClear={() => { clearAutoDeployHistory(); toast.success("History cleared"); }} />}
     </div>
