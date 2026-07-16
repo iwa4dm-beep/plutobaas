@@ -653,7 +653,10 @@ function AutoDeployInner() {
       {phase === "awaiting-approval" && pending && (
         <ApprovalPanel
           pending={pending}
-          onCancel={() => { setPending(null); setPhase("source"); log("✗ Deploy cancelled by user"); }}
+          onCancel={() => {
+            setPending(null); setPhase("source"); log("✗ Deploy cancelled by user");
+            dispatchWebhookEvent("approval.cancelled", { slug: pending.slug, approver: approverEmail });
+          }}
           onConfirm={() => confirmDeploy(pending)}
         />
       )}
