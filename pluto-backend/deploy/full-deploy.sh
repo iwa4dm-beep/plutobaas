@@ -49,12 +49,21 @@ else
 fi
 
 # 2) worker bootstrap
+log "reset sandbox worker port"
+if [ -x "$DEPLOY/reset-sandbox-worker-port.sh" ]; then
+  bash "$DEPLOY/reset-sandbox-worker-port.sh" "${PORT:-8787}" || die "port reset failed"
+fi
+
 log "bootstrap pluto-sandbox-worker"
 if [ -x "$DEPLOY/bootstrap-sandbox-worker.sh" ]; then
-  SECRET="$SECRET" bash "$DEPLOY/bootstrap-sandbox-worker.sh" || die "worker bootstrap failed"
+  if ! SECRET="$SECRET" SERVICE_KEY="${SERVICE_KEY:-}" UPSTREAM="${UPSTREAM:-}" bash "$DEPLOY/bootstrap-sandbox-worker.sh"; then
+    log "bootstrap failed; running emergency worker repair"
+    [ -x "$DEPLOY/repair-sandbox-worker.sh" ] || die "worker bootstrap failed and repair script is missing"
+    SECRET="$SECRET" SERVICE_KEY="${SERVICE_KEY:-}" UPSTREAM="${UPSTREAM:-}" bash "$DEPLOY/repair-sandbox-worker.sh" || die "worker repair failed"
+  fi
 else
   # fallback: refresh env + copy mjs + restart
-  SECRET="$SECRET" bash "$DEPLOY/fix-worker-env.sh" || die "fix-worker-env failed"
+  SECRET="$SECRET" SERVICE_KEY="${SERVICE_KEY:-}" UPSTREAM="${UPSTREAM:-}" bash "$DEPLOY/fix-worker-env.sh" || die "fix-worker-env failed"
   install -d /opt/pluto/sandbox-worker
   cp sandbox-worker/sandbox-worker.mjs /opt/pluto/sandbox-worker/
   systemctl restart pluto-sandbox-worker 2>/dev/null || systemctl restart pluto-sandbox

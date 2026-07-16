@@ -77,6 +77,7 @@ stop_worker_units_and_free_port() {
   for u in pluto-sandbox-worker pluto-sandbox; do
     if systemctl list-unit-files "${u}.service" >/dev/null 2>&1; then
       systemctl stop "$u" 2>/dev/null || true
+      systemctl kill --kill-who=all "$u" 2>/dev/null || true
       systemctl reset-failed "$u" 2>/dev/null || true
     fi
   done
@@ -132,11 +133,19 @@ install -m 0640 -o root -g www-data "$TMP" "$ENV_FILE" 2>/dev/null || install -m
 rm -f "$TMP"
 
 echo "▶ Installing systemd unit: ${UNIT}.service"
+if [ "$UNIT" = "pluto-sandbox-worker" ] && systemctl list-unit-files pluto-sandbox.service >/dev/null 2>&1; then
+  echo "▶ Disabling legacy conflicting service: pluto-sandbox.service"
+  systemctl disable --now pluto-sandbox.service 2>/dev/null || true
+  systemctl mask pluto-sandbox.service 2>/dev/null || true
+fi
 cat > "/etc/systemd/system/${UNIT}.service" <<EOF
 [Unit]
 Description=Pluto Sandbox Worker (ZIP unpacker + static site host)
 After=network-online.target
 Wants=network-online.target
+Conflicts=pluto-sandbox.service
+StartLimitIntervalSec=60
+StartLimitBurst=20
 
 [Service]
 Type=simple
@@ -147,6 +156,8 @@ ExecStartPre=+/bin/sh -c 'if command -v fuser >/dev/null 2>&1; then fuser -k ${P
 ExecStart=/usr/bin/node /opt/pluto/sandbox-worker/sandbox-worker.mjs
 Restart=on-failure
 RestartSec=3s
+KillMode=mixed
+TimeoutStopSec=10s
 StandardOutput=journal
 StandardError=journal
 ReadWritePaths=${SITES_ROOT}
