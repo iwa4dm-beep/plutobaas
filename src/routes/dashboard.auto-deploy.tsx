@@ -192,6 +192,8 @@ function AutoDeployInner() {
     setPhase("source"); setAnalyze(null); setPlan(null); setLogs([]);
     setDeployResult(null); setErrorMsg(null); setExpanded({});
     setPending(null); setHealth(null);
+    setStreamEvents([]); setRunningStepIdx(-1);
+    if (streamTimerRef.current) { clearInterval(streamTimerRef.current); streamTimerRef.current = null; }
   };
 
   const acquireFile = async (): Promise<{ file: File; sourceRef: string }> => {
