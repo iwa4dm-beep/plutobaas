@@ -7,6 +7,12 @@
 import { defineConfig } from "@lovable.dev/vite-tanstack-config";
 
 export default defineConfig({
+  nitro: {
+    // VPS/self-hosted builds must run as a Node server. Lovable-hosted builds
+    // still force the Cloudflare target internally, so this only affects
+    // external/self-hosted production builds.
+    preset: process.env.NITRO_PRESET || "node-server",
+  },
   tanstackStart: {
     // Redirect TanStack Start's bundled server entry to src/server.ts (our SSR error wrapper).
     // nitro/vite builds from this

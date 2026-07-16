@@ -63,25 +63,29 @@ publishable-safe. Never expose the `service_role` key.
 3. **Site settings → Environment variables** → add the two `VITE_*` values.
 4. Trigger a deploy. Netlify serves at `https://<project>.netlify.app`.
 
-### Option C — Cloud VPS (Docker + nginx)
+### Option C — Cloud VPS (TanStack Start server + nginx)
 
 ```bash
 git clone git@github.com:<you>/<lovable-repo>.git app && cd app
 printf 'VITE_PLUTO_URL=https://api.timescard.cloud\nVITE_PLUTO_ANON_KEY=pk_anon_xxx\n' > .env
-docker run --rm -v "$PWD":/app -w /app oven/bun:1 bun install
-docker run --rm -v "$PWD":/app -w /app --env-file .env oven/bun:1 bun run build
-sudo rsync -a --delete dist/ /var/www/app/
+sudo APP_DIR="$PWD" PUBLIC_URL=https://app.example.com/ bash ./deploy-frontend.sh
 ```
 
-Minimal nginx site:
+This project builds to `.output/server/index.mjs` + `.output/public/assets`, not
+`dist/index.html`. Do **not** deploy it as a static SPA. The deploy script builds
+with `NITRO_PRESET=node-server`, installs a systemd service, and configures nginx
+as a reverse proxy while serving hashed `/assets/*` files with the correct MIME
+types.
+
+Minimal nginx shape:
 
 ```nginx
 server {
   listen 443 ssl http2;
   server_name app.example.com;
-  root /var/www/app;
-  index index.html;
-  location / { try_files $uri /index.html; }   # SPA fallback
+  root /path/to/app/.output/public;
+  location ^~ /assets/ { try_files $uri =404; }
+  location / { proxy_pass http://127.0.0.1:3001; }
 }
 ```
 
