@@ -34,8 +34,8 @@ is_https_public_url() {
 DOMAIN="${DOMAIN:-$(public_host)}"
 PUBLIC_BASE="${PUBLIC_URL%/}"
 SYSTEMD_UNIT="/etc/systemd/system/${SERVICE}.service"
-NGINX_AVAILABLE="/etc/nginx/sites-available/${DOMAIN}"
-NGINX_ENABLED="/etc/nginx/sites-enabled/${DOMAIN}"
+NGINX_AVAILABLE="/etc/nginx/sites-available/${DOMAIN}.conf"
+NGINX_ENABLED="/etc/nginx/sites-enabled/${DOMAIN}.conf"
 NGINX_CONF_D="/etc/nginx/conf.d/00-${DOMAIN}.conf"
 NGINX_SITE=""
 SUDO=""
@@ -62,15 +62,21 @@ select_nginx_site_path() {
   local dump
   dump="$(nginx_dump)"
 
-  # Always prefer /etc/nginx/conf.d/*.conf. sites-enabled include patterns
-  # vary — some servers use `sites-enabled/*.conf`, silently ignoring files
-  # without the .conf suffix. That exact bug caused dashboard.timescard.cloud
-  # to fall back to the api.timescard.cloud default_server certificate.
-  NGINX_SITE="$NGINX_CONF_D"
+  # Pick a path that nginx actually includes, and always use a .conf suffix.
+  # Some servers include only `sites-enabled/*.conf`; files without .conf are
+  # silently ignored, causing nginx to fall back to another domain's 443 block.
   if printf '%s\n' "$dump" | grep -qE 'include[[:space:]]+/etc/nginx/conf\.d/\*\.conf'; then
+    NGINX_SITE="$NGINX_CONF_D"
     ok "nginx includes conf.d/*.conf; using ${NGINX_SITE}"
+  elif printf '%s\n' "$dump" | grep -qE 'include[[:space:]]+/etc/nginx/sites-enabled/\*\.conf'; then
+    NGINX_SITE="$NGINX_AVAILABLE"
+    ok "nginx includes sites-enabled/*.conf; using ${NGINX_ENABLED}"
+  elif printf '%s\n' "$dump" | grep -qE 'include[[:space:]]+/etc/nginx/sites-enabled/\*'; then
+    NGINX_SITE="$NGINX_AVAILABLE"
+    ok "nginx includes sites-enabled/*; using ${NGINX_ENABLED}"
   else
-    warn "nginx.conf does not obviously include conf.d/*.conf; still writing ${NGINX_SITE} (standard path)"
+    NGINX_SITE="$NGINX_CONF_D"
+    warn "nginx include pattern not detected; using standard path ${NGINX_SITE}"
   fi
 
   # Delete stale copies in sites-enabled/sites-available so the wrong
@@ -101,6 +107,22 @@ install_nginx_site_link() {
   else
     $SUDO rm -f "$NGINX_AVAILABLE" "$NGINX_ENABLED"
   fi
+}
+
+assert_nginx_site_loaded() {
+  [ -n "$NGINX_SITE" ] || select_nginx_site_path
+
+  local dump
+  dump="$(nginx_dump)"
+  if ! printf '%s\n' "$dump" | grep -qF "# configuration file: ${NGINX_SITE}:"; then
+    show_tls_diagnostics
+    fail "nginx is not loading ${NGINX_SITE}. Fix nginx include patterns, then re-run."
+  fi
+  if ! printf '%s\n' "$dump" | grep -A80 -F "# configuration file: ${NGINX_SITE}:" | grep -qE "server_name[[:space:]]+${DOMAIN}([[:space:];]|$)"; then
+    show_tls_diagnostics
+    fail "nginx loaded ${NGINX_SITE}, but no active server_name ${DOMAIN} was found."
+  fi
+  ok "nginx is loading the managed server block for ${DOMAIN}: ${NGINX_SITE}"
 }
 
 remove_conflicting_nginx_configs() {
@@ -142,6 +164,8 @@ show_tls_diagnostics() {
   echo "--- local VPS public IPv4 ---"
   curl -4fsS --max-time 5 https://ifconfig.me 2>/dev/null || curl -4fsS --max-time 5 http://ifconfig.me 2>/dev/null || true
   echo
+  echo "--- public HTTPS endpoint headers (certificate verification disabled for diagnostics) ---"
+  curl -kfsSI --max-time 10 "$PUBLIC_BASE/" 2>/dev/null | sed -n '1,40p' || true
   echo "--- nginx files mentioning ${DOMAIN} ---"
   $SUDO grep -RlnF "$DOMAIN" /etc/nginx/sites-enabled /etc/nginx/sites-available /etc/nginx/conf.d 2>/dev/null || true
   echo "--- active nginx 443/server_name/ssl_certificate lines ---"
@@ -240,7 +264,7 @@ ensure_tls_certificate() {
 
   warn "Valid TLS certificate missing for ${DOMAIN}; requesting Let's Encrypt certificate"
   write_nginx_http_site
-  $SUDO ln -sf "$NGINX_AVAILABLE" "$NGINX_ENABLED"
+  install_nginx_site_link
   $SUDO nginx -t
   $SUDO systemctl reload nginx 2>/dev/null || $SUDO systemctl restart nginx
 
@@ -482,6 +506,7 @@ ok "$SERVICE is active"
 # ---------- 6. Reload nginx ----------
 log "Testing & reloading nginx"
 $SUDO nginx -t
+  assert_nginx_site_loaded
 $SUDO systemctl reload nginx
 ok "nginx reloaded"
 verify_served_tls_san
