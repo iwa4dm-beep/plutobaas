@@ -1,0 +1,11 @@
+[Unit]
+Description=Run pluto-domain-reconciler every 2 minutes
+
+[Timer]
+OnBootSec=45s
+OnUnitActiveSec=2min
+AccuracySec=15s
+Unit=pluto-domain-reconciler.service
+
+[Install]
+WantedBy=timers.target

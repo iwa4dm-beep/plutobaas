@@ -1,0 +1,59 @@
+# Custom domain vhost for __HOST__ → slug=__SLUG__
+# Rendered by pluto-backend/deploy/reconcile-domains.sh — DO NOT EDIT BY HAND.
+# Regenerating this file is idempotent; the reconciler will overwrite it.
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name __HOST__;
+
+    # ACME HTTP-01 challenge
+    location /.well-known/acme-challenge/ {
+        root /var/www/html;
+        default_type "text/plain";
+    }
+
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    http2 on;
+    server_name __HOST__;
+
+    ssl_certificate     /etc/letsencrypt/live/__HOST__/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/__HOST__/privkey.pem;
+    ssl_protocols       TLSv1.2 TLSv1.3;
+    ssl_session_cache   shared:SSL:10m;
+    ssl_session_timeout 1d;
+    ssl_prefer_server_ciphers off;
+
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    add_header X-Content-Type-Options    "nosniff"                             always;
+    add_header Referrer-Policy           "strict-origin-when-cross-origin"     always;
+
+    # Static site: the reconciler binds this host to a project slug living
+    # under /var/lib/pluto/sites/<slug>/current (managed by sandbox-worker).
+    root /var/lib/pluto/sites/__SLUG__/current;
+    index index.html;
+
+    # Runtime env injection (Phase C). Must not be cached.
+    location = /env.js {
+        add_header Cache-Control "no-store" always;
+        try_files /env.js =404;
+    }
+
+    # Long-cache hashed assets
+    location ~* \.(?:js|css|woff2?|ttf|otf|png|jpg|jpeg|gif|svg|webp|avif|ico)$ {
+        expires 30d;
+        add_header Cache-Control "public, max-age=2592000, immutable" always;
+        try_files $uri =404;
+    }
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}

@@ -1,0 +1,12 @@
+[Unit]
+Description=Pluto custom-domain reconciler (Phase D)
+Documentation=file:///opt/pluto/docs/CUSTOM-DOMAIN-AUTOWIRE.md
+After=network-online.target nginx.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=-/etc/pluto/reconciler.env
+ExecStart=/opt/pluto/deploy/reconcile-domains.sh
+Nice=10
+IOSchedulingClass=best-effort
