@@ -53,9 +53,13 @@ if [ "$code" = "200" ]; then
   echo
 else
   bad "site-status → HTTP ${code}"
+  cat /tmp/_site_status.json 2>/dev/null | head -c 300; echo
   if [ "$code" = "401" ]; then
     echo "     401 here means the old worker is still running and treating public routes as secret-protected."
     echo "     Fix now: sudo bash deploy/refresh-worker.sh && bash deploy/verify-deploy.sh ${SLUG}"
+  elif [ "$code" = "404" ]; then
+    echo "     404 here means the worker is healthy but cannot resolve this slug."
+    echo "     Recover now: sudo SLUG='${SLUG}' bash deploy/repair-sandbox-worker-and-site.sh"
   fi
 fi
 
@@ -68,6 +72,9 @@ else
   if [ "$code" = "401" ]; then
     echo "     401 here is not a missing bundle; it means stale worker code is active."
     echo "     Fix now: sudo bash deploy/refresh-worker.sh"
+  elif [ "$code" = "404" ]; then
+    echo "     404 means the slug is not linked or no bundle has been unpacked for it."
+    echo "     Recover now: sudo SLUG='${SLUG}' bash deploy/repair-sandbox-worker-and-site.sh"
   fi
   echo "     If worker health is OK, check slug disk state: ls -la /var/lib/pluto/sites/${SLUG}"
 fi
