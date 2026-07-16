@@ -1291,6 +1291,23 @@ function WebhooksSection() {
                   onChange={(e) => persist(hooks.map((x) => x.id === h.id ? { ...x, enabled: e.target.checked } : x))}/>
                 <span className="font-medium">{h.label}</span>
                 <span className="text-[10px] uppercase px-1.5 py-0.5 rounded bg-muted">{h.format}</span>
+                {h.secret && (
+                  <span className="text-[10px] font-mono px-1.5 py-0.5 rounded border border-emerald-500/40 bg-emerald-500/10 text-emerald-500 flex items-center gap-1">
+                    <ShieldCheck className="h-2.5 w-2.5"/> signed
+                  </span>
+                )}
+                {status[h.id] && (
+                  <span
+                    data-testid={`endpoint-status-${h.id}`}
+                    className={`text-[10px] font-mono px-1.5 py-0.5 rounded border ${
+                      status[h.id].finalStatus === "delivered" ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-500"
+                      : status[h.id].finalStatus === "retrying" ? "border-amber-500/40 bg-amber-500/10 text-amber-500"
+                      : "border-destructive/40 bg-destructive/10 text-destructive"
+                    }`}
+                    title={`Last: ${status[h.id].lastEvent} · attempt ${status[h.id].lastAttempt} · ${status[h.id].lastError ?? "ok"}`}>
+                    {status[h.id].finalStatus} · try {status[h.id].lastAttempt}/4
+                  </span>
+                )}
                 <span className="text-muted-foreground font-mono truncate flex-1 min-w-0">{h.url}</span>
                 <button onClick={() => testHook(h)}
                   className="rounded-md border border-border px-2 py-0.5 text-[11px] hover:bg-accent">Test</button>
@@ -1308,6 +1325,9 @@ function WebhooksSection() {
           ))}
         </ul>
       )}
+
+      {/* Payload schemas */}
+      {showSchemas && <PayloadSchemasPanel />}
 
       {/* Delivery log */}
       {showLog && (
