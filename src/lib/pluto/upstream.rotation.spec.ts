@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // E2E-style unit test for the JWT-rotation self-healing path in plutoApi.
 //
 // Scenario: operator rotated PLUTO_JWT_SECRET on the backend. The browser
