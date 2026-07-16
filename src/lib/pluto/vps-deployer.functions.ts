@@ -486,7 +486,7 @@ export const deployAll = createServerFn({ method: "POST" })
       //     the health probe can reach it without a per-request user token.
       // Sandbox worker uses vm.runInContext (classic script, no ESM). Assign
       // to `handler` — the runner picks it up via `typeof handler !== 'undefined'`.
-      const code = `handler = async (req) => new Response(JSON.stringify({ ok: true, service: "pluto-bootstrap", workspace: ${JSON.stringify(data.workspaceId)}, bundle: ${JSON.stringify(bundleKey)}, ts: Date.now() }), { headers: { "content-type": "application/json" } });`;
+      const code = `handler = async (req) => new Response(JSON.stringify({ ok: true, service: "pluto-bootstrap", version: ${JSON.stringify(BOOTSTRAP_VERSION)}, workspace: ${JSON.stringify(data.workspaceId)}, bundle: ${JSON.stringify(bundleKey)}, ts: Date.now() }), { headers: { "content-type": "application/json" } });`;
 
       if (existing) {
         const patchUrl = `${base}/functions/v1/${encodeURIComponent(existing.id)}`;
