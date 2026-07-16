@@ -328,10 +328,95 @@ async function status(workspaceId) {
   }
 }
 
+// ---------- Public static serving (no shared secret) ----------
+// GET /sites/<slug>/*  — serves the workspace's `current` symlink content.
+// GET /preview/<slug>/* — serves the workspace's `preview` symlink content.
+// Nginx can either proxy these paths directly (location /sites/) or terminate
+// wildcard hostnames like <slug>.app.<apex> and proxy_pass to /sites/<slug>/.
+const MIME = {
+  ".html": "text/html; charset=utf-8",
+  ".htm":  "text/html; charset=utf-8",
+  ".js":   "application/javascript; charset=utf-8",
+  ".mjs":  "application/javascript; charset=utf-8",
+  ".css":  "text/css; charset=utf-8",
+  ".json": "application/json; charset=utf-8",
+  ".map":  "application/json; charset=utf-8",
+  ".svg":  "image/svg+xml",
+  ".png":  "image/png",
+  ".jpg":  "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".webp": "image/webp",
+  ".gif":  "image/gif",
+  ".ico":  "image/x-icon",
+  ".woff": "font/woff",
+  ".woff2":"font/woff2",
+  ".ttf":  "font/ttf",
+  ".txt":  "text/plain; charset=utf-8",
+  ".wasm": "application/wasm",
+};
+
+async function serveStatic(res, wsDir, linkName, relPath) {
+  // Resolve wsDir/<linkName> → real release dir, then join relPath safely.
+  let baseDir;
+  try { baseDir = await fsp.realpath(path.join(wsDir, linkName)); }
+  catch { return json(res, 404, { error: "not_deployed", channel: linkName }); }
+
+  const clean = decodeURIComponent(relPath || "").replace(/^\/+/, "");
+  const requested = path.resolve(baseDir, clean);
+  if (!requested.startsWith(baseDir)) return json(res, 400, { error: "bad_path" });
+
+  let filePath = requested;
+  try {
+    const st = await fsp.stat(filePath);
+    if (st.isDirectory()) filePath = path.join(filePath, "index.html");
+  } catch { /* fall through — SPA fallback below */ }
+
+  try {
+    const data = await fsp.readFile(filePath);
+    const ext = path.extname(filePath).toLowerCase();
+    const type = MIME[ext] ?? "application/octet-stream";
+    res.writeHead(200, {
+      "content-type": type,
+      "content-length": data.length,
+      "cache-control": ext === ".html" ? "no-cache" : "public, max-age=3600",
+    });
+    return res.end(data);
+  } catch {
+    // SPA fallback → index.html at the release root.
+    try {
+      const idx = await fsp.readFile(path.join(baseDir, "index.html"));
+      res.writeHead(200, { "content-type": MIME[".html"], "content-length": idx.length, "cache-control": "no-cache" });
+      return res.end(idx);
+    } catch {
+      return json(res, 404, { error: "not_found" });
+    }
+  }
+}
+
+async function handleStatic(req, res, prefix, linkName) {
+  // /sites/<slug>[/<rest>]
+  const rest = req.url.slice(prefix.length);
+  const m = rest.match(/^\/?([^/?#]+)(?:\/([^?#]*))?/);
+  if (!m) return json(res, 404, { error: "bad_url" });
+  const slug = String(m[1] || "").trim().toLowerCase();
+  if (!SLUG_RE.test(slug)) return json(res, 404, { error: "invalid_slug" });
+  const r = await resolveSlug(slug);
+  if (!r.ok) return json(res, 404, { error: r.error });
+  const wsDir = path.join(SITES_ROOT, r.workspaceId);
+  return serveStatic(res, wsDir, linkName, m[2] || "");
+}
+
 const server = http.createServer(async (req, res) => {
   try {
     if (req.method === "GET" && req.url === "/healthz") {
       return json(res, 200, { ok: true, service: "pluto-sandbox-worker", uptime: process.uptime() });
+    }
+    // Public static routes — no shared secret, safe to expose behind nginx.
+    if (req.method === "GET" && req.url && req.url.startsWith("/sites/")) {
+      return handleStatic(req, res, "/sites/", "current");
+    }
+    if (req.method === "GET" && req.url && req.url.startsWith("/preview/")) {
+      return handleStatic(req, res, "/preview/", "preview");
     }
     if (!checkSecret(req)) return json(res, 401, { error: "invalid or missing x-sandbox-secret" });
 
