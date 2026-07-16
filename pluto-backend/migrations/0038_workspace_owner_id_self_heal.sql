@@ -26,6 +26,7 @@ create table if not exists admin.workspace_members (
 
 alter table if exists admin.projects
   add column if not exists owner_id uuid references auth.users(id) on delete set null,
+  add column if not exists workspace_id uuid references admin.workspaces(id) on delete set null,
   add column if not exists created_at timestamptz default now();
 
 alter table if exists admin.workspaces
@@ -36,3 +37,4 @@ alter table if exists admin.workspaces
 
 create index if not exists workspaces_owner_idx on admin.workspaces(owner_id);
 create index if not exists projects_owner_idx on admin.projects(owner_id);
+create index if not exists projects_workspace_idx on admin.projects(workspace_id);

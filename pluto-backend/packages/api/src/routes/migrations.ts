@@ -82,6 +82,7 @@ async function ensureWorkspaceOwnerColumns(sql: any) {
 
     alter table if exists admin.projects
       add column if not exists owner_id uuid references auth.users(id) on delete set null,
+      add column if not exists workspace_id uuid references admin.workspaces(id) on delete set null,
       add column if not exists created_at timestamptz default now();
 
     alter table if exists admin.workspaces
@@ -91,6 +92,7 @@ async function ensureWorkspaceOwnerColumns(sql: any) {
       add column if not exists updated_at timestamptz not null default now();
 
     create index if not exists workspaces_owner_idx on admin.workspaces(owner_id);
+    create index if not exists projects_workspace_idx on admin.projects(workspace_id);
   `);
 }
 
