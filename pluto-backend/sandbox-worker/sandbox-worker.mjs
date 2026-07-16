@@ -123,7 +123,24 @@ async function ensureSlugSymlink(wsDir, slug) {
   return slugPath;
 }
 
-async function unpack({ workspaceId, slug, bucket, key }) {
+// Phase C — write /env.js so window.__PLUTO_ENV__ = {...} is available to the
+// deployed bundle before its main script runs. Keys are validated against the
+// same shape enforced by admin.project_env (uppercase alnum + underscore).
+const ENV_KEY_RE = /^[A-Z][A-Z0-9_]{0,62}$/;
+function serializeEnvJs(envObj) {
+  const clean = {};
+  for (const [k, v] of Object.entries(envObj || {})) {
+    // Accept the reserved lowercase runtime keys (url/anonKey/serviceKey/browserUrl)
+    // AND admin.project_env-style UPPER_SNAKE keys.
+    if (/^(url|anonKey|serviceKey|browserUrl)$/.test(k) || ENV_KEY_RE.test(k)) {
+      clean[k] = String(v ?? "");
+    }
+  }
+  // JSON.stringify escaping is sufficient — no </script> risk in JSON.
+  return `window.__PLUTO_ENV__ = ${JSON.stringify(clean)};\n`;
+}
+
+async function unpack({ workspaceId, slug, bucket, key, env }) {
   const ws = safeSlug(workspaceId);
   if (!ws) throw new Error("invalid workspaceId");
   if (!bucket || !key) throw new Error("bucket and key are required");
