@@ -150,12 +150,13 @@ function DeployPage() {
     let status = 0;
     let response: unknown = null;
     try {
+      // NOTE: don't set content-type here — plutoApi already sets it.
+      // Passing it again (esp. with different casing) produces a duplicated
+      // `content-type: application/json, application/json` header which
+      // Fastify rejects with 415 Unsupported Media Type.
       const res = await plutoApi<any>("/admin/v1/sql/run", {
         method: "POST",
-        headers: { "content-type": "application/json" },
         body: JSON.stringify(body),
-        // @ts-expect-error — plutoApi returns parsed body; capture status via wrapper below.
-        __captureStatus: (s: number) => { status = s; },
       });
       response = res;
       status = status || 200;
