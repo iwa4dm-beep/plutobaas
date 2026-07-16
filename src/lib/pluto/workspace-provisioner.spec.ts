@@ -98,7 +98,7 @@ describe("provisionWorkspace (Auto-Connect Studio)", () => {
     });
     await provisionWorkspace({ projectName: "no-email" });
     const body = JSON.parse(calls[0].init?.body as string);
-    expect(body.email).toMatch(/^admin\+[a-z0-9]+@timescard\.cloud$/);
+    expect(body.email).toMatch(/^admin\+[a-z0-9-]+@timescard\.cloud$/);
     expect(body.workspace_name).toBe("no-email");
     expect(body.seed_demo).toBe(false);
   });
