@@ -121,6 +121,16 @@ remove_conflicting_nginx_configs() {
 
 show_tls_diagnostics() {
   warn "TLS certificate served for ${DOMAIN} does not match; showing nginx diagnostics"
+  echo "--- DNS records for ${DOMAIN} ---"
+  if command -v dig >/dev/null 2>&1; then
+    echo "A:    $(dig +short A "$DOMAIN" | tr '\n' ' ')"
+    echo "AAAA: $(dig +short AAAA "$DOMAIN" | tr '\n' ' ')"
+  else
+    getent ahosts "$DOMAIN" 2>/dev/null || true
+  fi
+  echo "--- local VPS public IPv4 ---"
+  curl -4fsS --max-time 5 https://ifconfig.me 2>/dev/null || curl -4fsS --max-time 5 http://ifconfig.me 2>/dev/null || true
+  echo
   echo "--- nginx files mentioning ${DOMAIN} ---"
   $SUDO grep -RlnF "$DOMAIN" /etc/nginx/sites-enabled /etc/nginx/sites-available /etc/nginx/conf.d 2>/dev/null || true
   echo "--- active nginx 443/server_name/ssl_certificate lines ---"
@@ -137,24 +147,37 @@ verify_served_tls_san() {
   }
 
   log "Verifying served TLS certificate SAN for ${DOMAIN}"
-  local served_cert cert_info check_output openssl_log
+  local local_cert public_cert cert_info check_output openssl_log
   openssl_log="/tmp/${DOMAIN}.openssl-s_client.log"
-  served_cert="$(printf '' | openssl s_client -connect "${DOMAIN}:443" -servername "$DOMAIN" -showcerts 2>"$openssl_log" | openssl x509 -outform PEM 2>>"$openssl_log" || true)"
 
-  if [ -z "$served_cert" ]; then
-    cat "$openssl_log" 2>/dev/null || true
+  local_cert="$(printf '' | openssl s_client -connect "127.0.0.1:443" -servername "$DOMAIN" -showcerts 2>"$openssl_log.local" | openssl x509 -outform PEM 2>>"$openssl_log.local" || true)"
+  if [ -n "$local_cert" ]; then
+    echo "--- certificate served locally by nginx for SNI ${DOMAIN} ---"
+    printf '%s\n' "$local_cert" | openssl x509 -noout -subject -issuer -ext subjectAltName 2>&1 || true
+    check_output="$(printf '%s\n' "$local_cert" | openssl x509 -noout -checkhost "$DOMAIN" 2>&1 || true)"
+    printf '%s\n' "$check_output"
+  fi
+
+  public_cert="$(printf '' | openssl s_client -connect "${DOMAIN}:443" -servername "$DOMAIN" -showcerts 2>"$openssl_log.public" | openssl x509 -outform PEM 2>>"$openssl_log.public" || true)"
+
+  if [ -z "$public_cert" ]; then
+    cat "$openssl_log.public" 2>/dev/null || true
     show_tls_diagnostics
     fail "Could not read served TLS certificate for ${DOMAIN}."
   fi
 
-  cert_info="$(printf '%s\n' "$served_cert" | openssl x509 -noout -subject -issuer -ext subjectAltName 2>&1 || true)"
+  echo "--- certificate served publicly for ${DOMAIN} ---"
+  cert_info="$(printf '%s\n' "$public_cert" | openssl x509 -noout -subject -issuer -ext subjectAltName 2>&1 || true)"
   printf '%s\n' "$cert_info"
 
-  check_output="$(printf '%s\n' "$served_cert" | openssl x509 -noout -checkhost "$DOMAIN" 2>&1 || true)"
+  check_output="$(printf '%s\n' "$public_cert" | openssl x509 -noout -checkhost "$DOMAIN" 2>&1 || true)"
   printf '%s\n' "$check_output"
   if ! printf '%s\n' "$check_output" | grep -qi 'does match'; then
-    cat "$openssl_log" 2>/dev/null || true
+    cat "$openssl_log.public" 2>/dev/null || true
     show_tls_diagnostics
+    if [ -n "$local_cert" ] && printf '%s\n' "$local_cert" | openssl x509 -noout -checkhost "$DOMAIN" 2>&1 | grep -qi 'does match'; then
+      fail "Local nginx serves the correct certificate, but public DNS reaches a different endpoint/certificate. Fix ${DOMAIN} DNS A/AAAA records to point to this VPS, then re-run."
+    fi
     fail "Served TLS certificate SAN does not match ${DOMAIN}. Fix duplicate/default 443 nginx blocks above, then re-run."
   fi
 
