@@ -7,7 +7,7 @@ import { Building2, Loader2, Copy, CheckCircle2, AlertTriangle, Eye, EyeOff } fr
 import { provisionWorkspace } from "@/lib/pluto/workspace-provisioner.functions";
 
 type Result =
-  | { ok: true; workspaceId: string; adminEmail: string; adminPassword: string; userId: string }
+  | { ok: true; workspaceId: string; projectId: string; adminEmail: string; adminPassword: string; userId: string; anonKey: string; serviceKey: string }
   | { ok: false; step: string; error: string; status: number };
 
 export function WorkspaceProvisionCard({
