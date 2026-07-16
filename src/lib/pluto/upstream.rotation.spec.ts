@@ -74,7 +74,7 @@ describe("plutoApi — JWT rotation self-healing (database-import scenario)", ()
     expect(localStorage.getItem(SESSION_KEY)).toContain(FRESH);
 
     // Confirm the second call actually used the fresh bearer.
-    const secondInit = fetchMock.mock.calls[1][1] as RequestInit;
+    const secondInit = (fetchMock.mock.calls[1] as unknown[])[1] as RequestInit;
     const secondAuth = (secondInit.headers as Record<string, string>)["Authorization"];
     expect(secondAuth).toBe(`Bearer ${FRESH}`);
   });
@@ -107,7 +107,7 @@ describe("plutoApi — JWT rotation self-healing (database-import scenario)", ()
 
     // 1st call: stale attempt + retry = 2, 2nd call: 1 → total 3
     expect(fetchMock).toHaveBeenCalledTimes(3);
-    const thirdInit = fetchMock.mock.calls[2][1] as RequestInit;
+    const thirdInit = (fetchMock.mock.calls[2] as unknown[])[1] as RequestInit;
     const thirdAuth = (thirdInit.headers as Record<string, string>)["Authorization"];
     expect(thirdAuth).toBe(`Bearer ${FRESH}`);
   });
@@ -119,7 +119,7 @@ describe("plutoApi — JWT rotation self-healing (database-import scenario)", ()
 
     await plutoApi("/dbio/whoami");
 
-    const url = fetchMock.mock.calls[0][0] as string;
+    const url = (fetchMock.mock.calls[0] as unknown[])[0] as string;
     expect(url).toBe("/api/pluto/dbio/whoami");
   });
 });
