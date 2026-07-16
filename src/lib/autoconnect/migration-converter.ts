@@ -49,6 +49,7 @@ export function tableToSql(t: TableDef): string {
   const ownerCol = t.columns.some((c) => c.name === "user_id") ? "user_id"
     : t.columns.some((c) => c.name === "owner_id") ? "owner_id"
     : "owner_id";
+  lines.push(`DROP POLICY IF EXISTS "${t.name}_owner_all" ON public.${q(t.name)};`);
   lines.push(`CREATE POLICY "${t.name}_owner_all" ON public.${q(t.name)}`);
   lines.push(`  FOR ALL TO authenticated`);
   lines.push(`  USING (${q(ownerCol)} = auth.uid())`);

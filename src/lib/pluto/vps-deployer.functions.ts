@@ -24,6 +24,32 @@ function truncate(s: string, n = 4000): string {
   return s.length > n ? s.slice(0, n) + `\n… (+${s.length - n} chars)` : s;
 }
 
+function isAlreadyExistsApplyError(text: string): boolean {
+  let message = text;
+  try {
+    const parsed = JSON.parse(text) as { message?: unknown; error?: unknown; details?: unknown };
+    message = [parsed.message, parsed.error, parsed.details, text].filter(Boolean).join(" ");
+  } catch {
+    // Keep raw response text.
+  }
+  return /already exists/i.test(message);
+}
+
+function makePolicyCreatesIdempotent(sql: string): string {
+  const policyCreate = /(^|\n)(\s*)CREATE\s+POLICY\s+((?:"(?:[^"]|"")+")|[a-zA-Z_][\w$]*)\s+ON\s+((?:(?:"(?:[^"]|"")+")|[a-zA-Z_][\w$]*)(?:\s*\.\s*(?:(?:"(?:[^"]|"")+")|[a-zA-Z_][\w$]*))?)\s+/gi;
+  return sql.replace(policyCreate, (match, prefix: string, indent: string, policyName: string, tableName: string) => {
+    const before = sql.slice(Math.max(0, sql.indexOf(match) - 160), sql.indexOf(match));
+    if (new RegExp(`DROP\\s+POLICY\\s+IF\\s+EXISTS\\s+${escapeRegExp(policyName)}\\s+ON\\s+${escapeRegExp(tableName)}`, "i").test(before)) {
+      return match;
+    }
+    return `${prefix}${indent}DROP POLICY IF EXISTS ${policyName} ON ${tableName};\n${indent}CREATE POLICY ${policyName} ON ${tableName} `;
+  });
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 async function rawFetch(
   url: string,
   method: string,
@@ -90,7 +116,7 @@ export const pushMigrations = createServerFn({ method: "POST" })
     //   POST /admin/v1/migrations/{id}/apply                        -> 200 { ok, migration }
     const base = getVpsBaseUrl();
     const name = (data.label ?? `auto-${Date.now()}`).replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 120);
-    const body = JSON.stringify({ name, up_sql: data.sql, workspace_id: data.workspaceId });
+    const body = JSON.stringify({ name, up_sql: makePolicyCreatesIdempotent(data.sql), workspace_id: data.workspaceId });
     const created = await rawFetch(`${base}/admin/v1/migrations`, "POST", headers, body, body, 60_000);
     if (!created.ok) return { ok: false, error: created.text || `HTTP ${created.status}`, status: created.status, debug: created.debug };
     let parsed: { id?: string } = {};
@@ -102,7 +128,7 @@ export const pushMigrations = createServerFn({ method: "POST" })
       // Idempotency: treat "already exists" apply errors as success. The
       // migration record is created; the underlying objects are already there
       // from a prior run of the same bundle, so subsequent steps can proceed.
-      const alreadyExists = /already exists/i.test(applied.text);
+      const alreadyExists = isAlreadyExistsApplyError(applied.text);
       if (alreadyExists) {
         return { ok: true, migrationId: id, applied: 0, debug: applied.debug };
       }
@@ -386,14 +412,19 @@ export const deployAll = createServerFn({ method: "POST" })
     // Step 1: push migrations (create + apply)
     const migName = ((data.label ?? `deploy-${Date.now()}`)).replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 120);
     const migStep = await withRetry("push-migrations", "Push migrations (create + apply)", data.maxRetries, async () => {
-      const body = JSON.stringify({ name: migName, up_sql: data.sql, workspace_id: data.workspaceId });
+      const body = JSON.stringify({ name: migName, up_sql: makePolicyCreatesIdempotent(data.sql), workspace_id: data.workspaceId });
       const created = await rawFetch(`${base}/admin/v1/migrations`, "POST", headers, body, body, 60_000);
       if (!created.ok) return { ok: false, detail: `create HTTP ${created.status}: ${created.text.slice(0, 200)}`, debug: created.debug, result: null };
       let parsed: { id?: string } = {}; try { parsed = JSON.parse(created.text); } catch { /* ignore */ }
       const id = parsed.id ?? "";
       if (!id) return { ok: false, detail: "upstream returned no migration id", debug: created.debug, result: null };
       const applied = await rawFetch(`${base}/admin/v1/migrations/${encodeURIComponent(id)}/apply`, "POST", headers, "{}", "{}", 60_000);
-      if (!applied.ok) return { ok: false, detail: `apply HTTP ${applied.status}: ${applied.text.slice(0, 200)}`, debug: applied.debug, result: { migrationId: id } };
+      if (!applied.ok) {
+        if (isAlreadyExistsApplyError(applied.text)) {
+          return { ok: true, detail: `migration ${id} already applied; continuing`, debug: applied.debug, result: { migrationId: id, idempotent: true, applyBody: applied.text.slice(0, 500) } };
+        }
+        return { ok: false, detail: `apply HTTP ${applied.status}: ${applied.text.slice(0, 200)}`, debug: applied.debug, result: { migrationId: id } };
+      }
       return { ok: true, detail: `migration ${id} applied`, debug: applied.debug, result: { migrationId: id, applyBody: applied.text.slice(0, 500) } };
     });
     steps.push(migStep);
