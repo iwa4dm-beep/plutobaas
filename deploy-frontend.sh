@@ -16,6 +16,7 @@ PORT="${PORT:-3001}"
 PUBLIC_URL="${PUBLIC_URL:-https://app.timescard.cloud/}"
 BUN_BIN="${BUN_BIN:-/root/.bun/bin/bun}"
 NODE_BIN="${NODE_BIN:-$(command -v node || true)}"
+RESET_APP_DOMAIN="${RESET_APP_DOMAIN:-0}"
 
 public_host() {
   local url="${PUBLIC_URL#http://}"
@@ -128,6 +129,14 @@ same_nginx_file() {
   [ "$(readlink -f "$left")" = "$(readlink -f "$right")" ]
 }
 
+nginx_dump_has_active_dashboard_block() {
+  local dump="$1"
+  printf '%s\n' "$dump" | grep -qE "server_name[[:space:]]+${DOMAIN}([[:space:];]|$)" || return 1
+  printf '%s\n' "$dump" | grep -qF "ssl_certificate     /etc/letsencrypt/live/${DOMAIN}/fullchain.pem" || return 1
+  printf '%s\n' "$dump" | grep -qF "ssl_certificate_key /etc/letsencrypt/live/${DOMAIN}/privkey.pem" || return 1
+  printf '%s\n' "$dump" | grep -qF "proxy_pass         http://127.0.0.1:${PORT}" || return 1
+}
+
 install_nginx_site_link() {
   [ -n "$NGINX_SITE" ] || select_nginx_site_path
 
@@ -160,13 +169,19 @@ assert_nginx_site_loaded() {
 
   loaded_path=""
   for marker_path in $expected_paths; do
-    if printf '%s\n' "$dump" | grep -qF "# configuration file: ${marker_path}:"; then
+    if printf '%s\n' "$dump" | grep -qF "# configuration file: ${marker_path}:" \
+      || printf '%s\n' "$dump" | grep -qF "# configuration file ${marker_path}:"; then
       loaded_path="$marker_path"
       break
     fi
   done
 
   if [ -z "$loaded_path" ]; then
+    if nginx_dump_has_active_dashboard_block "$dump"; then
+      ok "nginx active config contains the managed ${DOMAIN} HTTPS proxy block"
+      return 0
+    fi
+
     show_tls_diagnostics
     fail "nginx is not loading the dashboard site. Expected one of: ${expected_paths}. Fix nginx include patterns, then re-run."
   fi
@@ -185,7 +200,7 @@ remove_conflicting_nginx_configs() {
   # win SNI matching or keep nginx from loading our managed per-domain 443
   # block, which makes nginx serve another domain's certificate.
   local files f
-  files="$($SUDO grep -RlF "$DOMAIN" /etc/nginx/sites-enabled /etc/nginx/sites-available /etc/nginx/conf.d 2>/dev/null | sort -u || true)"
+  files="$($SUDO grep -RlF "$DOMAIN" /etc/nginx/sites-enabled /etc/nginx/sites-available /etc/nginx/conf.d "$NGINX_MANAGED_DIR" 2>/dev/null | sort -u || true)"
   if [ -n "$files" ]; then
     for f in $files; do
       $SUDO grep -qE 'server_name[[:space:]]' "$f" 2>/dev/null || continue
@@ -220,11 +235,26 @@ show_tls_diagnostics() {
   echo "--- public HTTPS endpoint headers (certificate verification disabled for diagnostics) ---"
   curl -kfsSI --max-time 10 "$PUBLIC_BASE/" 2>/dev/null | sed -n '1,40p' || true
   echo "--- nginx files mentioning ${DOMAIN} ---"
-  $SUDO grep -RlnF "$DOMAIN" /etc/nginx/sites-enabled /etc/nginx/sites-available /etc/nginx/conf.d 2>/dev/null || true
+  $SUDO grep -RlnF "$DOMAIN" /etc/nginx/sites-enabled /etc/nginx/sites-available /etc/nginx/conf.d "$NGINX_MANAGED_DIR" 2>/dev/null || true
   echo "--- active nginx 443/server_name/ssl_certificate lines ---"
   nginx_dump | grep -nE 'listen .*443|server_name|ssl_certificate' | tail -240 || true
   echo "--- nginx logs ---"
   $SUDO journalctl -u nginx -n 80 --no-pager 2>/dev/null || true
+}
+
+reset_app_domain_nginx_tls() {
+  warn "RESET_APP_DOMAIN=1 — removing only ${DOMAIN} nginx configs and TLS cert, then rebuilding fresh"
+  $SUDO rm -f \
+    "$NGINX_AVAILABLE" "$NGINX_ENABLED" "$NGINX_CONF_D" "$NGINX_MANAGED_SITE" \
+    "/etc/nginx/sites-enabled/${DOMAIN}" "/etc/nginx/sites-available/${DOMAIN}" \
+    "/etc/nginx/sites-enabled/${DOMAIN}-le-ssl.conf" "/etc/nginx/sites-available/${DOMAIN}-le-ssl.conf" \
+    "/etc/nginx/conf.d/${DOMAIN}.conf" "/etc/nginx/conf.d/${DOMAIN}-le-ssl.conf" \
+    2>/dev/null || true
+
+  if command -v certbot >/dev/null 2>&1; then
+    $SUDO certbot delete --cert-name "$DOMAIN" --non-interactive 2>/dev/null || true
+  fi
+  $SUDO rm -rf "/etc/letsencrypt/live/${DOMAIN}" "/etc/letsencrypt/archive/${DOMAIN}" "/etc/letsencrypt/renewal/${DOMAIN}.conf" 2>/dev/null || true
 }
 
 verify_served_tls_san() {
