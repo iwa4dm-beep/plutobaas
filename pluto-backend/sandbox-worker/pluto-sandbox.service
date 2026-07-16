@@ -1,15 +1,22 @@
 [Unit]
 Description=Pluto Sandbox Worker (ZIP unpacker + static site host)
-After=network.target
+After=network-online.target
+Wants=network-online.target
+Conflicts=pluto-sandbox.service
+StartLimitIntervalSec=60
+StartLimitBurst=20
 
 [Service]
 Type=simple
 User=www-data
 Group=www-data
 EnvironmentFile=/etc/pluto/sandbox-worker.env
+ExecStartPre=+/opt/pluto/sandbox-worker/free-port.sh
 ExecStart=/usr/bin/node /opt/pluto/sandbox-worker/sandbox-worker.mjs
 Restart=on-failure
 RestartSec=3s
+KillMode=mixed
+TimeoutStopSec=10s
 StandardOutput=journal
 StandardError=journal
 # Filesystem
