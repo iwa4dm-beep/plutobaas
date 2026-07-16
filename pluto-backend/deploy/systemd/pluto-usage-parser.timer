@@ -1,0 +1,11 @@
+[Unit]
+Description=Run pluto-usage-parser every 5 minutes
+
+[Timer]
+OnBootSec=90s
+OnUnitActiveSec=5min
+AccuracySec=30s
+Unit=pluto-usage-parser.service
+
+[Install]
+WantedBy=timers.target

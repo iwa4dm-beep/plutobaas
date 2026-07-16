@@ -1,0 +1,10 @@
+[Unit]
+Description=Pluto per-slug nginx log parser (Phase F)
+After=nginx.service
+Wants=nginx.service
+
+[Service]
+Type=oneshot
+EnvironmentFile=-/etc/pluto/reconciler.env
+ExecStart=/opt/pluto/deploy/parse-nginx-logs.sh
+Nice=15
