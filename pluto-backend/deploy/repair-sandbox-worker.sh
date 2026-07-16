@@ -69,21 +69,41 @@ install -m 0755 "$WORKER_SRC" /opt/pluto/sandbox-worker/sandbox-worker.mjs
 install -d -o www-data -g www-data -m 0755 "$SITES_ROOT"
 install -d -m 0750 "$(dirname "$ENV_FILE")"
 
+if [ -f "$HERE/reset-sandbox-worker-port.sh" ]; then
+  install -m 0755 "$HERE/reset-sandbox-worker-port.sh" /opt/pluto/sandbox-worker/reset-sandbox-worker-port.sh
+fi
 cat > /opt/pluto/sandbox-worker/free-port.sh <<'EOF'
 #!/usr/bin/env bash
 set -uo pipefail
 PORT="${SANDBOX_WORKER_PORT:-${PORT:-8787}}"
-if command -v fuser >/dev/null 2>&1; then
-  fuser -k "${PORT}/tcp" 2>/dev/null || true
+UNIT="${UNIT:-pluto-sandbox-worker}"
+if [ -x /opt/pluto/sandbox-worker/reset-sandbox-worker-port.sh ]; then
+  SKIP_TARGET_STOP=1 exec /opt/pluto/sandbox-worker/reset-sandbox-worker-port.sh "$PORT"
 fi
-if command -v ss >/dev/null 2>&1; then
-  PIDS="$(ss -H -ltnp "sport = :${PORT}" 2>/dev/null | grep -oE 'pid=[0-9]+' | cut -d= -f2 | sort -u || true)"
-  [ -n "$PIDS" ] && echo "$PIDS" | xargs -r kill -9 2>/dev/null || true
-fi
-pkill -f 'node .*sandbox-worker\.mjs' 2>/dev/null || true
-exit 0
+echo "missing /opt/pluto/sandbox-worker/reset-sandbox-worker-port.sh" >&2
+exit 1
 EOF
 chmod 0755 /opt/pluto/sandbox-worker/free-port.sh
+
+cat > /opt/pluto/sandbox-worker/repair-site-link.sh <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+SLUG="${1:?slug required}"
+SITES_ROOT="${SITES_ROOT:-/var/lib/pluto/sites}"
+SLUG_PATH="${SITES_ROOT}/${SLUG}"
+[ -e "$SLUG_PATH" ] && exit 0
+MATCHES="$(grep -Rsl '"slug"[[:space:]]*:[[:space:]]*"'"$SLUG"'"' "$SITES_ROOT"/*/current.json "$SITES_ROOT"/*/preview.json 2>/dev/null | sed 's#/[^/]*\.json$##' | sort -u || true)"
+COUNT="$(printf '%s\n' "$MATCHES" | sed '/^$/d' | wc -l | tr -d ' ')"
+if [ "$COUNT" = "1" ]; then
+  TARGET="$(printf '%s\n' "$MATCHES" | sed '/^$/d' | head -1)"
+  ln -s "$(basename "$TARGET")" "$SLUG_PATH"
+  echo "✓ repaired slug symlink: $SLUG_PATH -> $(basename "$TARGET")"
+  exit 0
+fi
+echo "✗ cannot repair slug '$SLUG': no unique manifest match under $SITES_ROOT" >&2
+exit 1
+EOF
+chmod 0755 /opt/pluto/sandbox-worker/repair-site-link.sh
 
 echo "▶ Writing $ENV_FILE"
 TMP="$(mktemp)"
