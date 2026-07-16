@@ -24,6 +24,8 @@ import { verifyZip } from "@/lib/autoconnect/zip-verify";
 import { buildBundle } from "@/lib/autoconnect/bundler";
 import { loadRepoAsFile } from "@/lib/autoconnect/github-loader";
 import { deployAll, type DeployAllResult, type DeployStepLog } from "@/lib/pluto/vps-deployer.functions";
+import { getUpstream } from "@/lib/pluto/upstream";
+
 import { RequireWorkspace } from "@/components/pluto/RequireWorkspace";
 import { useWorkspace } from "@/lib/pluto/workspace-context";
 import type { AnalyzeResult, IntegrationPlan } from "@/lib/autoconnect/types";
