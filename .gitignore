@@ -30,3 +30,5 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+e2e/.fixtures/
