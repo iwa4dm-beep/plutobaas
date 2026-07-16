@@ -659,15 +659,26 @@ export const deployAll = createServerFn({ method: "POST" })
     const servedSiteUrl = (process.env.PLUTO_SERVED_SITE_URL ?? "").replace(/\/+$/, "");
 
     // Auto-derive a per-deploy site URL when PLUTO_SERVED_SITE_URL is not set.
-    // Priority for the auto-derived value:
-    //   1. Sandbox worker's returned webRoot (authoritative — the worker just unpacked it)
-    //   2. `${PLUTO_SANDBOX_URL}/sites/<slug>/` (worker convention)
-    //   3. `${VPS_BASE}/sandbox/sites/<slug>/` (nginx location convention)
     // The slug is derived from the bundle filename (without .zip).
     const deploySlug = (filename.replace(/\.zip$/i, "") || data.workspaceId).replace(/[^a-zA-Z0-9._-]/g, "-");
     const sandboxBase = (process.env.PLUTO_SANDBOX_URL ?? "").replace(/\/+$/, "");
+
+    // Priority for the auto-derived value:
+    //   1. PLUTO_SERVED_SITE_URL_TEMPLATE with {slug} placeholder — e.g.
+    //      "https://{slug}.app.timescard.cloud" (nginx wildcard vhost) or
+    //      "https://api.timescard.cloud/sites/{slug}/" (path-based). This is
+    //      the recommended way to "auto-set" PLUTO_SERVED_SITE_URL per deploy
+    //      without hard-coding a slug in .env.
+    //   2. Sandbox worker's returned webRoot (from unpack response).
+    //   3. `${PLUTO_SANDBOX_URL}/sites/<slug>/` (worker /sites/<slug>/ route).
+    //   4. `${VPS_BASE}/sites/<slug>/`         (nginx passthrough to worker).
+    //   5. `${VPS_BASE}/sandbox/sites/<slug>/` (legacy nginx location).
+    const template = (process.env.PLUTO_SERVED_SITE_URL_TEMPLATE ?? "").trim();
+    const expandTemplate = (tpl: string) => tpl.replace(/\{slug\}/g, deploySlug).replace(/\/+$/, "");
     const autoDerivedCandidates: string[] = [];
+    if (template) autoDerivedCandidates.push(expandTemplate(template));
     if (sandboxBase) autoDerivedCandidates.push(`${sandboxBase}/sites/${deploySlug}`);
+    autoDerivedCandidates.push(`${base}/sites/${deploySlug}`);
     autoDerivedCandidates.push(`${base}/sandbox/sites/${deploySlug}`);
 
     const healthStep = await withRetry("health-check", "Health check (functions runtime + bootstrap + served site)", data.maxRetries, async () => {
