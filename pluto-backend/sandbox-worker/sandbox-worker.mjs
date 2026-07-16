@@ -28,14 +28,14 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 import { randomUUID, timingSafeEqual } from "node:crypto";
 
-const PORT = Number(process.env.PORT ?? 8787);
+const PORT = Number(process.env.PORT ?? process.env.SANDBOX_WORKER_PORT ?? 8787);
 const SECRET = process.env.SANDBOX_SHARED_SECRET ?? "";
-const SITES_ROOT = process.env.SITES_ROOT ?? "/var/lib/pluto/sites";
+const SITES_ROOT = process.env.SITES_ROOT ?? process.env.SANDBOX_SITES_ROOT ?? "/var/lib/pluto/sites";
 const UPSTREAM = (process.env.PLUTO_UPSTREAM_URL ?? "http://127.0.0.1:8000").replace(/\/+$/, "");
 const SERVICE_KEY = process.env.PLUTO_SERVICE_ROLE_KEY ?? "";
 
 if (!SECRET) { console.error("SANDBOX_SHARED_SECRET is required"); process.exit(1); }
-if (!SERVICE_KEY) { console.error("PLUTO_SERVICE_ROLE_KEY is required"); process.exit(1); }
+if (!SERVICE_KEY) console.warn("PLUTO_SERVICE_ROLE_KEY is not set; POST /unpack will fail until it is configured");
 
 await fsp.mkdir(SITES_ROOT, { recursive: true });
 
@@ -63,6 +63,7 @@ function safeSlug(s) {
 }
 
 async function fetchBundle(bucket, key) {
+  if (!SERVICE_KEY) throw new Error("PLUTO_SERVICE_ROLE_KEY is required for POST /unpack");
   const url = `${UPSTREAM}/storage/v1/object/${encodeURIComponent(bucket)}/${key.split("/").map(encodeURIComponent).join("/")}`;
   const res = await fetch(url, { headers: { apikey: SERVICE_KEY, authorization: `Bearer ${SERVICE_KEY}` } });
   if (!res.ok) throw new Error(`storage GET HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`);
