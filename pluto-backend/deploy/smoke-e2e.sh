@@ -46,12 +46,16 @@ req() { # req METHOD PATH [BODY]  → prints body, exports LAST_STATUS
   local method="$1" path="$2" body="${3:-}"
   local args=(-sS -o /tmp/pluto_e2e.body -w '%{http_code}' -X "$method" "${HDR_AUTH[@]}" "${HDR_JSON[@]}" --max-time 15)
   if [[ -n "$body" ]]; then args+=(--data "$body"); fi
-  LAST_STATUS="$(curl "${args[@]}" "$BASE_URL$path" || echo 000)"
+  curl "${args[@]}" "$BASE_URL$path" > /tmp/pluto_e2e.status || echo 000 > /tmp/pluto_e2e.status
+  LAST_STATUS="$(cat /tmp/pluto_e2e.status)"
   cat /tmp/pluto_e2e.body
 }
 
 expect_status() { # expect_status CODE CONTEXT
   local want="$1" ctx="$2"
+  if [[ -z "${LAST_STATUS:-}" && -f /tmp/pluto_e2e.status ]]; then
+    LAST_STATUS="$(cat /tmp/pluto_e2e.status)"
+  fi
   if [[ "$LAST_STATUS" != "$want" ]]; then
     echo -e "\n  ── response body ──"
     cat /tmp/pluto_e2e.body 2>/dev/null || true
