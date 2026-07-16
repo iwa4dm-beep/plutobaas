@@ -13,7 +13,7 @@ set -euo pipefail
 APP_DIR="${APP_DIR:-/root/backend-joy}"
 SERVICE="${SERVICE:-pluto-dashboard}"
 PORT="${PORT:-3001}"
-PUBLIC_URL="${PUBLIC_URL:-https://dashboard.timescard.cloud/}"
+PUBLIC_URL="${PUBLIC_URL:-https://app.timescard.cloud/}"
 BUN_BIN="${BUN_BIN:-/root/.bun/bin/bun}"
 NODE_BIN="${NODE_BIN:-$(command -v node || true)}"
 
