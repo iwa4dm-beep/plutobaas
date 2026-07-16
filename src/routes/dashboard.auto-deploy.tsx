@@ -65,6 +65,18 @@ type PendingDeploy = {
   isRollback: boolean;
 };
 
+// Known pipeline step order — used for real-time progression streaming
+// while the `deployAll` server function is executing.
+const PIPELINE_STEPS: Array<{ key: string; label: string }> = [
+  { key: "ensureInfra", label: "Ensure infrastructure" },
+  { key: "push-migrations", label: "Apply migrations" },
+  { key: "upload-bundle", label: "Upload frontend bundle" },
+  { key: "verify-deploy", label: "Verify deploy" },
+  { key: "unpack-serve", label: "Unpack & serve" },
+  { key: "activate-service", label: "Activate bootstrap function" },
+  { key: "health-check", label: "Health check" },
+];
+
 async function blobToBase64(blob: Blob): Promise<string> {
   const buf = new Uint8Array(await blob.arrayBuffer());
   let bin = "";
