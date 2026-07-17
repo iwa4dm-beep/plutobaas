@@ -1083,6 +1083,104 @@ code{background:#1c2740;padding:.15rem .4rem;border-radius:4px}</style></head>
   return manifest;
 }
 
+// ---------- Per-slug shared secret rotation (Feature 1) ----------
+// Each slug can hold an independently-rotated secret. Rotation writes a fresh
+// value to <SITES_ROOT>/.slug-secrets/<slug>.json. No worker restart needed —
+// callers read from disk on every request, so the next inbound call already
+// sees the new secret. Revoked entries stay on disk (audit trail) but fail
+// verifySlugSecret().
+function slugSecretPath(slug) { return path.join(SLUG_SECRETS_DIR, `${slug}.json`); }
+
+async function readSlugSecretRecord(slug) {
+  const s = String(slug || "").toLowerCase();
+  if (!SLUG_RE.test(s)) return null;
+  try {
+    const raw = await fsp.readFile(slugSecretPath(s), "utf-8");
+    return JSON.parse(raw);
+  } catch { return null; }
+}
+
+async function rotateSlugSecret(slug, opts = {}) {
+  const s = String(slug || "").toLowerCase();
+  if (!SLUG_RE.test(s)) throw new Error("invalid_slug");
+  await fsp.mkdir(SLUG_SECRETS_DIR, { recursive: true, mode: 0o700 });
+  const prev = await readSlugSecretRecord(s);
+  const bytes = new Uint8Array(32);
+  (globalThis.crypto ?? require("node:crypto").webcrypto).getRandomValues(bytes);
+  const secret = Buffer.from(bytes).toString("hex");
+  const now = new Date().toISOString();
+  const record = {
+    slug: s,
+    secret,
+    createdAt: now,
+    rotatedAt: now,
+    rotationCount: (prev?.rotationCount ?? 0) + 1,
+    revoked: false,
+    revokedAt: null,
+    previousHash: prev?.secret ? createHash("sha256").update(prev.secret).digest("hex").slice(0, 16) : null,
+    note: typeof opts.note === "string" ? opts.note.slice(0, 200) : null,
+  };
+  const tmp = `${slugSecretPath(s)}.tmp-${randomUUID().slice(0, 6)}`;
+  await fsp.writeFile(tmp, JSON.stringify(record, null, 2), { mode: 0o600 });
+  await fsp.rename(tmp, slugSecretPath(s));
+  return record;
+}
+
+async function revokeSlugSecret(slug) {
+  const s = String(slug || "").toLowerCase();
+  if (!SLUG_RE.test(s)) throw new Error("invalid_slug");
+  const prev = await readSlugSecretRecord(s);
+  if (!prev) return { ok: false, error: "no_secret_for_slug" };
+  const record = { ...prev, revoked: true, revokedAt: new Date().toISOString(), secret: "" };
+  await fsp.writeFile(slugSecretPath(s), JSON.stringify(record, null, 2), { mode: 0o600 });
+  return { ok: true, slug: s, revokedAt: record.revokedAt };
+}
+
+async function slugSecretStatus(slug) {
+  const rec = await readSlugSecretRecord(slug);
+  if (!rec) return { ok: false, slug: String(slug || "").toLowerCase(), hasSecret: false };
+  return {
+    ok: true,
+    slug: rec.slug,
+    hasSecret: !rec.revoked && !!rec.secret,
+    revoked: !!rec.revoked,
+    createdAt: rec.createdAt,
+    rotatedAt: rec.rotatedAt,
+    revokedAt: rec.revokedAt || null,
+    rotationCount: rec.rotationCount ?? 0,
+    secretRef: `SANDBOX_SLUG_SECRET_${rec.slug.replace(/-/g, "_").toUpperCase()}`,
+    fingerprint: rec.secret ? createHash("sha256").update(rec.secret).digest("hex").slice(0, 12) : null,
+  };
+}
+
+function verifySlugSecretHeader(req, slug) {
+  const provided = req.headers["x-slug-secret"];
+  if (typeof provided !== "string" || !provided) return Promise.resolve(false);
+  return readSlugSecretRecord(slug).then((rec) => {
+    if (!rec || rec.revoked || !rec.secret) return false;
+    if (provided.length !== rec.secret.length) return false;
+    try { return timingSafeEqual(Buffer.from(provided), Buffer.from(rec.secret)); } catch { return false; }
+  });
+}
+
+// ---------- Repair history (Feature 2) ----------
+async function appendRepairHistory(entry) {
+  let list = [];
+  try { list = JSON.parse(await fsp.readFile(REPAIR_HISTORY_FILE, "utf-8")); if (!Array.isArray(list)) list = []; } catch { list = []; }
+  list.unshift(entry);
+  if (list.length > REPAIR_HISTORY_MAX) list = list.slice(0, REPAIR_HISTORY_MAX);
+  await fsp.mkdir(SITES_ROOT, { recursive: true });
+  await fsp.writeFile(REPAIR_HISTORY_FILE, JSON.stringify(list, null, 2));
+}
+async function readRepairHistory(limit = 25, filter = {}) {
+  let list = [];
+  try { list = JSON.parse(await fsp.readFile(REPAIR_HISTORY_FILE, "utf-8")); if (!Array.isArray(list)) list = []; } catch { list = []; }
+  if (filter?.slug) list = list.filter((e) => e && e.slug === String(filter.slug).toLowerCase());
+  if (filter?.action) list = list.filter((e) => e && e.action === filter.action);
+  return list.slice(0, Math.max(1, Math.min(200, Number(limit) || 25)));
+}
+
+
 const server = http.createServer(async (req, res) => {
   try {
     const p = requestPath(req);
