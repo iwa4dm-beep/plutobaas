@@ -28,6 +28,7 @@ import { DeploySummaryChecksPanel } from "@/components/auto-deploy/DeploySummary
 import { BuildLogsPanel } from "@/components/auto-deploy/BuildLogsPanel";
 import { DeploymentSettingsPanel } from "@/components/auto-deploy/DeploymentSettingsPanel";
 import { RecommendationsPanel } from "@/components/auto-deploy/RecommendationsPanel";
+import { CustomDomainsPanel } from "@/components/auto-deploy/CustomDomainsPanel";
 import { loadDeploymentSettings } from "@/lib/pluto/deployment-settings";
 import { getUpstream } from "@/lib/pluto/upstream";
 
@@ -1022,6 +1023,9 @@ function AutoDeployInner() {
 
       {/* Build logs — Phase 2 */}
       {deployResult && <BuildLogsPanel result={deployResult} />}
+
+      {/* Custom domains — Phase 5 */}
+      <CustomDomainsPanel workspaceId={workspaceId} currentSlug={slug} />
 
 
       {/* Per-step deploy result */}
