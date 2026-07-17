@@ -81,7 +81,8 @@ function wrapDefault(v: string, type: string): string {
   // quotes, escaping embedded single quotes for the SQL literal, and casting
   // to the JSON type so bad JSON fails at migration time, not runtime.
   const isJson = /^jsonb?$/i.test(type.trim());
-  if (isJson) {
+  const isArray = /\[\]\s*$/.test(type.trim());
+  if (isJson || isArray) {
     let raw = trimmed;
     // Strip a single pair of matching surrounding quotes (single or double).
     if ((raw.startsWith("'") && raw.endsWith("'") && raw.length >= 2) ||
@@ -90,11 +91,17 @@ function wrapDefault(v: string, type: string): string {
     }
     // Unescape SQL-doubled single quotes so we get the intended payload.
     raw = raw.replace(/''/g, "'");
-    // Fall back to an empty JSON object if the payload is empty.
-    if (!raw) raw = "{}";
-    // Validate — if it isn't parseable JSON, defer to conservative empty
-    // object rather than emit SQL that will fail apply.
-    try { JSON.parse(raw); } catch { raw = "{}"; }
+    // Fall back to a conservative empty container if the payload is empty.
+    if (!raw) raw = isJson ? "{}" : "{}";
+    if (isJson) {
+      try { JSON.parse(raw); } catch { raw = "{}"; }
+    } else {
+      // For array types, ensure the literal is a valid Postgres array literal
+      // (starts with `{` and ends with `}`). If Laravel gave us `[]` or JSON,
+      // normalize to `{}` — an empty Postgres array — rather than emit SQL
+      // that fails apply with `malformed array literal`.
+      if (!/^\{.*\}$/s.test(raw)) raw = "{}";
+    }
     const escaped = raw.replace(/'/g, "''");
     return `'${escaped}'::${type.trim().toLowerCase()}`;
   }
