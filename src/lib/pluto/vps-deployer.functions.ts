@@ -426,10 +426,25 @@ const DeployAllInput = z.object({
 
 
 
-export type DeployStepKey = "ensure-infra" | "push-migrations" | "upload-bundle" | "verify-deploy" | "unpack-serve" | "activate-service" | "health-check";
+export type DeployStepKey = "ensure-infra" | "push-migrations" | "upload-bundle" | "verify-deploy" | "unpack-serve" | "activate-service" | "health-check" | "verify-ssl";
 export type DeployStepAttempt = { attempt: number; ok: boolean; detail: string; debug: StepDebug | null; startedAt: string; latencyMs: number };
 export type DeployStepLog = { key: DeployStepKey; label: string; ok: boolean; attempts: DeployStepAttempt[]; result: string | null };
 export type LiveUrlProbe = { url: string; status: number; reachable: boolean; contentType: string | null; snippet: string; latencyMs: number };
+export type SslProbe = {
+  url: string;
+  ok: boolean;
+  httpsStatus: number;
+  handshakeMs: number;
+  error?: string;
+  cert?: {
+    issuer: string | null;
+    subject: string | null;
+    validFrom: string | null;
+    validTo: string | null;
+    daysUntilExpiry: number | null;
+    hostnameMatch: boolean | null;
+  };
+};
 type JsonPrimitive = string | number | boolean | null;
 type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue };
 
