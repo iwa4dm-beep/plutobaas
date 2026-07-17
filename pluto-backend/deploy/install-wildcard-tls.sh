@@ -33,6 +33,46 @@ if ! command -v certbot >/dev/null 2>&1; then
   $SUDO apt-get install -y certbot python3-certbot-dns-cloudflare
 fi
 
+# Ensure the Cloudflare DNS plugin is actually available to THIS certbot.
+# `certbot plugins` lists all registered plugins; if dns-cloudflare is missing,
+# certbot rejects --dns-cloudflare-* flags with "unrecognized arguments".
+ensure_cf_plugin() {
+  if $SUDO certbot plugins 2>/dev/null | grep -qi 'dns-cloudflare'; then
+    return 0
+  fi
+  echo "▶ certbot is missing the dns-cloudflare plugin — installing"
+  # apt path (Debian/Ubuntu certbot from apt)
+  $SUDO apt-get update -y >/dev/null 2>&1 || true
+  $SUDO apt-get install -y python3-certbot-dns-cloudflare >/dev/null 2>&1 || true
+  if $SUDO certbot plugins 2>/dev/null | grep -qi 'dns-cloudflare'; then
+    return 0
+  fi
+  # snap path (certbot from snap)
+  if command -v snap >/dev/null 2>&1 && snap list certbot >/dev/null 2>&1; then
+    echo "▶ installing certbot-dns-cloudflare via snap"
+    $SUDO snap set certbot trust-plugin-with-root=ok || true
+    $SUDO snap install certbot-dns-cloudflare || true
+    $SUDO snap connect certbot:plugin certbot-dns-cloudflare || true
+    if $SUDO certbot plugins 2>/dev/null | grep -qi 'dns-cloudflare'; then
+      return 0
+    fi
+  fi
+  # pipx path (some distros ship certbot via pipx)
+  if command -v pipx >/dev/null 2>&1; then
+    $SUDO pipx inject certbot certbot-dns-cloudflare || true
+    if $SUDO certbot plugins 2>/dev/null | grep -qi 'dns-cloudflare'; then
+      return 0
+    fi
+  fi
+  echo "✗ Could not install the certbot dns-cloudflare plugin automatically."
+  echo "  Try one of:"
+  echo "    sudo apt-get install -y python3-certbot-dns-cloudflare"
+  echo "    sudo snap install certbot-dns-cloudflare \\"
+  echo "      && sudo snap set certbot trust-plugin-with-root=ok \\"
+  echo "      && sudo snap connect certbot:plugin certbot-dns-cloudflare"
+  return 1
+}
+
 # If CF_API_TOKEN is provided in env, materialise/update the ini file automatically.
 if [ -n "${CF_API_TOKEN:-}" ]; then
   echo "▶ writing Cloudflare credentials to $CF_INI"
