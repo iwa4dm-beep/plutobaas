@@ -167,3 +167,103 @@ export const preflightAndHeal = createServerFn({ method: "POST" })
 
     return { api, worker, ssl, slug404, suggestions: [...suggestions] };
   });
+
+// ---- Per-slug cert status ---------------------------------------------------
+
+export type SlugCertStatus = {
+  ok: boolean;
+  fqdn: string;
+  exists: boolean;
+  source: "per-slug" | "wildcard" | null;
+  notBefore?: string | null;
+  notAfter?: string | null;
+  daysLeft?: number | null;
+  issuer?: string;
+  subject?: string;
+  sans?: string[];
+  coversFqdn?: boolean;
+  hint?: string | null;
+  error?: string;
+};
+
+const CertStatusInput = z.object({
+  slug: z.string().min(1).max(64),
+  wildcard: z.string().min(3).max(253).optional(),
+});
+
+export const getSlugCertStatus = createServerFn({ method: "GET" })
+  .inputValidator((d: unknown) => CertStatusInput.parse(d))
+  .handler(async ({ data }): Promise<SlugCertStatus> => {
+    const base = getVpsBaseUrl();
+    const sandboxUrl = (envFirst("PLUTO_SANDBOX_URL") || `${base}/sandbox`).replace(/\/+$/, "");
+    const secret = envFirst("PLUTO_SANDBOX_SECRET", "PLUTO_SANDBOX_WORKER_SECRET", "SANDBOX_SHARED_SECRET");
+    const wildcard = data.wildcard || envFirst("PLUTO_WILDCARD_HOST") || "app.timescard.cloud";
+    const url = `${sandboxUrl}/admin/cert-status?slug=${encodeURIComponent(data.slug)}&wildcard=${encodeURIComponent(wildcard)}`;
+    const fqdn = `${data.slug}.${wildcard}`;
+    if (!secret) {
+      return { ok: false, fqdn, exists: false, source: null, error: "PLUTO_SANDBOX_SECRET not configured" };
+    }
+    try {
+      const r = await fetch(url, { headers: { "x-sandbox-secret": secret, accept: "application/json" } });
+      const text = await r.text();
+      if (!r.ok) return { ok: false, fqdn, exists: false, source: null, error: `HTTP ${r.status}: ${text.slice(0, 200)}` };
+      return JSON.parse(text) as SlugCertStatus;
+    } catch (e) {
+      return { ok: false, fqdn, exists: false, source: null, error: (e as Error).message };
+    }
+  });
+
+// ---- Batch per-slug HTTP-01 issuance ---------------------------------------
+
+export type BatchIssueResult = {
+  slug: string;
+  ok: boolean;
+  exitCode: number;
+  durationMs: number;
+  tail: string;
+  hint: string | null;
+};
+
+const BatchInput = z.object({
+  slugs: z.array(z.string().min(1).max(64)).min(1).max(25),
+  wildcard: z.string().min(3).max(253).optional(),
+  acmeEmail: z.string().email().max(254).optional(),
+});
+
+export const batchIssuePerSlugCerts = createServerFn({ method: "POST" })
+  .inputValidator((d: unknown) => BatchInput.parse(d))
+  .handler(async ({ data }): Promise<{ results: BatchIssueResult[] }> => {
+    const base = getVpsBaseUrl();
+    const sandboxUrl = (envFirst("PLUTO_SANDBOX_URL") || `${base}/sandbox`).replace(/\/+$/, "");
+    const secret = envFirst("PLUTO_SANDBOX_SECRET", "PLUTO_SANDBOX_WORKER_SECRET", "SANDBOX_SHARED_SECRET");
+    if (!secret) {
+      return { results: data.slugs.map((slug) => ({ slug, ok: false, exitCode: -1, durationMs: 0, tail: "", hint: "PLUTO_SANDBOX_SECRET not configured in Lovable Cloud." })) };
+    }
+    const endpoint = `${sandboxUrl}/admin/repair`;
+    // Sequential — each certbot run should not be parallelised (nginx reload, LE rate limits).
+    const results: BatchIssueResult[] = [];
+    for (const slug of data.slugs) {
+      const t0 = Date.now();
+      try {
+        const r = await fetch(endpoint, {
+          method: "POST",
+          headers: { "content-type": "application/json", "x-sandbox-secret": secret, accept: "application/json" },
+          body: JSON.stringify({ action: "per-slug-ssl", slug, wildcard: data.wildcard ?? "", acmeEmail: data.acmeEmail ?? "" }),
+        });
+        const text = await r.text();
+        let parsed: { ok?: boolean; exitCode?: number; tail?: string; hint?: string | null } = {};
+        try { parsed = JSON.parse(text); } catch { /* keep raw */ }
+        results.push({
+          slug,
+          ok: parsed.ok !== false && (parsed.exitCode == null || parsed.exitCode === 0),
+          exitCode: typeof parsed.exitCode === "number" ? parsed.exitCode : r.status,
+          durationMs: Date.now() - t0,
+          tail: (typeof parsed.tail === "string" ? parsed.tail : text).slice(-2048),
+          hint: typeof parsed.hint === "string" ? parsed.hint : null,
+        });
+      } catch (e) {
+        results.push({ slug, ok: false, exitCode: -1, durationMs: Date.now() - t0, tail: "", hint: (e as Error).message });
+      }
+    }
+    return { results };
+  });

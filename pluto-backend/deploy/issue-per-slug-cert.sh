@@ -71,22 +71,64 @@ if [[ ! -f "$SITE_ROOT/current/index.html" ]]; then
 HTML
 fi
 
-# 4) DNS sanity check (non-fatal; certbot will fail loudly if wrong)
-if command -v getent >/dev/null 2>&1; then
-  RESOLVED="$(getent hosts "$FQDN" | awk '{print $1}' | head -n1 || true)"
-  if [[ -z "$RESOLVED" ]]; then
-    echo "!! Warning: ${FQDN} does not resolve. Add DNS record before retrying."
-  else
-    echo "   DNS: ${FQDN} -> ${RESOLVED}"
+# 4) Determine this VPS's public IP (for guidance in DNS errors)
+public_ip() {
+  local ip=""
+  for src in "https://api.ipify.org" "https://ifconfig.me" "https://icanhazip.com"; do
+    ip="$(curl -fsS --max-time 3 "$src" 2>/dev/null | tr -d '[:space:]' || true)"
+    [[ "$ip" =~ ^[0-9.]+$ ]] && { echo "$ip"; return; }
+  done
+  # Fallback: primary route interface
+  ip route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src"){print $(i+1); exit}}'
+}
+VPS_IP="$(public_ip || true)"
+
+# 5) DNS sanity check — fail early with a precise remediation.
+echo "==> DNS check for ${FQDN}"
+DIG_A="$(command -v dig >/dev/null 2>&1 && dig +short A "$FQDN" @1.1.1.1 2>/dev/null | tr '\n' ' ' || true)"
+RESOLVED="$(getent hosts "$FQDN" 2>/dev/null | awk '{print $1}' | head -n1 || true)"
+if [[ -z "$DIG_A" && -z "$RESOLVED" ]]; then
+  cat >&2 <<MSG
+✗ DNS resolution failed for ${FQDN}.
+
+  HTTP-01 challenge requires ${FQDN} to point at this VPS BEFORE certbot runs.
+  Add ONE of these DNS records at your registrar (e.g. Hostinger):
+
+    Option A — per-slug (this slug only):
+      Type: A
+      Name: ${SLUG}.${BASE%%.*}          # subdomain part relative to your zone
+      Value: ${VPS_IP:-<this-VPS-IPv4>}
+      TTL:  300
+
+    Option B — wildcard (covers every future slug):
+      Type: A
+      Name: *.${BASE%%.*}                # e.g. *.app  for zone timescard.cloud
+      Value: ${VPS_IP:-<this-VPS-IPv4>}
+      TTL:  300
+
+  After adding the record, wait 30–120s for propagation, then rerun:
+      sudo bash pluto-backend/deploy/issue-per-slug-cert.sh ${SLUG} ${BASE}
+MSG
+  exit 10
+fi
+if [[ -n "$DIG_A" ]]; then echo "   dig  A: ${DIG_A}"; fi
+if [[ -n "$RESOLVED" ]]; then echo "   host A: ${RESOLVED}"; fi
+if [[ -n "$VPS_IP" && -n "$DIG_A$RESOLVED" ]]; then
+  MATCH=0
+  for ip in $DIG_A $RESOLVED; do [[ "$ip" == "$VPS_IP" ]] && MATCH=1; done
+  if [[ "$MATCH" -eq 0 ]]; then
+    cat >&2 <<MSG
+✗ DNS mismatch: ${FQDN} resolves to '${DIG_A:-$RESOLVED}' but this VPS is ${VPS_IP}.
+
+  Update the A record for ${FQDN} (or *.${BASE%%.*}) to point to ${VPS_IP}
+  and rerun this script. HTTP-01 challenge will fail otherwise.
+MSG
+    exit 11
   fi
+  echo "   ✓ DNS points at this VPS (${VPS_IP})"
 fi
 
-# 5) Pre-issue: make sure port 80 is reachable for HTTP-01. If nginx isn't
-#    running yet with any http vhost for this FQDN, `certbot certonly --webroot`
-#    still works as long as *some* server_name covers the host on :80. The
-#    existing wildcard-app.conf already listens on :80 for *.<base>, which is
-#    enough. If the wildcard vhost isn't installed we install a stub HTTP-only
-#    server for this slug so the challenge can be served.
+# 6) Ensure nginx serves the ACME challenge for this FQDN on :80.
 if ! nginx -T 2>/dev/null | grep -qE "server_name[[:space:]]+.*\\*\\.${BASE//./\\.}"; then
   STUB="/etc/nginx/sites-available/pluto-slug-${SLUG}-acme.conf"
   cat > "$STUB" <<CONF
@@ -103,14 +145,53 @@ CONF
   systemctl reload nginx
 fi
 
-# 6) Request the certificate
-certbot certonly \
-  --webroot -w "$WEBROOT" \
-  -d "$FQDN" \
-  --email "$EMAIL" \
-  --agree-tos --no-eff-email \
-  --non-interactive \
-  --keep-until-expiring
+# 6a) Self-probe the HTTP-01 path before letting certbot hit LE's rate limits.
+TOKEN="preflight-$(date +%s)-$RANDOM"
+echo "$TOKEN" > "$WEBROOT/.well-known/acme-challenge/$TOKEN"
+chown -R www-data:www-data "$WEBROOT" 2>/dev/null || true
+CHAL_URL="http://${FQDN}/.well-known/acme-challenge/${TOKEN}"
+SELF="$(curl -fsS --max-time 8 "$CHAL_URL" 2>/dev/null || true)"
+rm -f "$WEBROOT/.well-known/acme-challenge/$TOKEN"
+if [[ "$SELF" != "$TOKEN" ]]; then
+  cat >&2 <<MSG
+✗ HTTP-01 preflight failed for ${CHAL_URL}
+  Expected body: ${TOKEN}
+  Got:           $(echo -n "${SELF:0:120}" | head -c 120)
+
+  Likely causes:
+    1. Firewall/UFW is blocking port 80. Run:  sudo ufw allow 80/tcp
+    2. Another service is bound to :80 in front of nginx (Cloudflare Tunnel,
+       Caddy, Apache). Check:  sudo ss -tlnp | grep ':80'
+    3. Nginx isn't reloading — verify:  sudo nginx -t && sudo systemctl reload nginx
+    4. DNS is pointing at a proxy (Cloudflare orange-cloud) that hides
+       /.well-known/acme-challenge/. Set the record to DNS-only (grey cloud)
+       or use Cloudflare DNS-01 via setup-wildcard-subdomains.sh.
+
+  Not calling certbot to avoid burning the Let's Encrypt failure quota.
+MSG
+  exit 12
+fi
+echo "   ✓ HTTP-01 self-probe ok"
+
+# 7) Request the certificate
+if ! certbot certonly \
+    --webroot -w "$WEBROOT" \
+    -d "$FQDN" \
+    --email "$EMAIL" \
+    --agree-tos --no-eff-email \
+    --non-interactive \
+    --keep-until-expiring; then
+  cat >&2 <<MSG
+✗ certbot failed to issue a certificate for ${FQDN}.
+  Inspect the last error above and /var/log/letsencrypt/letsencrypt.log
+  Common causes:
+    - Rate limit hit (5 failed attempts/hour or 50 certs/week per domain).
+      Wait or use --staging while diagnosing.
+    - CAA record on ${BASE} disallows letsencrypt.org (check DNS CAA).
+    - IPv6 AAAA record present but not reachable — remove AAAA or make it work.
+MSG
+  exit 13
+fi
 
 # 7) Render and enable the per-slug HTTPS vhost
 if [[ ! -f "$TEMPLATE" ]]; then

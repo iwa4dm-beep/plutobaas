@@ -1409,6 +1409,56 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, { ok: true, count: list.length, entries: list });
     }
 
+    // GET /admin/cert-status?slug=<slug>&wildcard=<base> — inspect Let's Encrypt cert on disk.
+    // Reads /etc/letsencrypt/live/<slug>.<base>/cert.pem (or the wildcard live dir) via `openssl x509`.
+    if (req.method === "GET" && (p === "/admin/cert-status" || p === "/sandbox/admin/cert-status")) {
+      const slug = String(q.get("slug") || "").toLowerCase().trim();
+      const base = String(q.get("wildcard") || "app.timescard.cloud").toLowerCase().trim();
+      if (!/^[a-z0-9][a-z0-9-]{0,38}[a-z0-9]$/.test(slug)) return json(res, 400, { error: "invalid_slug" });
+      if (!/^[a-z0-9.-]{3,253}$/.test(base)) return json(res, 400, { error: "invalid_wildcard" });
+      const fqdn = `${slug}.${base}`;
+      // Prefer per-slug live dir; fall back to wildcard dir.
+      const perSlugLive = `/etc/letsencrypt/live/${fqdn}`;
+      const wildcardLive = `/etc/letsencrypt/live/${base}`;
+      let liveDir = null; let source = null;
+      try { await fsp.access(`${perSlugLive}/cert.pem`); liveDir = perSlugLive; source = "per-slug"; }
+      catch {
+        try { await fsp.access(`${wildcardLive}/cert.pem`); liveDir = wildcardLive; source = "wildcard"; } catch {}
+      }
+      if (!liveDir) {
+        return json(res, 200, {
+          ok: false, fqdn, source: null, exists: false,
+          hint: `No certificate on disk for ${fqdn}. Issue one with per-slug-ssl or wildcard-ssl.`,
+        });
+      }
+      const runOpenssl = (args) => new Promise((resolve) => {
+        const out = []; const err = [];
+        const c = spawn("openssl", args, { stdio: ["ignore", "pipe", "pipe"] });
+        c.stdout.on("data", (b) => out.push(b));
+        c.stderr.on("data", (b) => err.push(b));
+        c.on("close", (code) => resolve({ code: code ?? -1, stdout: Buffer.concat(out).toString("utf8"), stderr: Buffer.concat(err).toString("utf8") }));
+        c.on("error", () => resolve({ code: -1, stdout: "", stderr: "openssl not available" }));
+      });
+      const info = await runOpenssl(["x509", "-in", `${liveDir}/cert.pem`, "-noout", "-enddate", "-startdate", "-issuer", "-subject", "-ext", "subjectAltName"]);
+      if (info.code !== 0) return json(res, 200, { ok: false, fqdn, source, exists: true, error: info.stderr.slice(-400) });
+      const grab = (re) => (info.stdout.match(re)?.[1] || "").trim();
+      const notAfterStr = grab(/notAfter=(.+)/);
+      const notBeforeStr = grab(/notBefore=(.+)/);
+      const issuer = grab(/issuer=(.+)/);
+      const subject = grab(/subject=(.+)/);
+      const sanBlock = info.stdout.split(/X509v3 Subject Alternative Name:/i)[1] || "";
+      const sans = sanBlock.split("\n")[1]?.split(",").map((s) => s.trim().replace(/^DNS:/, "")).filter(Boolean) || [];
+      const notAfter = notAfterStr ? new Date(notAfterStr).toISOString() : null;
+      const notBefore = notBeforeStr ? new Date(notBeforeStr).toISOString() : null;
+      const daysLeft = notAfter ? Math.round((new Date(notAfter).getTime() - Date.now()) / 86400000) : null;
+      const covers = sans.some((s) => s === fqdn || (s.startsWith("*.") && fqdn.endsWith(s.slice(1))));
+      return json(res, 200, {
+        ok: true, fqdn, source, exists: true, notBefore, notAfter, daysLeft,
+        issuer, subject, sans, coversFqdn: covers,
+        hint: daysLeft != null && daysLeft < 15 ? `Cert expires in ${daysLeft} days — renewal recommended.` : null,
+      });
+    }
+
     // ---------- Feature 1: per-slug secret rotation ----------
     // POST /admin/secrets/rotate   { slug, note? }
     // POST /admin/secrets/revoke   { slug }
