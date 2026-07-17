@@ -2,7 +2,7 @@
 # Full post-deploy verifier — proves nginx → worker → static bundle works
 # end-to-end for a given slug. Combines:
 #   1. worker /healthz on 127.0.0.1:8787
-#   2. nginx → /sandbox/healthz over HTTPS  (api.<APEX>)
+#   2. nginx → /sandbox/healthz over HTTPS + authenticated /sandbox/health
 #   3. /site-status/<slug> readiness readout
 #   4. nginx → /sites/<slug>/ over HTTPS
 #   5. served-site probe (delegates to verify-served-site.sh)
@@ -43,6 +43,24 @@ else
   bad "https://${API}/sandbox/healthz → HTTP ${code} (nginx→worker routing broken?)"
   echo "     nginx test:   sudo nginx -t"
   echo "     nginx reload: sudo systemctl reload nginx"
+fi
+
+SECRET="$(grep -E '^SANDBOX_SHARED_SECRET=' /etc/pluto/sandbox-worker.env 2>/dev/null | tail -1 | cut -d= -f2- || true)"
+if [ -n "$SECRET" ]; then
+  code="$(curl -s -o /tmp/_sandbox_auth_health.json -w '%{http_code}' --max-time 8 \
+    -H "x-sandbox-secret: ${SECRET}" "https://${API}/sandbox/health?slug=${SLUG}" || echo 000)"
+  if [ "$code" = "200" ]; then
+    ok "authenticated /sandbox/health confirmed secret + last deploy status"
+    cat /tmp/_sandbox_auth_health.json | python3 -m json.tool 2>/dev/null | head -n 80 || cat /tmp/_sandbox_auth_health.json
+    echo
+  else
+    bad "authenticated /sandbox/health → HTTP ${code}"
+    echo "     Fix worker routing/code: sudo bash deploy/refresh-worker.sh && sudo systemctl reload nginx"
+    cat /tmp/_sandbox_auth_health.json 2>/dev/null | head -c 300; echo
+  fi
+else
+  bad "SANDBOX_SHARED_SECRET missing from /etc/pluto/sandbox-worker.env"
+  echo "     Fix now: sudo bash deploy/print-sandbox-secret.sh"
 fi
 
 step "3/5  Site readiness — /site-status/${SLUG}"
