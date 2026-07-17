@@ -188,13 +188,17 @@ export function CustomDomainsPanel({ workspaceId, currentSlug }: Props) {
       toast.error("Hostname already added");
       return;
     }
+    const trimmedExpected =
+      recordType === "TXT"
+        ? parseExpectedValues("TXT", expectedValue).join("\n")
+        : expectedValue.trim();
     const row: CustomDomain = {
       id: newDomainId(),
       hostname: h,
       slug: slug.trim(),
       recordType,
-      expectedValue: expectedValue.trim(),
-      targetIp: recordType === "A" ? expectedValue.trim() : undefined,
+      expectedValue: trimmedExpected,
+      targetIp: recordType === "A" ? trimmedExpected : undefined,
       status: "pending",
       createdAt: new Date().toISOString(),
       sslStatus: "unknown",
@@ -203,7 +207,10 @@ export function CustomDomainsPanel({ workspaceId, currentSlug }: Props) {
     };
     upsertCustomDomain(workspaceId, row);
     setHostname("");
-    toast.success(`Added ${h}. Add a ${recordType} record and Verify will run automatically.`);
+    const count = recordType === "TXT" ? parseExpectedValues("TXT", trimmedExpected).length : 1;
+    toast.success(
+      `Added ${h}. Add ${count > 1 ? `any of the ${count} ${recordType} values` : `a ${recordType} record`} and Verify will run automatically.`,
+    );
   };
 
   const handleVerify = async (row: CustomDomain) => {
