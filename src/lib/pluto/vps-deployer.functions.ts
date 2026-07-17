@@ -592,7 +592,7 @@ export const deployAll = createServerFn({ method: "POST" })
         null,
         null,
         15_000,
-      ).catch((e) => ({ ok: false, status: 0, text: String(e?.message ?? e), debug: null } as Awaited<ReturnType<typeof rawFetch>>));
+      ).catch((e) => ({ ok: false, status: 0, text: String(e?.message ?? e), debug: null as unknown as Awaited<ReturnType<typeof rawFetch>>["debug"] }));
       if (hp && hp.status === 401) {
         return {
           ok: false,
