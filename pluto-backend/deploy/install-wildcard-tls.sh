@@ -93,6 +93,7 @@ if [ "${FORCE_MANUAL:-0}" = "1" ] || [ ! -f "$CF_INI" ]; then
     --cert-name "$APEX" \
     -d "*.${APEX}" -d "${APEX}"
 else
+  ensure_cf_plugin
   $SUDO certbot certonly \
     --dns-cloudflare \
     --dns-cloudflare-credentials "$CF_INI" \
