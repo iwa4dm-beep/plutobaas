@@ -212,7 +212,7 @@ function AutoDeployInner() {
   // PLUTO_SERVED_SITE_URL / PLUTO_SERVED_SITE_URL_TEMPLATE env values per-deploy.
   const [servedSiteUrl, setServedSiteUrl] = useState<string>("");
   const [servedSiteUrlTemplate, setServedSiteUrlTemplate] = useState<string>("");
-  const [strictServedSite, setStrictServedSite] = useState<boolean>(false);
+  const [strictServedSite, setStrictServedSite] = useState<boolean>(true);
   const [defaultBranch, setDefaultBranch] = useState<string>("main");
   const refreshSettingsFromStore = useCallback(() => {
     if (typeof window === "undefined") return;
@@ -797,7 +797,7 @@ function AutoDeployInner() {
               type="text"
               value={servedSiteUrlTemplate}
               onChange={(e) => saveServedSiteConfig({ template: e.target.value })}
-              placeholder="https://api.timescard.cloud/sites/{slug}"
+              placeholder="https://{slug}.app.timescard.cloud"
               className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm font-mono"
             />
           </div>

@@ -33,8 +33,8 @@ if ! command -v certbot >/dev/null 2>&1; then
   $SUDO apt-get install -y certbot python3-certbot-dns-cloudflare
 fi
 
-# If CF_API_TOKEN is provided in env, materialise the ini file automatically.
-if [ -n "${CF_API_TOKEN:-}" ] && [ ! -f "$CF_INI" ]; then
+# If CF_API_TOKEN is provided in env, materialise/update the ini file automatically.
+if [ -n "${CF_API_TOKEN:-}" ]; then
   echo "▶ writing Cloudflare credentials to $CF_INI"
   $SUDO mkdir -p "$(dirname "$CF_INI")"
   printf 'dns_cloudflare_api_token = %s\n' "$CF_API_TOKEN" | $SUDO tee "$CF_INI" >/dev/null
@@ -50,6 +50,7 @@ if [ "${FORCE_MANUAL:-0}" = "1" ] || [ ! -f "$CF_INI" ]; then
     --preferred-challenges dns \
     --agree-tos --no-eff-email \
     --email "$EMAIL" \
+    --cert-name "$APEX" \
     -d "*.${APEX}" -d "${APEX}"
 else
   $SUDO certbot certonly \
@@ -58,6 +59,7 @@ else
     --dns-cloudflare-propagation-seconds 30 \
     --agree-tos --no-eff-email \
     --email "$EMAIL" \
+    --cert-name "$APEX" \
     -d "*.${APEX}" -d "${APEX}"
 fi
 

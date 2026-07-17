@@ -17,7 +17,7 @@ export const DEFAULT_SETTINGS: DeploymentSettings = {
   strictServedSite: true,
   strictSsl: false,
   servedSiteUrl: "",
-  servedSiteUrlTemplate: "",
+  servedSiteUrlTemplate: "https://{slug}.app.timescard.cloud",
   notifyEmail: "",
   defaultBranch: "main",
 };
