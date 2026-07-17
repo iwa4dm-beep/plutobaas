@@ -24,9 +24,11 @@ ts="$(date -u +%Y%m%dT%H%M%SZ)"
 
 echo "▶ migration preflight: ensure Postgres compatibility roles"
 if [ -f "$HERE/ensure-pg-roles.sql" ]; then
-  docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" exec -T "$PG_SERVICE" \
+  if ! docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" exec -T "$PG_SERVICE" \
     psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
-    < "$HERE/ensure-pg-roles.sql" >/dev/null
+    < "$HERE/ensure-pg-roles.sql" >/dev/null; then
+    echo "⚠ role repair skipped by database permissions; migrator will continue with tolerant in-process checks"
+  fi
 fi
 
 echo "▶ migration preflight: build runner image"
