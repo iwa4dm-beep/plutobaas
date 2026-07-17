@@ -47,47 +47,67 @@ fi
 SECRET="${SECRET:-}" SERVICE_KEY="${SERVICE_KEY:-}" UPSTREAM="${UPSTREAM:-}" WILDCARD="$APEX" ACME_EMAIL="$ACME_EMAIL" \
   bash "$HERE/bootstrap-sandbox-worker.sh"
 
-log "3/7 Refresh running worker code"
+log "3/8 Refresh running worker code"
 bash "$HERE/refresh-worker.sh"
 
-log "4/7 Issue/verify wildcard SSL certificate"
+log "4/8 Issue/verify wildcard SSL certificate (*.$APEX)"
 APEX="$APEX" ACME_EMAIL="$ACME_EMAIL" bash "$HERE/fix-wildcard-ssl.sh" "${SLUG:-}"
 
-log "5/7 Install nginx wildcard proxy"
+log "5/8 Install nginx wildcard proxy"
 ACME_EMAIL="$ACME_EMAIL" bash "$HERE/install-sites-proxy.sh" --wildcard "$APEX"
 nginx -t
 systemctl reload nginx
 
+log "6/8 Install auto-renew timer (twice-daily certbot renew)"
+if [ -x "$HERE/install-tls-renew-timer.sh" ]; then bash "$HERE/install-tls-renew-timer.sh" || true; fi
+
 if [ -n "$SLUG" ]; then
-  log "6/7 Ensure slug has a served placeholder if no bundle exists yet: $SLUG"
+  log "7/8 Ensure slug has a served placeholder if no bundle exists: $SLUG"
   code="$(curl -s -o /tmp/_pluto_status.json -w '%{http_code}' --max-time 8 "https://api.${APEX#app.}/site-status/${SLUG}" || echo 000)"
   if [ "$code" != "200" ]; then
     bash "$HERE/seed-slug.sh" "$SLUG" || true
   fi
 
-  log "7/7 Verify live slug"
-  APEX="$APEX" API="api.${APEX#app.}" bash "$HERE/verify-deploy.sh" "$SLUG"
+  log "8/8 First verify-deploy for $SLUG"
+  APEX="$APEX" API="api.${APEX#app.}" bash "$HERE/verify-deploy.sh" "$SLUG" || VERIFY_FAILED=1
 else
-  log "6/7 Skip slug verification (set SLUG=<slug> to verify one now)"
-  echo "Test any deployed slug with:"
-  echo "  APEX=$APEX bash $HERE/verify-served-site.sh <slug>"
+  log "7/8 No SLUG provided — skipping targeted verify"
+  echo "   Verify any slug later with:"
+  echo "     sudo APEX=$APEX bash $HERE/verify-deploy.sh <slug>"
 
-  log "7/7 Current subdomain summary"
+  log "8/8 Active subdomain summary"
   BASE_DOMAIN="$APEX" bash "$HERE/list-active-subdomains.sh" || true
+fi
+
+# Deterministic final summary — always prints, even if verify-deploy fails.
+CERT_LINE="(no wildcard cert found)"
+if [ -r "/etc/letsencrypt/live/${APEX}/fullchain.pem" ]; then
+  CERT_LINE="$(openssl x509 -in /etc/letsencrypt/live/${APEX}/fullchain.pem -noout -subject -enddate 2>/dev/null | tr '\n' ' ')"
 fi
 
 cat <<EOF
 
-✅ Wildcard subdomain platform is installed for *.${APEX}
+════════════════════════════════════════════════════════════════
+$( [ "${VERIFY_FAILED:-0}" = "1" ] && echo "⚠ Setup completed but verify-deploy failed for slug: $SLUG" || echo "✅ Wildcard subdomain platform installed for *.${APEX}" )
+════════════════════════════════════════════════════════════════
 
-How it works from now on:
-  1. DNS has one wildcard record: *.${APEX} → this VPS
-  2. nginx has one wildcard vhost, not one vhost per slug
-  3. The sandbox worker maps each deploy slug to its release directory
-  4. New slugs automatically go live at https://<slug>.${APEX}/
+Cert: ${CERT_LINE}
+Nginx wildcard vhost: /etc/nginx/sites-enabled/pluto-wildcard-${APEX}.conf
+Worker unit: pluto-sandbox-worker.service ($(systemctl is-active pluto-sandbox-worker 2>/dev/null || echo unknown))
 
-Required permanent secrets/config:
-  - VPS /etc/pluto/sandbox-worker.env keeps SANDBOX_SHARED_SECRET secret.
-  - Lovable Cloud secret PLUTO_SANDBOX_SECRET must match that VPS value.
-  - Cloudflare token should stay only on the VPS at /etc/letsencrypt/cloudflare.ini for DNS-01 renewals.
+How new deploys work:
+  1. Wildcard DNS *.${APEX} → this VPS (one record forever)
+  2. One nginx wildcard vhost — no per-slug config
+  3. Sandbox worker routes Host: <slug>.${APEX} to its release directory
+  4. Wildcard cert already covers every slug — no per-slug certbot run
+
+Verify any slug later:
+  sudo APEX=${APEX} bash $HERE/verify-deploy.sh <slug>
+
+Permanent config to keep in sync:
+  - /etc/pluto/sandbox-worker.env  (SANDBOX_SHARED_SECRET on VPS)
+  - Lovable Cloud → Secrets → PLUTO_SANDBOX_SECRET (must match VPS)
+  - /etc/letsencrypt/cloudflare.ini (Cloudflare API token for DNS-01 renew)
 EOF
+
+[ "${VERIFY_FAILED:-0}" = "1" ] && exit 1 || exit 0
