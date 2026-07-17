@@ -25,6 +25,63 @@ green() { printf "\033[32m%s\033[0m\n" "$*"; }
 yell()  { printf "\033[33m%s\033[0m\n" "$*"; }
 bold()  { printf "\033[1m%s\033[0m\n" "$*"; }
 
+quarantine_nginx_blockers() {
+  # Old Pluto vhosts can keep nginx -t broken before this script gets a chance
+  # to install the temporary HTTP-01 server block. Disable only managed Pluto
+  # links/configs that match known stale signatures, then let the deploy flow
+  # regenerate them from the current templates.
+  [[ "$(id -u)" == "0" ]] || return 0
+
+  local changed=0 out bad_config link target
+  local quarantine_dir="/etc/nginx/sites-enabled/.pluto-disabled-$(date +%Y%m%d-%H%M%S)"
+
+  for _ in 1 2 3 4 5; do
+    out="$(nginx -t 2>&1 || true)"
+    grep -qE 'unknown log format "pluto_slug_json"|cannot load certificate|no such file or directory.*fullchain.pem' <<<"$out" || break
+
+    if grep -q 'unknown log format "pluto_slug_json"' <<<"$out"; then
+      # Prefer the exact config path reported by nginx, then also catch any
+      # enabled managed Pluto vhost that still references the old log_format.
+      while IFS= read -r bad_config; do
+        [[ -z "$bad_config" ]] && continue
+        mkdir -p "$quarantine_dir"
+        if [[ "$bad_config" == /etc/nginx/sites-enabled/pluto-*.conf ]]; then
+          yell "  ! disabling stale Pluto vhost with missing log_format: $bad_config"
+          mv -f "$bad_config" "$quarantine_dir/$(basename "$bad_config")" 2>/dev/null || rm -f "$bad_config"
+          changed=1
+        fi
+      done < <(grep -oE '/etc/nginx/sites-enabled/pluto-[^: ]+\.conf' <<<"$out" | sort -u)
+
+      for link in /etc/nginx/sites-enabled/pluto-*.conf; do
+        [[ -e "$link" || -L "$link" ]] || continue
+        target="$link"
+        [[ -L "$link" ]] && target="$(readlink -f "$link" 2>/dev/null || echo "$link")"
+        if grep -q 'pluto_slug_json' "$target" 2>/dev/null; then
+          mkdir -p "$quarantine_dir"
+          yell "  ! disabling stale Pluto vhost with missing log_format: $link"
+          mv -f "$link" "$quarantine_dir/$(basename "$link")" 2>/dev/null || rm -f "$link"
+          changed=1
+        fi
+      done
+    fi
+
+    # Broken cert references from old managed per-slug/wildcard vhosts should
+    # not block a fresh HTTP-01 cert. Remove only Pluto-managed enabled links.
+    while IFS= read -r bad_config; do
+      [[ -z "$bad_config" ]] && continue
+      if [[ "$bad_config" == /etc/nginx/sites-enabled/pluto-*.conf ]]; then
+        mkdir -p "$quarantine_dir"
+        yell "  ! disabling Pluto vhost with missing cert reference: $bad_config"
+        mv -f "$bad_config" "$quarantine_dir/$(basename "$bad_config")" 2>/dev/null || rm -f "$bad_config"
+        changed=1
+      fi
+    done < <(grep -oE '/etc/nginx/sites-enabled/pluto-[^: ]+\.conf' <<<"$out" | sort -u)
+  done
+
+  [[ "$changed" -eq 1 ]] && yell "  ! disabled stale nginx configs are backed up in: $quarantine_dir"
+  return 0
+}
+
 if [[ -z "$SLUG" ]]; then
   red "usage: preflight-dns.sh <slug> [base]"
   exit 2
@@ -135,21 +192,23 @@ fi
 # managed Pluto configs that can make nginx -t fail before HTTP-01 even starts.
 if [[ "$(id -u)" == "0" ]]; then
   mkdir -p "${WEBROOT}/.well-known/acme-challenge" 2>/dev/null || true
+  quarantine_nginx_blockers
 
   OLD_SLUG_LINK="/etc/nginx/sites-enabled/pluto-slug-${SLUG}.conf"
-  if [[ -e "$OLD_SLUG_LINK" ]] && nginx -t 2>&1 | grep -q 'unknown log format "pluto_slug_json"'; then
+  if [[ -e "$OLD_SLUG_LINK" || -L "$OLD_SLUG_LINK" ]] && nginx -t 2>&1 | grep -q 'unknown log format "pluto_slug_json"'; then
     yell "  ! disabling stale per-slug vhost with missing log_format: $OLD_SLUG_LINK"
     rm -f "$OLD_SLUG_LINK"
   fi
 
   WILDCARD_LINK="/etc/nginx/sites-enabled/pluto-wildcard-${BASE}.conf"
   WILDCARD_CERT="/etc/letsencrypt/live/${BASE}/fullchain.pem"
-  if [[ -e "$WILDCARD_LINK" ]]; then
+  if [[ -e "$WILDCARD_LINK" || -L "$WILDCARD_LINK" ]]; then
     if [[ ! -s "$WILDCARD_CERT" ]] || ! openssl x509 -in "$WILDCARD_CERT" -noout -text 2>/dev/null | grep -q "DNS:\*\.${BASE}"; then
       yell "  ! disabling incomplete wildcard vhost while testing HTTP-01: $WILDCARD_LINK"
       rm -f "$WILDCARD_LINK"
     fi
   fi
+  quarantine_nginx_blockers
 
   if ! nginx -T 2>/dev/null | grep -qE "server_name[[:space:]]+.*${FQDN//./\.}"; then
     STUB="/etc/nginx/sites-available/pluto-slug-${SLUG}-acme.conf"

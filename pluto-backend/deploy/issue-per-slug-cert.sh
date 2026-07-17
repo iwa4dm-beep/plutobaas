@@ -49,22 +49,69 @@ TEMPLATE="$(cd "$(dirname "$0")" && pwd)/nginx/per-slug-http01.conf.template"
 
 echo "==> Issuing HTTP-01 cert for ${FQDN}"
 
+quarantine_nginx_blockers() {
+  local changed=0 out bad_config link target
+  local quarantine_dir="/etc/nginx/sites-enabled/.pluto-disabled-$(date +%Y%m%d-%H%M%S)"
+  for _ in 1 2 3 4 5; do
+    out="$(nginx -t 2>&1 || true)"
+    grep -qE 'unknown log format "pluto_slug_json"|cannot load certificate|no such file or directory.*fullchain.pem' <<<"$out" || break
+
+    if grep -q 'unknown log format "pluto_slug_json"' <<<"$out"; then
+      while IFS= read -r bad_config; do
+        [[ -z "$bad_config" ]] && continue
+        if [[ "$bad_config" == /etc/nginx/sites-enabled/pluto-*.conf ]]; then
+          mkdir -p "$quarantine_dir"
+          echo "==> Disabling stale Pluto vhost with missing log_format: $bad_config"
+          mv -f "$bad_config" "$quarantine_dir/$(basename "$bad_config")" 2>/dev/null || rm -f "$bad_config"
+          changed=1
+        fi
+      done < <(grep -oE '/etc/nginx/sites-enabled/pluto-[^: ]+\.conf' <<<"$out" | sort -u)
+
+      for link in /etc/nginx/sites-enabled/pluto-*.conf; do
+        [[ -e "$link" || -L "$link" ]] || continue
+        target="$link"
+        [[ -L "$link" ]] && target="$(readlink -f "$link" 2>/dev/null || echo "$link")"
+        if grep -q 'pluto_slug_json' "$target" 2>/dev/null; then
+          mkdir -p "$quarantine_dir"
+          echo "==> Disabling stale Pluto vhost with missing log_format: $link"
+          mv -f "$link" "$quarantine_dir/$(basename "$link")" 2>/dev/null || rm -f "$link"
+          changed=1
+        fi
+      done
+    fi
+
+    while IFS= read -r bad_config; do
+      [[ -z "$bad_config" ]] && continue
+      if [[ "$bad_config" == /etc/nginx/sites-enabled/pluto-*.conf ]]; then
+        mkdir -p "$quarantine_dir"
+        echo "==> Disabling Pluto vhost with missing cert reference: $bad_config"
+        mv -f "$bad_config" "$quarantine_dir/$(basename "$bad_config")" 2>/dev/null || rm -f "$bad_config"
+        changed=1
+      fi
+    done < <(grep -oE '/etc/nginx/sites-enabled/pluto-[^: ]+\.conf' <<<"$out" | sort -u)
+  done
+
+  [[ "$changed" -eq 1 ]] && echo "==> Disabled stale nginx configs are backed up in: $quarantine_dir"
+}
+
 # Previous failed runs may have left an enabled per-slug vhost rendered by an
 # older template (for example referencing an unavailable log_format). Remove it
 # before the pre-cert nginx -t; the final, fresh vhost is rendered again below.
 rm -f "$NGINX_ENABLED"
+quarantine_nginx_blockers
 
 # If a managed wildcard vhost was enabled without a usable wildcard cert, nginx
 # -t fails before this per-slug flow can complete. Quarantine only the managed
 # Pluto wildcard link; per-slug vhosts do not need it.
 WILDCARD_LINK="/etc/nginx/sites-enabled/pluto-wildcard-${BASE}.conf"
 WILDCARD_CERT="/etc/letsencrypt/live/${BASE}/fullchain.pem"
-if [[ -e "$WILDCARD_LINK" ]]; then
+if [[ -e "$WILDCARD_LINK" || -L "$WILDCARD_LINK" ]]; then
   if [[ ! -s "$WILDCARD_CERT" ]] || ! openssl x509 -in "$WILDCARD_CERT" -noout -text 2>/dev/null | grep -q "DNS:\*\.${BASE}"; then
     echo "==> Disabling incomplete wildcard vhost while issuing per-slug cert: $WILDCARD_LINK"
     rm -f "$WILDCARD_LINK"
   fi
 fi
+quarantine_nginx_blockers
 
 # 1) Ensure certbot is present
 if ! command -v certbot >/dev/null 2>&1; then

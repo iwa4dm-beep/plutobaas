@@ -148,13 +148,19 @@ fi
 if nghit "unknown log format.*pluto_slug_json"; then
   FOUND=1
   red "✗ ROOT CAUSE: nginx has an old per-slug vhost that references log_format 'pluto_slug_json', but that format is not loaded."
+  BAD_VHOSTS="$(grep -Rsl 'pluto_slug_json' /etc/nginx/sites-enabled/pluto-*.conf /etc/nginx/sites-available/pluto-*.conf 2>/dev/null | sort -u | tr '\n' ' ')"
+  [[ -n "$BAD_VHOSTS" ]] && echo "  Stale configs: $BAD_VHOSTS"
   cat <<MSG
 
-  Fix — pull the updated template and regenerate the per-slug vhost:
+  Fast fix — disable only Pluto-managed stale enabled vhosts, then rerun go-live:
+    sudo grep -Rsl 'pluto_slug_json' /etc/nginx/sites-enabled/pluto-*.conf 2>/dev/null | sudo xargs -r rm -f
     cd /root/backend-joy
     sudo bash pluto-backend/deploy/clean-pull.sh
-    sudo bash pluto-backend/deploy/issue-per-slug-cert.sh ${SLUG:-<slug>} ${BASE}
-    sudo nginx -t && sudo systemctl reload nginx
+    sudo bash pluto-backend/deploy/go-live.sh ${SLUG:-<slug>} ${BASE}
+
+  If repo path differs, use rescue:
+    curl -fsSL https://plutobaas.lovable.app/downloads/pluto-rescue-go-live.sh -o /tmp/pluto-rescue-go-live.sh
+    sudo bash /tmp/pluto-rescue-go-live.sh ${SLUG:-<slug>} ${BASE}
 MSG
 fi
 
