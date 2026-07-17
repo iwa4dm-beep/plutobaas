@@ -222,7 +222,7 @@ async function sandboxHealth(filter = {}) {
   return {
     ok: true,
     service: "pluto-sandbox-worker",
-    version: "v1-static-serve-2026-07-17-storage-header-fix",
+    version: "v1-static-serve-2026-07-17-public-diagnostics",
     features: {
       request_body_service_key: true,
       storage_workspace_header_preserves_uuid: true,
@@ -921,7 +921,7 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, {
         ok: true,
         service: "pluto-sandbox-worker",
-        version: "v1-static-serve-2026-07-17-storage-header-fix",
+        version: "v1-static-serve-2026-07-17-public-diagnostics",
         features: {
           request_body_service_key: true,
           storage_workspace_header_preserves_uuid: true,
