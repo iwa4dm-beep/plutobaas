@@ -90,8 +90,11 @@ export function CustomDomainsPanel({ workspaceId, currentSlug }: Props) {
   }, [recordType]);
 
   const canAdd = useMemo(
-    () => isValidHostname(hostname) && slug.trim().length > 0 && expectedValue.trim().length > 0,
-    [hostname, slug, expectedValue],
+    () =>
+      isValidHostname(hostname) &&
+      slug.trim().length > 0 &&
+      parseExpectedValues(recordType, expectedValue).length > 0,
+    [hostname, slug, expectedValue, recordType],
   );
 
   const runVerifyAndSsl = useCallback(
