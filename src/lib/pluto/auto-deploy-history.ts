@@ -49,12 +49,15 @@ export type EndpointCheck = {
   ok: boolean;
   bodySnippet: string;
   failReason?: string;
+  /** "error" (default) fails overallOk; "warning" is reported but does not fail the pipeline. */
+  severity?: "error" | "warning";
 };
 
 export type HealthSummary = {
   endpoints: EndpointCheck[];
   overallOk: boolean;
 };
+
 
 export function loadAutoDeployHistory(): AutoDeployHistoryEntry[] {
   if (typeof window === "undefined") return [];
