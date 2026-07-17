@@ -81,10 +81,10 @@ function sanitizeMigrationSql(sql: string): string {
 }
 
 function stripOuterTransaction(sql: string): string {
-  let out = sql.trim();
-  out = out.replace(/^BEGIN\s*;\s*/i, "");
-  out = out.replace(/\s*COMMIT\s*;?\s*$/i, "");
-  return out;
+  return sql
+    .replace(/^\s*BEGIN\s*;\s*$/gim, "")
+    .replace(/^\s*COMMIT\s*;\s*$/gim, "")
+    .trim();
 }
 
 function addAdaptiveMigrationPreamble(sql: string): string {

@@ -152,6 +152,7 @@ function envVarsToSql(workspaceId: string, envVars: EnvVar[]): string {
   return `\n-- Auto-Deploy Studio: env vars\ndo $$
 declare pid uuid;
 begin
+  alter table if exists admin.project_env add column if not exists is_secret boolean not null default false;
   select id into pid from admin.projects where workspace_id = '${wid}' order by created_at asc limit 1;
   if pid is not null then
 ${rows}

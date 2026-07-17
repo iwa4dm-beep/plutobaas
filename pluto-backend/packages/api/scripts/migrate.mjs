@@ -298,10 +298,10 @@ function prepareMigrationSql(contents) {
 }
 
 function stripOuterTransaction(sqlText) {
-  let s = sqlText.trim();
-  s = s.replace(/^begin\s*;\s*/i, '');
-  s = s.replace(/\s*commit\s*;?\s*$/i, '');
-  return s;
+  return sqlText
+    .replace(/^\s*begin\s*;\s*$/gim, '')
+    .replace(/^\s*commit\s*;\s*$/gim, '')
+    .trim();
 }
 
 function buildAdaptivePreamble(sqlText, repairs) {
