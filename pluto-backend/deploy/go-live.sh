@@ -132,10 +132,19 @@ if ! SKIP_WILDCARD=1 SKIP_VERIFY=1 bash pluto-backend/deploy/full-deploy.sh "$SL
   exit 34
 fi
 
+bold "▸ Step 3.5/5: post-deploy HTTP-01 preflight (nginx may have changed)"
+if ! bash pluto-backend/deploy/preflight-dns.sh "$SLUG" "$BASE"; then
+  red "✗ Post-deploy preflight failed — full-deploy changed nginx/DNS reachability. Fix the printed issue, then rerun."
+  exit 32
+fi
+
 # ── 6. per-slug cert ────────────────────────────────────────────────────────
 bold "▸ Step 4/5: issue-per-slug-cert $SLUG $BASE"
 if ! bash pluto-backend/deploy/issue-per-slug-cert.sh "$SLUG" "$BASE"; then
-  red "✗ Cert issuance failed. Rerun preflight to see the specific block:"
+  red "✗ Cert issuance failed. Running diagnosis now:"
+  bash pluto-backend/deploy/diagnose-cert-failure.sh "$SLUG" "$BASE" || true
+  red ""
+  red "Rerun preflight to see DNS/port-80 blockers:"
   red "    sudo bash $REPO/pluto-backend/deploy/preflight-dns.sh $SLUG $BASE"
   exit 35
 fi

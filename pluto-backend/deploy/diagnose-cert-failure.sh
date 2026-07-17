@@ -96,6 +96,26 @@ if hit "urn:ietf:params:acme:error:unauthorized" || hit "Invalid response from h
 MSG
 fi
 
+# ── 3b. IPv6/AAAA challenge failure ─────────────────────────────────────────
+if hit "IPv6" || hit "AAAA" || hit "During secondary validation"; then
+  FOUND=1
+  red "✗ ROOT CAUSE: HTTP-01 likely failed over IPv6/AAAA while IPv4 looked OK."
+  cat <<MSG
+
+  Let's Encrypt checks every address it resolves. If ${SLUG:-<slug>}.${BASE}
+  has an AAAA record that points somewhere other than this VPS, certbot fails
+  even when your local A-record preflight returns 200.
+
+  Fix at your DNS provider:
+    1. Delete AAAA for ${SLUG:-<slug>}.${BASE}
+    2. Delete wildcard AAAA for *.${BASE} if present
+    3. Keep/add A record to this VPS IPv4
+    4. Recheck:
+       sudo bash pluto-backend/deploy/preflight-dns.sh ${SLUG:-<slug>} ${BASE}
+       sudo bash pluto-backend/deploy/issue-per-slug-cert.sh ${SLUG:-<slug>} ${BASE}
+MSG
+fi
+
 # ── 4. Rate limit ────────────────────────────────────────────────────────────
 if hit "urn:ietf:params:acme:error:rateLimited" || hit "too many certificates" || hit "duplicate certificate limit"; then
   FOUND=1
