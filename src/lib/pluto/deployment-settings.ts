@@ -14,7 +14,7 @@ export type DeploymentSettings = {
 
 export const DEFAULT_SETTINGS: DeploymentSettings = {
   autoDeployOnPush: false,
-  strictServedSite: false,
+  strictServedSite: true,
   strictSsl: false,
   servedSiteUrl: "",
   servedSiteUrlTemplate: "",
@@ -40,7 +40,8 @@ export function loadDeploymentSettings(workspaceId: string): DeploymentSettings 
   try {
     merged.servedSiteUrl = window.localStorage.getItem(LEGACY_KEYS.servedSiteUrl) ?? merged.servedSiteUrl;
     merged.servedSiteUrlTemplate = window.localStorage.getItem(LEGACY_KEYS.servedSiteUrlTemplate) ?? merged.servedSiteUrlTemplate;
-    merged.strictServedSite = window.localStorage.getItem(LEGACY_KEYS.strictServedSite) === "1";
+    const legacyStrict = window.localStorage.getItem(LEGACY_KEYS.strictServedSite);
+    if (legacyStrict != null) merged.strictServedSite = legacyStrict === "1";
   } catch { /* ignore */ }
 
   try {
