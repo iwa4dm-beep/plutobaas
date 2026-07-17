@@ -1377,6 +1377,7 @@ const server = http.createServer(async (req, res) => {
       if (body?.slug && safeArg(String(body.slug))) args.push("--slug", String(body.slug));
       if (body?.wildcard && safeArg(String(body.wildcard))) args.push("--wildcard", String(body.wildcard));
       if (body?.acmeEmail && safeArg(String(body.acmeEmail))) args.push("--acme-email", String(body.acmeEmail));
+      const startedIso = new Date().toISOString();
       const startedAt = Date.now();
       const chunks = [];
       let exitCode = -1;
@@ -1392,8 +1393,102 @@ const server = http.createServer(async (req, res) => {
       let hint = null;
       if (exitCode === 127) hint = "/usr/local/sbin/pluto-repair not installed or sudoers rule missing — run `sudo bash pluto-backend/deploy/full-deploy.sh`.";
       else if (exitCode !== 0) hint = "Repair script exited non-zero — inspect tail for the failing step.";
-      return json(res, 200, { ok: exitCode === 0, action, exitCode, durationMs: Date.now() - startedAt, tail, hint });
+      const durationMs = Date.now() - startedAt;
+      await appendRepairHistory({
+        action, slug: body?.slug ? String(body.slug).toLowerCase() : null,
+        wildcard: body?.wildcard || null, exitCode, ok: exitCode === 0,
+        startedAt: startedIso, finishedAt: new Date().toISOString(), durationMs,
+        tail: tail.slice(-1024), hint,
+      }).catch(() => {});
+      return json(res, 200, { ok: exitCode === 0, action, exitCode, durationMs, tail, hint });
     }
+
+    // GET /admin/repair/history?slug=&limit=25 — recent repair runs (Feature 2).
+    if (req.method === "GET" && (p === "/admin/repair/history" || p === "/sandbox/admin/repair/history")) {
+      const list = await readRepairHistory(q.get("limit") || 25, {
+        slug: q.get("slug") || undefined, action: q.get("action") || undefined,
+      });
+      return json(res, 200, { ok: true, count: list.length, entries: list });
+    }
+
+    // ---------- Feature 1: per-slug secret rotation ----------
+    // POST /admin/secrets/rotate   { slug, note? }
+    // POST /admin/secrets/revoke   { slug }
+    // GET  /admin/secrets/status?slug=...
+    if (req.method === "POST" && (p === "/admin/secrets/rotate" || p === "/sandbox/admin/secrets/rotate")) {
+      const body = await readJson(req).catch(() => ({}));
+      try {
+        const rec = await rotateSlugSecret(body?.slug, { note: body?.note });
+        return json(res, 200, {
+          ok: true, slug: rec.slug, secret: rec.secret,
+          secretRef: `SANDBOX_SLUG_SECRET_${rec.slug.replace(/-/g, "_").toUpperCase()}`,
+          rotationCount: rec.rotationCount, rotatedAt: rec.rotatedAt,
+          fingerprint: createHash("sha256").update(rec.secret).digest("hex").slice(0, 12),
+          note: "Save this value now — the worker keeps it on disk but future GETs never return the raw secret.",
+        });
+      } catch (e) { return json(res, 400, { ok: false, error: e?.message || String(e) }); }
+    }
+    if (req.method === "POST" && (p === "/admin/secrets/revoke" || p === "/sandbox/admin/secrets/revoke")) {
+      const body = await readJson(req).catch(() => ({}));
+      try {
+        const r = await revokeSlugSecret(body?.slug);
+        return json(res, r.ok ? 200 : 404, r);
+      } catch (e) { return json(res, 400, { ok: false, error: e?.message || String(e) }); }
+    }
+    if (req.method === "GET" && (p === "/admin/secrets/status" || p === "/sandbox/admin/secrets/status")) {
+      const slug = q.get("slug");
+      if (!slug) return json(res, 400, { ok: false, error: "slug is required" });
+      return json(res, 200, await slugSecretStatus(slug));
+    }
+
+    // ---------- Feature 3: one-call subdomain provisioning ----------
+    // POST /admin/provision  { slug, seed?: true, rotateSecret?: true, revealSecret?: false, baseDomain? }
+    // Ensures the slug maps to <slug>.<baseDomain>, seeds a placeholder if
+    // /var/lib/pluto/sites/<slug> has no bundle, optionally rotates a fresh
+    // per-slug secret and returns { subdomain, secretRef, secret? }.
+    if (req.method === "POST" && (p === "/admin/provision" || p === "/sandbox/admin/provision")) {
+      const body = await readJson(req).catch(() => ({}));
+      const slug = String(body?.slug || "").trim().toLowerCase();
+      if (!SLUG_RE.test(slug)) return json(res, 400, { ok: false, error: "invalid_slug" });
+      const baseDomain = safeDomain(body?.baseDomain || DEFAULT_BASE_DOMAIN);
+      const seedIfMissing = body?.seed !== false;
+      let seeded = false, siteState = await siteStatus(slug);
+      if (!siteState.ok && seedIfMissing) {
+        try { await seedPlaceholder(slug); seeded = true; siteState = await siteStatus(slug); }
+        catch (e) { return json(res, 500, { ok: false, error: "seed_failed", detail: e?.message || String(e) }); }
+      }
+      let secretPayload = null;
+      if (body?.rotateSecret) {
+        const rec = await rotateSlugSecret(slug, { note: "provision" });
+        secretPayload = {
+          secretRef: `SANDBOX_SLUG_SECRET_${slug.replace(/-/g, "_").toUpperCase()}`,
+          rotatedAt: rec.rotatedAt,
+          fingerprint: createHash("sha256").update(rec.secret).digest("hex").slice(0, 12),
+          secret: body?.revealSecret === true ? rec.secret : undefined,
+        };
+      } else {
+        const st = await slugSecretStatus(slug);
+        secretPayload = st.hasSecret ? {
+          secretRef: st.secretRef, rotatedAt: st.rotatedAt,
+          fingerprint: st.fingerprint, revoked: st.revoked,
+        } : null;
+      }
+      return json(res, 200, {
+        ok: true,
+        slug,
+        subdomain: `${slug}.${baseDomain}`,
+        url: `https://${slug}.${baseDomain}/`,
+        baseDomain,
+        seeded,
+        served: !!siteState.ok,
+        site: siteState,
+        secret: secretPayload,
+        hint: seeded
+          ? "Placeholder seeded. Deploy a real bundle to replace it."
+          : (siteState.ok ? "Subdomain is ready." : "No bundle and seed=false — call again with seed:true or run Auto Deploy."),
+      });
+    }
+
 
     return json(res, 404, { error: "not_found" });
   } catch (e) {
