@@ -169,6 +169,51 @@ fi
 install -m 0640 -o root -g www-data "$TMP" "$ENV_FILE" 2>/dev/null || install -m 0600 -o root -g root "$TMP" "$ENV_FILE"
 rm -f "$TMP"
 
+echo "▶ Installing /usr/local/sbin/pluto-repair wrapper + sudoers rule"
+DEPLOY_DIR="$(cd "$(dirname "$0")" && pwd)"
+cat > /usr/local/sbin/pluto-repair <<PLUTO_REPAIR_EOF
+#!/usr/bin/env bash
+# Whitelisted repair dispatcher invoked by pluto-sandbox-worker via sudo.
+# Accepts: <action> [--slug S] [--wildcard W] [--acme-email E]
+set -euo pipefail
+umask 022
+DEPLOY_DIR="${DEPLOY_DIR}"
+ACTION="\${1:-}"; shift || true
+SLUG=""; WILDCARD=""; ACME_EMAIL=""
+while [ \$# -gt 0 ]; do
+  case "\$1" in
+    --slug) SLUG="\${2:-}"; shift 2;;
+    --wildcard) WILDCARD="\${2:-}"; shift 2;;
+    --acme-email) ACME_EMAIL="\${2:-}"; shift 2;;
+    *) echo "unknown arg: \$1" >&2; exit 2;;
+  esac
+done
+run_one() {
+  case "\$1" in
+    worker-and-site) SLUG="\$SLUG" bash "\$DEPLOY_DIR/repair-sandbox-worker-and-site.sh";;
+    wildcard-ssl)    ACME_EMAIL="\$ACME_EMAIL" WILDCARD="\$WILDCARD" bash "\$DEPLOY_DIR/fix-wildcard-ssl.sh";;
+    deploy-and-verify) SLUG="\$SLUG" bash "\$DEPLOY_DIR/deploy-and-verify.sh";;
+    *) echo "unknown action: \$1" >&2; exit 2;;
+  esac
+}
+case "\$ACTION" in
+  all)
+    run_one worker-and-site
+    run_one wildcard-ssl
+    run_one deploy-and-verify
+    ;;
+  worker-and-site|wildcard-ssl|deploy-and-verify) run_one "\$ACTION";;
+  *) echo "invalid action: \$ACTION" >&2; exit 2;;
+esac
+PLUTO_REPAIR_EOF
+chmod 0755 /usr/local/sbin/pluto-repair
+cat > /etc/sudoers.d/pluto-worker <<'SUDOERS_EOF'
+www-data ALL=(root) NOPASSWD: /usr/local/sbin/pluto-repair
+Defaults!/usr/local/sbin/pluto-repair !requiretty
+SUDOERS_EOF
+chmod 0440 /etc/sudoers.d/pluto-worker
+visudo -c -f /etc/sudoers.d/pluto-worker >/dev/null
+
 echo "▶ Installing systemd unit: ${UNIT}.service"
 if [ "$UNIT" = "pluto-sandbox-worker" ] && systemctl list-unit-files pluto-sandbox.service >/dev/null 2>&1; then
   echo "▶ Disabling legacy conflicting service: pluto-sandbox.service"
