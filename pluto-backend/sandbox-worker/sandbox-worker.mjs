@@ -731,7 +731,9 @@ code{background:#1c2740;padding:.15rem .4rem;border-radius:4px}</style></head>
 
 const server = http.createServer(async (req, res) => {
   try {
-    if (req.method === "GET" && req.url === "/healthz") {
+    const p = requestPath(req);
+    const q = requestQuery(req);
+    if (req.method === "GET" && p === "/healthz") {
       // Detailed liveness — safe to expose publicly (no secrets, no PII).
       let siteCount = 0; let slugCount = 0; let lastServedAt = null;
       try {
@@ -765,22 +767,21 @@ const server = http.createServer(async (req, res) => {
       });
     }
     // Public static routes — no shared secret, safe to expose behind nginx.
-    if (req.method === "GET" && req.url && req.url.startsWith("/sites/")) {
+    if (req.method === "GET" && p.startsWith("/sites/")) {
       return handleStatic(req, res, "/sites/", "current");
     }
-    if (req.method === "GET" && req.url && req.url.startsWith("/preview/")) {
+    if (req.method === "GET" && p.startsWith("/preview/")) {
       return handleStatic(req, res, "/preview/", "preview");
     }
     // Public readiness endpoint — no secret required.
-    if (req.method === "GET" && req.url && req.url.startsWith("/site-status/")) {
-      const [rawSlug, qs] = req.url.slice("/site-status/".length).split("?");
+    if (req.method === "GET" && p.startsWith("/site-status/")) {
+      const rawSlug = p.slice("/site-status/".length);
       const s = decodeURIComponent(rawSlug || "");
       let r = await siteStatus(s);
       // Auto-seed placeholder when a trusted probe asks for it. Prevents the
       // "verify-deploy → 404 → run seed-slug.sh by hand" loop.
       if (!r.ok && (r.error === "slug_not_found" || r.error === "slug_not_linked")) {
-        const params = new URLSearchParams(qs || "");
-        const wantsSeed = params.get("autoseed") === "1"
+        const wantsSeed = q.get("autoseed") === "1"
           || req.headers["x-pluto-auto-seed"] === "1";
         if (wantsSeed && SLUG_RE.test(String(s || "").toLowerCase())) {
           try {
@@ -798,15 +799,57 @@ const server = http.createServer(async (req, res) => {
 
     if (!checkSecret(req)) return json(res, 401, { error: "invalid or missing x-sandbox-secret" });
 
+    if (req.method === "GET" && (p === "/health" || p === "/sandbox/health")) {
+      const slug = normalizeSlug(q.get("slug"));
+      const workspaceId = q.get("workspaceId") ? safeSlug(q.get("workspaceId")) : "";
+      return json(res, 200, await sandboxHealth({ slug, workspaceId }));
+    }
 
 
-    if (req.method === "POST" && req.url === "/unpack") {
+    if (req.method === "POST" && p === "/unpack") {
       const body = await readJson(req);
-      const m = await unpack(body);
+      const startedAt = new Date().toISOString();
+      const recordBase = {
+        ok: false,
+        status: "running",
+        phase: "unpack",
+        startedAt,
+        workspaceId: safeSlug(body?.workspaceId || ""),
+        slug: normalizeSlug(body?.slug),
+        channel: VALID_CHANNELS.has(body?.channel) ? body.channel : "preview",
+        bucket: body?.bucket || null,
+        key: body?.key || null,
+        migrationStatus: normalizeMigrations(body?.migrations),
+      };
+      await writeLastDeployStatus(recordBase).catch(() => {});
+      let m;
+      try {
+        m = await unpack(body);
+        await writeLastDeployStatus({
+          ...recordBase,
+          ...m,
+          ok: true,
+          status: "succeeded",
+          phase: "served",
+          startedAt,
+          finishedAt: new Date().toISOString(),
+          migrationStatus: m.migrationStatus ?? recordBase.migrationStatus,
+        }).catch(() => {});
+      } catch (e) {
+        await writeLastDeployStatus({
+          ...recordBase,
+          ok: false,
+          status: "failed",
+          phase: "unpack",
+          finishedAt: new Date().toISOString(),
+          error: e?.message ?? String(e),
+        }).catch(() => {});
+        throw e;
+      }
       return json(res, 200, { ok: true, ...m });
     }
     // Authenticated placeholder seeder — dashboard "Heal" button calls this.
-    if (req.method === "POST" && req.url === "/admin/seed-slug") {
+    if (req.method === "POST" && p === "/admin/seed-slug") {
       const body = await readJson(req).catch(() => ({}));
       const slug = body?.slug;
       if (!slug || !SLUG_RE.test(String(slug).toLowerCase())) {
@@ -815,26 +858,26 @@ const server = http.createServer(async (req, res) => {
       const m = await seedPlaceholder(String(slug).toLowerCase());
       return json(res, 200, { ok: true, ...m });
     }
-    const statusMatch = req.method === "GET" && req.url && req.url.startsWith("/status/");
+    const statusMatch = req.method === "GET" && p.startsWith("/status/");
     if (statusMatch) {
-      const ws = decodeURIComponent(req.url.slice("/status/".length));
+      const ws = decodeURIComponent(p.slice("/status/".length));
       return json(res, 200, await status(ws));
     }
-    const resolveMatch = req.method === "GET" && req.url && req.url.startsWith("/resolve/");
+    const resolveMatch = req.method === "GET" && p.startsWith("/resolve/");
     if (resolveMatch) {
-      const s = decodeURIComponent(req.url.slice("/resolve/".length));
+      const s = decodeURIComponent(p.slice("/resolve/".length));
       return json(res, 200, await resolveSlug(s));
     }
-    if (req.method === "POST" && req.url === "/env") {
+    if (req.method === "POST" && p === "/env") {
       const body = await readJson(req);
       const r = await rotateEnv(body);
       return json(res, 200, r);
     }
-    if (req.method === "POST" && req.url === "/publish") {
+    if (req.method === "POST" && p === "/publish") {
       const r = await publish(await readJson(req));
       return json(res, 200, r);
     }
-    if (req.method === "POST" && req.url === "/unpublish") {
+    if (req.method === "POST" && p === "/unpublish") {
       const r = await unpublish(await readJson(req));
       return json(res, 200, r);
     }
