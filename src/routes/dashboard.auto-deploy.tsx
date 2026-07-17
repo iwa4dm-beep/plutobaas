@@ -1017,6 +1017,9 @@ function AutoDeployInner() {
       {/* Summary + Checks */}
       {deployResult && <DeploySummaryChecksPanel result={deployResult} />}
 
+      {/* Recommendations — Phase 4 */}
+      <RecommendationsPanel result={deployResult ?? null} workspaceId={workspaceId} />
+
       {/* Build logs — Phase 2 */}
       {deployResult && <BuildLogsPanel result={deployResult} />}
 
