@@ -31,10 +31,22 @@ try {
     $$;
 
     CREATE OR REPLACE FUNCTION auth.jwt() RETURNS jsonb
-      LANGUAGE sql STABLE
+      LANGUAGE plpgsql STABLE
       SET search_path = public
     AS $$
-      SELECT nullif(current_setting('pluto.jwt', true), '')::jsonb
+    DECLARE raw text;
+    BEGIN
+      raw := nullif(current_setting('pluto.jwt', true), '');
+      IF raw IS NULL THEN
+        raw := nullif(current_setting('request.jwt.claims', true), '');
+      END IF;
+      IF raw IS NULL OR btrim(raw) = '' THEN
+        RETURN '{}'::jsonb;
+      END IF;
+      RETURN raw::jsonb;
+    EXCEPTION WHEN others THEN
+      RETURN '{}'::jsonb;
+    END
     $$;
   `);
 

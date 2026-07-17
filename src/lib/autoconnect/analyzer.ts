@@ -146,13 +146,15 @@ function parseSupabaseMigration(sql: string): { tables: TableDef[]; extraPreambl
   // that reference the custom type (e.g. `status ticket_status NOT NULL`)
   // don't fail with `type "ticket_status" does not exist` when the emitted
   // migration is applied to a fresh Postgres.
-  const enumRe = /create\s+type\s+(?:if\s+not\s+exists\s+)?(?:public\.)?"?(\w+)"?\s+as\s+enum\s*\(([^)]*)\)\s*;/gi;
+  const enumRe = /create\s+type\s+(?:if\s+not\s+exists\s+)?(?:(?:"?public"?)\s*\.\s*)?"?(\w+)"?\s+as\s+enum\s*\(([^)]*)\)\s*;/gi;
   let em: RegExpExecArray | null;
   while ((em = enumRe.exec(sql)) !== null) {
     const typeName = em[1];
     const values = em[2];
+    const safeTypeName = typeName.replace(/"/g, "");
+    const qTypeName = /^[a-z_][a-z0-9_]*$/i.test(safeTypeName) ? safeTypeName : `"${safeTypeName.replace(/"/g, '""')}"`;
     extraPreamble.push(
-      `DO $$ BEGIN\n  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = '${typeName}') THEN\n    CREATE TYPE public.${typeName} AS ENUM (${values.trim()});\n  END IF;\nEND $$;`
+      `DO $$ BEGIN\n  IF NOT EXISTS (SELECT 1 FROM pg_type t JOIN pg_namespace n ON n.oid = t.typnamespace WHERE n.nspname = 'public' AND t.typname = '${safeTypeName.replace(/'/g, "''")}') THEN\n    CREATE TYPE public.${qTypeName} AS ENUM (${values.trim()});\n  END IF;\nEND $$;`
     );
   }
 

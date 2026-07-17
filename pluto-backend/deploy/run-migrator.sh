@@ -14,7 +14,11 @@ bash "$HERE/check-env.sh"
 echo "▶ building api image (for migrator overlay)"
 docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" -f "$OVERLAY_FILE" build migrator
 
-echo "▶ running migrator (one-shot)"
+echo "▶ dry-running pending migrations (rolled-back transaction)"
+docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" -f "$OVERLAY_FILE" \
+  run --rm --no-deps migrator --dry-run
+
+echo "▶ running migrator (one-shot apply)"
 docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" -f "$OVERLAY_FILE" \
   run --rm --no-deps migrator
 

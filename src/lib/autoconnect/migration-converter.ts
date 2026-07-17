@@ -95,6 +95,10 @@ export function buildMigrationBundle(tables: TableDef[], extraPreambleSql: strin
     preamble.push(stmt, "");
   }
 
+  for (const enumSql of inferEnumPreamble(tables)) {
+    preamble.push(enumSql, "");
+  }
+
   const usesAppRole = tables.some((t) =>
     t.columns.some((c) => /\bapp_role\b/i.test(c.type))
   );
@@ -118,6 +122,31 @@ END $$;`,
 
   const footer = ["COMMIT;", ""];
   return [...header, ...preamble, ...tables.map(tableToSql), ...footer].join("\n");
+}
+
+function inferEnumPreamble(tables: TableDef[]): string[] {
+  const builtin = new Set([
+    "bigint", "bigserial", "boolean", "bytea", "date", "double", "inet", "integer", "int", "int4", "int8",
+    "json", "jsonb", "numeric", "real", "serial", "smallint", "text", "time", "timestamp", "timestamptz", "uuid", "varchar",
+    "character", "citext", "vector",
+  ]);
+  const names = new Set<string>();
+  for (const table of tables) {
+    for (const col of table.columns) {
+      const base = col.type.replace(/\([^)]*\)/g, "").replace(/\[\]$/g, "").trim().split(/\s+/)[0].replace(/^public\./i, "");
+      if (!base || builtin.has(base.toLowerCase())) continue;
+      if (/(?:^|_)status$|(?:^|_)role$|(?:^|_)type$|(?:^|_)state$|enum/i.test(base)) names.add(base);
+    }
+  }
+  return [...names].map((name) => {
+    const safe = name.replace(/"/g, "");
+    const quoted = /^[a-z_][a-z0-9_]*$/i.test(safe) ? safe : `"${safe.replace(/"/g, '""')}"`;
+    return `DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type t JOIN pg_namespace n ON n.oid = t.typnamespace WHERE n.nspname = 'public' AND t.typname = '${safe.replace(/'/g, "''")}') THEN
+    CREATE TYPE public.${quoted} AS ENUM ('pending', 'active', 'inactive', 'archived');
+  END IF;
+END $$;`;
+  });
 }
 
 function buildInvoiceNumberHelperSql(): string {

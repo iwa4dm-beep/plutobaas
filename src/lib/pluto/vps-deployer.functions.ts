@@ -67,15 +67,35 @@ function escapeRegExp(value: string): string {
  */
 function sanitizeMigrationSql(sql: string): string {
   let out = sql;
+  out = stripOuterTransaction(out);
   out = out.replace(/'\s*uuid_generate_v4\s*\(\s*\)\s*'/gi, "gen_random_uuid()");
   out = out.replace(/\buuid_generate_v4\s*\(\s*\)/gi, "gen_random_uuid()");
   out = out.replace(/\bCREATE\s+SEQUENCE\s+(?!IF\s+NOT\s+EXISTS)(public\.invoice_number_seq\b)/gi, "CREATE SEQUENCE IF NOT EXISTS $1");
+  out = addAdaptiveMigrationPreamble(out);
   out = addOwnerIdPolicyGuards(out);
   if (/\bDEFAULT\s+(?:public\.)?generate_invoice_number\s*\(\s*\)/i.test(out)
     && !/\bCREATE\s+(?:OR\s+REPLACE\s+)?FUNCTION\s+public\.generate_invoice_number\s*\(/i.test(out)) {
     out = `${buildInvoiceNumberHelperSql()}\n\n${out}`;
   }
   return out;
+}
+
+function stripOuterTransaction(sql: string): string {
+  let out = sql.trim();
+  out = out.replace(/^BEGIN\s*;\s*/i, "");
+  out = out.replace(/\s*COMMIT\s*;?\s*$/i, "");
+  return out;
+}
+
+function addAdaptiveMigrationPreamble(sql: string): string {
+  const preamble = [
+    "CREATE SCHEMA IF NOT EXISTS auth;",
+    "CREATE EXTENSION IF NOT EXISTS pgcrypto;",
+  ];
+  if (/\bgin_trgm_ops\b|\bgist_trgm_ops\b/i.test(sql)) preamble.push("CREATE EXTENSION IF NOT EXISTS pg_trgm;");
+  if (/\bcitext\b/i.test(sql)) preamble.push("CREATE EXTENSION IF NOT EXISTS citext;");
+  if (/\bvector\s*(?:\(|,|$)/i.test(sql)) preamble.push("CREATE EXTENSION IF NOT EXISTS vector;");
+  return `${preamble.join("\n")}\n${sql}`;
 }
 
 function addOwnerIdPolicyGuards(sql: string): string {
