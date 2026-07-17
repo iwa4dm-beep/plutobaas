@@ -190,8 +190,8 @@ while [ \$# -gt 0 ]; do
 done
 run_one() {
   case "\$1" in
-    worker-and-site) SLUG="\$SLUG" bash "\$DEPLOY_DIR/repair-sandbox-worker-and-site.sh";;
-    wildcard-ssl)    ACME_EMAIL="\$ACME_EMAIL" WILDCARD="\$WILDCARD" bash "\$DEPLOY_DIR/fix-wildcard-ssl.sh";;
+    worker-and-site) SLUG="\$SLUG" WILDCARD="\$WILDCARD" ACME_EMAIL="\$ACME_EMAIL" bash "\$DEPLOY_DIR/repair-sandbox-worker-and-site.sh";;
+    wildcard-ssl)    APEX="\${WILDCARD:-app.timescard.cloud}" ACME_EMAIL="\$ACME_EMAIL" bash "\$DEPLOY_DIR/fix-wildcard-ssl.sh" "\$SLUG";;
     deploy-and-verify) SLUG="\$SLUG" bash "\$DEPLOY_DIR/deploy-and-verify.sh";;
     *) echo "unknown action: \$1" >&2; exit 2;;
   esac

@@ -891,7 +891,7 @@ export const deployAll = createServerFn({ method: "POST" })
 
       let parsed: { webRoot?: string; releaseDir?: string; servedAt?: string; sizeBytes?: number; durationMs?: number } = {};
       try { parsed = JSON.parse(r.text); } catch { /* ignore */ }
-      servedSiteFromWorker.url = `${base}/sites/${deploySlug}`;
+      servedSiteFromWorker.url = `https://${deploySlug}.app.timescard.cloud`;
       return {
         ok: true,
         detail: `unpacked ${parsed.sizeBytes ?? "?"} bytes in ${parsed.durationMs ?? "?"}ms → ${parsed.webRoot ?? "(root)"}`,
@@ -1013,11 +1013,11 @@ export const deployAll = createServerFn({ method: "POST" })
         let healNote: string | null = null;
         if (!s.ok && (s.status === 404 || s.status === 0) && sandboxSecret) {
           const statusUrl = `${base}/site-status/${encodeURIComponent(deploySlug)}?autoseed=1`;
-          const seed = await rawFetch(statusUrl, "GET", { accept: "application/json", "x-pluto-auto-seed": "1" }, null, null, 20_000);
+          const seed = await rawFetch(statusUrl, "GET", { accept: "application/json", "x-pluto-auto-seed": "1", "x-sandbox-secret": sandboxSecret }, null, null, 20_000);
           healNote = seed.ok ? "auto-seed checked" : `auto-seed HTTP ${seed.status}`;
           s = await rawFetch(probeUrl, "GET", { accept: "text/html" }, null, null, 15_000);
           if (!s.ok) {
-            const repairBody = JSON.stringify({ action: "worker-and-site", slug: deploySlug });
+            const repairBody = JSON.stringify({ action: "worker-and-site", slug: deploySlug, wildcard: "app.timescard.cloud" });
             const repair = await rawFetch(`${sandboxUrl}/admin/repair`, "POST", { "content-type": "application/json", "x-sandbox-secret": sandboxSecret, accept: "application/json" }, repairBody, repairBody, 180_000);
             healNote = `${healNote}; worker/nginx repair HTTP ${repair.status}`;
             s = await rawFetch(probeUrl, "GET", { accept: "text/html" }, null, null, 15_000);
@@ -1054,11 +1054,11 @@ export const deployAll = createServerFn({ method: "POST" })
       let healNote: string | null = null;
       if (!p.ok && (p.status === 404 || p.status === 0) && sandboxSecret) {
         const statusUrl = `${base}/site-status/${encodeURIComponent(deploySlug)}?autoseed=1`;
-        const seed = await rawFetch(statusUrl, "GET", { accept: "application/json", "x-pluto-auto-seed": "1" }, null, null, 20_000);
+        const seed = await rawFetch(statusUrl, "GET", { accept: "application/json", "x-pluto-auto-seed": "1", "x-sandbox-secret": sandboxSecret }, null, null, 20_000);
         healNote = seed.ok ? "auto-seed checked" : `auto-seed HTTP ${seed.status}`;
         p = await rawFetch(probeUrl, "GET", { accept: "text/html,*/*" }, null, null, 12_000);
         if (!p.ok) {
-          const repairBody = JSON.stringify({ action: "worker-and-site", slug: deploySlug });
+          const repairBody = JSON.stringify({ action: "worker-and-site", slug: deploySlug, wildcard: "app.timescard.cloud" });
           const repair = await rawFetch(`${sandboxUrl}/admin/repair`, "POST", { "content-type": "application/json", "x-sandbox-secret": sandboxSecret, accept: "application/json" }, repairBody, repairBody, 180_000);
           healNote = `${healNote}; worker/nginx repair HTTP ${repair.status}`;
           p = await rawFetch(probeUrl, "GET", { accept: "text/html,*/*" }, null, null, 12_000);

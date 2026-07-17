@@ -332,9 +332,13 @@ const SLUG_RE = /^[a-z0-9](?:[a-z0-9-]{1,38}[a-z0-9])?$/;
 async function ensureSlugSymlink(wsDir, slug) {
   if (!slug || !SLUG_RE.test(slug)) return null;
   const slugPath = path.join(SITES_ROOT, slug);
-  // Reject if a real directory already sits there under a different owner.
-  try {
-    const st = await fsp.lstat(slugPath);
+  // Maintain a Vercel/Lovable-style mapping:
+  //   /var/lib/pluto/sites/<workspaceId>/...  = real release storage
+  //   /var/lib/pluto/sites/<slug>             = symlink to workspaceId
+  // If an old auto-seeded placeholder directory already owns the slug, replace
+  // it with the real deployment. Refuse to overwrite non-placeholder content.
+  const st = await fsp.lstat(slugPath).catch(() => null);
+  if (st) {
     if (st.isSymbolicLink()) {
       const target = await fsp.readlink(slugPath);
       const abs = path.isAbsolute(target) ? target : path.join(SITES_ROOT, target);
@@ -345,12 +349,31 @@ async function ensureSlugSymlink(wsDir, slug) {
       // as "not linked" because no symlink could be created over the directory.
       return slugPath;
     } else {
-      // A concrete directory / file at this slug — refuse to clobber.
-      return null;
+      let existing = null;
+      try { existing = JSON.parse(await fsp.readFile(path.join(slugPath, "current.json"), "utf-8")); } catch { /* not a Pluto placeholder */ }
+      if (existing?.placeholder === true || existing?.autoSeeded === true) {
+        await fsp.rm(slugPath, { recursive: true, force: true });
+      } else {
+        throw new Error(`slug '${slug}' is already occupied by a non-placeholder site at ${slugPath}`);
+      }
     }
-  } catch { /* not exist, fine */ }
+  }
   await fsp.symlink(path.relative(SITES_ROOT, wsDir), slugPath);
   return slugPath;
+}
+
+function routeFromWildcardHost(req) {
+  const rawHost = String(req.headers.host || "").split(":")[0].trim().toLowerCase();
+  const base = safeDomain(DEFAULT_BASE_DOMAIN);
+  const suffix = `.${base}`;
+  if (!rawHost.endsWith(suffix) || rawHost === base) return null;
+  let label = rawHost.slice(0, -suffix.length);
+  let linkName = "current";
+  if (label.endsWith("-dev")) {
+    label = label.slice(0, -4);
+    linkName = "preview";
+  }
+  return SLUG_RE.test(label) ? { slug: label, linkName } : null;
 }
 
 // Phase C — write /env.js so window.__PLUTO_ENV__ = {...} is available to the
@@ -1086,6 +1109,8 @@ const server = http.createServer(async (req, res) => {
           request_body_service_key: true,
           storage_workspace_header_preserves_uuid: true,
           served_site_diagnostics: true,
+          wildcard_host_routing: true,
+          authenticated_auto_seed: true,
           active_subdomains_api: true,
           ssl_expiry_precheck: true,
         },
@@ -1102,6 +1127,12 @@ const server = http.createServer(async (req, res) => {
       });
     }
     // Public static routes — no shared secret, safe to expose behind nginx.
+    const wildcardRoute = req.method === "GET" ? routeFromWildcardHost(req) : null;
+    if (wildcardRoute && !p.startsWith("/sites/") && !p.startsWith("/preview/") && !p.startsWith("/site-status/") && !p.startsWith("/sandbox/")) {
+      const r = await resolveSlug(wildcardRoute.slug);
+      if (!r.ok) return json(res, 404, { error: r.error, slug: wildcardRoute.slug });
+      return serveStatic(req, res, path.join(SITES_ROOT, r.workspaceId), wildcardRoute.linkName, p);
+    }
     if (req.method === "GET" && p.startsWith("/sites/")) {
       return handleStatic(req, res, "/sites/", "current");
     }
@@ -1119,6 +1150,9 @@ const server = http.createServer(async (req, res) => {
         const wantsSeed = q.get("autoseed") === "1"
           || req.headers["x-pluto-auto-seed"] === "1";
         if (wantsSeed && SLUG_RE.test(String(s || "").toLowerCase())) {
+          if (!checkSecret(req)) {
+            return json(res, 401, { ok: false, error: "auto_seed_requires_x_sandbox_secret" });
+          }
           try {
             await seedPlaceholder(String(s).toLowerCase());
             r = await siteStatus(s);

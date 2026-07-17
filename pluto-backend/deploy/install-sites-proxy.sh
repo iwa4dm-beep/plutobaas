@@ -184,12 +184,16 @@ if [ -n "$WILDCARD_APEX" ]; then
   $SUDO ln -sfn "$DST" "$LINK"
 
   CERT_LIVE="/etc/letsencrypt/live/${WILDCARD_APEX}"
-  if [ ! -s "${CERT_LIVE}/fullchain.pem" ]; then
-    echo "▶ No cert found at ${CERT_LIVE} — issuing wildcard via install-wildcard-tls.sh"
+  CERT_OK=0
+  if [ -s "${CERT_LIVE}/fullchain.pem" ] && openssl x509 -in "${CERT_LIVE}/fullchain.pem" -noout -text 2>/dev/null | grep -q "DNS:\*\.${WILDCARD_APEX}"; then
+    CERT_OK=1
+  fi
+  if [ "$CERT_OK" != "1" ]; then
+    echo "▶ Wildcard cert missing or incomplete at ${CERT_LIVE} — issuing *.${WILDCARD_APEX} via install-wildcard-tls.sh"
     ACME_EMAIL="${ACME_EMAIL:-}" CF_INI="${CF_INI:-/etc/letsencrypt/cloudflare.ini}" \
       $SUDO bash "$here/install-wildcard-tls.sh" "$WILDCARD_APEX"
   else
-    echo "✓ existing cert reused at ${CERT_LIVE}"
+    echo "✓ existing wildcard cert reused at ${CERT_LIVE}"
   fi
 fi
 

@@ -17,7 +17,7 @@ export const DEFAULT_SETTINGS: DeploymentSettings = {
   strictServedSite: true,
   strictSsl: false,
   servedSiteUrl: "",
-  servedSiteUrlTemplate: "",
+  servedSiteUrlTemplate: "https://{slug}.app.timescard.cloud",
   notifyEmail: "",
   defaultBranch: "main",
 };
@@ -51,6 +51,9 @@ export function loadDeploymentSettings(workspaceId: string): DeploymentSettings 
       Object.assign(merged, parsed);
     }
   } catch { /* ignore */ }
+  if (!merged.servedSiteUrlTemplate.trim()) {
+    merged.servedSiteUrlTemplate = DEFAULT_SETTINGS.servedSiteUrlTemplate;
+  }
   return merged;
 }
 

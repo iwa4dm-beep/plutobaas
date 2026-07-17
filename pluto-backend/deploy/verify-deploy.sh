@@ -70,17 +70,20 @@ if [ "$code" = "200" ]; then
   cat /tmp/_site_status.json | python3 -m json.tool 2>/dev/null || cat /tmp/_site_status.json
   echo
 else
-  bad "site-status → HTTP ${code}"
+  site_recovered=0
+  echo "  ! site-status → HTTP ${code}"
   cat /tmp/_site_status.json 2>/dev/null | head -c 300; echo
   if [ "$code" = "401" ]; then
+    bad "site-status requires worker refresh"
     echo "     401 here means the old worker is still running and treating public routes as secret-protected."
     echo "     Fix now: sudo bash deploy/refresh-worker.sh && bash deploy/verify-deploy.sh ${SLUG}"
   elif [ "$code" = "404" ]; then
     echo "     404 here means the worker is healthy but cannot resolve this slug."
     # Try worker-native auto-seed first (no root required, no shell out).
     code2="$(curl -s -o /tmp/_site_status.json -w '%{http_code}' --max-time 8 \
-      -H 'x-pluto-auto-seed: 1' "https://${API}/site-status/${SLUG}?autoseed=1" || echo 000)"
+      -H 'x-pluto-auto-seed: 1' -H "x-sandbox-secret: ${SECRET}" "https://${API}/site-status/${SLUG}?autoseed=1" || echo 000)"
     if [ "$code2" = "200" ]; then
+      site_recovered=1
       ok "site-status recovered via worker auto-seed"
       cat /tmp/_site_status.json | python3 -m json.tool 2>/dev/null || cat /tmp/_site_status.json
       echo
@@ -90,10 +93,11 @@ else
         echo "     Auto-seeding placeholder for '${SLUG}' now…"
         bash "$here/seed-slug.sh" "$SLUG" >/tmp/_seed_slug.log 2>&1 || cat /tmp/_seed_slug.log
         code="$(curl -s -o /tmp/_site_status.json -w '%{http_code}' --max-time 8 "https://${API}/site-status/${SLUG}" || echo 000)"
-        [ "$code" = "200" ] && { ok "site-status recovered after seed"; cat /tmp/_site_status.json | python3 -m json.tool 2>/dev/null || cat /tmp/_site_status.json; echo; }
+        [ "$code" = "200" ] && { site_recovered=1; ok "site-status recovered after seed"; cat /tmp/_site_status.json | python3 -m json.tool 2>/dev/null || cat /tmp/_site_status.json; echo; }
       fi
     fi
   fi
+  [ "$site_recovered" = "1" ] || bad "site-status is still not ready"
 fi
 
 step "4/5  Required HTTPS /sites/${SLUG}/ probe"
