@@ -41,9 +41,10 @@ async function workerFetch(pathAndQuery: string, init: RequestInit = {}): Promis
   }
   const text = await res.text();
   let parsed: WorkerJson = {};
-  try { parsed = text ? (JSON.parse(text) as WorkerJson) : {}; } catch { parsed = { raw: text }; }
+  try { parsed = text ? (JSON.parse(text) as WorkerJson) : {}; } catch { parsed = { raw: text as unknown as string }; }
   return { ok: res.ok, status: res.status, ...parsed };
 }
+/* eslint-enable @typescript-eslint/no-explicit-any */
 
 const SlugInput = z.object({
   slug: z.string().regex(/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/i, "invalid slug"),
