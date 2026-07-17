@@ -777,7 +777,7 @@ function AutoDeployInner() {
           <p className="text-xs text-muted-foreground">
             Health check-এর served-site probe এই URL থেকে হবে। empty রাখলে <code className="font-mono">PLUTO_SERVED_SITE_URL</code> /
             <code className="font-mono"> _TEMPLATE</code> env, তারপর autodetect (worker, nginx <code>/sites/&lt;slug&gt;</code>) fallback হবে।
-            Bundle unpack হয়ে গেলে served-site 404 আর deploy fail করবে না (warning-only) — unless "Strict" চেক করা থাকে।
+            Bundle unpack হওয়ার পর served-site 404 হলে deploy auto-heal চালাবে; তবুও serve না হলে strict mode deploy fail করবে।
           </p>
           <div>
             <label className="text-xs text-muted-foreground">Explicit URL (highest priority)</label>
@@ -808,7 +808,7 @@ function AutoDeployInner() {
               onChange={(e) => saveServedSiteConfig({ strict: e.target.checked })}
               className="rounded"
             />
-            <span>Strict mode — served-site 404 fails the deploy (only when explicit URL/template is set above)</span>
+            <span>Strict mode — served-site 404 fails the deploy after auto-heal attempts</span>
           </label>
         </div>
       </details>
