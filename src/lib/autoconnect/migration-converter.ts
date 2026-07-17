@@ -71,6 +71,34 @@ function wrapDefault(v: string, type: string): string {
   if (/^[a-zA-Z_][\w.]*\s*\([^)]*\)$/.test(trimmed)) return trimmed;
   if (/^(current_timestamp|current_date|current_time|null|true|false)$/i.test(trimmed)) return trimmed;
   if (type.includes("int") || type === "numeric" || type === "double precision" || type === "boolean") return v;
+
+  // JSON/JSONB defaults: Laravel migrations commonly emit `->default('[]')` or
+  // `->default('{}')`. The raw captured value may already be wrapped in quotes
+  // (e.g. `'{}'`, `'[]'`, `'{"k":"v"}'`). Naively wrapping it again produces
+  // `'''{}'''` which stores the literal string `'{}'` — Postgres then rejects
+  // it as `invalid input syntax for type json` (SQLSTATE 22P02, "Token \"'\"
+  // is invalid"). Normalize by stripping any single layer of surrounding
+  // quotes, escaping embedded single quotes for the SQL literal, and casting
+  // to the JSON type so bad JSON fails at migration time, not runtime.
+  const isJson = /^jsonb?$/i.test(type.trim());
+  if (isJson) {
+    let raw = trimmed;
+    // Strip a single pair of matching surrounding quotes (single or double).
+    if ((raw.startsWith("'") && raw.endsWith("'") && raw.length >= 2) ||
+        (raw.startsWith('"') && raw.endsWith('"') && raw.length >= 2)) {
+      raw = raw.slice(1, -1);
+    }
+    // Unescape SQL-doubled single quotes so we get the intended payload.
+    raw = raw.replace(/''/g, "'");
+    // Fall back to an empty JSON object if the payload is empty.
+    if (!raw) raw = "{}";
+    // Validate — if it isn't parseable JSON, defer to conservative empty
+    // object rather than emit SQL that will fail apply.
+    try { JSON.parse(raw); } catch { raw = "{}"; }
+    const escaped = raw.replace(/'/g, "''");
+    return `'${escaped}'::${type.trim().toLowerCase()}`;
+  }
+
   return `'${v.replace(/'/g, "''")}'`;
 }
 
