@@ -239,12 +239,44 @@ export async function migrationsRoutes(app: FastifyInstance, cfg: Config) {
       });
       return reply.send({ ok: true, migration: updated });
     } catch (e: any) {
+      // Surface the full Postgres error envelope so the deploy UI can
+      // pinpoint the offending statement instead of showing a bare
+      // "invalid input syntax for type json" with no location.
+      const pg = {
+        code: e?.code ?? null,
+        detail: e?.detail ?? null,
+        hint: e?.hint ?? null,
+        position: e?.position ?? null,
+        where: e?.where ?? null,
+        schema: e?.schema_name ?? e?.schema ?? null,
+        table: e?.table_name ?? e?.table ?? null,
+        column: e?.column_name ?? e?.column ?? null,
+        dataType: e?.data_type_name ?? e?.dataType ?? null,
+        constraint: e?.constraint_name ?? e?.constraint ?? null,
+        routine: e?.routine ?? null,
+      };
+      // Extract ±160 chars around `position` if we have it — the offending
+      // token is almost always right there.
+      let snippet: string | null = null;
+      try {
+        const pos = Number(pg.position);
+        if (Number.isFinite(pos) && pos > 0) {
+          const s = Math.max(0, pos - 160);
+          const e2 = Math.min(m.up_sql.length, pos + 160);
+          snippet = m.up_sql.slice(s, e2);
+        }
+      } catch { /* ignore */ }
       await logAudit(cfg, {
         actor_id: actor.userId, project_id: m.project_id,
         action: 'migration.apply', resource_type: 'migration', resource_id: m.id,
-        params: { name: m.name }, result: 'error', error_message: e.message,
+        params: { name: m.name, pg }, result: 'error', error_message: e.message,
       });
-      return reply.code(400).send({ error: 'apply_failed', message: e.message });
+      return reply.code(400).send({
+        error: 'apply_failed',
+        message: e.message,
+        pg,
+        snippet,
+      });
     }
   });
 

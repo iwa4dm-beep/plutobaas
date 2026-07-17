@@ -195,7 +195,32 @@ export const pushMigrations = createServerFn({ method: "POST" })
       if (alreadyExists) {
         return { ok: true, migrationId: id, applied: 0, debug: applied.debug };
       }
-      return { ok: false, error: applied.text || `HTTP ${applied.status}`, status: applied.status, debug: applied.debug };
+      // Enrich the error message with Postgres diagnostics (SQLSTATE, hint,
+      // offending snippet) so the UI can pinpoint the bad statement instead
+      // of surfacing "invalid input syntax for type json" with no location.
+      let enriched = applied.text || `HTTP ${applied.status}`;
+      try {
+        const parsed = JSON.parse(applied.text) as {
+          message?: string; pg?: Record<string, unknown> | null; snippet?: string | null;
+        };
+        const parts: string[] = [];
+        if (parsed.message) parts.push(parsed.message);
+        if (parsed.pg && typeof parsed.pg === "object") {
+          const pg = parsed.pg as Record<string, unknown>;
+          const bits: string[] = [];
+          if (pg.code) bits.push(`SQLSTATE ${String(pg.code)}`);
+          if (pg.where) bits.push(`WHERE ${String(pg.where).slice(0, 200)}`);
+          if (pg.hint) bits.push(`HINT ${String(pg.hint)}`);
+          if (pg.detail) bits.push(`DETAIL ${String(pg.detail)}`);
+          if (pg.schema || pg.table || pg.column) {
+            bits.push(`AT ${[pg.schema, pg.table, pg.column].filter(Boolean).join(".")}`);
+          }
+          if (bits.length) parts.push(`[${bits.join(" · ")}]`);
+        }
+        if (parsed.snippet) parts.push(`NEAR: …${parsed.snippet.replace(/\s+/g, " ").trim().slice(0, 240)}…`);
+        if (parts.length) enriched = parts.join(" — ");
+      } catch { /* leave raw text */ }
+      return { ok: false, error: enriched, status: applied.status, debug: applied.debug };
     }
     return { ok: true, migrationId: id, applied: 1, debug: applied.debug };
   });
