@@ -38,12 +38,61 @@ export function OneClickFixPanel({ slug, wildcard, acmeEmail, onAutoHealChange }
   const [results, setResults] = useState<Record<string, RepairResult>>({});
   const [preflight, setPreflight] = useState<PreflightHealResult | null>(null);
   const [autoHeal, setAutoHeal] = useState(false);
+  const [certStatus, setCertStatus] = useState<SlugCertStatus | null>(null);
+  const [certBusy, setCertBusy] = useState(false);
+  const [batchInput, setBatchInput] = useState("");
+  const [batchBusy, setBatchBusy] = useState(false);
+  const [batchResults, setBatchResults] = useState<BatchIssueResult[] | null>(null);
   const runRepair = useServerFn(runVpsRepair);
   const runPreflight = useServerFn(preflightAndHeal);
+  const fetchCertStatus = useServerFn(getSlugCertStatus);
+  const runBatch = useServerFn(batchIssuePerSlugCerts);
 
   useEffect(() => {
     try { setAutoHeal(localStorage.getItem(AUTOHEAL_KEY) === "1"); } catch { /* SSR */ }
   }, []);
+
+  // Auto-load cert status whenever `slug` prop changes.
+  useEffect(() => {
+    if (!slug) { setCertStatus(null); return; }
+    let cancelled = false;
+    setCertBusy(true);
+    fetchCertStatus({ data: { slug, wildcard } })
+      .then((r) => { if (!cancelled) setCertStatus(r); })
+      .catch((e) => { if (!cancelled) setCertStatus({ ok: false, fqdn: `${slug}.${wildcard || "app.timescard.cloud"}`, exists: false, source: null, error: (e as Error).message }); })
+      .finally(() => { if (!cancelled) setCertBusy(false); });
+    return () => { cancelled = true; };
+  }, [slug, wildcard, fetchCertStatus]);
+
+  const refreshCert = useCallback(async () => {
+    if (!slug) return;
+    setCertBusy(true);
+    try {
+      const r = await fetchCertStatus({ data: { slug, wildcard } });
+      setCertStatus(r);
+    } catch (e) { toast.error(`Cert status failed: ${(e as Error).message}`); }
+    finally { setCertBusy(false); }
+  }, [fetchCertStatus, slug, wildcard]);
+
+  const parsedBatchSlugs = batchInput
+    .split(/[\s,;]+/)
+    .map((s) => s.trim().toLowerCase())
+    .filter((s) => /^[a-z0-9][a-z0-9-]{0,38}[a-z0-9]$/.test(s));
+
+  const runBatchIssue = useCallback(async () => {
+    if (parsedBatchSlugs.length === 0) { toast.error("Enter at least one valid slug"); return; }
+    setBatchBusy(true);
+    setBatchResults(null);
+    try {
+      const r = await runBatch({ data: { slugs: parsedBatchSlugs, wildcard, acmeEmail } });
+      setBatchResults(r.results);
+      const okCount = r.results.filter((x) => x.ok).length;
+      const failCount = r.results.length - okCount;
+      if (failCount === 0) toast.success(`Batch: ${okCount}/${r.results.length} certs issued`);
+      else toast.warning(`Batch: ${okCount} ok, ${failCount} failed — expand rows for details`);
+    } catch (e) { toast.error(`Batch failed: ${(e as Error).message}`); }
+    finally { setBatchBusy(false); }
+  }, [runBatch, parsedBatchSlugs, wildcard, acmeEmail]);
 
   const toggleAutoHeal = useCallback((next: boolean) => {
     setAutoHeal(next);
