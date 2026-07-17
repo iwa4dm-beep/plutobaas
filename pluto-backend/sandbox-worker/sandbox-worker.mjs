@@ -640,6 +640,16 @@ const server = http.createServer(async (req, res) => {
       const m = await unpack(body);
       return json(res, 200, { ok: true, ...m });
     }
+    // Authenticated placeholder seeder — dashboard "Heal" button calls this.
+    if (req.method === "POST" && req.url === "/admin/seed-slug") {
+      const body = await readJson(req).catch(() => ({}));
+      const slug = body?.slug;
+      if (!slug || !SLUG_RE.test(String(slug).toLowerCase())) {
+        return json(res, 400, { ok: false, error: "invalid_slug" });
+      }
+      const m = await seedPlaceholder(String(slug).toLowerCase());
+      return json(res, 200, { ok: true, ...m });
+    }
     const statusMatch = req.method === "GET" && req.url && req.url.startsWith("/status/");
     if (statusMatch) {
       const ws = decodeURIComponent(req.url.slice("/status/".length));
