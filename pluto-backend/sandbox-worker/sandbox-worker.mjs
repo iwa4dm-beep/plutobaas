@@ -1086,6 +1086,8 @@ const server = http.createServer(async (req, res) => {
           request_body_service_key: true,
           storage_workspace_header_preserves_uuid: true,
           served_site_diagnostics: true,
+          active_subdomains_api: true,
+          ssl_expiry_precheck: true,
         },
         uptimeSec: Math.round(process.uptime()),
         sitesRoot: SITES_ROOT,
@@ -1141,6 +1143,14 @@ const server = http.createServer(async (req, res) => {
       const slug = normalizeSlug(q.get("slug"));
       const workspaceId = q.get("workspaceId") ? safeSlug(q.get("workspaceId")) : "";
       return json(res, 200, await sandboxHealth({ slug, workspaceId }));
+    }
+
+    // Authenticated JSON API for dashboards/automation:
+    // GET /admin/subdomains?baseDomain=app.timescard.cloud
+    // Returns active subdomains, nginx enable state, local HTTP/HTTPS probes,
+    // and SSL validity with a 30-day expiring-soon summary.
+    if (req.method === "GET" && (p === "/admin/subdomains" || p === "/sandbox/admin/subdomains")) {
+      return json(res, 200, await listActiveSubdomains(q.get("baseDomain") || DEFAULT_BASE_DOMAIN));
     }
 
 
