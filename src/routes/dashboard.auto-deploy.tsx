@@ -195,6 +195,29 @@ function AutoDeployInner() {
   const [preflightBusy, setPreflightBusy] = useState(false);
   const pingUpstreamFn = useServerFn(pingUpstream);
 
+  // Served-site probe config (persisted in localStorage). Overrides the
+  // PLUTO_SERVED_SITE_URL / PLUTO_SERVED_SITE_URL_TEMPLATE env values per-deploy.
+  const [servedSiteUrl, setServedSiteUrl] = useState<string>("");
+  const [servedSiteUrlTemplate, setServedSiteUrlTemplate] = useState<string>("");
+  const [strictServedSite, setStrictServedSite] = useState<boolean>(false);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      setServedSiteUrl(window.localStorage.getItem("pluto:servedSiteUrl") ?? "");
+      setServedSiteUrlTemplate(window.localStorage.getItem("pluto:servedSiteUrlTemplate") ?? "");
+      setStrictServedSite(window.localStorage.getItem("pluto:strictServedSite") === "1");
+    } catch { /* ignore */ }
+  }, []);
+  const saveServedSiteConfig = (next: { url?: string; template?: string; strict?: boolean }) => {
+    if (typeof window === "undefined") return;
+    try {
+      if (next.url !== undefined) { window.localStorage.setItem("pluto:servedSiteUrl", next.url); setServedSiteUrl(next.url); }
+      if (next.template !== undefined) { window.localStorage.setItem("pluto:servedSiteUrlTemplate", next.template); setServedSiteUrlTemplate(next.template); }
+      if (next.strict !== undefined) { window.localStorage.setItem("pluto:strictServedSite", next.strict ? "1" : "0"); setStrictServedSite(next.strict); }
+    } catch { /* ignore */ }
+  };
+
+
   // Real-time streaming
   const [streamEvents, setStreamEvents] = useState<StepEvent[]>([]);
   const [runningStepIdx, setRunningStepIdx] = useState<number>(-1);
