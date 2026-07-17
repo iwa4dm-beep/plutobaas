@@ -1084,6 +1084,9 @@ export const deployAll = createServerFn({ method: "POST" })
 
     // Step: Verify SSL / HTTPS on the resolved served-site URL (non-fatal on
     // http:// or when no site was resolved — reported as "skipped" success).
+    // On failure that looks like a wildcard-TLS problem (526, 495-497, TLS
+    // handshake error, hostname MISMATCH), auto-invoke the sandbox worker's
+    // `action=wildcard-ssl` repair once, then re-probe.
     let sslProbe: SslProbe | undefined;
     const sslStep = await withRetry("verify-ssl", "Verify SSL / HTTPS", 0, async () => {
       const target = resolvedSite || servedSiteUrl || "";
@@ -1094,14 +1097,35 @@ export const deployAll = createServerFn({ method: "POST" })
         return { ok: true, detail: `skipped — target is not https (${target})`, debug: null, result: { skipped: true, reason: "not-https", target } };
       }
       sslProbe = await probeSsl(target);
+      let healNote: string | null = null;
+      // Cloudflare 526 = origin cert invalid; 495-497 = client-cert/plain-http on TLS port.
+      const looksLikeWildcardTlsFailure =
+        !sslProbe.ok && (
+          sslProbe.httpsStatus === 526 ||
+          (sslProbe.httpsStatus >= 495 && sslProbe.httpsStatus <= 497) ||
+          sslProbe.cert?.hostnameMatch === false ||
+          /handshake|certificate|self.signed|expired|unable to verify/i.test(sslProbe.error || "")
+        );
+      if (looksLikeWildcardTlsFailure && sandboxSecret) {
+        try {
+          const repairBody = JSON.stringify({ action: "wildcard-ssl", wildcard: "app.timescard.cloud" });
+          const repair = await rawFetch(`${sandboxUrl}/admin/repair`, "POST", { "content-type": "application/json", "x-sandbox-secret": sandboxSecret, accept: "application/json" }, repairBody, repairBody, 240_000);
+          healNote = `wildcard-ssl repair HTTP ${repair.status}`;
+          // Re-probe after repair — Let's Encrypt issuance can take ~30-90s.
+          sslProbe = await probeSsl(target);
+        } catch (e) {
+          healNote = `wildcard-ssl repair error: ${e instanceof Error ? e.message : String(e)}`;
+        }
+      }
       const parts = [
         `HTTPS ${sslProbe.httpsStatus || "err"}`,
         sslProbe.cert?.issuer ? `issuer=${sslProbe.cert.issuer}` : null,
         sslProbe.cert?.daysUntilExpiry != null ? `${sslProbe.cert.daysUntilExpiry}d left` : null,
         sslProbe.cert?.hostnameMatch === false ? "hostname MISMATCH" : null,
         sslProbe.error ? `err=${sslProbe.error}` : null,
+        healNote,
       ].filter(Boolean).join(" · ");
-      return { ok: sslProbe.ok, detail: parts || (sslProbe.ok ? "ok" : "unhealthy"), debug: null, result: sslProbe };
+      return { ok: sslProbe.ok, detail: parts || (sslProbe.ok ? "ok" : "unhealthy"), debug: null, result: { ...sslProbe, ...(healNote ? { healNote } : {}) } };
     });
     steps.push(sslStep);
 
