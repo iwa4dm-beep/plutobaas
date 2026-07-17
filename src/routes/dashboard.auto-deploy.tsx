@@ -313,9 +313,10 @@ function AutoDeployInner() {
     }
     if (source === "github") {
       if (!ghRepo.trim()) throw new Error("GitHub repo দিন (owner/repo)");
-      log(`Fetching GitHub repo ${ghRepo}${ghRef ? ` @ ${ghRef}` : ""}…`);
-      const f = await loadRepoAsFile(ghRepo.trim(), ghRef.trim() || undefined);
-      return { file: f, sourceRef: `${ghRepo}${ghRef ? `@${ghRef}` : ""}` };
+      const effectiveRef = ghRef.trim() || defaultBranch.trim();
+      log(`Fetching GitHub repo ${ghRepo}${effectiveRef ? ` @ ${effectiveRef}` : ""}…`);
+      const f = await loadRepoAsFile(ghRepo.trim(), effectiveRef || undefined);
+      return { file: f, sourceRef: `${ghRepo}${effectiveRef ? `@${effectiveRef}` : ""}` };
     }
     if (!gitUrl.trim()) throw new Error("Git repo URL দিন");
     log(`Fetching git URL ${gitUrl}${gitRef ? ` @ ${gitRef}` : ""}…`);
