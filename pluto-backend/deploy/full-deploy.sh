@@ -125,6 +125,14 @@ fi
 if [ "${SKIP_WILDCARD:-0}" = "1" ]; then
   log "install sites-proxy (API routes only; wildcard vhost skipped)"
   ACME_EMAIL="$ACME_EMAIL" bash "$DEPLOY/install-sites-proxy.sh" || die "install-sites-proxy failed"
+  WILDCARD_LINK="/etc/nginx/sites-enabled/pluto-wildcard-${WILDCARD}.conf"
+  WILDCARD_CERT="/etc/letsencrypt/live/${WILDCARD}/fullchain.pem"
+  if [ -e "$WILDCARD_LINK" ]; then
+    if [ ! -s "$WILDCARD_CERT" ] || ! openssl x509 -in "$WILDCARD_CERT" -noout -text 2>/dev/null | grep -q "DNS:\*\.${WILDCARD}"; then
+      echo "  disabling incomplete managed wildcard vhost: $WILDCARD_LINK"
+      rm -f "$WILDCARD_LINK"
+    fi
+  fi
 else
   log "install sites-proxy (wildcard=$WILDCARD)"
   SKIP_SSL_ARG=""

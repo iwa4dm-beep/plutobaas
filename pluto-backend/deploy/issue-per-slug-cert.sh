@@ -49,6 +49,23 @@ TEMPLATE="$(cd "$(dirname "$0")" && pwd)/nginx/per-slug-http01.conf.template"
 
 echo "==> Issuing HTTP-01 cert for ${FQDN}"
 
+# Previous failed runs may have left an enabled per-slug vhost rendered by an
+# older template (for example referencing an unavailable log_format). Remove it
+# before the pre-cert nginx -t; the final, fresh vhost is rendered again below.
+rm -f "$NGINX_ENABLED"
+
+# If a managed wildcard vhost was enabled without a usable wildcard cert, nginx
+# -t fails before this per-slug flow can complete. Quarantine only the managed
+# Pluto wildcard link; per-slug vhosts do not need it.
+WILDCARD_LINK="/etc/nginx/sites-enabled/pluto-wildcard-${BASE}.conf"
+WILDCARD_CERT="/etc/letsencrypt/live/${BASE}/fullchain.pem"
+if [[ -e "$WILDCARD_LINK" ]]; then
+  if [[ ! -s "$WILDCARD_CERT" ]] || ! openssl x509 -in "$WILDCARD_CERT" -noout -text 2>/dev/null | grep -q "DNS:\*\.${BASE}"; then
+    echo "==> Disabling incomplete wildcard vhost while issuing per-slug cert: $WILDCARD_LINK"
+    rm -f "$WILDCARD_LINK"
+  fi
+fi
+
 # 1) Ensure certbot is present
 if ! command -v certbot >/dev/null 2>&1; then
   echo "==> installing certbot"
@@ -88,6 +105,8 @@ echo "==> DNS check for ${FQDN}"
 DIG_A="$(command -v dig >/dev/null 2>&1 && dig +short A "$FQDN" @1.1.1.1 2>/dev/null | tr '\n' ' ' || true)"
 RESOLVED="$(getent hosts "$FQDN" 2>/dev/null | awk '{print $1}' | head -n1 || true)"
 if [[ -z "$DIG_A" && -z "$RESOLVED" ]]; then
+  REL_SLUG_NAME="${SLUG}.${BASE%.*.*}"
+  REL_WILD_NAME="*.${BASE%.*.*}"
   cat >&2 <<MSG
 ✗ DNS resolution failed for ${FQDN}.
 
@@ -96,13 +115,13 @@ if [[ -z "$DIG_A" && -z "$RESOLVED" ]]; then
 
     Option A — per-slug (this slug only):
       Type: A
-      Name: ${SLUG}.${BASE%%.*}          # subdomain part relative to your zone
+      Name: ${REL_SLUG_NAME}          # for zone ${BASE#*.}
       Value: ${VPS_IP:-<this-VPS-IPv4>}
       TTL:  300
 
     Option B — wildcard (covers every future slug):
       Type: A
-      Name: *.${BASE%%.*}                # e.g. *.app  for zone timescard.cloud
+      Name: ${REL_WILD_NAME}          # for zone ${BASE#*.}
       Value: ${VPS_IP:-<this-VPS-IPv4>}
       TTL:  300
 

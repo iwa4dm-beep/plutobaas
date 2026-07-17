@@ -2,8 +2,9 @@
 # go-live.sh — one-command deploy for a single slug.
 #
 # Autodetects the repo top-level, then runs, in order:
-#   1. preflight (repo path + script presence + DNS + HTTP-01)
+#   1. repo/script preflight
 #   2. clean-pull.sh          (git sync)
+#   3. DNS + HTTP-01 preflight
 #   3. full-deploy.sh <slug>  (worker + API nginx; wildcard skipped)
 #   4. issue-per-slug-cert.sh <slug> <base>   (HTTP-01 cert)
 #   5. verify-deploy.sh <slug>
@@ -103,19 +104,19 @@ if (( ${#missing[@]} > 0 )); then
 fi
 green "✓ All required scripts present."
 
-# ── 3. Preflight (DNS + HTTP-01 + nameserver hint) ──────────────────────────
-bold "▸ Step 1/4: DNS + HTTP-01 preflight"
-if ! bash pluto-backend/deploy/preflight-dns.sh "$SLUG" "$BASE"; then
-  red "✗ Preflight failed — fix the printed DNS / port-80 issue above, then rerun."
-  exit 32
-fi
-
-# ── 4. clean-pull ───────────────────────────────────────────────────────────
-bold "▸ Step 2/4: clean-pull (git sync, preserving runtime data)"
+# ── 3. clean-pull ───────────────────────────────────────────────────────────
+bold "▸ Step 1/5: clean-pull (git sync, preserving runtime data)"
 if ! bash pluto-backend/deploy/clean-pull.sh; then
   red "✗ clean-pull failed. Common causes: dirty working tree, no network, wrong remote."
   red "  Inspect:  cd $REPO && git status && git remote -v"
   exit 33
+fi
+
+# ── 4. Preflight (DNS + HTTP-01 + nameserver hint) ──────────────────────────
+bold "▸ Step 2/5: DNS + HTTP-01 preflight"
+if ! bash pluto-backend/deploy/preflight-dns.sh "$SLUG" "$BASE"; then
+  red "✗ Preflight failed — fix the printed DNS / port-80 issue above, then rerun."
+  exit 32
 fi
 
 # ── 5. full-deploy ──────────────────────────────────────────────────────────
