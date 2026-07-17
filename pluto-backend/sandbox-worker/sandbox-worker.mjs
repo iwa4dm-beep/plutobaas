@@ -226,6 +226,7 @@ async function sandboxHealth(filter = {}) {
     features: {
       request_body_service_key: true,
       storage_workspace_header_preserves_uuid: true,
+      served_site_diagnostics: true,
     },
     auth: { ok: true, method: "x-sandbox-secret" },
     // Flat operator-friendly fields (used by Auto Deploy preflight + docs).
@@ -741,6 +742,126 @@ async function siteStatus(slug) {
   }
 }
 
+async function pathExists(p, kind = "any") {
+  try {
+    const st = await fsp.lstat(p);
+    if (kind === "directory") return st.isDirectory();
+    if (kind === "file") return st.isFile();
+    if (kind === "symlink") return st.isSymbolicLink();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function symlinkInfo(p) {
+  try {
+    const st = await fsp.lstat(p);
+    if (!st.isSymbolicLink()) return { exists: true, isSymlink: false, target: null, resolved: null };
+    const target = await fsp.readlink(p);
+    let resolved = null;
+    try { resolved = await fsp.realpath(p); } catch { resolved = path.resolve(path.dirname(p), target); }
+    return { exists: true, isSymlink: true, target, resolved };
+  } catch {
+    return { exists: false, isSymlink: false, target: null, resolved: null };
+  }
+}
+
+async function servedSiteDiagnostics(workspaceIdInput, slugInput) {
+  const slug = normalizeSlug(slugInput);
+  const workspaceId = safeSlug(workspaceIdInput || "");
+  const errors = [];
+  if (!workspaceId) errors.push("workspaceId_missing");
+  if (!slug) errors.push("invalid_slug");
+
+  const workspaceDir = path.join(SITES_ROOT, workspaceId || "_");
+  const slugPath = path.join(SITES_ROOT, slug || "_");
+  const nestedSlugPath = path.join(workspaceDir, slug || "_");
+  const currentLink = path.join(workspaceDir, "current");
+  const currentJsonPath = path.join(workspaceDir, "current.json");
+  const siteStatusResult = slug ? await siteStatus(slug) : { ok: false, error: "invalid_slug" };
+
+  const workspaceDirExists = await pathExists(workspaceDir, "directory");
+  if (!workspaceDirExists) errors.push("workspace_dir_missing");
+
+  const slugInfo = await symlinkInfo(slugPath);
+  const nestedSlugInfo = await symlinkInfo(nestedSlugPath);
+  const currentInfo = await symlinkInfo(currentLink);
+
+  const workspaceReal = workspaceDirExists ? await fsp.realpath(workspaceDir).catch(() => path.resolve(workspaceDir)) : path.resolve(workspaceDir);
+  const slugTargetsWorkspace = Boolean(slugInfo.resolved && path.resolve(slugInfo.resolved) === path.resolve(workspaceReal));
+  if (!slugInfo.exists) errors.push("top_level_slug_mapping_missing");
+  else if (!slugTargetsWorkspace && path.resolve(slugPath) !== path.resolve(workspaceDir)) errors.push("top_level_slug_mapping_wrong_target");
+
+  const currentJsonExists = await pathExists(currentJsonPath, "file");
+  let currentJson = null;
+  let currentJsonValid = false;
+  if (currentJsonExists) {
+    try {
+      currentJson = JSON.parse(await fsp.readFile(currentJsonPath, "utf-8"));
+      currentJsonValid = true;
+    } catch {
+      errors.push("current_json_invalid");
+    }
+  } else {
+    errors.push("current_json_missing");
+  }
+
+  const currentIndexExists = currentInfo.resolved
+    ? await pathExists(path.join(currentInfo.resolved, "index.html"), "file")
+    : false;
+  if (!currentInfo.exists) errors.push("current_symlink_missing");
+  if (currentInfo.exists && !currentInfo.isSymlink) errors.push("current_is_not_symlink");
+  if (currentInfo.exists && currentInfo.isSymlink && !currentIndexExists) errors.push("current_index_missing");
+
+  const currentJsonSlug = currentJsonValid && typeof currentJson?.slug === "string" ? currentJson.slug : null;
+  const currentJsonWorkspaceId = currentJsonValid && typeof currentJson?.workspaceId === "string" ? currentJson.workspaceId : null;
+  const currentJsonWebRoot = currentJsonValid && typeof currentJson?.webRoot === "string" ? currentJson.webRoot : null;
+  const currentJsonMatchesSlug = currentJsonValid ? currentJsonSlug === slug : null;
+  const currentJsonMatchesWorkspace = currentJsonValid ? currentJsonWorkspaceId === workspaceId : null;
+  if (currentJsonValid && !currentJsonMatchesSlug) errors.push("current_json_slug_mismatch");
+  if (currentJsonValid && !currentJsonMatchesWorkspace) errors.push("current_json_workspace_mismatch");
+
+  return {
+    ok: errors.length === 0,
+    slug,
+    workspaceId,
+    checkedAt: new Date().toISOString(),
+    paths: {
+      sitesRoot: SITES_ROOT,
+      workspaceDir,
+      workspaceDirExists,
+      slugPath,
+      slugPathExists: slugInfo.exists,
+      slugIsSymlink: slugInfo.isSymlink,
+      slugTarget: slugInfo.target,
+      slugTargetResolved: slugInfo.resolved,
+      slugTargetsWorkspace,
+      nestedSlugPath,
+      nestedSlugPathExists: nestedSlugInfo.exists,
+      nestedSlugIsSymlink: nestedSlugInfo.isSymlink,
+      nestedSlugTarget: nestedSlugInfo.target,
+      currentLink,
+      currentExists: currentInfo.exists,
+      currentIsSymlink: currentInfo.isSymlink,
+      currentTarget: currentInfo.target,
+      currentTargetResolved: currentInfo.resolved,
+      currentIndexExists,
+      currentJsonPath,
+      currentJsonExists,
+      currentJsonValid,
+      currentJsonSlug,
+      currentJsonWorkspaceId,
+      currentJsonWebRoot,
+      currentJsonMatchesSlug,
+      currentJsonMatchesWorkspace,
+      errors,
+    },
+    siteStatus: siteStatusResult,
+    hint: errors.length ? `Fix: ${errors.join(", ")}` : "Site mapping is consistent; check nginx/DNS/TLS if the public URL still fails.",
+  };
+}
+
 // Minimal in-process placeholder seeder — mirrors deploy/seed-slug.sh so the
 // worker can self-heal when /site-status/<slug> is asked for a slug that has
 // no bundle yet.
@@ -804,6 +925,7 @@ const server = http.createServer(async (req, res) => {
         features: {
           request_body_service_key: true,
           storage_workspace_header_preserves_uuid: true,
+          served_site_diagnostics: true,
         },
         uptimeSec: Math.round(process.uptime()),
         sitesRoot: SITES_ROOT,
@@ -854,6 +976,10 @@ const server = http.createServer(async (req, res) => {
       const slug = normalizeSlug(q.get("slug"));
       const workspaceId = q.get("workspaceId") ? safeSlug(q.get("workspaceId")) : "";
       return json(res, 200, await sandboxHealth({ slug, workspaceId }));
+    }
+
+    if (req.method === "GET" && ["/diagnostics", "/sandbox/diagnostics", "/site-diagnostics", "/sandbox/site-diagnostics"].includes(p)) {
+      return json(res, 200, await servedSiteDiagnostics(q.get("workspaceId"), q.get("slug")));
     }
 
 

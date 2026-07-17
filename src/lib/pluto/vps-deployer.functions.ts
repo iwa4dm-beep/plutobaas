@@ -430,6 +430,48 @@ export type DeployStepKey = "ensure-infra" | "push-migrations" | "upload-bundle"
 export type DeployStepAttempt = { attempt: number; ok: boolean; detail: string; debug: StepDebug | null; startedAt: string; latencyMs: number };
 export type DeployStepLog = { key: DeployStepKey; label: string; ok: boolean; attempts: DeployStepAttempt[]; result: string | null };
 export type LiveUrlProbe = { url: string; status: number; reachable: boolean; contentType: string | null; snippet: string; latencyMs: number };
+type JsonPrimitive = string | number | boolean | null;
+type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue };
+
+export type ServedSiteDiagnostics = {
+  ok: boolean;
+  slug: string;
+  workspaceId: string;
+  checkedAt: string;
+  sandbox: { url: string; status: number; body?: string; latencyMs: number };
+  paths?: {
+    sitesRoot: string;
+    workspaceDir: string;
+    workspaceDirExists: boolean;
+    slugPath: string;
+    slugPathExists: boolean;
+    slugIsSymlink: boolean;
+    slugTarget: string | null;
+    slugTargetResolved: string | null;
+    slugTargetsWorkspace: boolean;
+    nestedSlugPath: string;
+    nestedSlugPathExists: boolean;
+    nestedSlugIsSymlink: boolean;
+    nestedSlugTarget: string | null;
+    currentLink: string;
+    currentExists: boolean;
+    currentIsSymlink: boolean;
+    currentTarget: string | null;
+    currentTargetResolved: string | null;
+    currentIndexExists: boolean;
+    currentJsonPath: string;
+    currentJsonExists: boolean;
+    currentJsonValid: boolean;
+    currentJsonSlug: string | null;
+    currentJsonWorkspaceId: string | null;
+    currentJsonWebRoot: string | null;
+    currentJsonMatchesSlug: boolean | null;
+    currentJsonMatchesWorkspace: boolean | null;
+    errors: string[];
+  };
+  siteStatus?: JsonValue;
+  hint?: string;
+};
 export type DeployAllResult = {
   ok: boolean;
   workspaceId: string;
@@ -916,6 +958,77 @@ export const postDeployHealth = createServerFn({ method: "POST" })
       runtime: { url: healthUrl, status: h.status, body: h.text.slice(0, 800), latencyMs: h.debug.latencyMs },
       invoke: { url: invokeUrl, status: inv.status, body: inv.text.slice(0, 800), latencyMs: inv.debug.latencyMs },
       checkedAt: new Date().toISOString(),
+    };
+  });
+
+// ---------- Served-site filesystem diagnostics (via sandbox worker) ----------
+const ServedSiteDiagnosticsInput = z.object({
+  workspaceId: z.string().min(1).max(128),
+  slug: z.string().min(1).max(64),
+});
+
+export const diagnoseServedSite = createServerFn({ method: "POST" })
+  .inputValidator((d: unknown) => ServedSiteDiagnosticsInput.parse(d))
+  .handler(async ({ data }): Promise<ServedSiteDiagnostics> => {
+    const base = getVpsBaseUrl();
+    const sandboxUrl = (firstNonEmptyEnv("PLUTO_SANDBOX_URL") || `${base}/sandbox`).replace(/\/+$/, "");
+    const sandboxSecret = firstNonEmptyEnv("PLUTO_SANDBOX_SECRET", "PLUTO_SANDBOX_WORKER_SECRET", "SANDBOX_SHARED_SECRET");
+    const checkedAt = new Date().toISOString();
+    if (!sandboxSecret) {
+      return {
+        ok: false,
+        slug: data.slug,
+        workspaceId: data.workspaceId,
+        checkedAt,
+        sandbox: { url: sandboxUrl, status: 0, latencyMs: 0, body: "PLUTO_SANDBOX_SECRET not configured" },
+        hint: "PLUTO_SANDBOX_SECRET is missing; set it to the VPS worker shared secret before diagnostics can inspect site mapping.",
+      };
+    }
+
+    const query = `workspaceId=${encodeURIComponent(data.workspaceId)}&slug=${encodeURIComponent(data.slug)}`;
+    const candidates = /\/sandbox$/i.test(sandboxUrl)
+      ? [`${sandboxUrl}/diagnostics?${query}`, `${sandboxUrl}/site-diagnostics?${query}`]
+      : [`${sandboxUrl}/sandbox/diagnostics?${query}`, `${sandboxUrl}/sandbox/site-diagnostics?${query}`, `${sandboxUrl}/diagnostics?${query}`];
+
+    let last: Awaited<ReturnType<typeof rawFetch>> | null = null;
+    for (const url of candidates) {
+      last = await rawFetch(url, "GET", { "x-sandbox-secret": sandboxSecret, accept: "application/json" }, null, null, 15_000);
+      if (last.ok) {
+        try {
+          const parsed = JSON.parse(last.text) as Omit<ServedSiteDiagnostics, "sandbox"> & { checkedAt?: string };
+          return {
+            ...parsed,
+            checkedAt: parsed.checkedAt ?? checkedAt,
+            sandbox: { url, status: last.status, latencyMs: last.debug.latencyMs },
+          };
+        } catch {
+          return {
+            ok: false,
+            slug: data.slug,
+            workspaceId: data.workspaceId,
+            checkedAt,
+            sandbox: { url, status: last.status, body: last.text.slice(0, 800), latencyMs: last.debug.latencyMs },
+            hint: "Sandbox diagnostics returned non-JSON. Refresh sandbox-worker.mjs on the VPS and restart pluto-sandbox-worker.",
+          };
+        }
+      }
+      if (last.status !== 404) break;
+    }
+
+    return {
+      ok: false,
+      slug: data.slug,
+      workspaceId: data.workspaceId,
+      checkedAt,
+      sandbox: {
+        url: candidates.join(", "),
+        status: last?.status ?? 0,
+        body: last?.text.slice(0, 800) ?? "no response",
+        latencyMs: last?.debug.latencyMs ?? 0,
+      },
+      hint: (last?.status === 404)
+        ? "The VPS worker does not expose /diagnostics yet. Pull latest code, copy sandbox-worker.mjs to /opt/pluto/sandbox-worker, and restart pluto-sandbox-worker."
+        : `Sandbox diagnostics failed with HTTP ${last?.status ?? 0}.`,
     };
   });
 
