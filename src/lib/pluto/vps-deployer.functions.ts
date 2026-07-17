@@ -554,12 +554,14 @@ async function probeSsl(url: string): Promise<SslProbe> {
             const cn = c.subject?.CN ?? null;
             const alt = (c.subjectaltname ?? "").split(/,\s*/).map((s: string) => s.replace(/^DNS:/, "").trim()).filter(Boolean);
             const host = u.hostname.toLowerCase();
+            const norm = (v: unknown): string | null => Array.isArray(v) ? (v[0] ?? null) : (typeof v === "string" ? v : null);
+            const cn = norm(c.subject?.CN);
             const match = (n: string) => n.startsWith("*.")
               ? host.endsWith(n.slice(1).toLowerCase()) && host.split(".").length === n.split(".").length
               : n.toLowerCase() === host;
             const hostnameMatch = (cn && match(cn)) || alt.some(match) || null;
             done({
-              issuer: c.issuer?.O ?? c.issuer?.CN ?? null,
+              issuer: norm(c.issuer?.O) ?? norm(c.issuer?.CN),
               subject: cn,
               validFrom: c.valid_from ?? null,
               validTo: c.valid_to ?? null,
