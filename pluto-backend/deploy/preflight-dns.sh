@@ -117,6 +117,15 @@ public_ip() {
 VPS_IP="$(public_ip || true)"
 [[ -n "$VPS_IP" ]] && green "  VPS IPv4:  ${VPS_IP}" || yell "  VPS IPv4:  <unknown>"
 
+public_ipv6() {
+  local ip=""
+  ip="$(curl -6 -fsS --max-time 3 https://api64.ipify.org 2>/dev/null | tr -d '[:space:]' || true)"
+  [[ "$ip" == *:* ]] && { echo "$ip"; return; }
+  ip -6 route get 2606:4700:4700::1111 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src"){print $(i+1); exit}}'
+}
+VPS_IPV6="$(public_ipv6 || true)"
+[[ -n "$VPS_IPV6" ]] && echo "  VPS IPv6:  ${VPS_IPV6}" || yell "  VPS IPv6:  <none detected>"
+
 # ── 2. Nameserver detection → suggest ACME challenge ────────────────────────
 NS_LIST="$(dig +short NS "$ZONE_ROOT" @1.1.1.1 2>/dev/null | tr '[:upper:]' '[:lower:]' | sed 's/\.$//' | sort -u | tr '\n' ' ' | sed 's/ $//')"
 if [[ -z "$NS_LIST" ]]; then
@@ -184,6 +193,36 @@ if [[ -n "$VPS_IP" && "$RESOLVED" != "$VPS_IP" ]]; then
    HTTP-01 challenge can reach this VPS directly.)
 MSG
   exit 11
+fi
+
+# Let's Encrypt may prefer IPv6 when an AAAA record exists. If AAAA points to
+# another host, local IPv4 curl tests pass but certbot still fails HTTP-01.
+AAAA_EXACT="$(dig +short AAAA "$FQDN" @1.1.1.1 | grep -E ':' | tr '\n' ' ' || true)"
+AAAA_WILD="$(dig +short AAAA "test-$(date +%s).${BASE}" @1.1.1.1 | grep -E ':' | tr '\n' ' ' || true)"
+AAAA_RESOLVED="${AAAA_EXACT:-$AAAA_WILD}"
+if [[ -n "$AAAA_RESOLVED" ]]; then
+  echo "  AAAA:      ${AAAA_RESOLVED}"
+  IPV6_MATCH=0
+  if [[ -n "$VPS_IPV6" ]]; then
+    for ip6 in $AAAA_RESOLVED; do [[ "$ip6" == "$VPS_IPV6" ]] && IPV6_MATCH=1; done
+  fi
+  if [[ "$IPV6_MATCH" -ne 1 ]]; then
+    red "✗ IPv6/AAAA mismatch — ${FQDN} has AAAA record(s) not pointing to this VPS"
+    cat <<MSG
+
+  DNS AAAA value(s): ${AAAA_RESOLVED}
+  This VPS IPv6:     ${VPS_IPV6:-<none detected>}
+
+  Fix at ${NS_PROVIDER} before certbot:
+    • Recommended: delete the AAAA record for ${FQDN} and any wildcard AAAA for *.${BASE}
+    • Or point AAAA to this VPS IPv6 and open port 80 on IPv6.
+
+  Keep this A record:
+    Type: A     Name: ${SLUG}.${BASE%%.*}     Value: ${VPS_IP:-<VPS-IPv4>}
+MSG
+    exit 11
+  fi
+  green "  ✓ AAAA also points at this VPS"
 fi
 
 # ── 4. HTTP-01 self-probe on port 80 ────────────────────────────────────────

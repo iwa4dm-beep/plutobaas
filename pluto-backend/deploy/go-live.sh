@@ -135,7 +135,10 @@ fi
 # ── 6. per-slug cert ────────────────────────────────────────────────────────
 bold "▸ Step 4/5: issue-per-slug-cert $SLUG $BASE"
 if ! bash pluto-backend/deploy/issue-per-slug-cert.sh "$SLUG" "$BASE"; then
-  red "✗ Cert issuance failed. Rerun preflight to see the specific block:"
+  red "✗ Cert issuance failed. Running diagnosis now:"
+  bash pluto-backend/deploy/diagnose-cert-failure.sh "$SLUG" "$BASE" || true
+  red ""
+  red "Rerun preflight to see DNS/port-80 blockers:"
   red "    sudo bash $REPO/pluto-backend/deploy/preflight-dns.sh $SLUG $BASE"
   exit 35
 fi
