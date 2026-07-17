@@ -125,11 +125,24 @@ export type VerifyResult =
   | { ok: true; records: string[] }
   | { ok: false; reason: string; records: string[] };
 
+/** Parse an `expectedValue` into one or more acceptable values.
+ *  For TXT we allow multiple entries separated by newlines, commas, or
+ *  semicolons — the row matches if ANY parsed value is present in DNS. */
+export function parseExpectedValues(type: DomainRecordType, expected: string): string[] {
+  if (type !== "TXT") return [expected.trim()].filter(Boolean);
+  return expected
+    .split(/[\n,;]+/)
+    .map((s) => s.trim().replace(/^"|"$/g, ""))
+    .filter(Boolean);
+}
+
 function matches(type: DomainRecordType, expected: string, records: string[]): boolean {
   const norm = (s: string) => s.trim().toLowerCase().replace(/\.$/, "");
-  const want = norm(expected);
-  if (type === "TXT") return records.some((r) => r.trim() === expected.trim());
-  return records.some((r) => norm(r) === want);
+  const wants = parseExpectedValues(type, expected);
+  if (wants.length === 0) return false;
+  if (type === "TXT") return wants.some((w) => records.some((r) => r.trim() === w));
+  const wantsNorm = wants.map(norm);
+  return records.some((r) => wantsNorm.includes(norm(r)));
 }
 
 export async function verifyDomainRecord(
