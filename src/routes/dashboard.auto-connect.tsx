@@ -216,6 +216,7 @@ function AutoConnectPage() {
               {step === 4 && plan && (
                 <MigrationsStep
                   plan={plan}
+                  extraPreambleSql={analyze?.backend.extraPreambleSql ?? []}
                   db={db}
                   setDb={setDb}
                   onValidateDb={runValidateDb}
@@ -522,14 +523,15 @@ function StructureReport({ analyze }: { analyze: AnalyzeResult }) {
   );
 }
 
-function MigrationsStep({ plan, db, setDb, onValidateDb, ack, setAck, ackTyped, setAckTyped, onNext, busy, verify }: {
+function MigrationsStep({ plan, extraPreambleSql, db, setDb, onValidateDb, ack, setAck, ackTyped, setAckTyped, onNext, busy, verify }: {
   plan: IntegrationPlan; db: DbConfig; setDb: (d: DbConfig) => void;
+  extraPreambleSql: string[];
   onValidateDb: () => void; ack: boolean; setAck: (v: boolean) => void;
   ackTyped: string; setAckTyped: (v: string) => void;
   onNext: () => void; busy: boolean; verify: VerifyResult | null;
 }) {
   const tables = plan.tables.map((t) => ({ name: t.name, columns: t.columns, timestamps: true }));
-  const rawSql = useMemo(() => buildMigrationBundle(tables), [tables]);
+  const rawSql = useMemo(() => buildMigrationBundle(tables, extraPreambleSql), [tables, extraPreambleSql]);
   const sql = db.driver === "mysql" ? mysqlToPg(rawSql) : rawSql;
   const stmts = useMemo(() => analyzeSql(sql), [sql]);
   const impact = useMemo(() => summarizeImpact(stmts), [stmts]);
