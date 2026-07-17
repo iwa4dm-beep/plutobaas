@@ -138,8 +138,24 @@ function scanApiCalls(file: string, src: string) {
 }
 
 // ── Supabase SQL migration parser (regex-only, static) ───────────────────
-function parseSupabaseMigration(sql: string): TableDef[] {
+function parseSupabaseMigration(sql: string): { tables: TableDef[]; extraPreamble: string[] } {
   const tables: TableDef[] = [];
+  const extraPreamble: string[] = [];
+
+  // Extract CREATE TYPE ... AS ENUM(...) so downstream CREATE TABLE columns
+  // that reference the custom type (e.g. `status ticket_status NOT NULL`)
+  // don't fail with `type "ticket_status" does not exist` when the emitted
+  // migration is applied to a fresh Postgres.
+  const enumRe = /create\s+type\s+(?:if\s+not\s+exists\s+)?(?:public\.)?"?(\w+)"?\s+as\s+enum\s*\(([^)]*)\)\s*;/gi;
+  let em: RegExpExecArray | null;
+  while ((em = enumRe.exec(sql)) !== null) {
+    const typeName = em[1];
+    const values = em[2];
+    extraPreamble.push(
+      `DO $$ BEGIN\n  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = '${typeName}') THEN\n    CREATE TYPE public.${typeName} AS ENUM (${values.trim()});\n  END IF;\nEND $$;`
+    );
+  }
+
   const createRe =
     /create\s+table\s+(?:if\s+not\s+exists\s+)?(?:public\.)?"?(\w+)"?\s*\(([\s\S]*?)\)\s*;/gi;
   let m: RegExpExecArray | null;
@@ -169,7 +185,7 @@ function parseSupabaseMigration(sql: string): TableDef[] {
     }
     if (cols.length) tables.push({ name, columns: cols });
   }
-  return tables;
+  return { tables, extraPreamble };
 }
 
 // ── Main entry ───────────────────────────────────────────────────────────
