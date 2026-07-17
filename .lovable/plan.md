@@ -1,92 +1,91 @@
-# Plan: Domain resolution, wildcard TLS auto-renew, and dashboard visibility
 
-This bundles six related items into one coherent workstream so the sandbox, DNS, TLS, and dashboard all speak the same language about a slug.
+# Observability & Logs System — ধাপে ধাপে Plan
 
-## Scope
+চারটি scope-ই আপনি select করেছেন এবং data source হবে **VPS worker + nginx access logs**। আমি এটাকে ৫টি ধাপে ভাগ করছি যাতে প্রতি ধাপ শেষে একটা কার্যকরী feature live হয় — পরের ধাপ শুরু করার আগে আপনি verify করতে পারবেন।
 
-1. **Site-mapping API** — one source of truth mapping `slug → { apiUrl, appUrl, previewUrl, apex, workspaceId }`, with optional auto-trigger of DNS+TLS.
-2. **Wildcard TLS auto-renew + alerts** for `*.app.timescard.cloud`.
-3. **DNS auto-heal wizard** that turns HTTP 000 into an actionable diagnosis (DNS missing / cert missing / nginx down / worker down / bundle missing) with a one-click repair command.
-4. **Dashboard workspace/app list fetch fix** so the app/workspace list reliably renders.
-5. **UI status panel** for a slug: Auto Deploy pushed? Migrations applied? Bundle unpacked? Placeholder vs real?
-6. **Auto-seed on `slug_not_found`** inside `verify-deploy.sh` (already partial) + inside the worker `/site-status` path so the manual `seed-slug.sh` step disappears.
+## Data model (একবার তৈরি হবে, সব ধাপে reuse হবে)
 
-## Deliverables
+Lovable Cloud-এ ২টা table:
 
-### 1. Site-mapping API (dashboard-side, TanStack server functions)
+**`request_logs`** — worker + nginx থেকে আসা প্রতিটা HTTP request-এর row:
+- `id`, `ts`, `deployment_id` (nullable), `workspace_id`, `slug`
+- `environment` (`production` / `preview` / `sandbox`)
+- `host`, `route` (matched pattern), `request_path`, `request_method`
+- `status_code`, `request_type` (`html`/`api`/`asset`/`webhook`)
+- `service` (`worker` / `nginx` / `edge`), `resource` (`sites`/`sandbox`/`api`/...)
+- `cache` (`HIT`/`MISS`/`BYPASS`/null), `duration_ms`, `bytes`
+- `console_level` (nullable — `error`/`warn`/`info`/`debug`), `message`
+- `branch` (nullable), `workflow_run_id`, `workflow_step` (nullable)
 
-- `src/lib/pluto/site-mapping.functions.ts`
-  - `getSiteMapping({ slug })` → `{ slug, workspaceId, apex, apiUrl, prodUrl, previewUrl, workerBase, sandboxPort, dns: {...}, tls: {...} }`
-  - `upsertSiteMapping({ slug, workspaceId, apex? })` → persists override rows in `admin.site_mappings`
-  - `triggerAutoHeal({ slug, actions: ['dns','tls','seed','reload'] })` → calls VPS repair endpoint (see §3)
-- Migration `0039_site_mappings.sql`
-  - `admin.site_mappings(slug pk, workspace_id, apex, api_host, prod_host, preview_host, updated_at)` + grants + RLS (owner/admin via `has_role`).
-- `src/routes/api/public/site-mapping.$slug.ts` (GET) — public read-only resolver returning the mapping; used by the sandbox worker and by CLI health checks. Anon-safe (no secrets in body).
+**`workflow_runs`** — Auto-Deploy pipeline runs (existing history table extend):
+- `id`, `slug`, `branch`, `commit_sha`, `started_at`, `finished_at`, `status`
+- `deployment_id`, `steps` (jsonb — array of {name, status, duration, log_url})
 
-### 2. Wildcard TLS auto-renew + alerts
+RLS: workspace-scoped read via `has_role` + workspace membership; service-role write only.
 
-- `pluto-backend/deploy/tls-renew.sh` — wraps `certbot renew --deploy-hook 'systemctl reload nginx'`, logs to `/var/log/pluto/tls-renew.log`, writes a `status.json` (last-run ts, success, cert not-after per domain).
-- `pluto-backend/deploy/systemd/pluto-tls-renew.service` + `.timer` (daily, `RandomizedDelaySec=1h`) — installed by `install-wildcard-tls.sh` if missing.
-- `pluto-backend/deploy/tls-alert.sh` — reads `status.json` and cert expiry; if `not_after < now+14d` OR last run failed, POSTs to `/api/public/tls-alert` (HMAC-signed with `TLS_ALERT_SECRET`). Runs on the same timer.
-- `src/routes/api/public/tls-alert.ts` — verifies HMAC, inserts a row into `admin.tls_events`, emits an in-app notification for admins.
-- Dashboard shows a red banner when any cert is `expiring`/`failed`.
+## ধাপ ১ — Ingestion pipeline (backend foundation)
 
-### 3. DNS + Auto-Heal wizard
+1. **Worker patch** (`sandbox-worker.mjs`): প্রতিটা request-এর জন্য একটা structured JSON line stdout-এ log করবে (fields উপরের model অনুযায়ী)। ইতিমধ্যে filesystem write ছাড়াই journald ধরবে।
+2. **nginx**: `log_format json_combined` যোগ করে `access.log`-এ JSON format-এ লিখবে।
+3. **Log shipper** (`pluto-backend/deploy/install-log-shipper.sh`): একটা ছোট Node daemon (`pluto-log-shipper`) যেটা
+   - journald + nginx access log tail করে
+   - JSON parse করে
+   - batch (500 rows / 2s) করে TanStack public server route `POST /api/public/ingest/logs` -এ পাঠায় HMAC signature সহ
+4. **Ingestion endpoint** (`src/routes/api/public/ingest/logs.ts`): signature verify → Zod validate → `request_logs` bulk insert (`supabaseAdmin`)।
+5. **Systemd unit** + secret (`PLUTO_LOG_INGEST_SECRET`) auto-generated।
 
-- `pluto-backend/deploy/diagnose-slug.sh <slug>` — replaces the "checklist" text at end of `verify-served-site.sh` with real probes:
-  - `dig +short <slug>.<apex>` vs. detected VPS IP
-  - `openssl s_client` SAN check for `*.<apex>`
-  - `systemctl is-active nginx pluto-sandbox-worker`
-  - `/site-status/<slug>` on `127.0.0.1:8787`
-  - Disk state at `/var/lib/pluto/sites/<slug>`
-  - Emits a JSON `{ cause, fix_command }`.
-- `verify-served-site.sh` calls it whenever a probe returns 000 or non-2xx and prints the `fix_command` inline (DNS → `ensure-wildcard-dns.sh`; TLS → `fix-wildcard-ssl.sh`; missing slug → `seed-slug.sh`; worker → `refresh-worker.sh`).
-- Dashboard `HealDialog` component: calls `triggerAutoHeal` from §1 and streams progress.
+**Verify**: `curl` diagnostic দেখাবে `select count(*) from request_logs where ts > now() - interval '1 minute'` > 0.
 
-### 4. Dashboard workspace/app list fetch fix
+## ধাপ ২ — Unified Logs Explorer (`/dashboard/logs`)
 
-- Audit `src/routes/_authenticated/index.tsx` (or dashboard root) + the `listWorkspaces` / `listProjects` server functions.
-  - Ensure both use `context.queryClient.ensureQueryData` + `useSuspenseQuery` (not `useEffect` + `fetch`).
-  - Ensure server function uses `requireSupabaseAuth` and reads workspaces where `owner_id = context.userId OR EXISTS(workspace_members)`.
-  - Grants: verify `authenticated` has `SELECT` on `admin.workspaces`, `admin.workspace_members`, `admin.projects` (per 0038 self-heal, add anything still missing in `0039`).
-- Add `errorComponent` + `notFoundComponent` and an empty-state CTA ("Create your first workspace").
+নতুন route + query surface। Server function `queryLogs` (RLS-scoped) সব ১৫টা dimension-এ filter নেয়। URL search params (validated via `zodValidator + fallback`) — bookmarkable/shareable।
 
-### 5. UI status panel per slug
+UI (single page, keyboard-first):
+- **Left rail — Facets**: প্রতিটা dimension-এর জন্য top-N counts (Environment, Status Code, Route, Request Type, Service, Cache, Host, Console Level, Branch, Workflow Step, Deployment ID, Resource, Request Method)। ক্লিক = filter toggle।
+- **Top bar**: full-text `Contains` box (matches `message` + `request_path`), time range picker, refresh interval।
+- **Center**: virtualized table (ts, level/status, method, path, duration, deployment) — row expand করলে full JSON।
+- **Right drawer**: selected row-এর deployment + workflow_run cross-link।
 
-- `src/routes/_authenticated/projects/$slug.status.tsx`
-- Server fn `getSlugStatus({ slug })`:
-  - `deployment`: latest `admin.deployments` row (state, started_at, finished_at, bundle_sha, size).
-  - `migrations`: `admin.migration_runs` latest per project (applied vs pending count).
-  - `bundle`: fetches `https://api.<apex>/site-status/<slug>` → parses `{ release, placeholder, sizeBytes, servedAt }`.
-  - `dns`, `tls`: pulled from §1/§2.
-- UI: 4 traffic-light cards (Auto Deploy · Migrations · Bundle · DNS/TLS) with timestamps and a "Heal" button per row.
+Empty/error/loading states + CSV export।
 
-### 6. Auto-seed on `slug_not_found`
+## ধাপ ৩ — Auto-Deploy Studio-তে filter integration
 
-- Worker side (`sandbox-worker/sandbox-worker.mjs`): when `/site-status/<slug>` would return 404 and the request carries `X-Pluto-Auto-Seed: 1` from a trusted source, seed a minimal placeholder in-process (same layout `seed-slug.sh` writes) and return 200 with `placeholder: true, autoSeeded: true`.
-- `verify-deploy.sh`: already auto-seeds when root — extend to also POST to `/api/public/site-mapping/<slug>/heal` so the dashboard is notified.
-- Server fn `triggerAutoHeal` (§1) with `actions: ['seed']` calls the worker's admin `/seed-slug` endpoint (secret-authed) — used by the dashboard Heal button.
+বর্তমান `dashboard.auto-deploy.tsx`-এ:
+- History list-এর উপরে একটা compact filter bar (Environment, Status Code, Deployment ID, Route, Branch)।
+- প্রতিটা deploy row-এ **"View logs"** button → Logs Explorer-এ pre-filtered navigate (`?deployment_id=...&ts>=started_at`)।
+- Health check panel-এ prod-live 4xx/5xx rate mini-chart (last 15 min from `request_logs`)।
 
-## Technical notes
+## ধাপ ৪ — Served-site diagnostics extension (live tail)
 
-- All new server functions use `createServerFn` + `requireSupabaseAuth` where user context matters; public read (`/api/public/site-mapping/*`) uses a publishable-key client and returns only non-secret fields.
-- Worker gets one new authenticated endpoint `POST /admin/seed-slug` guarded by the existing shared `SECRET` header.
-- DNS auto-heal continues to use `ensure-wildcard-dns.sh` (Cloudflare token at `/etc/letsencrypt/cloudflare.ini`).
-- No new secrets requested up front; `TLS_ALERT_SECRET` is generated server-side via `generate_secret` when the timer is first installed.
+`ServedSiteDiagnosticsPanel`-এ নতুন tab **"Live requests"**:
+- `queryLogs({ slug, since: now-5m })` polling প্রতি 3s
+- Path, Status, Method, Cache, duration মিনি table
+- **"Tail in Explorer"** button → `/dashboard/logs?slug=...&auto_refresh=1`
 
-## Rollout order
+## ধাপ ৫ — Workflow/CI Runs viewer (`/dashboard/workflows`)
 
-1. Migration `0039_site_mappings.sql` + grants.
-2. Site-mapping server fns + public resolver route.
-3. Worker `/admin/seed-slug` + `X-Pluto-Auto-Seed` behavior.
-4. `diagnose-slug.sh` + `verify-served-site.sh` integration.
-5. `tls-renew.sh` + systemd timer + `tls-alert.sh` + `/api/public/tls-alert` route.
-6. Dashboard: workspace list fix → per-slug status panel → Heal dialog → TLS banner.
+- Auto-Deploy pipeline runs list — Branch × Workflow Run × Deployment ID cross-index
+- Detail view: steps timeline (each step name + status + duration) + step-level log filter shortcut → Logs Explorer scoped to that `workflow_run_id + workflow_step`
+- Retry / rerun button (existing auto-deploy trigger reused)
 
-## Out of scope
+---
 
-- Custom (non-`app.timescard.cloud`) domain automation — separate flow via `reconcile-domains.sh`.
-- Changing worker's on-disk layout or migration engine.
-- Adding a queue/broker for repair jobs — repair actions stay synchronous with progress streamed over SSE.
+## Technical highlights (for reference)
 
-Approve this and I'll implement in the order above; each step is independently verifiable with `verify-deploy.sh <slug>`.
+- **Cost control**: retention policy — DELETE FROM request_logs WHERE ts < now() - interval '14 days' via `pg_cron`; asset requests (`request_type='asset'`) retained only 3 days.
+- **Indexes**: `(workspace_id, ts DESC)`, `(slug, ts DESC)`, `(deployment_id)`, GIN on `message` for `Contains` search.
+- **Security**: ingest endpoint under `/api/public/*` with HMAC (`PLUTO_LOG_INGEST_SECRET`); read via `requireSupabaseAuth` server fns; RLS enforces workspace scope; no PII in log lines (auth headers stripped worker-side).
+- **Performance**: virtualized table (`@tanstack/react-virtual`), facet counts computed via a single `queryLogs` call returning `{rows, facets}`; server pagination (keyset on `ts`).
+
+---
+
+## Order of delivery
+
+আমি shipped-per-step model-এ কাজ করব:
+1. ধাপ ১ (schema + ingest endpoint + shipper script) — VPS-এ shipper install করার পর ধাপ ২ শুরু।
+2. ধাপ ২ (Explorer) — এটাই সবচেয়ে বড়; শেষ হলে সব বাকি ধাপ এর উপর build করে।
+3. ধাপ ৩, ৪, ৫ — একই query surface reuse, তাই দ্রুত।
+
+**Priority fields আপনি text answer-এ দেননি** — আমি ধরে নিচ্ছি সব ১৫টাই first-class (facet + filter), শুধু "Workflow Run/Step/Branch" ধাপ ৫-এ populate হবে (ধাপ ১-এ column present কিন্তু nullable)।
+
+Plan approve করলে ধাপ ১ থেকে শুরু করব।
