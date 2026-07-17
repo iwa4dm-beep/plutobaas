@@ -371,14 +371,28 @@ export function CustomDomainsPanel({ workspaceId, currentSlug }: Props) {
                         {row.recordType}
                       </span>
                     </div>
-                    <div className="mt-0.5 text-xs text-muted-foreground">
-                      slug <code className="rounded bg-muted px-1">{row.slug}</code> · {row.recordType} →{" "}
-                      <code className="rounded bg-muted px-1">{row.expectedValue}</code>
-                      {row.lastCheckedAt && <> · checked {new Date(row.lastCheckedAt).toLocaleString()}</>}
-                      {nextRetry && row.status !== "active" && row.autoVerify !== false && (
-                        <> · next auto-retry {nextRetry.toLocaleTimeString()}</>
-                      )}
-                    </div>
+                    {(() => {
+                      const vals = parseExpectedValues(row.recordType, row.expectedValue);
+                      const label =
+                        vals.length > 1
+                          ? `${vals[0]} +${vals.length - 1} more`
+                          : vals[0] ?? row.expectedValue;
+                      return (
+                        <div className="mt-0.5 text-xs text-muted-foreground">
+                          slug <code className="rounded bg-muted px-1">{row.slug}</code> · {row.recordType} →{" "}
+                          <code className="rounded bg-muted px-1" title={vals.join("\n")}>
+                            {label}
+                          </code>
+                          {vals.length > 1 && (
+                            <span className="ml-1 text-[10px]">(any match)</span>
+                          )}
+                          {row.lastCheckedAt && <> · checked {new Date(row.lastCheckedAt).toLocaleString()}</>}
+                          {nextRetry && row.status !== "active" && row.autoVerify !== false && (
+                            <> · next auto-retry {nextRetry.toLocaleTimeString()}</>
+                          )}
+                        </div>
+                      );
+                    })()}
                     {row.lastError && <div className="mt-1 text-xs text-red-500">DNS: {row.lastError}</div>}
                     {row.sslError && ssl !== "active" && (
                       <div className="mt-1 text-xs text-red-500">SSL: {row.sslError}</div>
