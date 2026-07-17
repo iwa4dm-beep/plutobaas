@@ -29,7 +29,7 @@ import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
 import { spawn } from "node:child_process";
-import { randomUUID, timingSafeEqual, createHash } from "node:crypto";
+import { randomUUID, timingSafeEqual, createHash, randomBytes } from "node:crypto";
 
 const PORT = Number(process.env.PORT ?? process.env.SANDBOX_WORKER_PORT ?? 8787);
 const SECRET = process.env.SANDBOX_SHARED_SECRET ?? "";
