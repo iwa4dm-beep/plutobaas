@@ -24,6 +24,7 @@ import { Route as DocsApiRouteImport } from './routes/docs.api'
 import { Route as DashboardWorkspacesRouteImport } from './routes/dashboard.workspaces'
 import { Route as DashboardVpsSubdomainsRouteImport } from './routes/dashboard.vps-subdomains'
 import { Route as DashboardVpsStatusRouteImport } from './routes/dashboard.vps-status'
+import { Route as DashboardVpsRecoveryRouteImport } from './routes/dashboard.vps-recovery'
 import { Route as DashboardVerifyRouteImport } from './routes/dashboard.verify'
 import { Route as DashboardVectorRouteImport } from './routes/dashboard.vector'
 import { Route as DashboardUsersRouteImport } from './routes/dashboard.users'
@@ -102,6 +103,7 @@ import { Route as DashboardIntegrationsLovableFrontendRouteImport } from './rout
 import { Route as DashboardCustomDomainsAuditRouteImport } from './routes/dashboard.custom-domains.audit'
 import { Route as DashboardAdminInviteRouteImport } from './routes/dashboard.admin.invite'
 import { Route as ApiPublicVpsSubdomainsRouteImport } from './routes/api/public/vps-subdomains'
+import { Route as ApiPublicProvisionSubdomainRouteImport } from './routes/api/public/provision-subdomain'
 import { Route as ApiPublicPlutoMigrateRouteImport } from './routes/api/public/pluto-migrate'
 import { Route as ApiPublicAutoDeployWebhookRouteImport } from './routes/api/public/auto-deploy-webhook'
 import { Route as ApiPlutoVerifyBootstrapRouteImport } from './routes/api/pluto/verify-bootstrap'
@@ -187,6 +189,11 @@ const DashboardVpsSubdomainsRoute = DashboardVpsSubdomainsRouteImport.update({
 const DashboardVpsStatusRoute = DashboardVpsStatusRouteImport.update({
   id: '/vps-status',
   path: '/vps-status',
+  getParentRoute: () => DashboardRoute,
+} as any)
+const DashboardVpsRecoveryRoute = DashboardVpsRecoveryRouteImport.update({
+  id: '/vps-recovery',
+  path: '/vps-recovery',
   getParentRoute: () => DashboardRoute,
 } as any)
 const DashboardVerifyRoute = DashboardVerifyRouteImport.update({
@@ -589,6 +596,12 @@ const ApiPublicVpsSubdomainsRoute = ApiPublicVpsSubdomainsRouteImport.update({
   path: '/api/public/vps-subdomains',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicProvisionSubdomainRoute =
+  ApiPublicProvisionSubdomainRouteImport.update({
+    id: '/api/public/provision-subdomain',
+    path: '/api/public/provision-subdomain',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiPublicPlutoMigrateRoute = ApiPublicPlutoMigrateRouteImport.update({
   id: '/api/public/pluto-migrate',
   path: '/api/public/pluto-migrate',
@@ -732,6 +745,7 @@ export interface FileRoutesByFullPath {
   '/dashboard/users': typeof DashboardUsersRoute
   '/dashboard/vector': typeof DashboardVectorRoute
   '/dashboard/verify': typeof DashboardVerifyRoute
+  '/dashboard/vps-recovery': typeof DashboardVpsRecoveryRoute
   '/dashboard/vps-status': typeof DashboardVpsStatusRoute
   '/dashboard/vps-subdomains': typeof DashboardVpsSubdomainsRoute
   '/dashboard/workspaces': typeof DashboardWorkspacesRoute
@@ -746,6 +760,7 @@ export interface FileRoutesByFullPath {
   '/api/pluto/verify-bootstrap': typeof ApiPlutoVerifyBootstrapRoute
   '/api/public/auto-deploy-webhook': typeof ApiPublicAutoDeployWebhookRoute
   '/api/public/pluto-migrate': typeof ApiPublicPlutoMigrateRoute
+  '/api/public/provision-subdomain': typeof ApiPublicProvisionSubdomainRoute
   '/api/public/vps-subdomains': typeof ApiPublicVpsSubdomainsRoute
   '/dashboard/admin/invite': typeof DashboardAdminInviteRoute
   '/dashboard/custom-domains/audit': typeof DashboardCustomDomainsAuditRoute
@@ -837,6 +852,7 @@ export interface FileRoutesByTo {
   '/dashboard/users': typeof DashboardUsersRoute
   '/dashboard/vector': typeof DashboardVectorRoute
   '/dashboard/verify': typeof DashboardVerifyRoute
+  '/dashboard/vps-recovery': typeof DashboardVpsRecoveryRoute
   '/dashboard/vps-status': typeof DashboardVpsStatusRoute
   '/dashboard/vps-subdomains': typeof DashboardVpsSubdomainsRoute
   '/dashboard/workspaces': typeof DashboardWorkspacesRoute
@@ -851,6 +867,7 @@ export interface FileRoutesByTo {
   '/api/pluto/verify-bootstrap': typeof ApiPlutoVerifyBootstrapRoute
   '/api/public/auto-deploy-webhook': typeof ApiPublicAutoDeployWebhookRoute
   '/api/public/pluto-migrate': typeof ApiPublicPlutoMigrateRoute
+  '/api/public/provision-subdomain': typeof ApiPublicProvisionSubdomainRoute
   '/api/public/vps-subdomains': typeof ApiPublicVpsSubdomainsRoute
   '/dashboard/admin/invite': typeof DashboardAdminInviteRoute
   '/dashboard/custom-domains/audit': typeof DashboardCustomDomainsAuditRoute
@@ -944,6 +961,7 @@ export interface FileRoutesById {
   '/dashboard/users': typeof DashboardUsersRoute
   '/dashboard/vector': typeof DashboardVectorRoute
   '/dashboard/verify': typeof DashboardVerifyRoute
+  '/dashboard/vps-recovery': typeof DashboardVpsRecoveryRoute
   '/dashboard/vps-status': typeof DashboardVpsStatusRoute
   '/dashboard/vps-subdomains': typeof DashboardVpsSubdomainsRoute
   '/dashboard/workspaces': typeof DashboardWorkspacesRoute
@@ -958,6 +976,7 @@ export interface FileRoutesById {
   '/api/pluto/verify-bootstrap': typeof ApiPlutoVerifyBootstrapRoute
   '/api/public/auto-deploy-webhook': typeof ApiPublicAutoDeployWebhookRoute
   '/api/public/pluto-migrate': typeof ApiPublicPlutoMigrateRoute
+  '/api/public/provision-subdomain': typeof ApiPublicProvisionSubdomainRoute
   '/api/public/vps-subdomains': typeof ApiPublicVpsSubdomainsRoute
   '/dashboard/admin/invite': typeof DashboardAdminInviteRoute
   '/dashboard/custom-domains/audit': typeof DashboardCustomDomainsAuditRoute
@@ -1052,6 +1071,7 @@ export interface FileRouteTypes {
     | '/dashboard/users'
     | '/dashboard/vector'
     | '/dashboard/verify'
+    | '/dashboard/vps-recovery'
     | '/dashboard/vps-status'
     | '/dashboard/vps-subdomains'
     | '/dashboard/workspaces'
@@ -1066,6 +1086,7 @@ export interface FileRouteTypes {
     | '/api/pluto/verify-bootstrap'
     | '/api/public/auto-deploy-webhook'
     | '/api/public/pluto-migrate'
+    | '/api/public/provision-subdomain'
     | '/api/public/vps-subdomains'
     | '/dashboard/admin/invite'
     | '/dashboard/custom-domains/audit'
@@ -1157,6 +1178,7 @@ export interface FileRouteTypes {
     | '/dashboard/users'
     | '/dashboard/vector'
     | '/dashboard/verify'
+    | '/dashboard/vps-recovery'
     | '/dashboard/vps-status'
     | '/dashboard/vps-subdomains'
     | '/dashboard/workspaces'
@@ -1171,6 +1193,7 @@ export interface FileRouteTypes {
     | '/api/pluto/verify-bootstrap'
     | '/api/public/auto-deploy-webhook'
     | '/api/public/pluto-migrate'
+    | '/api/public/provision-subdomain'
     | '/api/public/vps-subdomains'
     | '/dashboard/admin/invite'
     | '/dashboard/custom-domains/audit'
@@ -1263,6 +1286,7 @@ export interface FileRouteTypes {
     | '/dashboard/users'
     | '/dashboard/vector'
     | '/dashboard/verify'
+    | '/dashboard/vps-recovery'
     | '/dashboard/vps-status'
     | '/dashboard/vps-subdomains'
     | '/dashboard/workspaces'
@@ -1277,6 +1301,7 @@ export interface FileRouteTypes {
     | '/api/pluto/verify-bootstrap'
     | '/api/public/auto-deploy-webhook'
     | '/api/public/pluto-migrate'
+    | '/api/public/provision-subdomain'
     | '/api/public/vps-subdomains'
     | '/dashboard/admin/invite'
     | '/dashboard/custom-domains/audit'
@@ -1307,6 +1332,7 @@ export interface RootRouteChildren {
   ApiPlutoVerifyBootstrapRoute: typeof ApiPlutoVerifyBootstrapRoute
   ApiPublicAutoDeployWebhookRoute: typeof ApiPublicAutoDeployWebhookRoute
   ApiPublicPlutoMigrateRoute: typeof ApiPublicPlutoMigrateRoute
+  ApiPublicProvisionSubdomainRoute: typeof ApiPublicProvisionSubdomainRoute
   ApiPublicVpsSubdomainsRoute: typeof ApiPublicVpsSubdomainsRoute
   SdkDownloadFileRoute: typeof SdkDownloadFileRoute
   ApiPublicSiteMappingSlugRoute: typeof ApiPublicSiteMappingSlugRoute
@@ -1417,6 +1443,13 @@ declare module '@tanstack/react-router' {
       path: '/vps-status'
       fullPath: '/dashboard/vps-status'
       preLoaderRoute: typeof DashboardVpsStatusRouteImport
+      parentRoute: typeof DashboardRoute
+    }
+    '/dashboard/vps-recovery': {
+      id: '/dashboard/vps-recovery'
+      path: '/vps-recovery'
+      fullPath: '/dashboard/vps-recovery'
+      preLoaderRoute: typeof DashboardVpsRecoveryRouteImport
       parentRoute: typeof DashboardRoute
     }
     '/dashboard/verify': {
@@ -1965,6 +1998,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicVpsSubdomainsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/provision-subdomain': {
+      id: '/api/public/provision-subdomain'
+      path: '/api/public/provision-subdomain'
+      fullPath: '/api/public/provision-subdomain'
+      preLoaderRoute: typeof ApiPublicProvisionSubdomainRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/pluto-migrate': {
       id: '/api/public/pluto-migrate'
       path: '/api/public/pluto-migrate'
@@ -2172,6 +2212,7 @@ interface DashboardRouteChildren {
   DashboardUsersRoute: typeof DashboardUsersRoute
   DashboardVectorRoute: typeof DashboardVectorRoute
   DashboardVerifyRoute: typeof DashboardVerifyRoute
+  DashboardVpsRecoveryRoute: typeof DashboardVpsRecoveryRoute
   DashboardVpsStatusRoute: typeof DashboardVpsStatusRoute
   DashboardVpsSubdomainsRoute: typeof DashboardVpsSubdomainsRoute
   DashboardWorkspacesRoute: typeof DashboardWorkspacesRoute
@@ -2249,6 +2290,7 @@ const DashboardRouteChildren: DashboardRouteChildren = {
   DashboardUsersRoute: DashboardUsersRoute,
   DashboardVectorRoute: DashboardVectorRoute,
   DashboardVerifyRoute: DashboardVerifyRoute,
+  DashboardVpsRecoveryRoute: DashboardVpsRecoveryRoute,
   DashboardVpsStatusRoute: DashboardVpsStatusRoute,
   DashboardVpsSubdomainsRoute: DashboardVpsSubdomainsRoute,
   DashboardWorkspacesRoute: DashboardWorkspacesRoute,
@@ -2280,6 +2322,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPlutoVerifyBootstrapRoute: ApiPlutoVerifyBootstrapRoute,
   ApiPublicAutoDeployWebhookRoute: ApiPublicAutoDeployWebhookRoute,
   ApiPublicPlutoMigrateRoute: ApiPublicPlutoMigrateRoute,
+  ApiPublicProvisionSubdomainRoute: ApiPublicProvisionSubdomainRoute,
   ApiPublicVpsSubdomainsRoute: ApiPublicVpsSubdomainsRoute,
   SdkDownloadFileRoute: SdkDownloadFileRoute,
   ApiPublicSiteMappingSlugRoute: ApiPublicSiteMappingSlugRoute,

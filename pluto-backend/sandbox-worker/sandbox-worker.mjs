@@ -29,7 +29,7 @@ import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
 import { spawn } from "node:child_process";
-import { randomUUID, timingSafeEqual, createHash } from "node:crypto";
+import { randomUUID, timingSafeEqual, createHash, randomBytes } from "node:crypto";
 
 const PORT = Number(process.env.PORT ?? process.env.SANDBOX_WORKER_PORT ?? 8787);
 const SECRET = process.env.SANDBOX_SHARED_SECRET ?? "";
@@ -37,6 +37,9 @@ const SITES_ROOT = process.env.SITES_ROOT ?? process.env.SANDBOX_SITES_ROOT ?? "
 const UPSTREAM = (process.env.PLUTO_UPSTREAM_URL ?? "http://127.0.0.1:8000").replace(/\/+$/, "");
 const SERVICE_KEY = process.env.PLUTO_SERVICE_ROLE_KEY ?? "";
 const LAST_DEPLOY_FILE = path.join(SITES_ROOT, ".last-deploy.json");
+const SLUG_SECRETS_DIR = path.join(SITES_ROOT, ".slug-secrets");
+const REPAIR_HISTORY_FILE = path.join(SITES_ROOT, ".repair-history.json");
+const REPAIR_HISTORY_MAX = 200;
 const DEFAULT_BASE_DOMAIN = process.env.PLUTO_WILDCARD_HOST || process.env.BASE_DOMAIN || "app.timescard.cloud";
 const NGINX_SITES_ENABLED = process.env.NGINX_SITES_ENABLED || "/etc/nginx/sites-enabled";
 const NGINX_SITES_AVAILABLE = process.env.NGINX_SITES_AVAILABLE || "/etc/nginx/sites-available";
@@ -1080,6 +1083,102 @@ code{background:#1c2740;padding:.15rem .4rem;border-radius:4px}</style></head>
   return manifest;
 }
 
+// ---------- Per-slug shared secret rotation (Feature 1) ----------
+// Each slug can hold an independently-rotated secret. Rotation writes a fresh
+// value to <SITES_ROOT>/.slug-secrets/<slug>.json. No worker restart needed —
+// callers read from disk on every request, so the next inbound call already
+// sees the new secret. Revoked entries stay on disk (audit trail) but fail
+// verifySlugSecret().
+function slugSecretPath(slug) { return path.join(SLUG_SECRETS_DIR, `${slug}.json`); }
+
+async function readSlugSecretRecord(slug) {
+  const s = String(slug || "").toLowerCase();
+  if (!SLUG_RE.test(s)) return null;
+  try {
+    const raw = await fsp.readFile(slugSecretPath(s), "utf-8");
+    return JSON.parse(raw);
+  } catch { return null; }
+}
+
+async function rotateSlugSecret(slug, opts = {}) {
+  const s = String(slug || "").toLowerCase();
+  if (!SLUG_RE.test(s)) throw new Error("invalid_slug");
+  await fsp.mkdir(SLUG_SECRETS_DIR, { recursive: true, mode: 0o700 });
+  const prev = await readSlugSecretRecord(s);
+  const secret = randomBytes(32).toString("hex");
+  const now = new Date().toISOString();
+  const record = {
+    slug: s,
+    secret,
+    createdAt: now,
+    rotatedAt: now,
+    rotationCount: (prev?.rotationCount ?? 0) + 1,
+    revoked: false,
+    revokedAt: null,
+    previousHash: prev?.secret ? createHash("sha256").update(prev.secret).digest("hex").slice(0, 16) : null,
+    note: typeof opts.note === "string" ? opts.note.slice(0, 200) : null,
+  };
+  const tmp = `${slugSecretPath(s)}.tmp-${randomUUID().slice(0, 6)}`;
+  await fsp.writeFile(tmp, JSON.stringify(record, null, 2), { mode: 0o600 });
+  await fsp.rename(tmp, slugSecretPath(s));
+  return record;
+}
+
+async function revokeSlugSecret(slug) {
+  const s = String(slug || "").toLowerCase();
+  if (!SLUG_RE.test(s)) throw new Error("invalid_slug");
+  const prev = await readSlugSecretRecord(s);
+  if (!prev) return { ok: false, error: "no_secret_for_slug" };
+  const record = { ...prev, revoked: true, revokedAt: new Date().toISOString(), secret: "" };
+  await fsp.writeFile(slugSecretPath(s), JSON.stringify(record, null, 2), { mode: 0o600 });
+  return { ok: true, slug: s, revokedAt: record.revokedAt };
+}
+
+async function slugSecretStatus(slug) {
+  const rec = await readSlugSecretRecord(slug);
+  if (!rec) return { ok: false, slug: String(slug || "").toLowerCase(), hasSecret: false };
+  return {
+    ok: true,
+    slug: rec.slug,
+    hasSecret: !rec.revoked && !!rec.secret,
+    revoked: !!rec.revoked,
+    createdAt: rec.createdAt,
+    rotatedAt: rec.rotatedAt,
+    revokedAt: rec.revokedAt || null,
+    rotationCount: rec.rotationCount ?? 0,
+    secretRef: `SANDBOX_SLUG_SECRET_${rec.slug.replace(/-/g, "_").toUpperCase()}`,
+    fingerprint: rec.secret ? createHash("sha256").update(rec.secret).digest("hex").slice(0, 12) : null,
+  };
+}
+
+function verifySlugSecretHeader(req, slug) {
+  const provided = req.headers["x-slug-secret"];
+  if (typeof provided !== "string" || !provided) return Promise.resolve(false);
+  return readSlugSecretRecord(slug).then((rec) => {
+    if (!rec || rec.revoked || !rec.secret) return false;
+    if (provided.length !== rec.secret.length) return false;
+    try { return timingSafeEqual(Buffer.from(provided), Buffer.from(rec.secret)); } catch { return false; }
+  });
+}
+
+// ---------- Repair history (Feature 2) ----------
+async function appendRepairHistory(entry) {
+  let list = [];
+  try { list = JSON.parse(await fsp.readFile(REPAIR_HISTORY_FILE, "utf-8")); if (!Array.isArray(list)) list = []; } catch { list = []; }
+  list.unshift(entry);
+  if (list.length > REPAIR_HISTORY_MAX) list = list.slice(0, REPAIR_HISTORY_MAX);
+  await fsp.mkdir(SITES_ROOT, { recursive: true });
+  await fsp.writeFile(REPAIR_HISTORY_FILE, JSON.stringify(list, null, 2));
+}
+async function readRepairHistory(limit = 25, filter = {}) {
+  let list = [];
+  try { list = JSON.parse(await fsp.readFile(REPAIR_HISTORY_FILE, "utf-8")); if (!Array.isArray(list)) list = []; } catch { list = []; }
+  if (filter?.slug) list = list.filter((e) => e && e.slug === String(filter.slug).toLowerCase());
+  if (filter?.action) list = list.filter((e) => e && e.action === filter.action);
+  return list.slice(0, Math.max(1, Math.min(200, Number(limit) || 25)));
+}
+
+
 const server = http.createServer(async (req, res) => {
   try {
     const p = requestPath(req);
@@ -1276,6 +1375,7 @@ const server = http.createServer(async (req, res) => {
       if (body?.slug && safeArg(String(body.slug))) args.push("--slug", String(body.slug));
       if (body?.wildcard && safeArg(String(body.wildcard))) args.push("--wildcard", String(body.wildcard));
       if (body?.acmeEmail && safeArg(String(body.acmeEmail))) args.push("--acme-email", String(body.acmeEmail));
+      const startedIso = new Date().toISOString();
       const startedAt = Date.now();
       const chunks = [];
       let exitCode = -1;
@@ -1291,8 +1391,102 @@ const server = http.createServer(async (req, res) => {
       let hint = null;
       if (exitCode === 127) hint = "/usr/local/sbin/pluto-repair not installed or sudoers rule missing — run `sudo bash pluto-backend/deploy/full-deploy.sh`.";
       else if (exitCode !== 0) hint = "Repair script exited non-zero — inspect tail for the failing step.";
-      return json(res, 200, { ok: exitCode === 0, action, exitCode, durationMs: Date.now() - startedAt, tail, hint });
+      const durationMs = Date.now() - startedAt;
+      await appendRepairHistory({
+        action, slug: body?.slug ? String(body.slug).toLowerCase() : null,
+        wildcard: body?.wildcard || null, exitCode, ok: exitCode === 0,
+        startedAt: startedIso, finishedAt: new Date().toISOString(), durationMs,
+        tail: tail.slice(-1024), hint,
+      }).catch(() => {});
+      return json(res, 200, { ok: exitCode === 0, action, exitCode, durationMs, tail, hint });
     }
+
+    // GET /admin/repair/history?slug=&limit=25 — recent repair runs (Feature 2).
+    if (req.method === "GET" && (p === "/admin/repair/history" || p === "/sandbox/admin/repair/history")) {
+      const list = await readRepairHistory(q.get("limit") || 25, {
+        slug: q.get("slug") || undefined, action: q.get("action") || undefined,
+      });
+      return json(res, 200, { ok: true, count: list.length, entries: list });
+    }
+
+    // ---------- Feature 1: per-slug secret rotation ----------
+    // POST /admin/secrets/rotate   { slug, note? }
+    // POST /admin/secrets/revoke   { slug }
+    // GET  /admin/secrets/status?slug=...
+    if (req.method === "POST" && (p === "/admin/secrets/rotate" || p === "/sandbox/admin/secrets/rotate")) {
+      const body = await readJson(req).catch(() => ({}));
+      try {
+        const rec = await rotateSlugSecret(body?.slug, { note: body?.note });
+        return json(res, 200, {
+          ok: true, slug: rec.slug, secret: rec.secret,
+          secretRef: `SANDBOX_SLUG_SECRET_${rec.slug.replace(/-/g, "_").toUpperCase()}`,
+          rotationCount: rec.rotationCount, rotatedAt: rec.rotatedAt,
+          fingerprint: createHash("sha256").update(rec.secret).digest("hex").slice(0, 12),
+          note: "Save this value now — the worker keeps it on disk but future GETs never return the raw secret.",
+        });
+      } catch (e) { return json(res, 400, { ok: false, error: e?.message || String(e) }); }
+    }
+    if (req.method === "POST" && (p === "/admin/secrets/revoke" || p === "/sandbox/admin/secrets/revoke")) {
+      const body = await readJson(req).catch(() => ({}));
+      try {
+        const r = await revokeSlugSecret(body?.slug);
+        return json(res, r.ok ? 200 : 404, r);
+      } catch (e) { return json(res, 400, { ok: false, error: e?.message || String(e) }); }
+    }
+    if (req.method === "GET" && (p === "/admin/secrets/status" || p === "/sandbox/admin/secrets/status")) {
+      const slug = q.get("slug");
+      if (!slug) return json(res, 400, { ok: false, error: "slug is required" });
+      return json(res, 200, await slugSecretStatus(slug));
+    }
+
+    // ---------- Feature 3: one-call subdomain provisioning ----------
+    // POST /admin/provision  { slug, seed?: true, rotateSecret?: true, revealSecret?: false, baseDomain? }
+    // Ensures the slug maps to <slug>.<baseDomain>, seeds a placeholder if
+    // /var/lib/pluto/sites/<slug> has no bundle, optionally rotates a fresh
+    // per-slug secret and returns { subdomain, secretRef, secret? }.
+    if (req.method === "POST" && (p === "/admin/provision" || p === "/sandbox/admin/provision")) {
+      const body = await readJson(req).catch(() => ({}));
+      const slug = String(body?.slug || "").trim().toLowerCase();
+      if (!SLUG_RE.test(slug)) return json(res, 400, { ok: false, error: "invalid_slug" });
+      const baseDomain = safeDomain(body?.baseDomain || DEFAULT_BASE_DOMAIN);
+      const seedIfMissing = body?.seed !== false;
+      let seeded = false, siteState = await siteStatus(slug);
+      if (!siteState.ok && seedIfMissing) {
+        try { await seedPlaceholder(slug); seeded = true; siteState = await siteStatus(slug); }
+        catch (e) { return json(res, 500, { ok: false, error: "seed_failed", detail: e?.message || String(e) }); }
+      }
+      let secretPayload = null;
+      if (body?.rotateSecret) {
+        const rec = await rotateSlugSecret(slug, { note: "provision" });
+        secretPayload = {
+          secretRef: `SANDBOX_SLUG_SECRET_${slug.replace(/-/g, "_").toUpperCase()}`,
+          rotatedAt: rec.rotatedAt,
+          fingerprint: createHash("sha256").update(rec.secret).digest("hex").slice(0, 12),
+          secret: body?.revealSecret === true ? rec.secret : undefined,
+        };
+      } else {
+        const st = await slugSecretStatus(slug);
+        secretPayload = st.hasSecret ? {
+          secretRef: st.secretRef, rotatedAt: st.rotatedAt,
+          fingerprint: st.fingerprint, revoked: st.revoked,
+        } : null;
+      }
+      return json(res, 200, {
+        ok: true,
+        slug,
+        subdomain: `${slug}.${baseDomain}`,
+        url: `https://${slug}.${baseDomain}/`,
+        baseDomain,
+        seeded,
+        served: !!siteState.ok,
+        site: siteState,
+        secret: secretPayload,
+        hint: seeded
+          ? "Placeholder seeded. Deploy a real bundle to replace it."
+          : (siteState.ok ? "Subdomain is ready." : "No bundle and seed=false — call again with seed:true or run Auto Deploy."),
+      });
+    }
+
 
     return json(res, 404, { error: "not_found" });
   } catch (e) {
