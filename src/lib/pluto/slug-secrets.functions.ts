@@ -3,7 +3,8 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { getVpsBaseUrl } from "./vps-client";
-import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+
+export type WorkerJson = { [k: string]: unknown };
 
 function envFirst(...keys: string[]): string {
   for (const k of keys) {
@@ -20,44 +21,57 @@ function workerConfig() {
   return { sandboxUrl, secret };
 }
 
-async function workerFetch(pathAndQuery: string, init: RequestInit = {}) {
+async function workerFetch(pathAndQuery: string, init: RequestInit = {}): Promise<WorkerJson> {
   const { sandboxUrl, secret } = workerConfig();
-  if (!secret) throw new Error("PLUTO_SANDBOX_SECRET is not configured — set it in Lovable Cloud → Secrets.");
+  if (!secret) {
+    return {
+      ok: false,
+      error: "PLUTO_SANDBOX_SECRET is not configured — set it in Lovable Cloud → Secrets.",
+    };
+  }
   const headers = new Headers(init.headers);
   headers.set("x-sandbox-secret", secret);
   if (init.body && !headers.has("content-type")) headers.set("content-type", "application/json");
-  const res = await fetch(`${sandboxUrl}${pathAndQuery}`, { ...init, headers });
-  const text = await res.text();
-  let json: unknown = null;
-  try { json = text ? JSON.parse(text) : null; } catch { json = { raw: text }; }
-  if (!res.ok) {
-    const errMsg = (json && typeof json === "object" && "error" in (json as Record<string, unknown>))
-      ? String((json as Record<string, unknown>).error) : `HTTP ${res.status}`;
-    throw new Error(`Worker ${pathAndQuery} failed: ${errMsg}`);
+  let res: Response;
+  try {
+    res = await fetch(`${sandboxUrl}${pathAndQuery}`, { ...init, headers });
+  } catch (e) {
+    return { ok: false, error: `Worker unreachable: ${(e as Error).message}` };
   }
-  return json as Record<string, unknown>;
+  const text = await res.text();
+  let parsed: WorkerJson = {};
+  try { parsed = text ? (JSON.parse(text) as WorkerJson) : {}; } catch { parsed = { raw: text }; }
+  return { ok: res.ok, status: res.status, ...parsed };
 }
 
-const SlugInput = z.object({ slug: z.string().regex(/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/i, "invalid slug"), note: z.string().max(200).optional() });
+const SlugInput = z.object({
+  slug: z.string().regex(/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/i, "invalid slug"),
+  note: z.string().max(200).optional(),
+});
 
 export const rotateSlugSecret = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => SlugInput.parse(d))
-  .handler(async ({ data }) => workerFetch("/admin/secrets/rotate", {
-    method: "POST", body: JSON.stringify({ slug: data.slug, note: data.note }),
-  }));
+  .handler(async ({ data }): Promise<WorkerJson> =>
+    workerFetch("/admin/secrets/rotate", {
+      method: "POST",
+      body: JSON.stringify({ slug: data.slug, note: data.note }),
+    })
+  );
 
 export const revokeSlugSecret = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => SlugInput.pick({ slug: true }).parse(d))
-  .handler(async ({ data }) => workerFetch("/admin/secrets/revoke", {
-    method: "POST", body: JSON.stringify({ slug: data.slug }),
-  }));
+  .handler(async ({ data }): Promise<WorkerJson> =>
+    workerFetch("/admin/secrets/revoke", {
+      method: "POST",
+      body: JSON.stringify({ slug: data.slug }),
+    })
+  );
 
 export const getSlugSecretStatus = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => SlugInput.pick({ slug: true }).parse(d))
-  .handler(async ({ data }) => workerFetch(`/admin/secrets/status?slug=${encodeURIComponent(data.slug)}`));
+  .handler(async ({ data }): Promise<WorkerJson> =>
+    workerFetch(`/admin/secrets/status?slug=${encodeURIComponent(data.slug)}`)
+  );
 
 const HistoryInput = z.object({
   slug: z.string().max(128).optional(),
@@ -66,14 +80,13 @@ const HistoryInput = z.object({
 });
 
 export const getRepairHistory = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => HistoryInput.parse(d ?? {}))
-  .handler(async ({ data }) => {
+  .handler(async ({ data }): Promise<WorkerJson> => {
     const params = new URLSearchParams();
     if (data.slug) params.set("slug", data.slug);
     if (data.action) params.set("action", data.action);
     if (data.limit) params.set("limit", String(data.limit));
-    return workerFetch(`/admin/repair/history${params.size ? `?${params}` : ""}`);
+    return workerFetch(`/admin/repair/history${params.toString() ? `?${params.toString()}` : ""}`);
   });
 
 const ProvisionInput = z.object({
@@ -84,17 +97,17 @@ const ProvisionInput = z.object({
   baseDomain: z.string().max(253).optional(),
 });
 
+export type ProvisionInputT = z.infer<typeof ProvisionInput>;
+
 export const provisionSubdomain = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => ProvisionInput.parse(d))
-  .handler(async ({ data }) => workerFetch("/admin/provision", {
-    method: "POST", body: JSON.stringify(data),
-  }));
+  .handler(async ({ data }): Promise<WorkerJson> =>
+    workerFetch("/admin/provision", { method: "POST", body: JSON.stringify(data) })
+  );
 
-export type WorkerJson = Record<string, unknown>;
-
-// Shared helper used by /api/public/provision-subdomain.ts.
-export async function callProvisionSubdomain(input: z.infer<typeof ProvisionInput>): Promise<WorkerJson> {
+// Shared helper used by /api/public/provision-subdomain.ts (raw HTTP route).
+export async function callProvisionSubdomain(input: ProvisionInputT): Promise<WorkerJson> {
   const parsed = ProvisionInput.parse(input);
   return workerFetch("/admin/provision", { method: "POST", body: JSON.stringify(parsed) });
 }
+export const ProvisionSchema = ProvisionInput;
