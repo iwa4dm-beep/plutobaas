@@ -1084,26 +1084,33 @@ function HealthCheckPanel({ health }: { health: HealthSummary }) {
 
 function EndpointRow({ endpoint }: { endpoint: EndpointCheck }) {
   const [open, setOpen] = useState(false);
+  const isWarn = !endpoint.ok && endpoint.severity === "warning";
+  const Icon = endpoint.ok ? CheckCircle2 : (isWarn ? AlertCircle : AlertCircle);
+  const iconColor = endpoint.ok ? "text-emerald-500" : (isWarn ? "text-amber-500" : "text-destructive");
+  const statusColor = endpoint.ok
+    ? "bg-emerald-500/15 text-emerald-600"
+    : (isWarn ? "bg-amber-500/15 text-amber-600" : "bg-destructive/15 text-destructive");
+  const reasonColor = isWarn ? "text-amber-600" : "text-destructive";
   return (
     <li>
       <button onClick={() => setOpen((v) => !v)} className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-accent/40">
-        {endpoint.ok
-          ? <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />
-          : <AlertCircle className="h-4 w-4 text-destructive shrink-0" />}
+        <Icon className={`h-4 w-4 shrink-0 ${iconColor}`} />
         <div className="flex-1 min-w-0">
           <div className="text-sm flex items-center gap-2">
             <span className="font-medium">{endpoint.label}</span>
             <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-muted">{endpoint.method}</span>
-            <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded ${endpoint.ok ? "bg-emerald-500/15 text-emerald-600" : "bg-destructive/15 text-destructive"}`}>
+            <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded ${statusColor}`}>
               {endpoint.status || "ERR"}
             </span>
+            {isWarn && <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-600">WARN</span>}
             {endpoint.latencyMs > 0 && <span className="text-xs text-muted-foreground">{endpoint.latencyMs}ms</span>}
           </div>
           <div className="text-xs text-muted-foreground font-mono truncate mt-0.5">{endpoint.url}</div>
-          {endpoint.failReason && <div className="text-xs text-destructive mt-0.5">{endpoint.failReason}</div>}
+          {endpoint.failReason && <div className={`text-xs mt-0.5 ${reasonColor}`}>{endpoint.failReason}{isWarn ? " (non-fatal — served-site is downstream infra config)" : ""}</div>}
         </div>
         {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
       </button>
+
       {open && (
         <div className="px-4 pb-3">
           <pre className="max-h-40 overflow-auto rounded bg-muted p-2 text-[11px] font-mono whitespace-pre-wrap">{endpoint.bodySnippet || "(empty)"}</pre>
