@@ -27,6 +27,7 @@ import { deployAll, diagnoseServedSite, probeLiveUrl, type DeployAllResult, type
 import { DeploySummaryChecksPanel } from "@/components/auto-deploy/DeploySummaryChecks";
 import { BuildLogsPanel } from "@/components/auto-deploy/BuildLogsPanel";
 import { DeploymentSettingsPanel } from "@/components/auto-deploy/DeploymentSettingsPanel";
+import { RecommendationsPanel } from "@/components/auto-deploy/RecommendationsPanel";
 import { loadDeploymentSettings } from "@/lib/pluto/deployment-settings";
 import { getUpstream } from "@/lib/pluto/upstream";
 
@@ -1015,6 +1016,9 @@ function AutoDeployInner() {
 
       {/* Summary + Checks */}
       {deployResult && <DeploySummaryChecksPanel result={deployResult} />}
+
+      {/* Recommendations — Phase 4 */}
+      <RecommendationsPanel result={deployResult ?? null} workspaceId={workspaceId} />
 
       {/* Build logs — Phase 2 */}
       {deployResult && <BuildLogsPanel result={deployResult} />}
