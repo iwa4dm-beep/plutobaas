@@ -46,6 +46,8 @@ SITE_ROOT="/var/lib/pluto/sites/${SLUG}"
 NGINX_AVAILABLE="/etc/nginx/sites-available/pluto-slug-${SLUG}.conf"
 NGINX_ENABLED="/etc/nginx/sites-enabled/pluto-slug-${SLUG}.conf"
 TEMPLATE="$(cd "$(dirname "$0")" && pwd)/nginx/per-slug-http01.conf.template"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+CERTBOT_OUT="/tmp/pluto-certbot-${SLUG}-$(date +%Y%m%d-%H%M%S).log"
 
 echo "==> Issuing HTTP-01 cert for ${FQDN}"
 
@@ -147,6 +149,14 @@ public_ip() {
 }
 VPS_IP="$(public_ip || true)"
 
+public_ipv6() {
+  local ip=""
+  ip="$(curl -6 -fsS --max-time 3 https://api64.ipify.org 2>/dev/null | tr -d '[:space:]' || true)"
+  [[ "$ip" == *:* ]] && { echo "$ip"; return; }
+  ip -6 route get 2606:4700:4700::1111 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src"){print $(i+1); exit}}'
+}
+VPS_IPV6="$(public_ipv6 || true)"
+
 # 5) DNS sanity check — fail early with a precise remediation.
 echo "==> DNS check for ${FQDN}"
 DIG_A="$(command -v dig >/dev/null 2>&1 && dig +short A "$FQDN" @1.1.1.1 2>/dev/null | tr '\n' ' ' || true)"
@@ -194,6 +204,39 @@ MSG
   echo "   ✓ DNS points at this VPS (${VPS_IP})"
 fi
 
+# Let's Encrypt will also try IPv6 if an AAAA record exists. A stale Hostinger
+#/proxy AAAA is a common reason local HTTP-01 self-probe passes but certbot
+# still fails with "unauthorized". Fail early with the exact DNS fix.
+DIG_AAAA="$(command -v dig >/dev/null 2>&1 && dig +short AAAA "$FQDN" @1.1.1.1 2>/dev/null | tr '\n' ' ' || true)"
+if [[ -n "$DIG_AAAA" ]]; then
+  echo "   AAAA: ${DIG_AAAA}"
+  IPV6_MATCH=0
+  if [[ -n "$VPS_IPV6" ]]; then
+    for ip6 in $DIG_AAAA; do [[ "$ip6" == "$VPS_IPV6" ]] && IPV6_MATCH=1; done
+  fi
+  if [[ "$IPV6_MATCH" -ne 1 ]]; then
+    cat >&2 <<MSG
+✗ IPv6/AAAA mismatch for ${FQDN}.
+
+  DNS has AAAA record(s): ${DIG_AAAA}
+  This VPS IPv6 is:       ${VPS_IPV6:-<none detected>}
+
+  Let's Encrypt may use IPv6 for HTTP-01. If AAAA points elsewhere, certbot
+  fails even when the IPv4 curl test works.
+
+  Fix at your DNS provider:
+    Option A (recommended): delete the AAAA record for ${FQDN} and any wildcard AAAA for *.${BASE}
+    Option B: point AAAA to this VPS IPv6 and make sure port 80 is open on IPv6
+
+  Then rerun:
+    sudo bash ${SCRIPT_DIR}/preflight-dns.sh ${SLUG} ${BASE}
+    sudo bash ${SCRIPT_DIR}/issue-per-slug-cert.sh ${SLUG} ${BASE}
+MSG
+    exit 11
+  fi
+  echo "   ✓ AAAA points at this VPS IPv6 (${VPS_IPV6})"
+fi
+
 # 6) Ensure nginx serves the ACME challenge for this FQDN on :80.
 if ! nginx -T 2>/dev/null | grep -qE "server_name[[:space:]]+.*\\*\\.${BASE//./\\.}"; then
   STUB="/etc/nginx/sites-available/pluto-slug-${SLUG}-acme.conf"
@@ -207,7 +250,20 @@ server {
 }
 CONF
   ln -sf "$STUB" "/etc/nginx/sites-enabled/pluto-slug-${SLUG}-acme.conf"
-  nginx -t
+  if ! nginx -t >/tmp/pluto-issue-nginx-${SLUG}.out 2>&1; then
+    cat /tmp/pluto-issue-nginx-${SLUG}.out >&2
+    cat >&2 <<MSG
+✗ nginx config is invalid before certbot can run.
+
+  Diagnose:
+    sudo bash ${SCRIPT_DIR}/diagnose-cert-failure.sh ${SLUG} ${BASE}
+
+  Fast stale-vhost cleanup:
+    sudo grep -Rsl 'pluto_slug_json' /etc/nginx/sites-enabled/pluto-*.conf 2>/dev/null | sudo xargs -r rm -f
+    sudo nginx -t && sudo systemctl reload nginx
+MSG
+    exit 12
+  fi
   systemctl reload nginx
 fi
 
@@ -243,19 +299,27 @@ echo "   ✓ HTTP-01 self-probe ok"
 if ! certbot certonly \
     --webroot -w "$WEBROOT" \
     -d "$FQDN" \
+    --cert-name "$FQDN" \
+    --preferred-challenges http \
     --email "$EMAIL" \
     --agree-tos --no-eff-email \
     --non-interactive \
-    --keep-until-expiring; then
+    --keep-until-expiring >"$CERTBOT_OUT" 2>&1; then
+  cat "$CERTBOT_OUT" >&2 || true
   cat >&2 <<MSG
 ✗ certbot failed to issue a certificate for ${FQDN}.
+  Captured certbot output: ${CERTBOT_OUT}
   Inspect the last error above and /var/log/letsencrypt/letsencrypt.log
   Common causes:
     - Rate limit hit (5 failed attempts/hour or 50 certs/week per domain).
       Wait or use --staging while diagnosing.
     - CAA record on ${BASE} disallows letsencrypt.org (check DNS CAA).
     - IPv6 AAAA record present but not reachable — remove AAAA or make it work.
+
+  Automatic diagnosis:
+    sudo bash ${SCRIPT_DIR}/diagnose-cert-failure.sh ${SLUG} ${BASE}
 MSG
+  bash "${SCRIPT_DIR}/diagnose-cert-failure.sh" "${SLUG}" "${BASE}" 2>/dev/null || true
   exit 13
 fi
 
@@ -270,7 +334,12 @@ ln -sf "$NGINX_AVAILABLE" "$NGINX_ENABLED"
 # Remove the temporary ACME-only stub if present — the full vhost supersedes it.
 rm -f "/etc/nginx/sites-enabled/pluto-slug-${SLUG}-acme.conf"
 
-nginx -t
+if ! nginx -t >/tmp/pluto-final-nginx-${SLUG}.out 2>&1; then
+  cat /tmp/pluto-final-nginx-${SLUG}.out >&2
+  echo "✗ nginx config failed after installing the HTTPS vhost. Diagnose:" >&2
+  echo "    sudo bash ${SCRIPT_DIR}/diagnose-cert-failure.sh ${SLUG} ${BASE}" >&2
+  exit 14
+fi
 systemctl reload nginx
 
 # 8) Verify
