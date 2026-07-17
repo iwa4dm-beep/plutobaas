@@ -222,7 +222,7 @@ async function sandboxHealth(filter = {}) {
   return {
     ok: true,
     service: "pluto-sandbox-worker",
-    version: "v1-static-serve-2026-07-17-storage-header-fix",
+    version: "v1-static-serve-2026-07-17-public-diagnostics",
     features: {
       request_body_service_key: true,
       storage_workspace_header_preserves_uuid: true,
@@ -921,7 +921,7 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, {
         ok: true,
         service: "pluto-sandbox-worker",
-        version: "v1-static-serve-2026-07-17-storage-header-fix",
+        version: "v1-static-serve-2026-07-17-public-diagnostics",
         features: {
           request_body_service_key: true,
           storage_workspace_header_preserves_uuid: true,
@@ -970,6 +970,11 @@ const server = http.createServer(async (req, res) => {
     }
 
 
+    // Public read-only diagnostics — reports symlink/current.json presence only.
+    if (req.method === "GET" && ["/diagnostics", "/sandbox/diagnostics", "/site-diagnostics", "/sandbox/site-diagnostics"].includes(p)) {
+      return json(res, 200, await servedSiteDiagnostics(q.get("workspaceId"), q.get("slug")));
+    }
+
     if (!checkSecret(req)) return json(res, 401, { error: "invalid or missing x-sandbox-secret" });
 
     if (req.method === "GET" && (p === "/health" || p === "/sandbox/health")) {
@@ -978,9 +983,6 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, await sandboxHealth({ slug, workspaceId }));
     }
 
-    if (req.method === "GET" && ["/diagnostics", "/sandbox/diagnostics", "/site-diagnostics", "/sandbox/site-diagnostics"].includes(p)) {
-      return json(res, 200, await servedSiteDiagnostics(q.get("workspaceId"), q.get("slug")));
-    }
 
 
     if (req.method === "POST" && p === "/unpack") {
