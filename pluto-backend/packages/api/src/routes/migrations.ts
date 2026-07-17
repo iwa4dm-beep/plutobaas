@@ -96,6 +96,115 @@ async function ensureWorkspaceOwnerColumns(sql: any) {
   `);
 }
 
+function prepareAdHocMigrationSql(input: string): { sql: string; repairs: string[] } {
+  const repairs: string[] = [];
+  let out = String(input || '')
+    .replace(/^\uFEFF/, '')
+    .replace(/^\s*BEGIN\s*;\s*$/gim, '')
+    .replace(/^\s*COMMIT\s*;\s*$/gim, '')
+    .trim();
+
+  const beforeUuid = out;
+  out = out.replace(/'\s*uuid_generate_v4\s*\(\s*\)\s*'/gi, 'gen_random_uuid()');
+  out = out.replace(/\buuid_generate_v4\s*\(\s*\)/gi, 'gen_random_uuid()');
+  if (out !== beforeUuid) repairs.push('uuid_generate_v4 normalized');
+
+  const beforeConcurrent = out;
+  out = out.replace(/\bCREATE\s+(UNIQUE\s+)?INDEX\s+CONCURRENTLY\b/gi, 'CREATE $1INDEX');
+  out = out.replace(/\bDROP\s+INDEX\s+CONCURRENTLY\b/gi, 'DROP INDEX');
+  if (out !== beforeConcurrent) repairs.push('CONCURRENTLY removed for transactional apply');
+
+  const beforePolicy = out;
+  out = makePolicyCreatesIdempotent(out);
+  if (out !== beforePolicy) repairs.push('CREATE POLICY guarded with DROP POLICY IF EXISTS');
+
+  const beforeOwner = out;
+  out = addOwnerIdPolicyGuards(out);
+  if (out !== beforeOwner) repairs.push('owner_id guard added before owner policies');
+
+  const preamble = buildAdHocPreamble(out, repairs);
+  return { sql: `${preamble}\n${out}`.trim() + '\n', repairs };
+}
+
+function buildAdHocPreamble(sqlText: string, repairs: string[]) {
+  const lines = [
+    'create schema if not exists auth;',
+    'create extension if not exists pgcrypto;',
+  ];
+  if (/\bgin_trgm_ops\b|\bgist_trgm_ops\b/i.test(sqlText)) {
+    lines.push('create extension if not exists pg_trgm;');
+    repairs.push('pg_trgm ensured');
+  }
+  if (/\bcitext\b/i.test(sqlText)) {
+    lines.push('create extension if not exists citext;');
+    repairs.push('citext ensured');
+  }
+  if (/\bvector\s*(?:\(|,|$)/i.test(sqlText)) {
+    lines.push('create extension if not exists vector;');
+    repairs.push('vector ensured');
+  }
+  if (/admin\.project_env[\s\S]{0,240}\bis_secret\b/i.test(sqlText) || /\bis_secret\b[\s\S]{0,240}admin\.project_env/i.test(sqlText)) {
+    lines.push('alter table if exists admin.project_env add column if not exists is_secret boolean not null default false;');
+    repairs.push('admin.project_env.is_secret ensured');
+  }
+  return lines.join('\n');
+}
+
+function makePolicyCreatesIdempotent(sqlText: string): string {
+  const policyCreate = /(^|\n)(\s*)CREATE\s+POLICY\s+((?:"(?:[^"]|"")+")|[a-zA-Z_][\w$]*)\s+ON\s+((?:(?:"(?:[^"]|"")+")|[a-zA-Z_][\w$]*)(?:\s*\.\s*(?:(?:"(?:[^"]|"")+")|[a-zA-Z_][\w$]*))?)\s+/gi;
+  return sqlText.replace(policyCreate, (match, prefix: string, indent: string, policyName: string, tableName: string, offset: number) => {
+    const before = sqlText.slice(Math.max(0, offset - 220), offset);
+    if (new RegExp(`DROP\\s+POLICY\\s+IF\\s+EXISTS\\s+${escapeRegExp(policyName)}\\s+ON\\s+${escapeRegExp(tableName)}`, 'i').test(before)) return match;
+    return `${prefix}${indent}DROP POLICY IF EXISTS ${policyName} ON ${tableName};\n${indent}CREATE POLICY ${policyName} ON ${tableName} `;
+  });
+}
+
+function addOwnerIdPolicyGuards(sqlText: string): string {
+  const policyStatement = /(^|\n)(\s*(?:DROP\s+POLICY\s+IF\s+EXISTS\s+[^;]+;\s*)?CREATE\s+POLICY\s+[^;]+\s+ON\s+((?:(?:"(?:[^"]|"")+")|[a-zA-Z_][\w$]*)(?:\s*\.\s*(?:(?:"(?:[^"]|"")+")|[a-zA-Z_][\w$]*))?)\s+[^;]*owner_id[^;]*;)/gi;
+  return sqlText.replace(policyStatement, (match, prefix: string, statement: string, tableName: string, offset: number) => {
+    const guard = `ALTER TABLE ${tableName} ADD COLUMN IF NOT EXISTS owner_id uuid;`;
+    const before = sqlText.slice(Math.max(0, offset - 260), offset);
+    if (new RegExp(`ALTER\\s+TABLE\\s+${escapeRegExp(tableName)}\\s+ADD\\s+COLUMN\\s+IF\\s+NOT\\s+EXISTS\\s+owner_id`, 'i').test(before)) return match;
+    return `${prefix}${guard}\n${statement}`;
+  });
+}
+
+function escapeRegExp(value: string): string {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function buildPgErrorPayload(e: any, sqlText: string) {
+  const pg = {
+    code: e?.code ?? null,
+    detail: e?.detail ?? null,
+    hint: e?.hint ?? null,
+    position: e?.position ?? null,
+    where: e?.where ?? null,
+    schema: e?.schema_name ?? e?.schema ?? null,
+    table: e?.table_name ?? e?.table ?? null,
+    column: e?.column_name ?? e?.column ?? null,
+    dataType: e?.data_type_name ?? e?.dataType ?? null,
+    constraint: e?.constraint_name ?? e?.constraint ?? null,
+    routine: e?.routine ?? null,
+  };
+  let snippet: string | null = null;
+  let line: number | null = null;
+  let column: number | null = null;
+  let offending: string | null = null;
+  const pos = Number(pg.position);
+  if (Number.isFinite(pos) && pos > 0) {
+    const idx = Math.max(0, pos - 1);
+    const s = Math.max(0, idx - 180);
+    const e2 = Math.min(sqlText.length, idx + 180);
+    snippet = sqlText.slice(s, e2);
+    const before = sqlText.slice(0, idx);
+    line = before.split('\n').length;
+    column = idx - before.lastIndexOf('\n');
+    offending = sqlText.slice(idx).match(/^[^\s,;)]+/)?.[0] ?? null;
+  }
+  return { pg, snippet, line, column, offending };
+}
+
 export async function migrationsRoutes(app: FastifyInstance, cfg: Config) {
   // Full history of the low-level runner ledger (public._pluto_migrations).
   // Superadmin-only. Joins each ledger row with the on-disk file's checksum
@@ -223,8 +332,13 @@ export async function migrationsRoutes(app: FastifyInstance, cfg: Config) {
     await assertRole(cfg, m.project_id, actor);
     try {
       await ensureWorkspaceOwnerColumns(sql);
+      const prepared = prepareAdHocMigrationSql(m.up_sql);
       const t = await timed(async () => {
-        await sql.begin(async (tx) => { await tx.unsafe(m.up_sql); });
+        await sql.begin(async (tx) => {
+          await tx.unsafe("set local lock_timeout = '15s'");
+          await tx.unsafe("set local statement_timeout = '180s'");
+          await tx.unsafe(prepared.sql);
+        });
       });
       const [updated] = await sql<any[]>`
         update admin.migrations
@@ -235,47 +349,21 @@ export async function migrationsRoutes(app: FastifyInstance, cfg: Config) {
       await logAudit(cfg, {
         actor_id: actor.userId, project_id: m.project_id,
         action: 'migration.apply', resource_type: 'migration', resource_id: m.id,
-        params: { name: m.name, version: String(m.version) }, result: 'ok', duration_ms: t.ms,
+        params: { name: m.name, version: String(m.version), repairs: prepared.repairs }, result: 'ok', duration_ms: t.ms,
       });
-      return reply.send({ ok: true, migration: updated });
+      return reply.send({ ok: true, migration: updated, repairs: prepared.repairs });
     } catch (e: any) {
-      // Surface the full Postgres error envelope so the deploy UI can
-      // pinpoint the offending statement instead of showing a bare
-      // "invalid input syntax for type json" with no location.
-      const pg = {
-        code: e?.code ?? null,
-        detail: e?.detail ?? null,
-        hint: e?.hint ?? null,
-        position: e?.position ?? null,
-        where: e?.where ?? null,
-        schema: e?.schema_name ?? e?.schema ?? null,
-        table: e?.table_name ?? e?.table ?? null,
-        column: e?.column_name ?? e?.column ?? null,
-        dataType: e?.data_type_name ?? e?.dataType ?? null,
-        constraint: e?.constraint_name ?? e?.constraint ?? null,
-        routine: e?.routine ?? null,
-      };
-      // Extract ±160 chars around `position` if we have it — the offending
-      // token is almost always right there.
-      let snippet: string | null = null;
-      try {
-        const pos = Number(pg.position);
-        if (Number.isFinite(pos) && pos > 0) {
-          const s = Math.max(0, pos - 160);
-          const e2 = Math.min(m.up_sql.length, pos + 160);
-          snippet = m.up_sql.slice(s, e2);
-        }
-      } catch { /* ignore */ }
+      const prepared = prepareAdHocMigrationSql(m.up_sql);
+      const diagnostic = buildPgErrorPayload(e, prepared.sql);
       await logAudit(cfg, {
         actor_id: actor.userId, project_id: m.project_id,
         action: 'migration.apply', resource_type: 'migration', resource_id: m.id,
-        params: { name: m.name, pg }, result: 'error', error_message: e.message,
+        params: { name: m.name, pg: diagnostic.pg, line: diagnostic.line, column: diagnostic.column }, result: 'error', error_message: e.message,
       });
       return reply.code(400).send({
         error: 'apply_failed',
         message: e.message,
-        pg,
-        snippet,
+        ...diagnostic,
       });
     }
   });
