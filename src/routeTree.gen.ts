@@ -109,6 +109,7 @@ import { Route as ApiPlutoDeployRouteImport } from './routes/api/pluto/deploy'
 import { Route as ApiPlutoAuditRouteImport } from './routes/api/pluto.audit'
 import { Route as ApiPlutoSplatRouteImport } from './routes/api/pluto.$'
 import { Route as DashboardProjectsSlugEnvRouteImport } from './routes/dashboard.projects.$slug.env'
+import { Route as ApiPublicSiteMappingSlugRouteImport } from './routes/api/public/site-mapping.$slug'
 
 const StatusRoute = StatusRouteImport.update({
   id: '/status',
@@ -622,6 +623,12 @@ const DashboardProjectsSlugEnvRoute =
     path: '/$slug/env',
     getParentRoute: () => DashboardProjectsRoute,
   } as any)
+const ApiPublicSiteMappingSlugRoute =
+  ApiPublicSiteMappingSlugRouteImport.update({
+    id: '/api/public/site-mapping/$slug',
+    path: '/api/public/site-mapping/$slug',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -723,6 +730,7 @@ export interface FileRoutesByFullPath {
   '/dashboard/custom-domains/audit': typeof DashboardCustomDomainsAuditRoute
   '/dashboard/integrations/lovable-frontend': typeof DashboardIntegrationsLovableFrontendRoute
   '/sdk/download/$file': typeof SdkDownloadFileRoute
+  '/api/public/site-mapping/$slug': typeof ApiPublicSiteMappingSlugRoute
   '/dashboard/projects/$slug/env': typeof DashboardProjectsSlugEnvRoute
 }
 export interface FileRoutesByTo {
@@ -824,6 +832,7 @@ export interface FileRoutesByTo {
   '/dashboard/custom-domains/audit': typeof DashboardCustomDomainsAuditRoute
   '/dashboard/integrations/lovable-frontend': typeof DashboardIntegrationsLovableFrontendRoute
   '/sdk/download/$file': typeof SdkDownloadFileRoute
+  '/api/public/site-mapping/$slug': typeof ApiPublicSiteMappingSlugRoute
   '/dashboard/projects/$slug/env': typeof DashboardProjectsSlugEnvRoute
 }
 export interface FileRoutesById {
@@ -927,6 +936,7 @@ export interface FileRoutesById {
   '/dashboard/custom-domains/audit': typeof DashboardCustomDomainsAuditRoute
   '/dashboard/integrations/lovable-frontend': typeof DashboardIntegrationsLovableFrontendRoute
   '/sdk/download/$file': typeof SdkDownloadFileRoute
+  '/api/public/site-mapping/$slug': typeof ApiPublicSiteMappingSlugRoute
   '/dashboard/projects/$slug/env': typeof DashboardProjectsSlugEnvRoute
 }
 export interface FileRouteTypes {
@@ -1031,6 +1041,7 @@ export interface FileRouteTypes {
     | '/dashboard/custom-domains/audit'
     | '/dashboard/integrations/lovable-frontend'
     | '/sdk/download/$file'
+    | '/api/public/site-mapping/$slug'
     | '/dashboard/projects/$slug/env'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -1132,6 +1143,7 @@ export interface FileRouteTypes {
     | '/dashboard/custom-domains/audit'
     | '/dashboard/integrations/lovable-frontend'
     | '/sdk/download/$file'
+    | '/api/public/site-mapping/$slug'
     | '/dashboard/projects/$slug/env'
   id:
     | '__root__'
@@ -1234,6 +1246,7 @@ export interface FileRouteTypes {
     | '/dashboard/custom-domains/audit'
     | '/dashboard/integrations/lovable-frontend'
     | '/sdk/download/$file'
+    | '/api/public/site-mapping/$slug'
     | '/dashboard/projects/$slug/env'
   fileRoutesById: FileRoutesById
 }
@@ -1258,6 +1271,7 @@ export interface RootRouteChildren {
   ApiPublicAutoDeployWebhookRoute: typeof ApiPublicAutoDeployWebhookRoute
   ApiPublicPlutoMigrateRoute: typeof ApiPublicPlutoMigrateRoute
   SdkDownloadFileRoute: typeof SdkDownloadFileRoute
+  ApiPublicSiteMappingSlugRoute: typeof ApiPublicSiteMappingSlugRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -1962,6 +1976,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardProjectsSlugEnvRouteImport
       parentRoute: typeof DashboardProjectsRoute
     }
+    '/api/public/site-mapping/$slug': {
+      id: '/api/public/site-mapping/$slug'
+      path: '/api/public/site-mapping/$slug'
+      fullPath: '/api/public/site-mapping/$slug'
+      preLoaderRoute: typeof ApiPublicSiteMappingSlugRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -2197,6 +2218,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPublicAutoDeployWebhookRoute: ApiPublicAutoDeployWebhookRoute,
   ApiPublicPlutoMigrateRoute: ApiPublicPlutoMigrateRoute,
   SdkDownloadFileRoute: SdkDownloadFileRoute,
+  ApiPublicSiteMappingSlugRoute: ApiPublicSiteMappingSlugRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

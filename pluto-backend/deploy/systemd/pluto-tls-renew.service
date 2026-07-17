@@ -1,0 +1,11 @@
+[Unit]
+Description=Pluto wildcard TLS renewal + expiry alert
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/env bash /root/backend-joy/pluto-backend/deploy/tls-renew.sh
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=6

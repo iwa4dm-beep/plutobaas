@@ -75,11 +75,18 @@ if [ $pass -gt 0 ]; then
   exit 0
 else
   echo "❌  No endpoint returned 2xx for slug '$SLUG'."
-  echo "   Checklist:"
-  echo "   1. Was the deploy actually pushed?   (Auto Deploy → status ✓)"
-  echo "   2. Is sandbox-worker running?        systemctl status pluto-sandbox-worker"
-  echo "   3. Did nginx reload with new config? sudo nginx -t && sudo systemctl reload nginx"
-  echo "   4. Does the slug exist on disk?      ls /var/lib/pluto/sites/${SLUG}"
-  echo "   5. Tail worker logs:                 journalctl -u pluto-sandbox-worker -f"
+  here="$(cd "$(dirname "$0")" && pwd)"
+  if [ -x "$here/diagnose-slug.sh" ]; then
+    echo
+    echo "▶ Running diagnose-slug for actionable cause + fix command:"
+    APEX="$APEX" API="$API" bash "$here/diagnose-slug.sh" "$SLUG" || true
+  else
+    echo "   Checklist:"
+    echo "   1. Was the deploy actually pushed?   (Auto Deploy → status ✓)"
+    echo "   2. Is sandbox-worker running?        systemctl status pluto-sandbox-worker"
+    echo "   3. Did nginx reload with new config? sudo nginx -t && sudo systemctl reload nginx"
+    echo "   4. Does the slug exist on disk?      ls /var/lib/pluto/sites/${SLUG}"
+    echo "   5. Tail worker logs:                 journalctl -u pluto-sandbox-worker -f"
+  fi
   exit 1
 fi

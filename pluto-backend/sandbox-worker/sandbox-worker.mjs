@@ -529,6 +529,41 @@ async function siteStatus(slug) {
   }
 }
 
+// Minimal in-process placeholder seeder — mirrors deploy/seed-slug.sh so the
+// worker can self-heal when /site-status/<slug> is asked for a slug that has
+// no bundle yet.
+async function seedPlaceholder(slug) {
+  const s = String(slug || "").trim().toLowerCase();
+  if (!SLUG_RE.test(s)) throw new Error("invalid_slug");
+  const wsDir = path.join(SITES_ROOT, s);
+  const ts = new Date().toISOString().replace(/[-:.]/g, "");
+  const rel = `seed-${ts}`;
+  const relDir = path.join(wsDir, rel);
+  await fsp.mkdir(relDir, { recursive: true });
+  const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>${s} — placeholder</title>
+<style>body{font:16px/1.5 system-ui,sans-serif;margin:0;padding:2rem;background:#0b1220;color:#e6edf7}
+.box{max-width:640px;margin:10vh auto;background:#111a2e;padding:2rem;border-radius:12px}
+code{background:#1c2740;padding:.15rem .4rem;border-radius:4px}</style></head>
+<body><div class="box"><h1>✓ Sandbox is live</h1>
+<p>Slug: <code>${s}</code></p>
+<p>Auto-seeded placeholder. Run Auto Deploy from the dashboard to replace with real build.</p>
+<p>Seeded: ${ts}</p></div></body></html>`;
+  await fsp.writeFile(path.join(relDir, "index.html"), html);
+  await fsp.writeFile(path.join(relDir, "env.js"), "window.__PLUTO_ENV__ = window.__PLUTO_ENV__ || {};\n");
+  const manifest = {
+    workspaceId: s, slug: s, channel: "production",
+    release: rel, servedAt: ts, sizeBytes: Buffer.byteLength(html),
+    placeholder: true, autoSeeded: true,
+  };
+  await fsp.writeFile(path.join(wsDir, "current.json"), JSON.stringify(manifest, null, 2));
+  await fsp.writeFile(path.join(wsDir, "preview.json"), JSON.stringify({ ...manifest, channel: "preview" }, null, 2));
+  await atomicSymlink(path.join(wsDir, "current"), rel);
+  await atomicSymlink(path.join(wsDir, "preview"), rel);
+  return manifest;
+}
+
 const server = http.createServer(async (req, res) => {
   try {
     if (req.method === "GET" && req.url === "/healthz") {
@@ -573,10 +608,28 @@ const server = http.createServer(async (req, res) => {
     }
     // Public readiness endpoint — no secret required.
     if (req.method === "GET" && req.url && req.url.startsWith("/site-status/")) {
-      const s = decodeURIComponent(req.url.slice("/site-status/".length).split("?")[0]);
-      const r = await siteStatus(s);
+      const [rawSlug, qs] = req.url.slice("/site-status/".length).split("?");
+      const s = decodeURIComponent(rawSlug || "");
+      let r = await siteStatus(s);
+      // Auto-seed placeholder when a trusted probe asks for it. Prevents the
+      // "verify-deploy → 404 → run seed-slug.sh by hand" loop.
+      if (!r.ok && (r.error === "slug_not_found" || r.error === "slug_not_linked")) {
+        const params = new URLSearchParams(qs || "");
+        const wantsSeed = params.get("autoseed") === "1"
+          || req.headers["x-pluto-auto-seed"] === "1";
+        if (wantsSeed && SLUG_RE.test(String(s || "").toLowerCase())) {
+          try {
+            await seedPlaceholder(String(s).toLowerCase());
+            r = await siteStatus(s);
+            if (r.ok) r.autoSeeded = true;
+          } catch (e) {
+            return json(res, 500, { ok: false, error: "auto_seed_failed", detail: e?.message ?? String(e) });
+          }
+        }
+      }
       return json(res, r.ok ? 200 : 404, r);
     }
+
 
     if (!checkSecret(req)) return json(res, 401, { error: "invalid or missing x-sandbox-secret" });
 
@@ -585,6 +638,16 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "POST" && req.url === "/unpack") {
       const body = await readJson(req);
       const m = await unpack(body);
+      return json(res, 200, { ok: true, ...m });
+    }
+    // Authenticated placeholder seeder — dashboard "Heal" button calls this.
+    if (req.method === "POST" && req.url === "/admin/seed-slug") {
+      const body = await readJson(req).catch(() => ({}));
+      const slug = body?.slug;
+      if (!slug || !SLUG_RE.test(String(slug).toLowerCase())) {
+        return json(res, 400, { ok: false, error: "invalid_slug" });
+      }
+      const m = await seedPlaceholder(String(slug).toLowerCase());
       return json(res, 200, { ok: true, ...m });
     }
     const statusMatch = req.method === "GET" && req.url && req.url.startsWith("/status/");

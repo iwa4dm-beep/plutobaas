@@ -1,57 +1,92 @@
-## Goal
+# Plan: Domain resolution, wildcard TLS auto-renew, and dashboard visibility
 
-তুমি বলেছো: Auto-Deploy Studio পুরো test করবো, issue fix করবো, `https://github.com/ctgpost/musafirdesk` live করবো, এবং ভবিষ্যতের যেকোনো GitHub project যাতে auto-deploy হয় সেটা নিশ্চিত করবো — সব credential/env AI নিজেই set করবে।
+This bundles six related items into one coherent workstream so the sandbox, DNS, TLS, and dashboard all speak the same language about a slug.
 
-কাজটা বড়, তাই প্রথমে আমি সমস্যা খুঁজে বের করবো (headless browser দিয়ে সত্যিকারের deploy চালিয়ে), তারপর তালিকা ধরে fix করবো — অন্ধভাবে refactor নয়।
+## Scope
 
-## Phase 1 — Diagnose (কোথায় কোথায় ভাঙে দেখা)
-
-1. Playwright script দিয়ে `/dashboard/auto-deploy` এ যাবো, workspace select করবো, GitHub source-এ `ctgpost/musafirdesk` দিয়ে run করবো, প্রতিটা phase-এ screenshot + console + network capture করবো:
-   - GitHub loader (server fn → codeload/gateway)
-   - `analyzeZip` (frontend + Laravel/PHP backend detection — musafirdesk is likely Laravel/PHP)
-   - `ai-deploy-planner` (LOVABLE_API_KEY দিয়ে SQL/env plan তৈরি)
-   - Approval modal → env vars → `deployAll` → health check → live URL
-2. প্রতিটা failure এর জন্য root cause note করবো (missing secret, wrong request shape, analyzer edge case, timeout, ইত্যাদি)।
-3. Existing secrets একবারে check: DBH_VPS_*, PLUTO_* সব আছে; missing কিছু (যেমন GitHub token scope, planner model access) দেখলে সেই মুহূর্তে `add_secret`/`generate_secret`/`set_secret` call করবো। User-obtained secret লাগলে জিজ্ঞেস করবো, নয়তো auto-provision।
-
-## Phase 2 — Fix (শুধু যা ভাঙে সেটাই)
-
-Diagnose থেকে পাওয়া issue-গুলো টার্গেট করে fix — যেমন সাধারণত এই জায়গাগুলোতে সমস্যা হয়:
-
-- **GitHub loader**: private/large repo, non-`main` default branch, redirect handling, gateway auth mismatch।
-- **Analyzer**: musafirdesk-এর মতো Laravel repo-তে migrations/routes parse fail, `.env.example` env-key detection।
-- **AI planner**: prompt খুব বড় হলে truncate, JSON parse fail, model rate-limit।
-- **Env auto-fill**: `.env.example` থেকে key তুলে UI-তে prefill, sensitive key মাস্ক, Pluto-provided (SUPABASE_URL, ANON_KEY, JWT_SECRET) auto-inject।
-- **deployAll pipeline**: step timeout, health-check false negative, rollback bundle-bytes cache।
-- **Real-time streaming**: `stepEvents` UI update rate, stuck spinner।
-
-প্রতিটা fix-এর পর same Playwright script re-run করে regression check।
-
-## Phase 3 — Deploy musafirdesk
-
-Fix-গুলো passing হলে UI থেকে সরাসরি (headless-এ automate করে) musafirdesk deploy করবো, live URL capture করে তোমাকে দেবো + screenshot।
-
-## Phase 4 — Ensure future GitHub URLs "just work"
-
-- `github-loader` এ default-branch discovery যোগ করবো (`main` → `master` → `HEAD` fallback ইতিমধ্যে আছে, কিন্তু API দিয়ে সঠিক branch resolve করবো)।
-- Common env-var preset (Laravel `APP_KEY`, `DB_*`, Node `PORT`, ইত্যাদি) auto-generate: random হলে `generate_secret`-এর মতো client-side crypto, Pluto-issued হলে workspace থেকে auto-fill।
-- Analyzer-এ Laravel/Node/Next/Vite detector শক্ত করবো যাতে unknown stack-এও একটা কাজ-করা bundle তৈরি হয়।
-- Documentation snippet `docs/AUTO-DEPLOY-STUDIO.md`-এ update।
-
-## Technical notes
-
-- Playwright script `/tmp/browser/auto-deploy/` এ, session `LOVABLE_BROWSER_SUPABASE_*` env থেকে restore।
-- Server fn call chain: `fetchGithubZip` → client `analyzeZip` → `planIntegration` (AI) → `deployAll` (VPS)।
-- Secrets already available: `DBH_VPS_*`, `PLUTO_*`, `GITHUB_API_KEY`, `LOVABLE_API_KEY` — এগুলোই deploy চালাতে যথেষ্ট হওয়ার কথা; কোনো নতুন secret দরকার হলে turn-এ জানিয়ে add করবো।
-- musafirdesk যেহেতু Laravel + সম্ভবত Vue/Blade — bundler এটাকে static bundle বানাতে পারবে কিনা সেটা Phase 1-এই দেখা যাবে; না পারলে সেটা biggest fix।
+1. **Site-mapping API** — one source of truth mapping `slug → { apiUrl, appUrl, previewUrl, apex, workspaceId }`, with optional auto-trigger of DNS+TLS.
+2. **Wildcard TLS auto-renew + alerts** for `*.app.timescard.cloud`.
+3. **DNS auto-heal wizard** that turns HTTP 000 into an actionable diagnosis (DNS missing / cert missing / nginx down / worker down / bundle missing) with a one-click repair command.
+4. **Dashboard workspace/app list fetch fix** so the app/workspace list reliably renders.
+5. **UI status panel** for a slug: Auto Deploy pushed? Migrations applied? Bundle unpacked? Placeholder vs real?
+6. **Auto-seed on `slug_not_found`** inside `verify-deploy.sh` (already partial) + inside the worker `/site-status` path so the manual `seed-slug.sh` step disappears.
 
 ## Deliverables
 
-1. Auto-Deploy Studio-র bug list + প্রতিটার fix (code diff)।
-2. musafirdesk live URL।
-3. Future GitHub deploy hardening (loader + analyzer + env auto-fill)।
-4. Screenshots + short report।
+### 1. Site-mapping API (dashboard-side, TanStack server functions)
 
----
+- `src/lib/pluto/site-mapping.functions.ts`
+  - `getSiteMapping({ slug })` → `{ slug, workspaceId, apex, apiUrl, prodUrl, previewUrl, workerBase, sandboxPort, dns: {...}, tls: {...} }`
+  - `upsertSiteMapping({ slug, workspaceId, apex? })` → persists override rows in `admin.site_mappings`
+  - `triggerAutoHeal({ slug, actions: ['dns','tls','seed','reload'] })` → calls VPS repair endpoint (see §3)
+- Migration `0039_site_mappings.sql`
+  - `admin.site_mappings(slug pk, workspace_id, apex, api_host, prod_host, preview_host, updated_at)` + grants + RLS (owner/admin via `has_role`).
+- `src/routes/api/public/site-mapping.$slug.ts` (GET) — public read-only resolver returning the mapping; used by the sandbox worker and by CLI health checks. Anon-safe (no secrets in body).
 
-**Approve করলে Phase 1 (diagnose run) শুরু করছি।** কোনো ধাপে user-only secret (যেমন musafirdesk repo যদি private হয় তাহলে extra scoped token) লাগলে তখন `add_secret` দিয়ে জিজ্ঞেস করবো — নয়তো fully auto।
+### 2. Wildcard TLS auto-renew + alerts
+
+- `pluto-backend/deploy/tls-renew.sh` — wraps `certbot renew --deploy-hook 'systemctl reload nginx'`, logs to `/var/log/pluto/tls-renew.log`, writes a `status.json` (last-run ts, success, cert not-after per domain).
+- `pluto-backend/deploy/systemd/pluto-tls-renew.service` + `.timer` (daily, `RandomizedDelaySec=1h`) — installed by `install-wildcard-tls.sh` if missing.
+- `pluto-backend/deploy/tls-alert.sh` — reads `status.json` and cert expiry; if `not_after < now+14d` OR last run failed, POSTs to `/api/public/tls-alert` (HMAC-signed with `TLS_ALERT_SECRET`). Runs on the same timer.
+- `src/routes/api/public/tls-alert.ts` — verifies HMAC, inserts a row into `admin.tls_events`, emits an in-app notification for admins.
+- Dashboard shows a red banner when any cert is `expiring`/`failed`.
+
+### 3. DNS + Auto-Heal wizard
+
+- `pluto-backend/deploy/diagnose-slug.sh <slug>` — replaces the "checklist" text at end of `verify-served-site.sh` with real probes:
+  - `dig +short <slug>.<apex>` vs. detected VPS IP
+  - `openssl s_client` SAN check for `*.<apex>`
+  - `systemctl is-active nginx pluto-sandbox-worker`
+  - `/site-status/<slug>` on `127.0.0.1:8787`
+  - Disk state at `/var/lib/pluto/sites/<slug>`
+  - Emits a JSON `{ cause, fix_command }`.
+- `verify-served-site.sh` calls it whenever a probe returns 000 or non-2xx and prints the `fix_command` inline (DNS → `ensure-wildcard-dns.sh`; TLS → `fix-wildcard-ssl.sh`; missing slug → `seed-slug.sh`; worker → `refresh-worker.sh`).
+- Dashboard `HealDialog` component: calls `triggerAutoHeal` from §1 and streams progress.
+
+### 4. Dashboard workspace/app list fetch fix
+
+- Audit `src/routes/_authenticated/index.tsx` (or dashboard root) + the `listWorkspaces` / `listProjects` server functions.
+  - Ensure both use `context.queryClient.ensureQueryData` + `useSuspenseQuery` (not `useEffect` + `fetch`).
+  - Ensure server function uses `requireSupabaseAuth` and reads workspaces where `owner_id = context.userId OR EXISTS(workspace_members)`.
+  - Grants: verify `authenticated` has `SELECT` on `admin.workspaces`, `admin.workspace_members`, `admin.projects` (per 0038 self-heal, add anything still missing in `0039`).
+- Add `errorComponent` + `notFoundComponent` and an empty-state CTA ("Create your first workspace").
+
+### 5. UI status panel per slug
+
+- `src/routes/_authenticated/projects/$slug.status.tsx`
+- Server fn `getSlugStatus({ slug })`:
+  - `deployment`: latest `admin.deployments` row (state, started_at, finished_at, bundle_sha, size).
+  - `migrations`: `admin.migration_runs` latest per project (applied vs pending count).
+  - `bundle`: fetches `https://api.<apex>/site-status/<slug>` → parses `{ release, placeholder, sizeBytes, servedAt }`.
+  - `dns`, `tls`: pulled from §1/§2.
+- UI: 4 traffic-light cards (Auto Deploy · Migrations · Bundle · DNS/TLS) with timestamps and a "Heal" button per row.
+
+### 6. Auto-seed on `slug_not_found`
+
+- Worker side (`sandbox-worker/sandbox-worker.mjs`): when `/site-status/<slug>` would return 404 and the request carries `X-Pluto-Auto-Seed: 1` from a trusted source, seed a minimal placeholder in-process (same layout `seed-slug.sh` writes) and return 200 with `placeholder: true, autoSeeded: true`.
+- `verify-deploy.sh`: already auto-seeds when root — extend to also POST to `/api/public/site-mapping/<slug>/heal` so the dashboard is notified.
+- Server fn `triggerAutoHeal` (§1) with `actions: ['seed']` calls the worker's admin `/seed-slug` endpoint (secret-authed) — used by the dashboard Heal button.
+
+## Technical notes
+
+- All new server functions use `createServerFn` + `requireSupabaseAuth` where user context matters; public read (`/api/public/site-mapping/*`) uses a publishable-key client and returns only non-secret fields.
+- Worker gets one new authenticated endpoint `POST /admin/seed-slug` guarded by the existing shared `SECRET` header.
+- DNS auto-heal continues to use `ensure-wildcard-dns.sh` (Cloudflare token at `/etc/letsencrypt/cloudflare.ini`).
+- No new secrets requested up front; `TLS_ALERT_SECRET` is generated server-side via `generate_secret` when the timer is first installed.
+
+## Rollout order
+
+1. Migration `0039_site_mappings.sql` + grants.
+2. Site-mapping server fns + public resolver route.
+3. Worker `/admin/seed-slug` + `X-Pluto-Auto-Seed` behavior.
+4. `diagnose-slug.sh` + `verify-served-site.sh` integration.
+5. `tls-renew.sh` + systemd timer + `tls-alert.sh` + `/api/public/tls-alert` route.
+6. Dashboard: workspace list fix → per-slug status panel → Heal dialog → TLS banner.
+
+## Out of scope
+
+- Custom (non-`app.timescard.cloud`) domain automation — separate flow via `reconcile-domains.sh`.
+- Changing worker's on-disk layout or migration engine.
+- Adding a queue/broker for repair jobs — repair actions stay synchronous with progress streamed over SSE.
+
+Approve this and I'll implement in the order above; each step is independently verifiable with `verify-deploy.sh <slug>`.
