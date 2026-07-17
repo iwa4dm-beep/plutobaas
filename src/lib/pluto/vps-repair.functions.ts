@@ -10,7 +10,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { getVpsBaseUrl } from "./vps-client";
 
-export type RepairAction = "worker-and-site" | "wildcard-ssl" | "deploy-and-verify" | "all";
+export type RepairAction = "worker-and-site" | "wildcard-ssl" | "per-slug-ssl" | "deploy-and-verify" | "all";
 
 export type RepairResult = {
   ok: boolean;
