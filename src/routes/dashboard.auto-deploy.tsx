@@ -909,6 +909,13 @@ function AutoDeployInner() {
               className="rounded-md border border-border px-3 py-2 text-sm hover:bg-accent flex items-center gap-1.5 disabled:opacity-60">
               <RefreshCw className={`h-3.5 w-3.5 ${probing ? "animate-spin" : ""}`} /> Re-check
             </button>
+            <button
+              onClick={runServedDiagnostics}
+              disabled={diagnosticsBusy}
+              className="rounded-md border border-border px-3 py-2 text-sm hover:bg-accent flex items-center gap-1.5 disabled:opacity-60">
+              {diagnosticsBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FolderTree className="h-3.5 w-3.5" />}
+              Diagnose
+            </button>
             <a href={liveUrl} target="_blank" rel="noreferrer"
               className={`rounded-md px-3 py-2 text-sm flex items-center gap-1.5 ${
                 isReachable
@@ -925,6 +932,8 @@ function AutoDeployInner() {
               {liveProbe.snippet ? ` · ${liveProbe.snippet.slice(0, 120)}` : ""}
             </div>
           )}
+
+          {servedDiagnostics && <ServedSiteDiagnosticsPanel diagnostics={servedDiagnostics} />}
 
           {bootstrapInvokeUrl && (
             <div className="text-xs text-muted-foreground">
