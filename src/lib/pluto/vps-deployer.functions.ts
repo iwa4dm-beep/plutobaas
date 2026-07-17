@@ -757,10 +757,10 @@ export const deployAll = createServerFn({ method: "POST" })
     const unpackStep = await withRetry("unpack-serve", "Unpack bundle + serve (sandbox worker)", data.maxRetries, async () => {
       if (!sandboxUrl || !sandboxSecret) {
         return {
-          ok: true,
-          detail: "skipped — PLUTO_SANDBOX_URL / PLUTO_SANDBOX_SECRET not configured. Install pluto-backend/sandbox-worker on the VPS to enable auto-serve.",
+          ok: !data.strictServedSite,
+          detail: "blocked — PLUTO_SANDBOX_URL / PLUTO_SANDBOX_SECRET not configured. Install pluto-backend/sandbox-worker on the VPS to enable auto-serve before going live.",
           debug: null,
-          result: { skipped: true },
+          result: { skipped: true, strictServedSite: data.strictServedSite },
         };
       }
 
@@ -855,10 +855,10 @@ export const deployAll = createServerFn({ method: "POST" })
         // pipeline for that — treat it as skipped with a clear operator hint.
         if (wrongServiceAll) {
           return {
-            ok: true,
-            detail: `skipped — sandbox worker at ${sandboxBaseForUnpack} does not expose an /unpack endpoint (tried: ${triedList}). Upgrade sandbox-worker.mjs to include POST /unpack, or set PLUTO_SANDBOX_URL to the correct base (e.g. https://api.timescard.cloud/sandbox).`,
+            ok: !data.strictServedSite,
+            detail: `blocked — sandbox worker at ${sandboxBaseForUnpack} does not expose an /unpack endpoint (tried: ${triedList}). Upgrade sandbox-worker.mjs to include POST /unpack, or set PLUTO_SANDBOX_URL to the correct base (e.g. https://api.timescard.cloud/sandbox).`,
             debug: r?.debug ?? null,
-            result: { skipped: true, reason: "no-unpack-endpoint", tried: triedList },
+            result: { skipped: true, reason: "no-unpack-endpoint", tried: triedList, strictServedSite: data.strictServedSite },
           };
         }
         // 401 = secret mismatch between Lovable Cloud PLUTO_SANDBOX_SECRET and
@@ -1008,9 +1008,24 @@ export const deployAll = createServerFn({ method: "POST" })
 
       let siteLine = "served site: (auto-detect failed — set PLUTO_SERVED_SITE_URL or install sandbox worker with /sites/<slug>/ vhost)";
       if (effectiveSite) {
-        const s = await rawFetch(`${effectiveSite}/`, "GET", { accept: "text/html" }, null, null, 15_000);
-        siteResult = { status: s.status, url: `${effectiveSite}/`, snippet: s.text.slice(0, 240) };
+        const probeUrl = `${effectiveSite}/`;
+        let s = await rawFetch(probeUrl, "GET", { accept: "text/html" }, null, null, 15_000);
+        let healNote: string | null = null;
+        if (!s.ok && (s.status === 404 || s.status === 0) && sandboxSecret) {
+          const statusUrl = `${base}/site-status/${encodeURIComponent(deploySlug)}?autoseed=1`;
+          const seed = await rawFetch(statusUrl, "GET", { accept: "application/json", "x-pluto-auto-seed": "1" }, null, null, 20_000);
+          healNote = seed.ok ? "auto-seed checked" : `auto-seed HTTP ${seed.status}`;
+          s = await rawFetch(probeUrl, "GET", { accept: "text/html" }, null, null, 15_000);
+          if (!s.ok) {
+            const repairBody = JSON.stringify({ action: "worker-and-site", slug: deploySlug });
+            const repair = await rawFetch(`${sandboxUrl}/admin/repair`, "POST", { "content-type": "application/json", "x-sandbox-secret": sandboxSecret, accept: "application/json" }, repairBody, repairBody, 180_000);
+            healNote = `${healNote}; worker/nginx repair HTTP ${repair.status}`;
+            s = await rawFetch(probeUrl, "GET", { accept: "text/html" }, null, null, 15_000);
+          }
+        }
+        siteResult = { status: s.status, url: probeUrl, snippet: s.text.slice(0, 240), ...(healNote ? { healNote } : {}) };
         siteLine = `served site (${autoSource}): ${s.ok ? `✓ HTTP ${s.status}` : `✗ HTTP ${s.status}`} @ ${effectiveSite}`;
+        if (healNote) siteLine += ` · heal=${healNote}`;
         // Cache the auto-derived URL for the resolvedSite block below.
         if (autoSource === "auto-derived") servedSiteFromWorker.url = servedSiteFromWorker.url ?? effectiveSite;
       }
