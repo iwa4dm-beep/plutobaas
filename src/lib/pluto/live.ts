@@ -1872,10 +1872,86 @@ export const backups = {
 // ============================================================
 // Phase 27 — Logs Explorer SDK
 // ============================================================
-export type LogRow = { id: string; ts: string; source: string; level: string; message: string; user_id: string | null };
+export type LogRow = {
+  id: string; ts: string; source: string; level: string; message: string; user_id: string | null;
+  // Optional enriched fields — sandbox-worker/nginx can emit these inside `message` as JSON.
+  environment?: string | null; resource?: string | null; route?: string | null;
+  request_path?: string | null; status_code?: number | null; request_type?: string | null;
+  host?: string | null; service?: string | null; request_method?: string | null;
+  cache?: string | null; branch?: string | null; workflow_run?: string | null;
+  workflow_step?: string | null; deployment_id?: string | null; slug?: string | null;
+  duration_ms?: number | null;
+};
 export type LogSearch = {
   source?: string; level?: string; q?: string; since?: string; until?: string; limit?: number; offset?: number;
+  // Extended dimensions — forwarded as query params; unknown ones are ignored by older Pluto builds.
+  environment?: string; resource?: string; route?: string; request_path?: string;
+  status_code?: string; request_type?: string; host?: string; service?: string;
+  request_method?: string; cache?: string; branch?: string; workflow_run?: string;
+  workflow_step?: string; deployment_id?: string; slug?: string;
 };
+
+/** Extract structured fields from a LogRow when the backend stores them either as
+ *  explicit columns or embedded in `message` as a JSON string. */
+export function extractLogFields(r: LogRow): LogRow {
+  const out: LogRow = { ...r };
+  const msg = r.message ?? "";
+  if (msg.startsWith("{") && msg.endsWith("}")) {
+    try {
+      const j = JSON.parse(msg) as Record<string, unknown>;
+      const pick = (k: string): string | null => { const v = j[k]; return v == null ? null : String(v); };
+      out.environment ??= pick("environment") ?? pick("env");
+      out.resource ??= pick("resource");
+      out.route ??= pick("route");
+      out.request_path ??= pick("path") ?? pick("request_path") ?? pick("url");
+      out.request_type ??= pick("request_type") ?? pick("type");
+      out.host ??= pick("host");
+      out.service ??= pick("service");
+      out.request_method ??= pick("method") ?? pick("request_method");
+      out.cache ??= pick("cache") ?? pick("cache_status");
+      out.branch ??= pick("branch");
+      out.workflow_run ??= pick("workflow_run") ?? pick("run_id");
+      out.workflow_step ??= pick("workflow_step") ?? pick("step");
+      out.deployment_id ??= pick("deployment_id") ?? pick("deploy_id");
+      out.slug ??= pick("slug");
+      const sc = j.status ?? j.status_code;
+      if (sc != null && out.status_code == null) out.status_code = Number(sc) || null;
+      const d = j.duration_ms ?? j.duration;
+      if (d != null && out.duration_ms == null) out.duration_ms = Number(d) || null;
+    } catch { /* ignore malformed */ }
+  }
+  return out;
+}
+
+/** Client-side filter for extended dimensions the backend can't yet query. */
+export function applyClientFilters(rows: LogRow[], f: Partial<LogSearch> & { contains?: string }): LogRow[] {
+  const keys: Array<[keyof LogSearch, keyof LogRow]> = [
+    ["environment", "environment"], ["resource", "resource"], ["route", "route"],
+    ["request_path", "request_path"], ["request_type", "request_type"], ["host", "host"],
+    ["service", "service"], ["request_method", "request_method"], ["cache", "cache"],
+    ["branch", "branch"], ["workflow_run", "workflow_run"], ["workflow_step", "workflow_step"],
+    ["deployment_id", "deployment_id"], ["slug", "slug"],
+  ];
+  const contains = (f.contains ?? "").toLowerCase();
+  const sc = f.status_code?.trim();
+  return rows.map(extractLogFields).filter((r) => {
+    for (const [sk, rk] of keys) {
+      const want = f[sk]; if (!want) continue;
+      const got = String(r[rk] ?? "");
+      if (!got.toLowerCase().includes(String(want).toLowerCase())) return false;
+    }
+    if (sc) {
+      const s = String(r.status_code ?? "");
+      if (sc.endsWith("xx")) { if (!s.startsWith(sc[0])) return false; }
+      else if (s !== sc) return false;
+    }
+    if (contains) {
+      const hay = `${r.message} ${r.request_path ?? ""} ${r.route ?? ""}`.toLowerCase();
+      if (!hay.includes(contains)) return false;
+    }
+    return true;
+  });
+}
 
 export const logsV2 = {
   async search(p: LogSearch = {}): Promise<{ logs: LogRow[] }> {
