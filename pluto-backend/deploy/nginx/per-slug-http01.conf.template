@@ -1,0 +1,66 @@
+# Per-slug HTTP-01 subdomain — rendered by issue-per-slug-cert.sh
+# Placeholders: __SLUG__ __BASE__ (e.g. app.timescard.cloud)
+#
+# This block overrides the wildcard *.app.timescard.cloud vhost for a single
+# slug when no wildcard cert is available (e.g. registrar without a supported
+# ACME DNS plugin). HTTP-01 challenge is served from /var/www/certbot.
+
+# HTTP: ACME challenge + redirect to HTTPS
+server {
+    listen      80;
+    listen [::]:80;
+    server_name __SLUG__.__BASE__;
+
+    location /.well-known/acme-challenge/ { root /var/www/certbot; }
+    location /                            { return 301 https://$host$request_uri; }
+}
+
+# HTTPS: per-slug cert, serves the same site tree as wildcard vhost
+server {
+    listen      443 ssl;
+    listen [::]:443 ssl;
+    http2 on;
+    server_name __SLUG__.__BASE__;
+
+    ssl_certificate     /etc/letsencrypt/live/__SLUG__.__BASE__/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/__SLUG__.__BASE__/privkey.pem;
+    ssl_protocols       TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers on;
+    ssl_session_cache   shared:SSL:10m;
+
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    add_header X-Content-Type-Options    "nosniff" always;
+    add_header Referrer-Policy           "strict-origin-when-cross-origin" always;
+
+    client_max_body_size 100M;
+
+    access_log /var/log/nginx/pluto-slugs.log pluto_slug_json;
+
+    root  /var/lib/pluto/sites/__SLUG__/current;
+    index index.html;
+
+    add_header X-Pluto-Channel "current" always;
+
+    location / {
+        try_files $uri $uri/ /index.html @not_deployed;
+    }
+
+    location ~* \.(?:js|css|woff2?|png|jpg|jpeg|gif|svg|ico|webp|avif)$ {
+        expires 30d;
+        access_log off;
+        add_header Cache-Control "public, max-age=2592000, immutable";
+        try_files $uri @not_deployed;
+    }
+
+    location = /index.html {
+        add_header Cache-Control "no-store, must-revalidate";
+    }
+
+    location @not_deployed {
+        default_type text/html;
+        return 404 '<!doctype html><meta charset=utf-8><title>Not deployed</title><body style="font-family:system-ui;padding:3rem;max-width:36rem;margin:auto"><h1>Not deployed yet</h1><p>The project <code>__SLUG__</code> is registered but has no live bundle.</p></body>';
+    }
+
+    gzip on;
+    gzip_types text/css application/javascript application/json image/svg+xml;
+}
