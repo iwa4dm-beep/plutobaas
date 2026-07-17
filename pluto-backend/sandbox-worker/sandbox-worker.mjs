@@ -337,8 +337,8 @@ async function ensureSlugSymlink(wsDir, slug) {
   //   /var/lib/pluto/sites/<slug>             = symlink to workspaceId
   // If an old auto-seeded placeholder directory already owns the slug, replace
   // it with the real deployment. Refuse to overwrite non-placeholder content.
-  try {
-    const st = await fsp.lstat(slugPath);
+  const st = await fsp.lstat(slugPath).catch(() => null);
+  if (st) {
     if (st.isSymbolicLink()) {
       const target = await fsp.readlink(slugPath);
       const abs = path.isAbsolute(target) ? target : path.join(SITES_ROOT, target);
@@ -357,7 +357,7 @@ async function ensureSlugSymlink(wsDir, slug) {
         throw new Error(`slug '${slug}' is already occupied by a non-placeholder site at ${slugPath}`);
       }
     }
-  } catch { /* not exist, fine */ }
+  }
   await fsp.symlink(path.relative(SITES_ROOT, wsDir), slugPath);
   return slugPath;
 }
