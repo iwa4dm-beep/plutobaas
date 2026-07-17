@@ -997,7 +997,7 @@ export const deployAll = createServerFn({ method: "POST" })
       // Resolve the site URL: explicit env → worker webRoot → auto-derived probe.
       let effectiveSite = servedSiteUrl || servedSiteFromWorker.url || "";
       let autoSource: "env" | "worker" | "auto-derived" | "none" = servedSiteUrl ? "env" : (servedSiteFromWorker.url ? "worker" : "none");
-      let siteResult: { status: number; url: string; snippet: string } | null = null;
+      let siteResult: { status: number; url: string; snippet: string; healNote?: string | null } | null = null;
 
       if (!effectiveSite) {
         for (const candidate of autoDerivedCandidates) {
