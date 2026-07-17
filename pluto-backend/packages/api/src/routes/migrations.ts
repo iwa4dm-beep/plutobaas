@@ -21,6 +21,8 @@ const listQ = z.object({
   limit: z.coerce.number().int().min(1).max(500).optional().default(100),
 });
 
+const AD_HOC_DRY_RUN_ROLLBACK = Symbol('ad-hoc-migration-dry-run-rollback');
+
 async function assertRole(cfg: Config, projectId: string | null | undefined, actor: any) {
   if (!projectId) {
     if (!(actor.isSuperadmin || actor.role === 'service_role')) {
@@ -333,6 +335,7 @@ export async function migrationsRoutes(app: FastifyInstance, cfg: Config) {
     try {
       await ensureWorkspaceOwnerColumns(sql);
       const prepared = prepareAdHocMigrationSql(m.up_sql);
+      await dryRunPreparedSql(sql, prepared.sql);
       const t = await timed(async () => {
         await sql.begin(async (tx) => {
           await tx.unsafe("set local lock_timeout = '15s'");
