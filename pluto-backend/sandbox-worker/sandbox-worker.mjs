@@ -222,7 +222,11 @@ async function sandboxHealth(filter = {}) {
   return {
     ok: true,
     service: "pluto-sandbox-worker",
-    version: "v1-static-serve-2026-07-17",
+    version: "v1-static-serve-2026-07-17-storage-header-fix",
+    features: {
+      request_body_service_key: true,
+      storage_workspace_header_preserves_uuid: true,
+    },
     auth: { ok: true, method: "x-sandbox-secret" },
     // Flat operator-friendly fields (used by Auto Deploy preflight + docs).
     secret_present: Boolean(SECRET),
@@ -370,7 +374,14 @@ async function atomicSymlink(linkPath, targetRelPath) {
 }
 
 async function unpack({ workspaceId, slug, bucket, key, env, channel, migrations, serviceKey }) {
-  const ws = safeSlug(workspaceId);
+  // Keep two workspace forms:
+  //   rawWorkspaceId  → auth/storage routing header (must preserve UUID hyphens)
+  //   ws              → filesystem-safe directory name
+  // Older code reused the filesystem-safe value for x-workspace-id, turning
+  // UUIDs like 061c...-... into 061c..._..., which made Storage reject GETs
+  // with 401 even though the same service key had just uploaded the bundle.
+  const rawWorkspaceId = String(workspaceId ?? "").trim();
+  const ws = safeSlug(rawWorkspaceId);
   if (!ws) throw new Error("invalid workspaceId");
   if (!bucket || !key) throw new Error("bucket and key are required");
   const normalizedSlug = typeof slug === "string" ? slug.trim().toLowerCase() : "";
@@ -385,7 +396,7 @@ async function unpack({ workspaceId, slug, bucket, key, env, channel, migrations
   const releaseDir = path.join(wsRoot, `release-${stamp}-${randomUUID().slice(0, 8)}`);
   await fsp.mkdir(releaseDir, { recursive: true });
 
-  const zipBytes = await fetchBundle(bucket, key, { serviceKey, workspaceId: ws });
+  const zipBytes = await fetchBundle(bucket, key, { serviceKey, workspaceId: rawWorkspaceId || ws });
   const zipPath = path.join(wsRoot, `bundle-${stamp}.zip`);
   await fsp.writeFile(zipPath, zipBytes);
 
@@ -789,7 +800,11 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, {
         ok: true,
         service: "pluto-sandbox-worker",
-        version: "v1-static-serve-2026-07-16",
+        version: "v1-static-serve-2026-07-17-storage-header-fix",
+        features: {
+          request_body_service_key: true,
+          storage_workspace_header_preserves_uuid: true,
+        },
         uptimeSec: Math.round(process.uptime()),
         sitesRoot: SITES_ROOT,
         workspaces: siteCount,
