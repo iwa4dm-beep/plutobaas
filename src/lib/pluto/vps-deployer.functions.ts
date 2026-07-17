@@ -426,10 +426,25 @@ const DeployAllInput = z.object({
 
 
 
-export type DeployStepKey = "ensure-infra" | "push-migrations" | "upload-bundle" | "verify-deploy" | "unpack-serve" | "activate-service" | "health-check";
+export type DeployStepKey = "ensure-infra" | "push-migrations" | "upload-bundle" | "verify-deploy" | "unpack-serve" | "activate-service" | "health-check" | "verify-ssl";
 export type DeployStepAttempt = { attempt: number; ok: boolean; detail: string; debug: StepDebug | null; startedAt: string; latencyMs: number };
 export type DeployStepLog = { key: DeployStepKey; label: string; ok: boolean; attempts: DeployStepAttempt[]; result: string | null };
 export type LiveUrlProbe = { url: string; status: number; reachable: boolean; contentType: string | null; snippet: string; latencyMs: number };
+export type SslProbe = {
+  url: string;
+  ok: boolean;
+  httpsStatus: number;
+  handshakeMs: number;
+  error?: string;
+  cert?: {
+    issuer: string | null;
+    subject: string | null;
+    validFrom: string | null;
+    validTo: string | null;
+    daysUntilExpiry: number | null;
+    hostnameMatch: boolean | null;
+  };
+};
 type JsonPrimitive = string | number | boolean | null;
 type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue };
 
@@ -489,10 +504,82 @@ export type DeployAllResult = {
     served?: boolean;
     /** Operator-facing hint when served=false. */
     servedHint?: string;
+    /** HTTPS/TLS verification for the resolved served-site URL. Only populated when the site is https:// */
+    sslProbe?: SslProbe;
   };
 };
 
 function nowIso(): string { return new Date().toISOString(); }
+
+/** Best-effort SSL/HTTPS verifier. Uses fetch() to validate the TLS chain +
+ *  hostname (any TLS/name error rejects the promise) and, when Node `tls`
+ *  is available in the runtime, harvests cert issuer/expiry via a direct
+ *  TLS handshake. Never throws — returns { ok:false, error } on failure. */
+async function probeSsl(url: string): Promise<SslProbe> {
+  const t0 = Date.now();
+  let httpsStatus = 0;
+  let fetchErr: string | undefined;
+  try {
+    if (!/^https:\/\//i.test(url)) {
+      return { url, ok: false, httpsStatus: 0, handshakeMs: 0, error: "not an https:// URL" };
+    }
+    const ctl = new AbortController();
+    const t = setTimeout(() => ctl.abort(), 12_000);
+    try {
+      const r = await fetch(url, { method: "GET", redirect: "manual", signal: ctl.signal, headers: { accept: "text/html,*/*" } });
+      httpsStatus = r.status;
+    } finally { clearTimeout(t); }
+  } catch (e) {
+    fetchErr = (e as Error).message || "fetch failed";
+  }
+  const handshakeMs = Date.now() - t0;
+
+  // Best-effort cert metadata via Node `tls`. Cloudflare Workers with
+  // nodejs_compat don't expose `tls`, so we fail-soft.
+  let cert: SslProbe["cert"] | undefined;
+  try {
+    const u = new URL(url);
+    const tlsMod = await import("node:tls").catch(() => null) as typeof import("node:tls") | null;
+    if (tlsMod && u.hostname) {
+      cert = await new Promise<SslProbe["cert"]>((resolve) => {
+        const done = (v: SslProbe["cert"]) => { try { socket.destroy(); } catch { /* noop */ } resolve(v); };
+        const socket = tlsMod.connect({
+          host: u.hostname, port: Number(u.port) || 443, servername: u.hostname, timeout: 8000,
+        }, () => {
+          try {
+            const c = socket.getPeerCertificate(false);
+            if (!c || Object.keys(c).length === 0) return done(undefined);
+            const validTo = c.valid_to ? new Date(c.valid_to) : null;
+            const days = validTo ? Math.floor((validTo.getTime() - Date.now()) / 86_400_000) : null;
+            const alt = (c.subjectaltname ?? "").split(/,\s*/).map((s: string) => s.replace(/^DNS:/, "").trim()).filter(Boolean);
+            const host = u.hostname.toLowerCase();
+            const norm = (v: unknown): string | null => Array.isArray(v) ? (String(v[0] ?? "") || null) : (typeof v === "string" ? v : null);
+            const cn = norm(c.subject?.CN);
+            const match = (n: string) => n.startsWith("*.")
+              ? host.endsWith(n.slice(1).toLowerCase()) && host.split(".").length === n.split(".").length
+              : n.toLowerCase() === host;
+            const hostnameMatch = (cn && match(cn)) || alt.some(match) || null;
+            done({
+              issuer: norm(c.issuer?.O) ?? norm(c.issuer?.CN),
+              subject: cn,
+              validFrom: c.valid_from ?? null,
+              validTo: c.valid_to ?? null,
+              daysUntilExpiry: days,
+              hostnameMatch,
+            });
+          } catch { done(undefined); }
+        });
+        socket.on("error", () => done(undefined));
+        socket.on("timeout", () => done(undefined));
+      });
+    }
+  } catch { /* tls not available — leave cert undefined */ }
+
+  const ok = !fetchErr && httpsStatus >= 200 && httpsStatus < 500
+    && (cert?.hostnameMatch !== false)
+    && (cert?.daysUntilExpiry == null || cert.daysUntilExpiry > 0);
+  return { url, ok, httpsStatus, handshakeMs, ...(fetchErr ? { error: fetchErr } : {}), ...(cert ? { cert } : {}) };
+}
 
 type AttemptOutcome = { ok: boolean; detail: string; debug: StepDebug | null; result: unknown };
 
@@ -918,6 +1005,29 @@ export const deployAll = createServerFn({ method: "POST" })
       servedHint = `Auto-detect could not find a reachable served site. Tried: ${autoDerivedCandidates.join(", ")}. To fix permanently, choose one: (a) set PLUTO_SERVED_SITE_URL_TEMPLATE (e.g. "https://{slug}.app.timescard.cloud" or "https://api.timescard.cloud/sites/{slug}/") so the URL is auto-computed per deploy; (b) set PLUTO_SERVED_SITE_URL to a static origin; or (c) install pluto-backend/sandbox-worker on the VPS — it now exposes GET /sites/<slug>/* which nginx can proxy at /sites/ or /sandbox/sites/.`;
     }
 
+    // Step: Verify SSL / HTTPS on the resolved served-site URL (non-fatal on
+    // http:// or when no site was resolved — reported as "skipped" success).
+    let sslProbe: SslProbe | undefined;
+    const sslStep = await withRetry("verify-ssl", "Verify SSL / HTTPS", 0, async () => {
+      const target = resolvedSite || servedSiteUrl || "";
+      if (!target) {
+        return { ok: true, detail: "skipped — no served-site URL to verify", debug: null, result: { skipped: true, reason: "no-served-site" } };
+      }
+      if (!/^https:\/\//i.test(target)) {
+        return { ok: true, detail: `skipped — target is not https (${target})`, debug: null, result: { skipped: true, reason: "not-https", target } };
+      }
+      sslProbe = await probeSsl(target);
+      const parts = [
+        `HTTPS ${sslProbe.httpsStatus || "err"}`,
+        sslProbe.cert?.issuer ? `issuer=${sslProbe.cert.issuer}` : null,
+        sslProbe.cert?.daysUntilExpiry != null ? `${sslProbe.cert.daysUntilExpiry}d left` : null,
+        sslProbe.cert?.hostnameMatch === false ? "hostname MISMATCH" : null,
+        sslProbe.error ? `err=${sslProbe.error}` : null,
+      ].filter(Boolean).join(" · ");
+      return { ok: sslProbe.ok, detail: parts || (sslProbe.ok ? "ok" : "unhealthy"), debug: null, result: sslProbe };
+    });
+    steps.push(sslStep);
+
     const liveUrls = {
       functionsHealth: `${base}/functions/v1/health`,
       bootstrapInvoke: `${base}/functions/v1/invoke/bootstrap`,
@@ -926,6 +1036,7 @@ export const deployAll = createServerFn({ method: "POST" })
       ...(servedSiteProbe ? { servedSiteProbe } : {}),
       served,
       ...(servedHint ? { servedHint } : {}),
+      ...(sslProbe ? { sslProbe } : {}),
     };
     return { ok: steps.every(s => s.ok), workspaceId: data.workspaceId, totalMs: Date.now() - t0, steps, liveUrls };
   });
