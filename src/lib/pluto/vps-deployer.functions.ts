@@ -627,8 +627,10 @@ export const deployAll = createServerFn({ method: "POST" })
       // uses the SAME credentials that just uploaded the bundle. This eliminates
       // env-drift between Lovable Cloud's PLUTO_SERVICE_ROLE_KEY and the VPS
       // worker's cached PLUTO_SERVICE_ROLE_KEY, which caused "storage GET HTTP 401".
-      const freshServiceKey = await getServiceRoleKey();
-      const body = JSON.stringify({ workspaceId: data.workspaceId, slug: deploySlug, bucket: data.bucket, key: cleanPath, channel: "production", migrations: migrationStatus, serviceKey: freshServiceKey || undefined });
+      const freshServiceKey = (data.operatorToken && data.operatorToken.trim()) || await getServiceRoleKey();
+      const unpackPayload = { workspaceId: data.workspaceId, slug: deploySlug, bucket: data.bucket, key: cleanPath, channel: "production", migrations: migrationStatus, serviceKey: freshServiceKey || undefined };
+      const body = JSON.stringify(unpackPayload);
+      const bodyPreview = JSON.stringify({ ...unpackPayload, serviceKey: freshServiceKey ? "[redacted]" : undefined });
       // The sandbox worker is nginx-proxied under /sandbox/* on api.timescard.cloud.
       // Operators sometimes set PLUTO_SANDBOX_URL to the bare host, which routes
       // POST /unpack into the main app and returns "Only HTML requests are supported here".
@@ -652,7 +654,7 @@ export const deployAll = createServerFn({ method: "POST" })
           "POST",
           { "content-type": "application/json", "x-sandbox-secret": sandboxSecret, accept: "application/json" },
           body,
-          body,
+          bodyPreview,
           180_000,
         );
         triedList = triedList ? `${triedList}, ${url}` : url;
