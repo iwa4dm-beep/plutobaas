@@ -251,7 +251,14 @@ export async function analyzeZip(
     if (/(^|\/)supabase\/migrations\/.+\.sql$/.test(lower)) {
       result.backend.detected = true;
       result.backend.rawMigrationFiles += 1;
-      result.backend.tables.push(...parseSupabaseMigration(text));
+      const parsed = parseSupabaseMigration(text);
+      result.backend.tables.push(...parsed.tables);
+      if (parsed.extraPreamble.length) {
+        result.backend.extraPreambleSql = [
+          ...(result.backend.extraPreambleSql ?? []),
+          ...parsed.extraPreamble,
+        ];
+      }
       markUsed("supabase migration");
     }
     if (/app\/models\/.+\.php$/.test(lower)) {
