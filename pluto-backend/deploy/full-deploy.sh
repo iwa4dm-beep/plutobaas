@@ -29,6 +29,11 @@ cd "$(dirname "$0")/.."
 ROOT="$(pwd)"
 DEPLOY="$ROOT/deploy"
 
+if [ -n "${1:-}" ] && [ -z "${SLUG:-}" ]; then
+  SLUG="$1"
+  export SLUG
+fi
+
 log() { printf '\n\033[1;36m▶ %s\033[0m\n' "$*"; }
 die() { printf '\n\033[1;31m✗ %s\033[0m\n' "$*" >&2; exit 1; }
 
@@ -117,11 +122,24 @@ else
 fi
 
 # 3) nginx sites-proxy
-log "install sites-proxy (wildcard=$WILDCARD)"
-SKIP_SSL_ARG=""
-[ "${SKIP_SSL:-0}" = "1" ] && SKIP_SSL_ARG="--skip-ssl"
-ACME_EMAIL="$ACME_EMAIL" bash "$DEPLOY/install-sites-proxy.sh" \
-  --wildcard "$WILDCARD" $SKIP_SSL_ARG || die "install-sites-proxy failed"
+if [ "${SKIP_WILDCARD:-0}" = "1" ]; then
+  log "install sites-proxy (API routes only; wildcard vhost skipped)"
+  ACME_EMAIL="$ACME_EMAIL" bash "$DEPLOY/install-sites-proxy.sh" || die "install-sites-proxy failed"
+  WILDCARD_LINK="/etc/nginx/sites-enabled/pluto-wildcard-${WILDCARD}.conf"
+  WILDCARD_CERT="/etc/letsencrypt/live/${WILDCARD}/fullchain.pem"
+  if [ -e "$WILDCARD_LINK" ]; then
+    if [ ! -s "$WILDCARD_CERT" ] || ! openssl x509 -in "$WILDCARD_CERT" -noout -text 2>/dev/null | grep -q "DNS:\*\.${WILDCARD}"; then
+      echo "  disabling incomplete managed wildcard vhost: $WILDCARD_LINK"
+      rm -f "$WILDCARD_LINK"
+    fi
+  fi
+else
+  log "install sites-proxy (wildcard=$WILDCARD)"
+  SKIP_SSL_ARG=""
+  [ "${SKIP_SSL:-0}" = "1" ] && SKIP_SSL_ARG="--skip-ssl"
+  ACME_EMAIL="$ACME_EMAIL" bash "$DEPLOY/install-sites-proxy.sh" \
+    --wildcard "$WILDCARD" $SKIP_SSL_ARG || die "install-sites-proxy failed"
+fi
 
 # 4) nginx reload
 log "nginx -t && reload"
@@ -129,7 +147,7 @@ nginx -t || die "nginx config invalid"
 systemctl reload nginx || die "nginx reload failed"
 
 # 5) verify
-if [ -n "${SLUG:-}" ]; then
+if [ -n "${SLUG:-}" ] && [ "${SKIP_VERIFY:-0}" != "1" ]; then
   log "verify deploy for slug=$SLUG"
   if ! bash "$DEPLOY/verify-deploy.sh" "$SLUG"; then
     log "verify failed; attempting worker + site recovery"
@@ -141,8 +159,13 @@ if [ -n "${SLUG:-}" ]; then
     fi
   fi
 else
-  log "no SLUG given — skipping end-to-end verification"
-  echo "  (rerun: bash deploy/verify-deploy.sh <slug>)"
+  if [ "${SKIP_VERIFY:-0}" = "1" ]; then
+    log "skip verify (SKIP_VERIFY=1)"
+    echo "  (rerun after TLS: bash deploy/verify-deploy.sh ${SLUG:-<slug>})"
+  else
+    log "no SLUG given — skipping end-to-end verification"
+    echo "  (rerun: bash deploy/verify-deploy.sh <slug>)"
+  fi
 fi
 
 printf '\n\033[1;32m✓ full-deploy completed\033[0m\n'

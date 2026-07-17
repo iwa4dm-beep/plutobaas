@@ -34,7 +34,10 @@ server {
 
     client_max_body_size 100M;
 
-    access_log /var/log/nginx/pluto-slugs.log pluto_slug_json;
+    # Keep this vhost self-contained: wildcard installs may define the
+    # pluto_slug_json log_format, but per-slug HTTP-01 must also work on a
+    # fresh nginx where that format is not installed yet.
+    access_log /var/log/nginx/pluto-slugs.log;
 
     root  /var/lib/pluto/sites/__SLUG__/current;
     index index.html;

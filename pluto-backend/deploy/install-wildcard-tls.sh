@@ -88,6 +88,7 @@ if [ "${FORCE_MANUAL:-0}" = "1" ] || [ ! -f "$CF_INI" ]; then
   $SUDO certbot certonly \
     --manual \
     --preferred-challenges dns \
+    --expand \
     --agree-tos --no-eff-email \
     --email "$EMAIL" \
     --cert-name "$APEX" \
@@ -98,6 +99,7 @@ else
     --dns-cloudflare \
     --dns-cloudflare-credentials "$CF_INI" \
     --dns-cloudflare-propagation-seconds 30 \
+    --expand --non-interactive \
     --agree-tos --no-eff-email \
     --email "$EMAIL" \
     --cert-name "$APEX" \

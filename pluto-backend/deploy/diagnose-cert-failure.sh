@@ -8,6 +8,7 @@
 #   • "urn:ietf:params:acme:error:rateLimited"
 #   • "urn:ietf:params:acme:error:dns"       (DNS-01 propagation)
 #   • "ssl_certificate ... cannot load"       (nginx pointing at missing file)
+#   • "unknown log format \"pluto_slug_json\"" (stale per-slug nginx template)
 #
 # Usage:
 #   sudo bash pluto-backend/deploy/diagnose-cert-failure.sh [slug] [base]
@@ -140,6 +141,36 @@ if nghit "cannot load certificate" || nghit "no such file or directory.*fullchai
   Fix — issue the cert first, THEN reload nginx:
     sudo bash pluto-backend/deploy/issue-per-slug-cert.sh ${SLUG:-<slug>} ${BASE}
     sudo nginx -t && sudo systemctl reload nginx
+MSG
+fi
+
+# ── 7. Stale per-slug nginx template references missing log_format ───────────
+if nghit "unknown log format.*pluto_slug_json"; then
+  FOUND=1
+  red "✗ ROOT CAUSE: nginx has an old per-slug vhost that references log_format 'pluto_slug_json', but that format is not loaded."
+  cat <<MSG
+
+  Fix — pull the updated template and regenerate the per-slug vhost:
+    cd /root/backend-joy
+    sudo bash pluto-backend/deploy/clean-pull.sh
+    sudo bash pluto-backend/deploy/issue-per-slug-cert.sh ${SLUG:-<slug>} ${BASE}
+    sudo nginx -t && sudo systemctl reload nginx
+MSG
+fi
+
+# ── 8. Certbot UnicodeDecodeError (usually bad credentials file / snap fd) ───
+if hit "UnicodeDecodeError" || hit "File not found: /dev/fd"; then
+  FOUND=1
+  red "✗ ROOT CAUSE: certbot DNS-01 credential handling failed (bad temp fd/encoding or provider mismatch)."
+  cat <<MSG
+
+  Your current DNS provider is likely not Cloudflare for this zone, so do not
+  keep retrying wildcard DNS-01. Use per-slug HTTP-01 for this slug:
+
+    cd /root/backend-joy
+    sudo SKIP_WILDCARD=1 SKIP_VERIFY=1 bash pluto-backend/deploy/full-deploy.sh ${SLUG:-<slug>}
+    sudo bash pluto-backend/deploy/issue-per-slug-cert.sh ${SLUG:-<slug>} ${BASE}
+    sudo bash pluto-backend/deploy/verify-deploy.sh ${SLUG:-<slug>}
 MSG
 fi
 

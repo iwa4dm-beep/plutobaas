@@ -44,6 +44,7 @@ done
 FQDN="${SLUG}.${BASE}"
 WILDCARD_LABEL="*.${BASE#*.}"   # wildcard host for the base zone segment
 ZONE_ROOT="${BASE#*.}"          # e.g. app.timescard.cloud → timescard.cloud
+WEBROOT="/var/www/certbot"
 
 bold "▸ Preflight for ${FQDN}"
 echo  "  zone root: ${ZONE_ROOT}"
@@ -129,9 +130,58 @@ MSG
 fi
 
 # ── 4. HTTP-01 self-probe on port 80 ────────────────────────────────────────
-WEBROOT="/var/www/letsencrypt"
+# Make the preflight useful on a fresh VPS: if nginx has no :80 ACME vhost for
+# this slug yet, install a temporary one before probing. Also quarantine stale
+# managed Pluto configs that can make nginx -t fail before HTTP-01 even starts.
+if [[ "$(id -u)" == "0" ]]; then
+  mkdir -p "${WEBROOT}/.well-known/acme-challenge" 2>/dev/null || true
+
+  OLD_SLUG_LINK="/etc/nginx/sites-enabled/pluto-slug-${SLUG}.conf"
+  if [[ -e "$OLD_SLUG_LINK" ]] && nginx -t 2>&1 | grep -q 'unknown log format "pluto_slug_json"'; then
+    yell "  ! disabling stale per-slug vhost with missing log_format: $OLD_SLUG_LINK"
+    rm -f "$OLD_SLUG_LINK"
+  fi
+
+  WILDCARD_LINK="/etc/nginx/sites-enabled/pluto-wildcard-${BASE}.conf"
+  WILDCARD_CERT="/etc/letsencrypt/live/${BASE}/fullchain.pem"
+  if [[ -e "$WILDCARD_LINK" ]]; then
+    if [[ ! -s "$WILDCARD_CERT" ]] || ! openssl x509 -in "$WILDCARD_CERT" -noout -text 2>/dev/null | grep -q "DNS:\*\.${BASE}"; then
+      yell "  ! disabling incomplete wildcard vhost while testing HTTP-01: $WILDCARD_LINK"
+      rm -f "$WILDCARD_LINK"
+    fi
+  fi
+
+  if ! nginx -T 2>/dev/null | grep -qE "server_name[[:space:]]+.*${FQDN//./\.}"; then
+    STUB="/etc/nginx/sites-available/pluto-slug-${SLUG}-acme.conf"
+    cat > "$STUB" <<CONF
+server {
+    listen 80;
+    listen [::]:80;
+    server_name ${FQDN};
+    location /.well-known/acme-challenge/ { root ${WEBROOT}; }
+    location / { return 404; }
+}
+CONF
+    ln -sf "$STUB" "/etc/nginx/sites-enabled/pluto-slug-${SLUG}-acme.conf"
+    if nginx -t >/tmp/pluto-preflight-nginx.out 2>&1; then
+      systemctl reload nginx 2>/dev/null || service nginx reload 2>/dev/null || true
+      green "  ✓ temporary HTTP-01 nginx stub installed"
+    else
+      red "✗ nginx config is invalid before HTTP-01 probe"
+      cat /tmp/pluto-preflight-nginx.out
+      cat <<MSG
+
+  Diagnose:
+    sudo bash pluto-backend/deploy/diagnose-cert-failure.sh ${SLUG} ${BASE}
+MSG
+      exit 12
+    fi
+  fi
+else
+  yell "  ! not root — cannot install temporary nginx ACME stub; probing existing config only"
+fi
+
 TOKEN="preflight-$(date +%s)-$$"
-mkdir -p "${WEBROOT}/.well-known/acme-challenge" 2>/dev/null || true
 echo "$TOKEN" > "${WEBROOT}/.well-known/acme-challenge/${TOKEN}" 2>/dev/null || true
 
 PROBE_CODE="$(curl -fsS -o /tmp/preflight-probe.out -w '%{http_code}' \

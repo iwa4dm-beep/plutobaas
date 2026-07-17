@@ -21,6 +21,7 @@
 #   ACME_EMAIL   — contact email for Let's Encrypt (defaults to admin@<zone>)
 #   CF_INI       — path to Cloudflare API creds for DNS-01 (default /etc/letsencrypt/cloudflare.ini)
 #   SKIP_DNS=1   — do not attempt Cloudflare wildcard A-record repair
+#   SKIP_SSL=1   — install wildcard nginx vhost only if a wildcard cert already exists
 #
 # Safe to re-run — it detects existing markers and replaces in place.
 
@@ -35,6 +36,7 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --api-conf)  API_CONF="$2"; shift 2 ;;
     --wildcard)  WILDCARD_APEX="${2:-app.timescard.cloud}"; shift 2 ;;
+    --skip-ssl)  SKIP_SSL=1; shift ;;
     --help|-h)   sed -n '2,25p' "$0"; exit 0 ;;
     *) echo "unknown flag: $1" >&2; exit 2 ;;
   esac
@@ -162,6 +164,20 @@ if [ -n "$WILDCARD_APEX" ]; then
       $SUDO bash "$here/ensure-wildcard-dns.sh" "$WILDCARD_APEX" || true
   fi
 
+  CERT_LIVE="/etc/letsencrypt/live/${WILDCARD_APEX}"
+  CERT_OK=0
+  if [ -s "${CERT_LIVE}/fullchain.pem" ] && openssl x509 -in "${CERT_LIVE}/fullchain.pem" -noout -text 2>/dev/null | grep -q "DNS:\*\.${WILDCARD_APEX}"; then
+    CERT_OK=1
+  fi
+  if [ "${SKIP_SSL:-0}" = "1" ] && [ "$CERT_OK" != "1" ]; then
+    echo "⚠ SKIP_SSL=1 and no complete wildcard cert exists at ${CERT_LIVE}; skipping wildcard HTTPS vhost."
+    echo "  For this domain provider, use per-slug HTTP-01 instead:"
+    echo "    sudo bash $here/issue-per-slug-cert.sh <slug> ${WILDCARD_APEX}"
+    WILDCARD_APEX=""
+  fi
+fi
+
+if [ -n "$WILDCARD_APEX" ]; then
   echo "▶ Installing wildcard vhost for *.${WILDCARD_APEX}"
   TPL="$here/nginx/wildcard-app.conf.template"
   DST="/etc/nginx/sites-available/pluto-wildcard-${WILDCARD_APEX}.conf"
@@ -183,15 +199,14 @@ if [ -n "$WILDCARD_APEX" ]; then
     "$TPL" | $SUDO tee "$DST" >/dev/null
   $SUDO ln -sfn "$DST" "$LINK"
 
-  CERT_LIVE="/etc/letsencrypt/live/${WILDCARD_APEX}"
-  CERT_OK=0
-  if [ -s "${CERT_LIVE}/fullchain.pem" ] && openssl x509 -in "${CERT_LIVE}/fullchain.pem" -noout -text 2>/dev/null | grep -q "DNS:\*\.${WILDCARD_APEX}"; then
-    CERT_OK=1
-  fi
   if [ "$CERT_OK" != "1" ]; then
-    echo "▶ Wildcard cert missing or incomplete at ${CERT_LIVE} — issuing *.${WILDCARD_APEX} via install-wildcard-tls.sh"
-    ACME_EMAIL="${ACME_EMAIL:-}" CF_INI="${CF_INI:-/etc/letsencrypt/cloudflare.ini}" \
-      $SUDO bash "$here/install-wildcard-tls.sh" "$WILDCARD_APEX"
+    if [ "${SKIP_SSL:-0}" = "1" ]; then
+      echo "⚠ wildcard cert still missing; not attempting DNS-01 because SKIP_SSL=1."
+    else
+      echo "▶ Wildcard cert missing or incomplete at ${CERT_LIVE} — issuing *.${WILDCARD_APEX} via install-wildcard-tls.sh"
+      ACME_EMAIL="${ACME_EMAIL:-}" CF_INI="${CF_INI:-/etc/letsencrypt/cloudflare.ini}" \
+        $SUDO bash "$here/install-wildcard-tls.sh" "$WILDCARD_APEX"
+    fi
   else
     echo "✓ existing wildcard cert reused at ${CERT_LIVE}"
   fi
