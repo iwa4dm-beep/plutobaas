@@ -65,52 +65,67 @@ export function tableToSql(t: TableDef): string {
 function q(id: string): string {
   return /^[a-z_][a-z0-9_]*$/i.test(id) ? id : `"${id.replace(/"/g, '""')}"`;
 }
-function wrapDefault(v: string, type: string): string {
+function wrapDefault(v: string, type: string): string | null {
   const trimmed = v.trim();
-  // Normalize legacy Laravel/uuid-ossp default to pgcrypto's built-in.
-  // Prevents "invalid input syntax for type uuid: uuid_generate_v4()" when the
-  // uuid-ossp extension is not installed on the target Postgres instance.
-  if (/^uuid_generate_v4\s*\(\s*\)$/i.test(trimmed)) return "gen_random_uuid()";
-  // Any SQL function call (identifier(...)) or common keyword: pass through unquoted.
-  if (/^[a-zA-Z_][\w.]*\s*\([^)]*\)$/.test(trimmed)) return trimmed;
-  if (/^(current_timestamp|current_date|current_time|null|true|false)$/i.test(trimmed)) return trimmed;
-  if (type.includes("int") || type === "numeric" || type === "double precision" || type === "boolean") return v;
+  if (!trimmed) return null;
 
-  // JSON/JSONB defaults: Laravel migrations commonly emit `->default('[]')` or
-  // `->default('{}')`. The raw captured value may already be wrapped in quotes
-  // (e.g. `'{}'`, `'[]'`, `'{"k":"v"}'`). Naively wrapping it again produces
-  // `'''{}'''` which stores the literal string `'{}'` — Postgres then rejects
-  // it as `invalid input syntax for type json` (SQLSTATE 22P02, "Token \"'\"
-  // is invalid"). Normalize by stripping any single layer of surrounding
-  // quotes, escaping embedded single quotes for the SQL literal, and casting
-  // to the JSON type so bad JSON fails at migration time, not runtime.
-  const isJson = /^jsonb?$/i.test(type.trim());
-  const isArray = /\[\]\s*$/.test(type.trim());
+  // Normalize legacy Laravel/uuid-ossp default to pgcrypto's built-in.
+  if (/^uuid_generate_v4\s*\(\s*\)$/i.test(trimmed)) return "gen_random_uuid()";
+
+  // Whitelist of safe function-call defaults (no column references).
+  const SAFE_FNS = /^(?:public\.)?(?:gen_random_uuid|now|current_timestamp|current_date|current_time|current_user|session_user|clock_timestamp|statement_timestamp|transaction_timestamp|localtimestamp|localtime|nextval|generate_invoice_number|uuid_generate_v[1-5])\s*\(/i;
+  if (SAFE_FNS.test(trimmed) && /\)\s*(?:::[a-zA-Z_][\w]*)?$/.test(trimmed)) return trimmed;
+
+  // SQL keywords (no parens).
+  if (/^(current_timestamp|current_date|current_time|current_user|session_user|localtimestamp|localtime|null|true|false)$/i.test(trimmed)) return trimmed;
+
+  const lowerType = type.trim().toLowerCase();
+  const isNumeric = /\b(int|integer|bigint|smallint|serial|numeric|decimal|real|double precision|float)\b/.test(lowerType);
+  const isBool = /^boolean$/.test(lowerType);
+
+  // Numeric literal for numeric-ish columns.
+  if (isNumeric && /^-?\d+(?:\.\d+)?$/.test(trimmed)) return trimmed;
+  if (isBool && /^(0|1|true|false|'?t'?|'?f'?)$/i.test(trimmed)) {
+    if (/^(1|true|'?t'?)$/i.test(trimmed)) return "true";
+    return "false";
+  }
+
+  // JSON/JSONB / array defaults.
+  const isJson = /^jsonb?$/i.test(lowerType);
+  const isArray = /\[\]\s*$/.test(lowerType);
   if (isJson || isArray) {
     let raw = trimmed;
-    // Strip a single pair of matching surrounding quotes (single or double).
     if ((raw.startsWith("'") && raw.endsWith("'") && raw.length >= 2) ||
         (raw.startsWith('"') && raw.endsWith('"') && raw.length >= 2)) {
       raw = raw.slice(1, -1);
     }
-    // Unescape SQL-doubled single quotes so we get the intended payload.
     raw = raw.replace(/''/g, "'");
-    // Fall back to a conservative empty container if the payload is empty.
-    if (!raw) raw = isJson ? "{}" : "{}";
+    if (!raw) raw = "{}";
     if (isJson) {
       try { JSON.parse(raw); } catch { raw = "{}"; }
     } else {
-      // For array types, ensure the literal is a valid Postgres array literal
-      // (starts with `{` and ends with `}`). If Laravel gave us `[]` or JSON,
-      // normalize to `{}` — an empty Postgres array — rather than emit SQL
-      // that fails apply with `malformed array literal`.
       if (!/^\{.*\}$/s.test(raw)) raw = "{}";
     }
     const escaped = raw.replace(/'/g, "''");
-    return `'${escaped}'::${type.trim().toLowerCase()}`;
+    return `'${escaped}'::${lowerType}`;
   }
 
-  return `'${v.replace(/'/g, "''")}'`;
+  // Explicit quoted string literal — pass through with proper escaping.
+  if (/^'.*'$/s.test(trimmed)) {
+    const inner = trimmed.slice(1, -1).replace(/''/g, "'");
+    return `'${inner.replace(/'/g, "''")}'`;
+  }
+
+  // Bare identifier or expression: to avoid Postgres treating it as a
+  // column reference ("cannot use column reference in DEFAULT expression"),
+  // treat it as a string literal only if the target type is text-like.
+  const isTextLike = /^(text|citext|varchar|character|char|uuid|inet|cidr|bytea|name)/.test(lowerType) || lowerType.startsWith('"') || /^[a-z_][a-z0-9_]*$/i.test(lowerType);
+  if (isTextLike) {
+    return `'${trimmed.replace(/'/g, "''")}'`;
+  }
+
+  // Unknown/unsafe expression for a non-text type — drop the DEFAULT.
+  return null;
 }
 
 export function buildMigrationBundle(tables: TableDef[], extraPreambleSql: string[] = []): string {
