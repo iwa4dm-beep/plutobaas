@@ -551,10 +551,9 @@ async function probeSsl(url: string): Promise<SslProbe> {
             if (!c || Object.keys(c).length === 0) return done(undefined);
             const validTo = c.valid_to ? new Date(c.valid_to) : null;
             const days = validTo ? Math.floor((validTo.getTime() - Date.now()) / 86_400_000) : null;
-            const cn = c.subject?.CN ?? null;
             const alt = (c.subjectaltname ?? "").split(/,\s*/).map((s: string) => s.replace(/^DNS:/, "").trim()).filter(Boolean);
             const host = u.hostname.toLowerCase();
-            const norm = (v: unknown): string | null => Array.isArray(v) ? (v[0] ?? null) : (typeof v === "string" ? v : null);
+            const norm = (v: unknown): string | null => Array.isArray(v) ? (String(v[0] ?? "") || null) : (typeof v === "string" ? v : null);
             const cn = norm(c.subject?.CN);
             const match = (n: string) => n.startsWith("*.")
               ? host.endsWith(n.slice(1).toLowerCase()) && host.split(".").length === n.split(".").length
