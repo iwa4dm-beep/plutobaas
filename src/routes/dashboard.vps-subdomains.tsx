@@ -1,9 +1,12 @@
+import { useState } from "react";
 import { createFileRoute, useRouter } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { AlertTriangle, CheckCircle2, ExternalLink, RefreshCw, ShieldCheck, XCircle } from "lucide-react";
+import { toast } from "sonner";
 import { PageHeader } from "@/components/pluto/PageHeader";
 import { getActiveSubdomains, type ActiveSubdomain } from "@/lib/pluto/vps-health.functions";
+import { runVpsRepair } from "@/lib/pluto/vps-repair.functions";
 
 export const Route = createFileRoute("/dashboard/vps-subdomains")({
   component: VpsSubdomainsPage,
@@ -18,6 +21,8 @@ export const Route = createFileRoute("/dashboard/vps-subdomains")({
 function VpsSubdomainsPage() {
   const router = useRouter();
   const load = useServerFn(getActiveSubdomains);
+  const repair = useServerFn(runVpsRepair);
+  const [repairing, setRepairing] = useState("");
   const { data, isLoading, isFetching, refetch } = useQuery({
     queryKey: ["vps-active-subdomains"],
     queryFn: () => load({ data: { baseDomain: "app.timescard.cloud" } }),
@@ -25,6 +30,19 @@ function VpsSubdomainsPage() {
   });
 
   const expiring = data?.subdomains.filter((d) => d.ssl.daysLeft != null && d.ssl.daysLeft <= 30) ?? [];
+
+  const fixSubdomain = async (row: ActiveSubdomain) => {
+    setRepairing(row.host);
+    try {
+      const action = row.issues.includes("ssl_invalid") || row.issues.includes("ssl_expiring_soon") ? "all" : "worker-and-site";
+      const result = await repair({ data: { action, slug: row.slug, wildcard: data?.baseDomain || "app.timescard.cloud" } });
+      if (result.ok) toast.success(`Repair completed for ${row.host}`);
+      else toast.error(result.hint || `Repair failed for ${row.host}`);
+      await refetch();
+    } finally {
+      setRepairing("");
+    }
+  };
 
   return (
     <div className="max-w-7xl space-y-6 p-6">
@@ -105,12 +123,13 @@ function VpsSubdomainsPage() {
                     <th className="px-4 py-3 font-medium">HTTPS</th>
                     <th className="px-4 py-3 font-medium">SSL</th>
                     <th className="px-4 py-3 font-medium">Issues</th>
+                    <th className="px-4 py-3 font-medium">Fix</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {data.subdomains.map((row) => <SubdomainRow key={row.host} row={row} />)}
+                  {data.subdomains.map((row) => <SubdomainRow key={row.host} row={row} onFix={fixSubdomain} fixing={repairing === row.host} />)}
                   {!data.subdomains.length && (
-                    <tr><td colSpan={6} className="px-4 py-10 text-center text-muted-foreground">No active subdomains found.</td></tr>
+                    <tr><td colSpan={7} className="px-4 py-10 text-center text-muted-foreground">No active subdomains found.</td></tr>
                   )}
                 </tbody>
               </table>
@@ -135,7 +154,7 @@ function SummaryCard({ label, value, tone }: { label: string; value: number; ton
   );
 }
 
-function SubdomainRow({ row }: { row: ActiveSubdomain }) {
+function SubdomainRow({ row, onFix, fixing }: { row: ActiveSubdomain; onFix: (row: ActiveSubdomain) => void; fixing: boolean }) {
   return (
     <tr className="border-t border-border align-top">
       <td className="px-4 py-3">
@@ -155,6 +174,17 @@ function SubdomainRow({ row }: { row: ActiveSubdomain }) {
         <div className="mt-1 text-xs text-muted-foreground">{row.ssl.cn ?? "—"}</div>
       </td>
       <td className="px-4 py-3 text-xs text-muted-foreground">{row.issues.length ? row.issues.join(", ") : "—"}</td>
+      <td className="px-4 py-3">
+        <button
+          type="button"
+          onClick={() => onFix(row)}
+          disabled={row.ok || fixing}
+          className="inline-flex items-center gap-1 rounded-md border border-border bg-background px-2.5 py-1 text-xs hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <RefreshCw className={`h-3 w-3 ${fixing ? "animate-spin" : ""}`} />
+          Fix
+        </button>
+      </td>
     </tr>
   );
 }
