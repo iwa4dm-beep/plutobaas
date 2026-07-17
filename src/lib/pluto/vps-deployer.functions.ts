@@ -1050,7 +1050,20 @@ export const deployAll = createServerFn({ method: "POST" })
     let servedHint: string | undefined;
     if (resolvedSite) {
       const probeUrl = resolvedSite.endsWith("/") ? resolvedSite : `${resolvedSite}/`;
-      const p = await rawFetch(probeUrl, "GET", { accept: "text/html,*/*" }, null, null, 12_000);
+      let p = await rawFetch(probeUrl, "GET", { accept: "text/html,*/*" }, null, null, 12_000);
+      let healNote: string | null = null;
+      if (!p.ok && (p.status === 404 || p.status === 0) && sandboxSecret) {
+        const statusUrl = `${base}/site-status/${encodeURIComponent(deploySlug)}?autoseed=1`;
+        const seed = await rawFetch(statusUrl, "GET", { accept: "application/json", "x-pluto-auto-seed": "1" }, null, null, 20_000);
+        healNote = seed.ok ? "auto-seed checked" : `auto-seed HTTP ${seed.status}`;
+        p = await rawFetch(probeUrl, "GET", { accept: "text/html,*/*" }, null, null, 12_000);
+        if (!p.ok) {
+          const repairBody = JSON.stringify({ action: "worker-and-site", slug: deploySlug });
+          const repair = await rawFetch(`${sandboxUrl}/admin/repair`, "POST", { "content-type": "application/json", "x-sandbox-secret": sandboxSecret, accept: "application/json" }, repairBody, repairBody, 180_000);
+          healNote = `${healNote}; worker/nginx repair HTTP ${repair.status}`;
+          p = await rawFetch(probeUrl, "GET", { accept: "text/html,*/*" }, null, null, 12_000);
+        }
+      }
       const looksHtml = /<!DOCTYPE|<html/i.test(p.text);
       servedSiteProbe = {
         url: probeUrl,
@@ -1059,10 +1072,11 @@ export const deployAll = createServerFn({ method: "POST" })
         contentType: looksHtml ? "text/html" : null,
         snippet: p.text.slice(0, 240),
         latencyMs: p.debug.latencyMs,
+        healNote,
       };
       served = p.ok;
       if (!p.ok) {
-        servedHint = `Bundle uploaded, but ${probeUrl} returned HTTP ${p.status}. The hostname is not yet wired to nginx / a vhost, or the sandbox worker did not unpack the release. Configure PLUTO_SERVED_SITE_URL or install a sandbox worker with a working /unpack endpoint that serves /sites/<slug>/.`;
+        servedHint = `Bundle uploaded, but ${probeUrl} returned HTTP ${p.status} after auto-heal${healNote ? ` (${healNote})` : ""}. The hostname is not wired to nginx / wildcard SSL, or the sandbox worker did not unpack the release. Run One-click Fix or on VPS: sudo SLUG='${deploySlug}' bash deploy/repair-sandbox-worker-and-site.sh.`;
       }
     } else {
       servedHint = `Auto-detect could not find a reachable served site. Tried: ${autoDerivedCandidates.join(", ")}. To fix permanently, choose one: (a) set PLUTO_SERVED_SITE_URL_TEMPLATE (e.g. "https://{slug}.app.timescard.cloud" or "https://api.timescard.cloud/sites/{slug}/") so the URL is auto-computed per deploy; (b) set PLUTO_SERVED_SITE_URL to a static origin; or (c) install pluto-backend/sandbox-worker on the VPS — it now exposes GET /sites/<slug>/* which nginx can proxy at /sites/ or /sandbox/sites/.`;
@@ -1101,7 +1115,7 @@ export const deployAll = createServerFn({ method: "POST" })
       ...(servedHint ? { servedHint } : {}),
       ...(sslProbe ? { sslProbe } : {}),
     };
-    return { ok: steps.every(s => s.ok), workspaceId: data.workspaceId, totalMs: Date.now() - t0, steps, liveUrls };
+    return { ok: steps.every(s => s.ok) && (!data.strictServedSite || served), workspaceId: data.workspaceId, totalMs: Date.now() - t0, steps, liveUrls };
   });
 
 // ---------- Standalone post-deploy health check (for Result panel refresh) ----------
