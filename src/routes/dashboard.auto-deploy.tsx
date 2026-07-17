@@ -26,6 +26,8 @@ import { loadRepoAsFile } from "@/lib/autoconnect/github-loader";
 import { deployAll, diagnoseServedSite, probeLiveUrl, type DeployAllResult, type DeployStepLog, type LiveUrlProbe, type ServedSiteDiagnostics } from "@/lib/pluto/vps-deployer.functions";
 import { DeploySummaryChecksPanel } from "@/components/auto-deploy/DeploySummaryChecks";
 import { BuildLogsPanel } from "@/components/auto-deploy/BuildLogsPanel";
+import { DeploymentSettingsPanel } from "@/components/auto-deploy/DeploymentSettingsPanel";
+import { loadDeploymentSettings } from "@/lib/pluto/deployment-settings";
 import { getUpstream } from "@/lib/pluto/upstream";
 
 import { RequireWorkspace } from "@/components/pluto/RequireWorkspace";
