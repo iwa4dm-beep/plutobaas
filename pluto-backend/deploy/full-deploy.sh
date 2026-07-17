@@ -31,7 +31,22 @@ log() { printf '\n\033[1;36m▶ %s\033[0m\n' "$*"; }
 die() { printf '\n\033[1;31m✗ %s\033[0m\n' "$*" >&2; exit 1; }
 
 [ "$(id -u)" -eq 0 ] || die "run as root (sudo)."
-[ -n "${SECRET:-}" ] || die "SECRET env is required (matches PLUTO_SANDBOX_WORKER_SECRET)."
+
+# Auto-load SECRET from existing worker env if not supplied (sudo strips vars).
+if [ -z "${SECRET:-}" ]; then
+  for envfile in /etc/pluto-sandbox-worker.env /etc/default/pluto-sandbox-worker /opt/pluto-sandbox-worker/.env; do
+    if [ -r "$envfile" ]; then
+      val="$(grep -E '^(PLUTO_SANDBOX_WORKER_SECRET|SANDBOX_SECRET|SECRET)=' "$envfile" | tail -n1 | cut -d= -f2- | sed -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'$//")"
+      if [ -n "$val" ]; then
+        SECRET="$val"
+        export SECRET
+        log "loaded SECRET from $envfile"
+        break
+      fi
+    fi
+  done
+fi
+[ -n "${SECRET:-}" ] || die "SECRET env is required. Provide via: sudo SECRET=\"\$(sudo bash deploy/print-sandbox-secret.sh)\" bash deploy/full-deploy.sh  — or set PLUTO_SANDBOX_WORKER_SECRET in /etc/pluto-sandbox-worker.env"
 
 WILDCARD="${WILDCARD:-app.timescard.cloud}"
 ACME_EMAIL="${ACME_EMAIL:-admin@${WILDCARD#*.}}"
