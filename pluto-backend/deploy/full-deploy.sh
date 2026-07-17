@@ -29,6 +29,11 @@ cd "$(dirname "$0")/.."
 ROOT="$(pwd)"
 DEPLOY="$ROOT/deploy"
 
+if [ -n "${1:-}" ] && [ -z "${SLUG:-}" ]; then
+  SLUG="$1"
+  export SLUG
+fi
+
 log() { printf '\n\033[1;36m▶ %s\033[0m\n' "$*"; }
 die() { printf '\n\033[1;31m✗ %s\033[0m\n' "$*" >&2; exit 1; }
 
@@ -117,11 +122,16 @@ else
 fi
 
 # 3) nginx sites-proxy
-log "install sites-proxy (wildcard=$WILDCARD)"
-SKIP_SSL_ARG=""
-[ "${SKIP_SSL:-0}" = "1" ] && SKIP_SSL_ARG="--skip-ssl"
-ACME_EMAIL="$ACME_EMAIL" bash "$DEPLOY/install-sites-proxy.sh" \
-  --wildcard "$WILDCARD" $SKIP_SSL_ARG || die "install-sites-proxy failed"
+if [ "${SKIP_WILDCARD:-0}" = "1" ]; then
+  log "install sites-proxy (API routes only; wildcard vhost skipped)"
+  ACME_EMAIL="$ACME_EMAIL" bash "$DEPLOY/install-sites-proxy.sh" || die "install-sites-proxy failed"
+else
+  log "install sites-proxy (wildcard=$WILDCARD)"
+  SKIP_SSL_ARG=""
+  [ "${SKIP_SSL:-0}" = "1" ] && SKIP_SSL_ARG="--skip-ssl"
+  ACME_EMAIL="$ACME_EMAIL" bash "$DEPLOY/install-sites-proxy.sh" \
+    --wildcard "$WILDCARD" $SKIP_SSL_ARG || die "install-sites-proxy failed"
+fi
 
 # 4) nginx reload
 log "nginx -t && reload"
