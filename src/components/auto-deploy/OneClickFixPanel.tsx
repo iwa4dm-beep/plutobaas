@@ -7,9 +7,13 @@ import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
 import {
   Wrench, Activity, ShieldCheck, Server, Globe2, Loader2, CheckCircle2, XCircle,
-  RefreshCw, Rocket, Zap, AlertTriangle,
+  RefreshCw, Rocket, Zap, AlertTriangle, Calendar, Layers,
 } from "lucide-react";
-import { runVpsRepair, preflightAndHeal, type RepairAction, type RepairResult, type PreflightHealResult } from "@/lib/pluto/vps-repair.functions";
+import {
+  runVpsRepair, preflightAndHeal, getSlugCertStatus, batchIssuePerSlugCerts,
+  type RepairAction, type RepairResult, type PreflightHealResult,
+  type SlugCertStatus, type BatchIssueResult,
+} from "@/lib/pluto/vps-repair.functions";
 
 type Props = {
   slug?: string;
