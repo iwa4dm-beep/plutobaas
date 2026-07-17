@@ -724,6 +724,57 @@ function AutoDeployInner() {
         </div>
       )}
 
+      {/* Served-site probe config — overrides PLUTO_SERVED_SITE_URL / _TEMPLATE env for this browser */}
+      <details className="rounded-xl border border-border bg-card p-4">
+        <summary className="cursor-pointer text-sm font-medium flex items-center gap-2">
+          <Activity className="h-4 w-4" />
+          Served-site probe config
+          <span className="text-xs text-muted-foreground font-normal">
+            {servedSiteUrl || servedSiteUrlTemplate ? "(override active)" : "(using env defaults + autodetect)"}
+          </span>
+        </summary>
+        <div className="mt-3 space-y-3 text-sm">
+          <p className="text-xs text-muted-foreground">
+            Health check-এর served-site probe এই URL থেকে হবে। empty রাখলে <code className="font-mono">PLUTO_SERVED_SITE_URL</code> /
+            <code className="font-mono"> _TEMPLATE</code> env, তারপর autodetect (worker, nginx <code>/sites/&lt;slug&gt;</code>) fallback হবে।
+            Bundle unpack হয়ে গেলে served-site 404 আর deploy fail করবে না (warning-only) — unless "Strict" চেক করা থাকে।
+          </p>
+          <div>
+            <label className="text-xs text-muted-foreground">Explicit URL (highest priority)</label>
+            <input
+              type="text"
+              value={servedSiteUrl}
+              onChange={(e) => saveServedSiteConfig({ url: e.target.value })}
+              placeholder="https://myapp.example.com"
+              className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm font-mono"
+            />
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground">
+              URL template — <code className="font-mono">{"{slug}"}</code> placeholder
+            </label>
+            <input
+              type="text"
+              value={servedSiteUrlTemplate}
+              onChange={(e) => saveServedSiteConfig({ template: e.target.value })}
+              placeholder="https://api.timescard.cloud/sites/{slug}"
+              className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm font-mono"
+            />
+          </div>
+          <label className="flex items-center gap-2 text-xs">
+            <input
+              type="checkbox"
+              checked={strictServedSite}
+              onChange={(e) => saveServedSiteConfig({ strict: e.target.checked })}
+              className="rounded"
+            />
+            <span>Strict mode — served-site 404 fails the deploy (only when explicit URL/template is set above)</span>
+          </label>
+        </div>
+      </details>
+
+
+
       {/* Source picker */}
       <section className="rounded-xl border border-border bg-card p-5 space-y-4">
 
