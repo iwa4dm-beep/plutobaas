@@ -302,14 +302,33 @@ export function CustomDomainsPanel({ workspaceId, currentSlug }: Props) {
         </div>
         <div>
           <label className="mb-1 block text-xs font-medium text-muted-foreground">
-            {recordType === "A" ? "Target IP" : recordType === "CNAME" ? "Target hostname" : "TXT value"}
+            {recordType === "A"
+              ? "Target IP"
+              : recordType === "CNAME"
+                ? "Target hostname"
+                : "TXT value(s) — one per line"}
           </label>
-          <input
-            className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/40"
-            placeholder={defaultExpected(recordType)}
-            value={expectedValue}
-            onChange={(e) => setExpectedValue(e.target.value)}
-          />
+          {recordType === "TXT" ? (
+            <textarea
+              className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/40 font-mono"
+              rows={3}
+              placeholder={`${defaultExpected("TXT")}\npluto-verify=another-token`}
+              value={expectedValue}
+              onChange={(e) => setExpectedValue(e.target.value)}
+            />
+          ) : (
+            <input
+              className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/40"
+              placeholder={defaultExpected(recordType)}
+              value={expectedValue}
+              onChange={(e) => setExpectedValue(e.target.value)}
+            />
+          )}
+          {recordType === "TXT" && parseExpectedValues("TXT", expectedValue).length > 1 && (
+            <p className="mt-1 text-[10px] text-muted-foreground">
+              Matches if DNS returns any of the {parseExpectedValues("TXT", expectedValue).length} values.
+            </p>
+          )}
         </div>
         <div className="flex items-end">
           <button
