@@ -190,28 +190,53 @@ async function sandboxHealth(filter = {}) {
   let siteStatusResult = null;
   const slug = filter.slug || normalizeSlug(lastDeploy?.slug);
   if (slug) siteStatusResult = await siteStatus(slug);
+
+  // Secret presence + source path — helps operators diagnose "which env file
+  // did the worker actually load its shared secret from?" without exposing
+  // the secret itself. secret_fingerprint is a short sha256 prefix so Lovable
+  // Cloud can compare fingerprints against PLUTO_SANDBOX_SECRET.
+  const secretPath = process.env.SANDBOX_SHARED_SECRET_PATH
+    || (fs.existsSync("/etc/pluto/sandbox-worker.env") ? "/etc/pluto/sandbox-worker.env" : null);
+  const secretFingerprint = SECRET
+    ? createHash("sha256").update(SECRET).digest("hex").slice(0, 12)
+    : null;
+
+  const unpack = lastDeploy ? {
+    ok: lastDeploy.ok === true,
+    status: lastDeploy.status ?? (lastDeploy.ok ? "succeeded" : "unknown"),
+    phase: lastDeploy.phase ?? null,
+    workspaceId: lastDeploy.workspaceId ?? null,
+    slug: lastDeploy.slug ?? null,
+    channel: lastDeploy.channel ?? null,
+    bucket: lastDeploy.bucket ?? null,
+    key: lastDeploy.key ?? null,
+    sizeBytes: lastDeploy.sizeBytes ?? null,
+    startedAt: lastDeploy.startedAt ?? null,
+    finishedAt: lastDeploy.finishedAt ?? lastDeploy.servedAt ?? null,
+    durationMs: lastDeploy.durationMs ?? lastDeploy.unpack?.durationMs ?? null,
+    error: lastDeploy.error ?? null,
+  } : { ok: false, status: "missing", phase: null };
+
+  const migrations = lastDeploy?.migrationStatus ?? normalizeMigrations(lastDeploy?.migrationsApplied ?? lastDeploy?.migrations) ?? null;
+
   return {
     ok: true,
     service: "pluto-sandbox-worker",
-    version: "v1-static-serve-2026-07-16",
+    version: "v1-static-serve-2026-07-17",
     auth: { ok: true, method: "x-sandbox-secret" },
+    // Flat operator-friendly fields (used by Auto Deploy preflight + docs).
+    secret_present: Boolean(SECRET),
+    secret_path: secretPath,
+    secret_fingerprint: secretFingerprint,
+    last_deploy_status: unpack.status,
+    last_deploy_ok: unpack.ok === true,
+    last_deploy_phase: unpack.phase,
+    last_deploy_error: unpack.error,
+    last_deploy_finished_at: unpack.finishedAt,
+    migrations_status: (migrations && typeof migrations === "object" && "status" in migrations) ? migrations.status : (migrations ?? null),
     filter: { slug: filter.slug || null, workspaceId: filter.workspaceId || null },
-    unpack: lastDeploy ? {
-      ok: lastDeploy.ok === true,
-      status: lastDeploy.status ?? (lastDeploy.ok ? "succeeded" : "unknown"),
-      phase: lastDeploy.phase ?? null,
-      workspaceId: lastDeploy.workspaceId ?? null,
-      slug: lastDeploy.slug ?? null,
-      channel: lastDeploy.channel ?? null,
-      bucket: lastDeploy.bucket ?? null,
-      key: lastDeploy.key ?? null,
-      sizeBytes: lastDeploy.sizeBytes ?? null,
-      startedAt: lastDeploy.startedAt ?? null,
-      finishedAt: lastDeploy.finishedAt ?? lastDeploy.servedAt ?? null,
-      durationMs: lastDeploy.durationMs ?? lastDeploy.unpack?.durationMs ?? null,
-      error: lastDeploy.error ?? null,
-    } : { ok: false, status: "missing", phase: null },
-    migrations: lastDeploy?.migrationStatus ?? normalizeMigrations(lastDeploy?.migrationsApplied ?? lastDeploy?.migrations) ?? null,
+    unpack,
+    migrations,
     static: siteStatusResult ? {
       ok: Boolean(siteStatusResult.staticServing || siteStatusResult.previewServing),
       production: Boolean(siteStatusResult.staticServing),
