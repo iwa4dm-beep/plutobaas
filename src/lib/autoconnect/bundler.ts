@@ -23,7 +23,7 @@ export async function buildBundle(
     ? plan.tables.map((t) => ({ name: t.name, columns: t.columns, timestamps: true }))
     : analyze.backend.tables;
 
-  let sql = buildMigrationBundle(tables);
+  let sql = buildMigrationBundle(tables, analyze.backend.extraPreambleSql ?? []);
   if (db?.driver === "mysql") sql = mysqlToPg(sql);
 
   const { zip: rewritten } = await rewriteFrontend(originalZip, analyze);
