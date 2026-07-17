@@ -29,6 +29,8 @@ import { BuildLogsPanel } from "@/components/auto-deploy/BuildLogsPanel";
 import { DeploymentSettingsPanel } from "@/components/auto-deploy/DeploymentSettingsPanel";
 import { RecommendationsPanel } from "@/components/auto-deploy/RecommendationsPanel";
 import { CustomDomainsPanel } from "@/components/auto-deploy/CustomDomainsPanel";
+import { OneClickFixPanel } from "@/components/auto-deploy/OneClickFixPanel";
+import { MigrationErrorCard, parseMigrationError } from "@/components/auto-deploy/MigrationErrorCard";
 import { loadDeploymentSettings } from "@/lib/pluto/deployment-settings";
 import { getUpstream } from "@/lib/pluto/upstream";
 
@@ -1027,6 +1029,9 @@ function AutoDeployInner() {
       {/* Custom domains — Phase 5 */}
       <CustomDomainsPanel workspaceId={workspaceId} currentSlug={slug} />
 
+      {/* One-click VPS repair — auto-heal preflight + remediation buttons */}
+      <OneClickFixPanel slug={slug} />
+
 
       {/* Per-step deploy result */}
       {deployResult && (
@@ -1448,6 +1453,9 @@ function StepRow({ step, open, onToggle }: { step: DeployStepLog; open: boolean;
                 <span className="text-muted-foreground">{a.startedAt}</span>
               </div>
               <div className="mt-1 text-muted-foreground break-words">{a.detail}</div>
+              {!a.ok && parseMigrationError(a.detail || "") && (
+                <div className="mt-2"><MigrationErrorCard raw={a.detail || ""} /></div>
+              )}
               {a.debug && (
                 <details className="mt-1">
                   <summary className="cursor-pointer text-muted-foreground">HTTP {a.debug.status} · {a.debug.method} {a.debug.url}</summary>

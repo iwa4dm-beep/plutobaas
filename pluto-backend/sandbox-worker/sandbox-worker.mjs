@@ -1060,6 +1060,36 @@ const server = http.createServer(async (req, res) => {
       const r = await unpublish(await readJson(req));
       return json(res, 200, r);
     }
+    // POST /admin/repair — whitelisted repair scripts, sudo-run via /usr/local/sbin/pluto-repair.
+    // Body: { action: "worker-and-site"|"wildcard-ssl"|"deploy-and-verify"|"all", slug?, wildcard?, acmeEmail? }
+    if (req.method === "POST" && (p === "/admin/repair" || p === "/sandbox/admin/repair")) {
+      const body = await readJson(req).catch(() => ({}));
+      const action = String(body?.action || "").trim();
+      const allowed = new Set(["worker-and-site", "wildcard-ssl", "deploy-and-verify", "all"]);
+      if (!allowed.has(action)) return json(res, 400, { error: "invalid_action", allowed: [...allowed] });
+      const args = [action];
+      const safeArg = (v) => typeof v === "string" && /^[A-Za-z0-9._@:/-]{0,253}$/.test(v);
+      if (body?.slug && safeArg(String(body.slug))) args.push("--slug", String(body.slug));
+      if (body?.wildcard && safeArg(String(body.wildcard))) args.push("--wildcard", String(body.wildcard));
+      if (body?.acmeEmail && safeArg(String(body.acmeEmail))) args.push("--acme-email", String(body.acmeEmail));
+      const startedAt = Date.now();
+      const chunks = [];
+      let exitCode = -1;
+      await new Promise((resolve) => {
+        const child = spawn("sudo", ["-n", "/usr/local/sbin/pluto-repair", ...args], { stdio: ["ignore", "pipe", "pipe"] });
+        const cap = (b) => { if (chunks.reduce((n, c) => n + c.length, 0) < 65536) chunks.push(b); };
+        child.stdout.on("data", cap);
+        child.stderr.on("data", cap);
+        child.on("close", (code) => { exitCode = code ?? -1; resolve(); });
+        child.on("error", (err) => { chunks.push(Buffer.from(`spawn error: ${err.message}\n`)); exitCode = 127; resolve(); });
+      });
+      const tail = Buffer.concat(chunks).toString("utf8").slice(-4096);
+      let hint = null;
+      if (exitCode === 127) hint = "/usr/local/sbin/pluto-repair not installed or sudoers rule missing — run `sudo bash pluto-backend/deploy/full-deploy.sh`.";
+      else if (exitCode !== 0) hint = "Repair script exited non-zero — inspect tail for the failing step.";
+      return json(res, 200, { ok: exitCode === 0, action, exitCode, durationMs: Date.now() - startedAt, tail, hint });
+    }
+
     return json(res, 404, { error: "not_found" });
   } catch (e) {
     return json(res, 500, { error: e?.message ?? String(e) });
