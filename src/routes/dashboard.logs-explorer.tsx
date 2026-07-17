@@ -93,7 +93,7 @@ function LogsExplorer() {
 
   const setField = useCallback(
     (k: keyof z.infer<typeof searchSchema>, v: string) => {
-      void navigate({ search: (prev) => ({ ...prev, [k]: v }) });
+      void navigate({ to: ".", search: (prev: z.infer<typeof searchSchema>) => ({ ...prev, [k]: v }) });
     },
     [navigate],
   );
