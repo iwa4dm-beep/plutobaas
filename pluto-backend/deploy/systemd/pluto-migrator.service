@@ -10,10 +10,7 @@ Type=oneshot
 WorkingDirectory=/root/backend-joy/pluto-backend
 # docker-compose.migrator.yml একটি overlay যা `migrator` service কে চালায়
 # (packages/api/scripts/migrate.mjs) এবং শেষ হলে exit করে।
-ExecStart=/usr/bin/docker compose --env-file .env \
-  -f docker/docker-compose.yml \
-  -f docker/docker-compose.migrator.yml \
-  run --rm migrator
+ExecStart=/bin/bash deploy/preflight-migrations.sh
 
 # ব্যর্থ হলে স্বয়ংক্রিয় retry (systemd oneshot এ Restart=on-failure সমর্থিত নয়,
 # তাই আমরা pluto-migrator.timer দিয়ে periodic retry করি — নিচে দেখুন)।

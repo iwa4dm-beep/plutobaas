@@ -3,10 +3,11 @@
 #
 # Runs:
 #   1) safe git pull (keeps whitelisted files via KEEP="a b c")
-#   2) bootstrap / refresh pluto-sandbox-worker (systemd + env)
-#   3) install / refresh nginx sites-proxy (wildcard SSL if requested)
-#   4) nginx -t && systemctl reload nginx
-#   5) verify-deploy.sh <slug>   (if SLUG given)
+#   2) migration preflight (roles → plan → dry-run → apply → verify)
+#   3) bootstrap / refresh pluto-sandbox-worker (systemd + env)
+#   4) install / refresh nginx sites-proxy (wildcard SSL if requested)
+#   5) nginx -t && systemctl reload nginx
+#   6) verify-deploy.sh <slug>   (if SLUG given)
 #
 # Usage:
 #   sudo SECRET='<shared-secret>' \
@@ -18,7 +19,8 @@
 # Optional env:
 #   KEEP        space-separated paths safe-pull.sh must restore after stash
 #   SKIP_PULL=1 skip git pull step
-#   SKIP_SSL=1  pass through to install-sites-proxy.sh (no cert issuance)
+#   SKIP_MIGRATIONS=1 skip migration preflight gate
+#   SKIP_SSL=1        pass through to install-sites-proxy.sh (no cert issuance)
 #   UPSTREAM    required on first install; existing env value is preserved later
 #   SERVICE_KEY required on first install for /sandbox/unpack; existing value is preserved later
 set -euo pipefail
@@ -46,7 +48,7 @@ if [ -z "${SECRET:-}" ]; then
   done
 fi
 # If still missing, auto-run print-sandbox-secret.sh to generate/read it.
-if [ -z "${SECRET:-}" ] && [ -x "$DEPLOY/print-sandbox-secret.sh" ] || [ -r "$DEPLOY/print-sandbox-secret.sh" ]; then
+if [ -z "${SECRET:-}" ] && { [ -x "$DEPLOY/print-sandbox-secret.sh" ] || [ -r "$DEPLOY/print-sandbox-secret.sh" ]; }; then
   log "no SECRET found — bootstrapping via print-sandbox-secret.sh"
   bash "$DEPLOY/print-sandbox-secret.sh" >/tmp/pluto-secret.out 2>&1 || true
   val="$(grep -E "^[[:space:]]*SANDBOX_SHARED_SECRET[[:space:]]*=" /etc/pluto/sandbox-worker.env 2>/dev/null | tail -n1 | cut -d= -f2- | sed -e 's/^[[:space:]]*//' -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'$//" -e 's/[[:space:]]*$//')"
@@ -69,7 +71,19 @@ else
   log "skip git pull (SKIP_PULL=1)"
 fi
 
-# 2) worker bootstrap
+# 2) migrations gate
+if [ "${SKIP_MIGRATIONS:-0}" != "1" ]; then
+  log "migration preflight gate"
+  if [ -f "$DEPLOY/preflight-migrations.sh" ]; then
+    bash "$DEPLOY/preflight-migrations.sh" || die "migration preflight failed"
+  else
+    bash "$DEPLOY/run-migrator.sh" || die "migration runner failed"
+  fi
+else
+  log "skip migrations (SKIP_MIGRATIONS=1)"
+fi
+
+# 3) worker bootstrap
 log "reset sandbox worker port"
 if [ -f "$DEPLOY/reset-sandbox-worker-port.sh" ]; then
   bash "$DEPLOY/reset-sandbox-worker-port.sh" "${PORT:-8787}" || die "port reset failed"
