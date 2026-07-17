@@ -1005,6 +1005,29 @@ export const deployAll = createServerFn({ method: "POST" })
       servedHint = `Auto-detect could not find a reachable served site. Tried: ${autoDerivedCandidates.join(", ")}. To fix permanently, choose one: (a) set PLUTO_SERVED_SITE_URL_TEMPLATE (e.g. "https://{slug}.app.timescard.cloud" or "https://api.timescard.cloud/sites/{slug}/") so the URL is auto-computed per deploy; (b) set PLUTO_SERVED_SITE_URL to a static origin; or (c) install pluto-backend/sandbox-worker on the VPS — it now exposes GET /sites/<slug>/* which nginx can proxy at /sites/ or /sandbox/sites/.`;
     }
 
+    // Step: Verify SSL / HTTPS on the resolved served-site URL (non-fatal on
+    // http:// or when no site was resolved — reported as "skipped" success).
+    let sslProbe: SslProbe | undefined;
+    const sslStep = await withRetry("verify-ssl", "Verify SSL / HTTPS", 0, async () => {
+      const target = resolvedSite || servedSiteUrl || "";
+      if (!target) {
+        return { ok: true, detail: "skipped — no served-site URL to verify", debug: null, result: { skipped: true, reason: "no-served-site" } };
+      }
+      if (!/^https:\/\//i.test(target)) {
+        return { ok: true, detail: `skipped — target is not https (${target})`, debug: null, result: { skipped: true, reason: "not-https", target } };
+      }
+      sslProbe = await probeSsl(target);
+      const parts = [
+        `HTTPS ${sslProbe.httpsStatus || "err"}`,
+        sslProbe.cert?.issuer ? `issuer=${sslProbe.cert.issuer}` : null,
+        sslProbe.cert?.daysUntilExpiry != null ? `${sslProbe.cert.daysUntilExpiry}d left` : null,
+        sslProbe.cert?.hostnameMatch === false ? "hostname MISMATCH" : null,
+        sslProbe.error ? `err=${sslProbe.error}` : null,
+      ].filter(Boolean).join(" · ");
+      return { ok: sslProbe.ok, detail: parts || (sslProbe.ok ? "ok" : "unhealthy"), debug: null, result: sslProbe };
+    });
+    steps.push(sslStep);
+
     const liveUrls = {
       functionsHealth: `${base}/functions/v1/health`,
       bootstrapInvoke: `${base}/functions/v1/invoke/bootstrap`,
@@ -1013,6 +1036,7 @@ export const deployAll = createServerFn({ method: "POST" })
       ...(servedSiteProbe ? { servedSiteProbe } : {}),
       served,
       ...(servedHint ? { servedHint } : {}),
+      ...(sslProbe ? { sslProbe } : {}),
     };
     return { ok: steps.every(s => s.ok), workspaceId: data.workspaceId, totalMs: Date.now() - t0, steps, liveUrls };
   });
