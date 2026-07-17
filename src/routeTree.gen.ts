@@ -32,6 +32,7 @@ import { Route as DashboardUsageRouteImport } from './routes/dashboard.usage'
 import { Route as DashboardTokensRouteImport } from './routes/dashboard.tokens'
 import { Route as DashboardStorageRouteImport } from './routes/dashboard.storage'
 import { Route as DashboardSqlRouteImport } from './routes/dashboard.sql'
+import { Route as DashboardSlugSecretsRouteImport } from './routes/dashboard.slug-secrets'
 import { Route as DashboardSettingsRouteImport } from './routes/dashboard.settings'
 import { Route as DashboardSdkReleaseRouteImport } from './routes/dashboard.sdk-release'
 import { Route as DashboardSdkDemoRouteImport } from './routes/dashboard.sdk-demo'
@@ -229,6 +230,11 @@ const DashboardStorageRoute = DashboardStorageRouteImport.update({
 const DashboardSqlRoute = DashboardSqlRouteImport.update({
   id: '/sql',
   path: '/sql',
+  getParentRoute: () => DashboardRoute,
+} as any)
+const DashboardSlugSecretsRoute = DashboardSlugSecretsRouteImport.update({
+  id: '/slug-secrets',
+  path: '/slug-secrets',
   getParentRoute: () => DashboardRoute,
 } as any)
 const DashboardSettingsRoute = DashboardSettingsRouteImport.update({
@@ -738,6 +744,7 @@ export interface FileRoutesByFullPath {
   '/dashboard/sdk-demo': typeof DashboardSdkDemoRoute
   '/dashboard/sdk-release': typeof DashboardSdkReleaseRoute
   '/dashboard/settings': typeof DashboardSettingsRoute
+  '/dashboard/slug-secrets': typeof DashboardSlugSecretsRoute
   '/dashboard/sql': typeof DashboardSqlRoute
   '/dashboard/storage': typeof DashboardStorageRoute
   '/dashboard/tokens': typeof DashboardTokensRoute
@@ -845,6 +852,7 @@ export interface FileRoutesByTo {
   '/dashboard/sdk-demo': typeof DashboardSdkDemoRoute
   '/dashboard/sdk-release': typeof DashboardSdkReleaseRoute
   '/dashboard/settings': typeof DashboardSettingsRoute
+  '/dashboard/slug-secrets': typeof DashboardSlugSecretsRoute
   '/dashboard/sql': typeof DashboardSqlRoute
   '/dashboard/storage': typeof DashboardStorageRoute
   '/dashboard/tokens': typeof DashboardTokensRoute
@@ -954,6 +962,7 @@ export interface FileRoutesById {
   '/dashboard/sdk-demo': typeof DashboardSdkDemoRoute
   '/dashboard/sdk-release': typeof DashboardSdkReleaseRoute
   '/dashboard/settings': typeof DashboardSettingsRoute
+  '/dashboard/slug-secrets': typeof DashboardSlugSecretsRoute
   '/dashboard/sql': typeof DashboardSqlRoute
   '/dashboard/storage': typeof DashboardStorageRoute
   '/dashboard/tokens': typeof DashboardTokensRoute
@@ -1064,6 +1073,7 @@ export interface FileRouteTypes {
     | '/dashboard/sdk-demo'
     | '/dashboard/sdk-release'
     | '/dashboard/settings'
+    | '/dashboard/slug-secrets'
     | '/dashboard/sql'
     | '/dashboard/storage'
     | '/dashboard/tokens'
@@ -1171,6 +1181,7 @@ export interface FileRouteTypes {
     | '/dashboard/sdk-demo'
     | '/dashboard/sdk-release'
     | '/dashboard/settings'
+    | '/dashboard/slug-secrets'
     | '/dashboard/sql'
     | '/dashboard/storage'
     | '/dashboard/tokens'
@@ -1279,6 +1290,7 @@ export interface FileRouteTypes {
     | '/dashboard/sdk-demo'
     | '/dashboard/sdk-release'
     | '/dashboard/settings'
+    | '/dashboard/slug-secrets'
     | '/dashboard/sql'
     | '/dashboard/storage'
     | '/dashboard/tokens'
@@ -1499,6 +1511,13 @@ declare module '@tanstack/react-router' {
       path: '/sql'
       fullPath: '/dashboard/sql'
       preLoaderRoute: typeof DashboardSqlRouteImport
+      parentRoute: typeof DashboardRoute
+    }
+    '/dashboard/slug-secrets': {
+      id: '/dashboard/slug-secrets'
+      path: '/slug-secrets'
+      fullPath: '/dashboard/slug-secrets'
+      preLoaderRoute: typeof DashboardSlugSecretsRouteImport
       parentRoute: typeof DashboardRoute
     }
     '/dashboard/settings': {
@@ -2205,6 +2224,7 @@ interface DashboardRouteChildren {
   DashboardSdkDemoRoute: typeof DashboardSdkDemoRoute
   DashboardSdkReleaseRoute: typeof DashboardSdkReleaseRoute
   DashboardSettingsRoute: typeof DashboardSettingsRoute
+  DashboardSlugSecretsRoute: typeof DashboardSlugSecretsRoute
   DashboardSqlRoute: typeof DashboardSqlRoute
   DashboardStorageRoute: typeof DashboardStorageRoute
   DashboardTokensRoute: typeof DashboardTokensRoute
@@ -2283,6 +2303,7 @@ const DashboardRouteChildren: DashboardRouteChildren = {
   DashboardSdkDemoRoute: DashboardSdkDemoRoute,
   DashboardSdkReleaseRoute: DashboardSdkReleaseRoute,
   DashboardSettingsRoute: DashboardSettingsRoute,
+  DashboardSlugSecretsRoute: DashboardSlugSecretsRoute,
   DashboardSqlRoute: DashboardSqlRoute,
   DashboardStorageRoute: DashboardStorageRoute,
   DashboardTokensRoute: DashboardTokensRoute,
