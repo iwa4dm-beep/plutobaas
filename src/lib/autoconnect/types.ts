@@ -54,6 +54,7 @@ export type AnalyzeResult = {
     envKeys: string[];
     envExample: Record<string, string>;
     rawMigrationFiles: number;
+    extraPreambleSql?: string[];
   };
   files: FileNode[];
   stats: {
