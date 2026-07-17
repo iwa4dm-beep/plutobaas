@@ -130,7 +130,7 @@ function AutoConnectPage() {
     let impact = null;
     if (plan) {
       const tables = plan.tables.map((t) => ({ name: t.name, columns: t.columns, timestamps: true }));
-      let sql = buildMigrationBundle(tables);
+      let sql = buildMigrationBundle(tables, analyze?.backend.extraPreambleSql ?? []);
       if (db.driver === "mysql") sql = mysqlToPg(sql);
       impact = summarizeImpact(analyzeSql(sql));
     }
