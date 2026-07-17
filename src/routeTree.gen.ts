@@ -24,6 +24,7 @@ import { Route as DocsApiRouteImport } from './routes/docs.api'
 import { Route as DashboardWorkspacesRouteImport } from './routes/dashboard.workspaces'
 import { Route as DashboardVpsSubdomainsRouteImport } from './routes/dashboard.vps-subdomains'
 import { Route as DashboardVpsStatusRouteImport } from './routes/dashboard.vps-status'
+import { Route as DashboardVpsRecoveryRouteImport } from './routes/dashboard.vps-recovery'
 import { Route as DashboardVerifyRouteImport } from './routes/dashboard.verify'
 import { Route as DashboardVectorRouteImport } from './routes/dashboard.vector'
 import { Route as DashboardUsersRouteImport } from './routes/dashboard.users'
@@ -188,6 +189,11 @@ const DashboardVpsSubdomainsRoute = DashboardVpsSubdomainsRouteImport.update({
 const DashboardVpsStatusRoute = DashboardVpsStatusRouteImport.update({
   id: '/vps-status',
   path: '/vps-status',
+  getParentRoute: () => DashboardRoute,
+} as any)
+const DashboardVpsRecoveryRoute = DashboardVpsRecoveryRouteImport.update({
+  id: '/vps-recovery',
+  path: '/vps-recovery',
   getParentRoute: () => DashboardRoute,
 } as any)
 const DashboardVerifyRoute = DashboardVerifyRouteImport.update({
@@ -739,6 +745,7 @@ export interface FileRoutesByFullPath {
   '/dashboard/users': typeof DashboardUsersRoute
   '/dashboard/vector': typeof DashboardVectorRoute
   '/dashboard/verify': typeof DashboardVerifyRoute
+  '/dashboard/vps-recovery': typeof DashboardVpsRecoveryRoute
   '/dashboard/vps-status': typeof DashboardVpsStatusRoute
   '/dashboard/vps-subdomains': typeof DashboardVpsSubdomainsRoute
   '/dashboard/workspaces': typeof DashboardWorkspacesRoute
@@ -845,6 +852,7 @@ export interface FileRoutesByTo {
   '/dashboard/users': typeof DashboardUsersRoute
   '/dashboard/vector': typeof DashboardVectorRoute
   '/dashboard/verify': typeof DashboardVerifyRoute
+  '/dashboard/vps-recovery': typeof DashboardVpsRecoveryRoute
   '/dashboard/vps-status': typeof DashboardVpsStatusRoute
   '/dashboard/vps-subdomains': typeof DashboardVpsSubdomainsRoute
   '/dashboard/workspaces': typeof DashboardWorkspacesRoute
@@ -953,6 +961,7 @@ export interface FileRoutesById {
   '/dashboard/users': typeof DashboardUsersRoute
   '/dashboard/vector': typeof DashboardVectorRoute
   '/dashboard/verify': typeof DashboardVerifyRoute
+  '/dashboard/vps-recovery': typeof DashboardVpsRecoveryRoute
   '/dashboard/vps-status': typeof DashboardVpsStatusRoute
   '/dashboard/vps-subdomains': typeof DashboardVpsSubdomainsRoute
   '/dashboard/workspaces': typeof DashboardWorkspacesRoute
@@ -1062,6 +1071,7 @@ export interface FileRouteTypes {
     | '/dashboard/users'
     | '/dashboard/vector'
     | '/dashboard/verify'
+    | '/dashboard/vps-recovery'
     | '/dashboard/vps-status'
     | '/dashboard/vps-subdomains'
     | '/dashboard/workspaces'
@@ -1168,6 +1178,7 @@ export interface FileRouteTypes {
     | '/dashboard/users'
     | '/dashboard/vector'
     | '/dashboard/verify'
+    | '/dashboard/vps-recovery'
     | '/dashboard/vps-status'
     | '/dashboard/vps-subdomains'
     | '/dashboard/workspaces'
@@ -1275,6 +1286,7 @@ export interface FileRouteTypes {
     | '/dashboard/users'
     | '/dashboard/vector'
     | '/dashboard/verify'
+    | '/dashboard/vps-recovery'
     | '/dashboard/vps-status'
     | '/dashboard/vps-subdomains'
     | '/dashboard/workspaces'
@@ -1431,6 +1443,13 @@ declare module '@tanstack/react-router' {
       path: '/vps-status'
       fullPath: '/dashboard/vps-status'
       preLoaderRoute: typeof DashboardVpsStatusRouteImport
+      parentRoute: typeof DashboardRoute
+    }
+    '/dashboard/vps-recovery': {
+      id: '/dashboard/vps-recovery'
+      path: '/vps-recovery'
+      fullPath: '/dashboard/vps-recovery'
+      preLoaderRoute: typeof DashboardVpsRecoveryRouteImport
       parentRoute: typeof DashboardRoute
     }
     '/dashboard/verify': {
@@ -2193,6 +2212,7 @@ interface DashboardRouteChildren {
   DashboardUsersRoute: typeof DashboardUsersRoute
   DashboardVectorRoute: typeof DashboardVectorRoute
   DashboardVerifyRoute: typeof DashboardVerifyRoute
+  DashboardVpsRecoveryRoute: typeof DashboardVpsRecoveryRoute
   DashboardVpsStatusRoute: typeof DashboardVpsStatusRoute
   DashboardVpsSubdomainsRoute: typeof DashboardVpsSubdomainsRoute
   DashboardWorkspacesRoute: typeof DashboardWorkspacesRoute
@@ -2270,6 +2290,7 @@ const DashboardRouteChildren: DashboardRouteChildren = {
   DashboardUsersRoute: DashboardUsersRoute,
   DashboardVectorRoute: DashboardVectorRoute,
   DashboardVerifyRoute: DashboardVerifyRoute,
+  DashboardVpsRecoveryRoute: DashboardVpsRecoveryRoute,
   DashboardVpsStatusRoute: DashboardVpsStatusRoute,
   DashboardVpsSubdomainsRoute: DashboardVpsSubdomainsRoute,
   DashboardWorkspacesRoute: DashboardWorkspacesRoute,
