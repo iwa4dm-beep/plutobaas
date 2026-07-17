@@ -100,6 +100,7 @@ const PIPELINE_STEPS: Array<{ key: string; label: string }> = [
   { key: "unpack-serve", label: "Unpack & serve" },
   { key: "activate-service", label: "Activate bootstrap function" },
   { key: "health-check", label: "Health check" },
+  { key: "verify-ssl", label: "Verify SSL / HTTPS" },
 ];
 
 async function blobToBase64(blob: Blob): Promise<string> {
