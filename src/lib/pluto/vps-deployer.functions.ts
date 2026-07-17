@@ -577,6 +577,52 @@ export const deployAll = createServerFn({ method: "POST" })
           result: { skipped: true },
         };
       }
+
+      // Preflight: verify our PLUTO_SANDBOX_SECRET matches the VPS worker's
+      // SANDBOX_SHARED_SECRET BEFORE uploading/unpacking. This turns the
+      // "unpack HTTP 401 sandbox secret mismatch" failure — which used to
+      // surface only after the retry loop finished — into an immediate,
+      // actionable error with fix steps.
+      const healthBase = /\/sandbox$/i.test(sandboxUrl) ? sandboxUrl : `${sandboxUrl}/sandbox`;
+      const healthUrl = `${healthBase}/health`;
+      const hp = await rawFetch(
+        healthUrl,
+        "GET",
+        { "x-sandbox-secret": sandboxSecret, accept: "application/json" },
+        null,
+        null,
+        15_000,
+      ).catch((e) => ({ ok: false, status: 0, text: String(e?.message ?? e), debug: null } as Awaited<ReturnType<typeof rawFetch>>));
+      if (hp && hp.status === 401) {
+        return {
+          ok: false,
+          detail:
+            `preflight /sandbox/health HTTP 401: sandbox secret mismatch. Lovable Cloud's PLUTO_SANDBOX_SECRET does not match the VPS worker's SANDBOX_SHARED_SECRET.\n` +
+            `Fix (on the VPS, from ~/backend-joy/pluto-backend):\n` +
+            `  sudo bash deploy/print-sandbox-secret.sh\n` +
+            `Copy the value in the "COPY THIS VALUE" block into Lovable Cloud → Secrets → PLUTO_SANDBOX_SECRET, then re-run Auto Deploy.\n` +
+            `Manual alternative: sudo grep SANDBOX_SHARED_SECRET /etc/pluto/sandbox-worker.env`,
+          debug: hp?.debug ?? null,
+          result: { reason: "sandbox-secret-mismatch", phase: "preflight", healthUrl },
+        };
+      }
+      if (hp && hp.ok) {
+        try {
+          const h = JSON.parse(hp.text);
+          if (h && h.secret_present === false) {
+            return {
+              ok: false,
+              detail:
+                `preflight /sandbox/health reports secret_present=false: the VPS worker has no SANDBOX_SHARED_SECRET loaded (secret_path=${h.secret_path ?? "unknown"}). ` +
+                `Run on the VPS: sudo bash ~/backend-joy/pluto-backend/deploy/print-sandbox-secret.sh, then paste the value into Lovable Cloud → Secrets → PLUTO_SANDBOX_SECRET.`,
+              debug: hp.debug ?? null,
+              result: { reason: "sandbox-secret-missing-on-vps", phase: "preflight" },
+            };
+          }
+        } catch { /* not JSON — worker likely older; continue */ }
+      }
+
+
       const body = JSON.stringify({ workspaceId: data.workspaceId, slug: deploySlug, bucket: data.bucket, key: cleanPath, channel: "production", migrations: migrationStatus });
       // The sandbox worker is nginx-proxied under /sandbox/* on api.timescard.cloud.
       // Operators sometimes set PLUTO_SANDBOX_URL to the bare host, which routes
