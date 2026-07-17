@@ -128,6 +128,20 @@ function prepareAdHocMigrationSql(input: string): { sql: string; repairs: string
   return { sql: `${preamble}\n${out}`.trim() + '\n', repairs };
 }
 
+async function dryRunPreparedSql(sql: any, preparedSql: string) {
+  try {
+    await sql.begin(async (tx: any) => {
+      await tx.unsafe("set local lock_timeout = '15s'");
+      await tx.unsafe("set local statement_timeout = '180s'");
+      await tx.unsafe(preparedSql);
+      throw AD_HOC_DRY_RUN_ROLLBACK;
+    });
+  } catch (e) {
+    if (e === AD_HOC_DRY_RUN_ROLLBACK) return;
+    throw e;
+  }
+}
+
 function buildAdHocPreamble(sqlText: string, repairs: string[]) {
   const lines = [
     'create schema if not exists auth;',
