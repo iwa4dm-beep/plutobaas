@@ -5,6 +5,7 @@ import {
   isValidHostname,
   newDomainId,
   nextRetryDelayMs,
+  parseExpectedValues,
   probeDomainSsl,
   removeCustomDomain,
   upsertCustomDomain,
@@ -89,8 +90,11 @@ export function CustomDomainsPanel({ workspaceId, currentSlug }: Props) {
   }, [recordType]);
 
   const canAdd = useMemo(
-    () => isValidHostname(hostname) && slug.trim().length > 0 && expectedValue.trim().length > 0,
-    [hostname, slug, expectedValue],
+    () =>
+      isValidHostname(hostname) &&
+      slug.trim().length > 0 &&
+      parseExpectedValues(recordType, expectedValue).length > 0,
+    [hostname, slug, expectedValue, recordType],
   );
 
   const runVerifyAndSsl = useCallback(
@@ -184,13 +188,17 @@ export function CustomDomainsPanel({ workspaceId, currentSlug }: Props) {
       toast.error("Hostname already added");
       return;
     }
+    const trimmedExpected =
+      recordType === "TXT"
+        ? parseExpectedValues("TXT", expectedValue).join("\n")
+        : expectedValue.trim();
     const row: CustomDomain = {
       id: newDomainId(),
       hostname: h,
       slug: slug.trim(),
       recordType,
-      expectedValue: expectedValue.trim(),
-      targetIp: recordType === "A" ? expectedValue.trim() : undefined,
+      expectedValue: trimmedExpected,
+      targetIp: recordType === "A" ? trimmedExpected : undefined,
       status: "pending",
       createdAt: new Date().toISOString(),
       sslStatus: "unknown",
@@ -199,7 +207,10 @@ export function CustomDomainsPanel({ workspaceId, currentSlug }: Props) {
     };
     upsertCustomDomain(workspaceId, row);
     setHostname("");
-    toast.success(`Added ${h}. Add a ${recordType} record and Verify will run automatically.`);
+    const count = recordType === "TXT" ? parseExpectedValues("TXT", trimmedExpected).length : 1;
+    toast.success(
+      `Added ${h}. Add ${count > 1 ? `any of the ${count} ${recordType} values` : `a ${recordType} record`} and Verify will run automatically.`,
+    );
   };
 
   const handleVerify = async (row: CustomDomain) => {
@@ -229,7 +240,12 @@ export function CustomDomainsPanel({ workspaceId, currentSlug }: Props) {
   const copyDnsRecord = async (row: CustomDomain) => {
     const type = row.recordType;
     const name = type === "TXT" ? `_pluto-verify.${row.hostname}` : row.hostname;
-    const text = `Type: ${type}\nName: ${name}\nValue: ${row.expectedValue}\nTTL: 300`;
+    const values = parseExpectedValues(type, row.expectedValue);
+    const valueBlock =
+      type === "TXT" && values.length > 1
+        ? values.map((v, i) => `Value ${i + 1}: ${v}`).join("\n") + `\n(any one of the values matches)`
+        : `Value: ${values[0] ?? row.expectedValue}`;
+    const text = `Type: ${type}\nName: ${name}\n${valueBlock}\nTTL: 300`;
     try {
       await navigator.clipboard.writeText(text);
       toast.success("DNS record copied to clipboard");
@@ -286,14 +302,33 @@ export function CustomDomainsPanel({ workspaceId, currentSlug }: Props) {
         </div>
         <div>
           <label className="mb-1 block text-xs font-medium text-muted-foreground">
-            {recordType === "A" ? "Target IP" : recordType === "CNAME" ? "Target hostname" : "TXT value"}
+            {recordType === "A"
+              ? "Target IP"
+              : recordType === "CNAME"
+                ? "Target hostname"
+                : "TXT value(s) — one per line"}
           </label>
-          <input
-            className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/40"
-            placeholder={defaultExpected(recordType)}
-            value={expectedValue}
-            onChange={(e) => setExpectedValue(e.target.value)}
-          />
+          {recordType === "TXT" ? (
+            <textarea
+              className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/40 font-mono"
+              rows={3}
+              placeholder={`${defaultExpected("TXT")}\npluto-verify=another-token`}
+              value={expectedValue}
+              onChange={(e) => setExpectedValue(e.target.value)}
+            />
+          ) : (
+            <input
+              className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/40"
+              placeholder={defaultExpected(recordType)}
+              value={expectedValue}
+              onChange={(e) => setExpectedValue(e.target.value)}
+            />
+          )}
+          {recordType === "TXT" && parseExpectedValues("TXT", expectedValue).length > 1 && (
+            <p className="mt-1 text-[10px] text-muted-foreground">
+              Matches if DNS returns any of the {parseExpectedValues("TXT", expectedValue).length} values.
+            </p>
+          )}
         </div>
         <div className="flex items-end">
           <button
@@ -336,14 +371,28 @@ export function CustomDomainsPanel({ workspaceId, currentSlug }: Props) {
                         {row.recordType}
                       </span>
                     </div>
-                    <div className="mt-0.5 text-xs text-muted-foreground">
-                      slug <code className="rounded bg-muted px-1">{row.slug}</code> · {row.recordType} →{" "}
-                      <code className="rounded bg-muted px-1">{row.expectedValue}</code>
-                      {row.lastCheckedAt && <> · checked {new Date(row.lastCheckedAt).toLocaleString()}</>}
-                      {nextRetry && row.status !== "active" && row.autoVerify !== false && (
-                        <> · next auto-retry {nextRetry.toLocaleTimeString()}</>
-                      )}
-                    </div>
+                    {(() => {
+                      const vals = parseExpectedValues(row.recordType, row.expectedValue);
+                      const label =
+                        vals.length > 1
+                          ? `${vals[0]} +${vals.length - 1} more`
+                          : vals[0] ?? row.expectedValue;
+                      return (
+                        <div className="mt-0.5 text-xs text-muted-foreground">
+                          slug <code className="rounded bg-muted px-1">{row.slug}</code> · {row.recordType} →{" "}
+                          <code className="rounded bg-muted px-1" title={vals.join("\n")}>
+                            {label}
+                          </code>
+                          {vals.length > 1 && (
+                            <span className="ml-1 text-[10px]">(any match)</span>
+                          )}
+                          {row.lastCheckedAt && <> · checked {new Date(row.lastCheckedAt).toLocaleString()}</>}
+                          {nextRetry && row.status !== "active" && row.autoVerify !== false && (
+                            <> · next auto-retry {nextRetry.toLocaleTimeString()}</>
+                          )}
+                        </div>
+                      );
+                    })()}
                     {row.lastError && <div className="mt-1 text-xs text-red-500">DNS: {row.lastError}</div>}
                     {row.sslError && ssl !== "active" && (
                       <div className="mt-1 text-xs text-red-500">SSL: {row.sslError}</div>

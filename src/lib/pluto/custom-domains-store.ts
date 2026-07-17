@@ -125,11 +125,24 @@ export type VerifyResult =
   | { ok: true; records: string[] }
   | { ok: false; reason: string; records: string[] };
 
+/** Parse an `expectedValue` into one or more acceptable values.
+ *  For TXT we allow multiple entries separated by newlines, commas, or
+ *  semicolons — the row matches if ANY parsed value is present in DNS. */
+export function parseExpectedValues(type: DomainRecordType, expected: string): string[] {
+  if (type !== "TXT") return [expected.trim()].filter(Boolean);
+  return expected
+    .split(/[\n,;]+/)
+    .map((s) => s.trim().replace(/^"|"$/g, ""))
+    .filter(Boolean);
+}
+
 function matches(type: DomainRecordType, expected: string, records: string[]): boolean {
   const norm = (s: string) => s.trim().toLowerCase().replace(/\.$/, "");
-  const want = norm(expected);
-  if (type === "TXT") return records.some((r) => r.trim() === expected.trim());
-  return records.some((r) => norm(r) === want);
+  const wants = parseExpectedValues(type, expected);
+  if (wants.length === 0) return false;
+  if (type === "TXT") return wants.some((w) => records.some((r) => r.trim() === w));
+  const wantsNorm = wants.map(norm);
+  return records.some((r) => wantsNorm.includes(norm(r)));
 }
 
 export async function verifyDomainRecord(
@@ -142,9 +155,11 @@ export async function verifyDomainRecord(
     const records = await resolveDnsRecords(hostname, type, signal);
     if (records.length === 0) return { ok: false, reason: `No ${type} record found`, records };
     if (!matches(type, expectedValue, records)) {
+      const wants = parseExpectedValues(type, expectedValue);
+      const wantLabel = wants.length > 1 ? `any of [${wants.join(", ")}]` : `"${wants[0] ?? expectedValue}"`;
       return {
         ok: false,
-        reason: `${type} record does not match expected "${expectedValue}" (got ${records.join(", ")})`,
+        reason: `${type} record does not match expected ${wantLabel} (got ${records.join(", ")})`,
         records,
       };
     }
