@@ -573,10 +573,28 @@ const server = http.createServer(async (req, res) => {
     }
     // Public readiness endpoint — no secret required.
     if (req.method === "GET" && req.url && req.url.startsWith("/site-status/")) {
-      const s = decodeURIComponent(req.url.slice("/site-status/".length).split("?")[0]);
-      const r = await siteStatus(s);
+      const [rawSlug, qs] = req.url.slice("/site-status/".length).split("?");
+      const s = decodeURIComponent(rawSlug || "");
+      let r = await siteStatus(s);
+      // Auto-seed placeholder when a trusted probe asks for it. Prevents the
+      // "verify-deploy → 404 → run seed-slug.sh by hand" loop.
+      if (!r.ok && (r.error === "slug_not_found" || r.error === "slug_not_linked")) {
+        const params = new URLSearchParams(qs || "");
+        const wantsSeed = params.get("autoseed") === "1"
+          || req.headers["x-pluto-auto-seed"] === "1";
+        if (wantsSeed && SLUG_RE.test(String(s || "").toLowerCase())) {
+          try {
+            await seedPlaceholder(String(s).toLowerCase());
+            r = await siteStatus(s);
+            if (r.ok) r.autoSeeded = true;
+          } catch (e) {
+            return json(res, 500, { ok: false, error: "auto_seed_failed", detail: e?.message ?? String(e) });
+          }
+        }
+      }
       return json(res, r.ok ? 200 : 404, r);
     }
+
 
     if (!checkSecret(req)) return json(res, 401, { error: "invalid or missing x-sandbox-secret" });
 
