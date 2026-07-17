@@ -1364,11 +1364,11 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, r);
     }
     // POST /admin/repair — whitelisted repair scripts, sudo-run via /usr/local/sbin/pluto-repair.
-    // Body: { action: "worker-and-site"|"wildcard-ssl"|"deploy-and-verify"|"all", slug?, wildcard?, acmeEmail? }
+    // Body: { action: "worker-and-site"|"wildcard-ssl"|"per-slug-ssl"|"deploy-and-verify"|"all", slug?, wildcard?, acmeEmail? }
     if (req.method === "POST" && (p === "/admin/repair" || p === "/sandbox/admin/repair")) {
       const body = await readJson(req).catch(() => ({}));
       const action = String(body?.action || "").trim();
-      const allowed = new Set(["worker-and-site", "wildcard-ssl", "deploy-and-verify", "all"]);
+      const allowed = new Set(["worker-and-site", "wildcard-ssl", "per-slug-ssl", "deploy-and-verify", "all"]);
       if (!allowed.has(action)) return json(res, 400, { error: "invalid_action", allowed: [...allowed] });
       const args = [action];
       const safeArg = (v) => typeof v === "string" && /^[A-Za-z0-9._@:/-]{0,253}$/.test(v);
