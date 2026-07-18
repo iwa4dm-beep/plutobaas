@@ -118,17 +118,77 @@ export class ApiError extends Error {
   }
 }
 
-export function describeError(e: unknown): { title: string; detail?: string; status?: number } {
+export function describeError(e: unknown): { title: string; detail?: string; status?: number; hint?: string } {
   if (e instanceof ApiError) {
-    const b = e.body as { error?: string; hint?: string; details?: string } | null;
+    const b = e.body as { error?: string; hint?: string; details?: string; message?: string } | null;
     const parts: string[] = [];
     if (b?.error && b.error !== e.message) parts.push(b.error);
     if (b?.hint) parts.push(`hint: ${b.hint}`);
     if (b?.details) parts.push(b.details);
-    return { title: `${e.status} · ${e.message}`, detail: parts.join(" — ") || undefined, status: e.status };
+    return {
+      title: friendlyTitleForStatus(e.status, e.message),
+      detail: parts.join(" — ") || undefined,
+      status: e.status,
+      hint: b?.hint,
+    };
   }
-  if (e instanceof Error) return { title: e.message };
+  if (e instanceof Error) {
+    const msg = e.message || "Unknown error";
+    // TanStack server-fn errors surface Response bodies as JSON in .message
+    try {
+      const jsonStart = msg.indexOf("{");
+      if (jsonStart >= 0) {
+        const parsed = JSON.parse(msg.slice(jsonStart)) as {
+          error?: string; message?: string; hint?: string; status?: number;
+        };
+        if (parsed && (parsed.error || parsed.message)) {
+          return {
+            title: parsed.message || parsed.error || msg,
+            detail: parsed.hint,
+            status: parsed.status,
+            hint: parsed.hint,
+          };
+        }
+      }
+    } catch { /* not JSON */ }
+    if (/Failed to fetch|NetworkError|ERR_NETWORK|ENOTFOUND|ECONNREFUSED/i.test(msg)) {
+      return {
+        title: "Network unreachable",
+        detail: "Backend সার্ভারে পৌঁছানো গেল না। Internet connection check করুন।",
+        hint: "Retry a moment later.",
+      };
+    }
+    if (/aborted|AbortError|timeout|timed out/i.test(msg)) {
+      return { title: "Request timed out", detail: "Server response দিতে অনেক সময় নিচ্ছে। আবার চেষ্টা করুন।" };
+    }
+    if (/unauthorized|\b401\b/i.test(msg)) {
+      return { title: "Session expired", detail: "আবার sign in করুন।", status: 401 };
+    }
+    if (/forbidden|\b403\b/i.test(msg)) {
+      return { title: "Access denied", detail: "এই action-এর জন্য admin privilege দরকার।", status: 403 };
+    }
+    return { title: msg };
+  }
   return { title: String(e) };
+}
+
+function friendlyTitleForStatus(status: number, fallback: string): string {
+  switch (status) {
+    case 400: return "Invalid request";
+    case 401: return "Sign in required";
+    case 403: return "Access denied";
+    case 404: return "Not found";
+    case 408:
+    case 504: return "Request timed out";
+    case 409: return "Conflict";
+    case 413: return "Request too large";
+    case 422: return "Validation failed";
+    case 429: return "Too many requests";
+    case 500: return "Server error";
+    case 502:
+    case 503: return "Backend unavailable";
+    default: return fallback || `HTTP ${status}`;
+  }
 }
 
 export async function api<T = unknown>(
