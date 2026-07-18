@@ -657,21 +657,24 @@ function AutoDeployInner() {
   const [liveProbe, setLiveProbe] = useState<LiveUrlProbe | null>(initialProbe);
   const [probing, setProbing] = useState(false);
   useEffect(() => { setLiveProbe(deployResult?.liveUrls?.servedSiteProbe ?? null); }, [deployResult]);
-  const probeLiveUrlFn = useServerFn(probeLiveUrl);
+  const probeAction = useServerAction(probeLiveUrl, {
+    errorTitle: "Probe failed",
+    silent: true,
+    onSuccess: (r) => {
+      setLiveProbe(r);
+      if (r.reachable) toast.success(`Live URL reachable — HTTP ${r.status}`);
+      else toast.error(`Live URL unreachable — HTTP ${r.status || "network error"}`);
+    },
+  });
   const runProbe = useCallback(async () => {
     if (!liveUrl) return;
     setProbing(true);
     try {
-      const r = await probeLiveUrlFn({ data: { url: liveUrl } });
-      setLiveProbe(r);
-      if (r.reachable) toast.success(`Live URL reachable — HTTP ${r.status}`);
-      else toast.error(`Live URL unreachable — HTTP ${r.status || "network error"}`);
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Probe failed");
+      await probeAction.run({ data: { url: liveUrl } });
     } finally {
       setProbing(false);
     }
-  }, [liveUrl, probeLiveUrlFn]);
+  }, [liveUrl, probeAction]);
   const servedHint = deployResult?.liveUrls?.servedHint ?? null;
   const backendSaysServed = deployResult?.liveUrls?.served === true;
   const isReachable = liveProbe ? liveProbe.reachable : backendSaysServed;
