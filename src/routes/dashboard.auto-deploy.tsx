@@ -264,7 +264,8 @@ function AutoDeployInner() {
 
       setPreflight(r);
     } catch (e) {
-      setPreflight({ ok: false, baseUrl: "", tokenSource: "none", checks: [], hint: (e as Error).message });
+      const info = describeError(e);
+      setPreflight({ ok: false, baseUrl: "", tokenSource: "none", checks: [], hint: info.detail ?? info.title });
     } finally { setPreflightBusy(false); }
   }, [pingUpstreamFn]);
 
@@ -293,6 +294,15 @@ function AutoDeployInner() {
     if (streamTimerRef.current) { clearInterval(streamTimerRef.current); streamTimerRef.current = null; }
   };
 
+  const diagnosticsAction = useServerAction(diagnoseServedSiteFn, {
+    errorTitle: "Diagnostics failed",
+    silent: true,
+    onSuccess: (r) => {
+      setServedDiagnostics(r);
+      if (r.ok) toast.success("Served-site mapping OK");
+      else toast.warning(r.hint ?? "Served-site mapping issue found");
+    },
+  });
   const runServedDiagnostics = useCallback(async () => {
     if (!workspaceId || !slug) {
       toast.error("Workspace/slug missing — deploy বা prepare আগে চালান");
@@ -300,16 +310,12 @@ function AutoDeployInner() {
     }
     setDiagnosticsBusy(true);
     try {
-      const r = await diagnoseServedSiteFn({ data: { workspaceId, slug } });
-      setServedDiagnostics(r);
-      if (r.ok) toast.success("Served-site mapping OK");
-      else toast.warning(r.hint ?? "Served-site mapping issue found");
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Diagnostics failed");
+      await diagnosticsAction.run({ data: { workspaceId, slug } });
     } finally {
       setDiagnosticsBusy(false);
     }
-  }, [diagnoseServedSiteFn, workspaceId, slug]);
+  }, [diagnosticsAction, workspaceId, slug]);
+
 
   const acquireFile = async (): Promise<{ file: File; sourceRef: string }> => {
     if (source === "zip") {
