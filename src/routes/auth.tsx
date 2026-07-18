@@ -1,8 +1,10 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { LogIn, UserPlus, Zap } from "lucide-react";
+import { toast } from "sonner";
 import { useAuth } from "@/lib/pluto/auth-context";
-import { isLive } from "@/lib/pluto/live";
+import { describeError, isLive } from "@/lib/pluto/live";
+import { ErrorBanner } from "@/components/pluto/ErrorBanner";
 
 export const Route = createFileRoute("/auth")({
   ssr: false,
