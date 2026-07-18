@@ -33,6 +33,9 @@ import { OneClickFixPanel } from "@/components/auto-deploy/OneClickFixPanel";
 import { MigrationErrorCard, parseMigrationError } from "@/components/auto-deploy/MigrationErrorCard";
 import { loadDeploymentSettings } from "@/lib/pluto/deployment-settings";
 import { getUpstream } from "@/lib/pluto/upstream";
+import { describeError } from "@/lib/pluto/live";
+import { useServerAction } from "@/lib/pluto/use-server-action";
+import { ErrorBanner } from "@/components/pluto/ErrorBanner";
 
 import { RequireWorkspace } from "@/components/pluto/RequireWorkspace";
 import { useWorkspace } from "@/lib/pluto/workspace-context";
@@ -264,7 +267,8 @@ function AutoDeployInner() {
 
       setPreflight(r);
     } catch (e) {
-      setPreflight({ ok: false, baseUrl: "", tokenSource: "none", checks: [], hint: (e as Error).message });
+      const info = describeError(e);
+      setPreflight({ ok: false, baseUrl: "", tokenSource: "none", checks: [], hint: info.detail ?? info.title });
     } finally { setPreflightBusy(false); }
   }, [pingUpstreamFn]);
 
@@ -293,6 +297,15 @@ function AutoDeployInner() {
     if (streamTimerRef.current) { clearInterval(streamTimerRef.current); streamTimerRef.current = null; }
   };
 
+  const diagnosticsAction = useServerAction(diagnoseServedSiteFn, {
+    errorTitle: "Diagnostics failed",
+    silent: true,
+    onSuccess: (r) => {
+      setServedDiagnostics(r);
+      if (r.ok) toast.success("Served-site mapping OK");
+      else toast.warning(r.hint ?? "Served-site mapping issue found");
+    },
+  });
   const runServedDiagnostics = useCallback(async () => {
     if (!workspaceId || !slug) {
       toast.error("Workspace/slug missing — deploy বা prepare আগে চালান");
@@ -300,16 +313,12 @@ function AutoDeployInner() {
     }
     setDiagnosticsBusy(true);
     try {
-      const r = await diagnoseServedSiteFn({ data: { workspaceId, slug } });
-      setServedDiagnostics(r);
-      if (r.ok) toast.success("Served-site mapping OK");
-      else toast.warning(r.hint ?? "Served-site mapping issue found");
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Diagnostics failed");
+      await diagnosticsAction.run({ data: { workspaceId, slug } });
     } finally {
       setDiagnosticsBusy(false);
     }
-  }, [diagnoseServedSiteFn, workspaceId, slug]);
+  }, [diagnosticsAction, workspaceId, slug]);
+
 
   const acquireFile = async (): Promise<{ file: File; sourceRef: string }> => {
     if (source === "zip") {
@@ -648,21 +657,24 @@ function AutoDeployInner() {
   const [liveProbe, setLiveProbe] = useState<LiveUrlProbe | null>(initialProbe);
   const [probing, setProbing] = useState(false);
   useEffect(() => { setLiveProbe(deployResult?.liveUrls?.servedSiteProbe ?? null); }, [deployResult]);
-  const probeLiveUrlFn = useServerFn(probeLiveUrl);
+  const probeAction = useServerAction(probeLiveUrl, {
+    errorTitle: "Probe failed",
+    silent: true,
+    onSuccess: (r) => {
+      setLiveProbe(r);
+      if (r.reachable) toast.success(`Live URL reachable — HTTP ${r.status}`);
+      else toast.error(`Live URL unreachable — HTTP ${r.status || "network error"}`);
+    },
+  });
   const runProbe = useCallback(async () => {
     if (!liveUrl) return;
     setProbing(true);
     try {
-      const r = await probeLiveUrlFn({ data: { url: liveUrl } });
-      setLiveProbe(r);
-      if (r.reachable) toast.success(`Live URL reachable — HTTP ${r.status}`);
-      else toast.error(`Live URL unreachable — HTTP ${r.status || "network error"}`);
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Probe failed");
+      await probeAction.run({ data: { url: liveUrl } });
     } finally {
       setProbing(false);
     }
-  }, [liveUrl, probeLiveUrlFn]);
+  }, [liveUrl, probeAction]);
   const servedHint = deployResult?.liveUrls?.servedHint ?? null;
   const backendSaysServed = deployResult?.liveUrls?.served === true;
   const isReachable = liveProbe ? liveProbe.reachable : backendSaysServed;
@@ -988,6 +1000,10 @@ function AutoDeployInner() {
       {(phase === "deploying" || (streamEvents.length > 0 && phase !== "live")) && (
         <StreamPanel events={streamEvents} runningIdx={runningStepIdx} />
       )}
+
+      {/* Server-action errors (probe / diagnostics) */}
+      <ErrorBanner error={probeAction.error} onDismiss={probeAction.reset} />
+      <ErrorBanner error={diagnosticsAction.error} onDismiss={diagnosticsAction.reset} />
 
       {/* Error banner */}
       {phase === "error" && errorMsg && (

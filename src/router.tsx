@@ -1,6 +1,7 @@
 import { QueryClient } from "@tanstack/react-query";
 import { createRouter } from "@tanstack/react-router";
 import { routeTree } from "./routeTree.gen";
+import { RouteErrorBoundary } from "./components/pluto/RouteErrorBoundary";
 
 export const getRouter = () => {
   const queryClient = new QueryClient();
@@ -10,6 +11,9 @@ export const getRouter = () => {
     context: { queryClient },
     scrollRestoration: true,
     defaultPreloadStaleTime: 0,
+    defaultErrorComponent: ({ error, reset }) => (
+      <RouteErrorBoundary error={error} reset={reset} boundary="tanstack_default_error_component" />
+    ),
   });
 
   return router;

@@ -1,7 +1,7 @@
 import { createFileRoute, useRouter } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { useServerFn } from "@tanstack/react-start";
 import { PageHeader } from "@/components/pluto/PageHeader";
+import { ErrorBanner } from "@/components/pluto/ErrorBanner";
 import { checkVpsHealth } from "@/lib/pluto/vps-health.functions";
 import { CheckCircle2, XCircle, RefreshCw, KeyRound } from "lucide-react";
 import { WorkspaceProvisionCard } from "@/components/pluto/WorkspaceProvisionCard";
@@ -18,10 +18,9 @@ export const Route = createFileRoute("/dashboard/vps-status")({
 
 function VpsStatusPage() {
   const router = useRouter();
-  const health = useServerFn(checkVpsHealth);
-  const { data, isLoading, refetch, isFetching } = useQuery({
+  const { data, isLoading, refetch, isFetching, error } = useQuery({
     queryKey: ["vps-health"],
-    queryFn: () => health(),
+    queryFn: () => checkVpsHealth(),
     refetchInterval: 30_000,
   });
 
@@ -43,6 +42,8 @@ function VpsStatusPage() {
       />
 
       {isLoading && <div className="text-sm text-muted-foreground">Probing VPS…</div>}
+      <ErrorBanner error={error} onRetry={() => refetch()} />
+
 
       {data && (
         <>

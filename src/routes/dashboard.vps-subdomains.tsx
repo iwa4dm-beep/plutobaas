@@ -1,10 +1,10 @@
 import { useState } from "react";
 import { createFileRoute, useRouter } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { useServerFn } from "@tanstack/react-start";
 import { AlertTriangle, CheckCircle2, ExternalLink, RefreshCw, ShieldCheck, XCircle } from "lucide-react";
-import { toast } from "sonner";
 import { PageHeader } from "@/components/pluto/PageHeader";
+import { ErrorBanner } from "@/components/pluto/ErrorBanner";
+import { useServerAction } from "@/lib/pluto/use-server-action";
 import { getActiveSubdomains, type ActiveSubdomain } from "@/lib/pluto/vps-health.functions";
 import { runVpsRepair } from "@/lib/pluto/vps-repair.functions";
 
@@ -20,27 +20,28 @@ export const Route = createFileRoute("/dashboard/vps-subdomains")({
 
 function VpsSubdomainsPage() {
   const router = useRouter();
-  const load = useServerFn(getActiveSubdomains);
-  const repair = useServerFn(runVpsRepair);
-  const [repairing, setRepairing] = useState("");
-  const { data, isLoading, isFetching, refetch } = useQuery({
+  const [repairingHost, setRepairingHost] = useState("");
+  const { data, isLoading, isFetching, refetch, error: queryError } = useQuery({
     queryKey: ["vps-active-subdomains"],
-    queryFn: () => load({ data: { baseDomain: "app.timescard.cloud" } }),
+    queryFn: () => getActiveSubdomains({ data: { baseDomain: "app.timescard.cloud" } }),
     refetchInterval: 60_000,
+  });
+
+  const repair = useServerAction(runVpsRepair, {
+    successMessage: "Repair completed",
+    errorTitle: "Repair failed",
+    onSuccess: () => { refetch(); },
   });
 
   const expiring = data?.subdomains.filter((d) => d.ssl.daysLeft != null && d.ssl.daysLeft <= 30) ?? [];
 
   const fixSubdomain = async (row: ActiveSubdomain) => {
-    setRepairing(row.host);
+    setRepairingHost(row.host);
     try {
       const action = row.issues.includes("ssl_invalid") || row.issues.includes("ssl_expiring_soon") ? "all" : "worker-and-site";
-      const result = await repair({ data: { action, slug: row.slug, wildcard: data?.baseDomain || "app.timescard.cloud" } });
-      if (result.ok) toast.success(`Repair completed for ${row.host}`);
-      else toast.error(result.hint || `Repair failed for ${row.host}`);
-      await refetch();
+      await repair.run({ data: { action, slug: row.slug, wildcard: data?.baseDomain || "app.timescard.cloud" } });
     } finally {
-      setRepairing("");
+      setRepairingHost("");
     }
   };
 
@@ -64,12 +65,16 @@ function VpsSubdomainsPage() {
 
       {isLoading && <div className="text-sm text-muted-foreground">Checking VPS subdomains…</div>}
 
+      <ErrorBanner error={queryError} onRetry={() => refetch()} />
+      <ErrorBanner error={repair.error} onDismiss={repair.reset} />
+
       {data?.error && (
         <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
           <div className="font-medium">Subdomain API unavailable</div>
           <div className="mt-1 text-destructive/80">{data.hint ?? data.error}</div>
         </div>
       )}
+
 
       {data && (
         <>
@@ -127,7 +132,7 @@ function VpsSubdomainsPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {data.subdomains.map((row) => <SubdomainRow key={row.host} row={row} onFix={fixSubdomain} fixing={repairing === row.host} />)}
+                  {data.subdomains.map((row) => <SubdomainRow key={row.host} row={row} onFix={fixSubdomain} fixing={repairingHost === row.host} />)}
                   {!data.subdomains.length && (
                     <tr><td colSpan={7} className="px-4 py-10 text-center text-muted-foreground">No active subdomains found.</td></tr>
                   )}
