@@ -149,7 +149,11 @@ export const requirePlutoAdmin = createMiddleware({ type: "function" })
     const header = (context as { __plutoAuthHeader?: string }).__plutoAuthHeader ?? "";
     if (!header || !/^Bearer\s+\S+/i.test(header)) {
       throw new Response(
-        JSON.stringify({ error: "unauthorized", message: "Missing bearer token" }),
+        JSON.stringify({
+          error: "unauthorized",
+          message: "Sign in required",
+          hint: "Session token পাওয়া যায়নি। আবার sign in করুন।",
+        }),
         { status: 401, headers: { "content-type": "application/json" } },
       );
     }
