@@ -40,7 +40,11 @@ function AuthPage() {
       }
       navigate({ to: "/dashboard" });
     } catch (err) {
-      setError(err instanceof Error ? err.message : mode === "signup" ? "Sign-up failed" : "Sign-in failed");
+      setError(err);
+      const info = describeError(err);
+      toast.error(mode === "signup" ? "Sign-up failed" : "Sign-in failed", {
+        description: info.detail ?? info.title,
+      });
     } finally {
       setBusy(false);
     }
