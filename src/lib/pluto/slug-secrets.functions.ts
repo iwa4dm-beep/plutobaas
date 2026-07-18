@@ -1,6 +1,7 @@
 // Per-slug secret rotation + repair history + subdomain provisioning.
 // All calls proxy to the authenticated sandbox worker admin surface.
 import { createServerFn } from "@tanstack/react-start";
+import { requirePlutoAdmin } from "./admin-middleware";
 import { z } from "zod";
 import { getVpsBaseUrl } from "./vps-client";
 
@@ -52,7 +53,7 @@ const SlugInput = z.object({
 });
 
 export const rotateSlugSecret = createServerFn({ method: "POST" })
-  .inputValidator((d: unknown) => SlugInput.parse(d))
+  .middleware([requirePlutoAdmin]).inputValidator((d: unknown) => SlugInput.parse(d))
   .handler(async ({ data }): Promise<WorkerJson> =>
     workerFetch("/admin/secrets/rotate", {
       method: "POST",
@@ -61,7 +62,7 @@ export const rotateSlugSecret = createServerFn({ method: "POST" })
   );
 
 export const revokeSlugSecret = createServerFn({ method: "POST" })
-  .inputValidator((d: unknown) => SlugInput.pick({ slug: true }).parse(d))
+  .middleware([requirePlutoAdmin]).inputValidator((d: unknown) => SlugInput.pick({ slug: true }).parse(d))
   .handler(async ({ data }): Promise<WorkerJson> =>
     workerFetch("/admin/secrets/revoke", {
       method: "POST",
@@ -70,7 +71,7 @@ export const revokeSlugSecret = createServerFn({ method: "POST" })
   );
 
 export const getSlugSecretStatus = createServerFn({ method: "POST" })
-  .inputValidator((d: unknown) => SlugInput.pick({ slug: true }).parse(d))
+  .middleware([requirePlutoAdmin]).inputValidator((d: unknown) => SlugInput.pick({ slug: true }).parse(d))
   .handler(async ({ data }): Promise<WorkerJson> =>
     workerFetch(`/admin/secrets/status?slug=${encodeURIComponent(data.slug)}`)
   );
@@ -82,7 +83,7 @@ const HistoryInput = z.object({
 });
 
 export const getRepairHistory = createServerFn({ method: "POST" })
-  .inputValidator((d: unknown) => HistoryInput.parse(d ?? {}))
+  .middleware([requirePlutoAdmin]).inputValidator((d: unknown) => HistoryInput.parse(d ?? {}))
   .handler(async ({ data }): Promise<WorkerJson> => {
     const params = new URLSearchParams();
     if (data.slug) params.set("slug", data.slug);
@@ -102,7 +103,7 @@ const ProvisionInput = z.object({
 export type ProvisionInputT = z.infer<typeof ProvisionInput>;
 
 export const provisionSubdomain = createServerFn({ method: "POST" })
-  .inputValidator((d: unknown) => ProvisionInput.parse(d))
+  .middleware([requirePlutoAdmin]).inputValidator((d: unknown) => ProvisionInput.parse(d))
   .handler(async ({ data }): Promise<WorkerJson> =>
     workerFetch("/admin/provision", { method: "POST", body: JSON.stringify(data) })
   );

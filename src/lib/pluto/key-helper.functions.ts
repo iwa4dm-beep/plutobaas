@@ -4,6 +4,7 @@
 //
 // Uses Web Crypto (crypto.subtle) — no extra deps, Worker-compatible.
 import { createServerFn } from "@tanstack/react-start";
+import { requirePlutoAdmin } from "./admin-middleware";
 import { z } from "zod";
 import { detectKeyFormat, isAdminCompatible, describeKey, type KeyFormat, type JsonObj } from "./key-helper";
 import { getServiceRoleKey, getVpsBaseUrl } from "./vps-client";
@@ -20,7 +21,7 @@ export type KeyInspectResult = {
 };
 
 export const inspectServiceKey = createServerFn({ method: "GET" })
-  .handler(async (): Promise<KeyInspectResult> => {
+  .middleware([requirePlutoAdmin]).handler(async (): Promise<KeyInspectResult> => {
     const key = (await getServiceRoleKey()) ?? "";
     const fmt = detectKeyFormat(key);
     return {
@@ -71,7 +72,7 @@ export type MintJwtResult =
   | { ok: false; error: string };
 
 export const mintAdminJwt = createServerFn({ method: "POST" })
-  .inputValidator((d: unknown) => MintInput.parse(d))
+  .middleware([requirePlutoAdmin]).inputValidator((d: unknown) => MintInput.parse(d))
   .handler(async ({ data }): Promise<MintJwtResult> => {
     const secret = process.env.PLUTO_JWT_SECRET;
     if (!secret) {
@@ -108,7 +109,7 @@ export type AdminUpstreamConfig =
   | { ok: false; error: string; url: string };
 
 export const getAdminUpstreamConfig = createServerFn({ method: "GET" })
-  .handler(async (): Promise<AdminUpstreamConfig> => {
+  .middleware([requirePlutoAdmin]).handler(async (): Promise<AdminUpstreamConfig> => {
     // Return the same-origin proxy path so browsers never hit
     // api.timescard.cloud directly (avoids CORS + preview fetch-proxy
     // interference). The proxy forwards Authorization / apikey headers.
@@ -154,7 +155,7 @@ const ProbeInput = z.object({
 });
 
 export const probeAdminKey = createServerFn({ method: "POST" })
-  .inputValidator((d: unknown) => ProbeInput.parse(d))
+  .middleware([requirePlutoAdmin]).inputValidator((d: unknown) => ProbeInput.parse(d))
   .handler(async ({ data }): Promise<ProbeResult> => {
     const base = getVpsBaseUrl();
     const key = data.token ?? (await getServiceRoleKey()) ?? "";

@@ -7,6 +7,7 @@
 // which dispatches to repair-sandbox-worker-and-site.sh, fix-wildcard-ssl.sh
 // or deploy-and-verify.sh.
 import { createServerFn } from "@tanstack/react-start";
+import { requirePlutoAdmin } from "./admin-middleware";
 import { z } from "zod";
 import { getVpsBaseUrl } from "./vps-client";
 
@@ -39,7 +40,7 @@ const Input = z.object({
 });
 
 export const runVpsRepair = createServerFn({ method: "POST" })
-  .inputValidator((d: unknown) => Input.parse(d))
+  .middleware([requirePlutoAdmin]).inputValidator((d: unknown) => Input.parse(d))
   .handler(async ({ data }): Promise<RepairResult> => {
     const startedAt = new Date().toISOString();
     const t0 = Date.now();
@@ -118,7 +119,7 @@ const PreflightInput = z.object({
 });
 
 export const preflightAndHeal = createServerFn({ method: "POST" })
-  .inputValidator((d: unknown) => PreflightInput.parse(d))
+  .middleware([requirePlutoAdmin]).inputValidator((d: unknown) => PreflightInput.parse(d))
   .handler(async ({ data }): Promise<PreflightHealResult> => {
     const base = getVpsBaseUrl();
     const wildcard = (data.wildcard || envFirst("PLUTO_WILDCARD_HOST") || "").replace(/^\*\./, "").replace(/^https?:\/\//, "");
@@ -192,7 +193,7 @@ const CertStatusInput = z.object({
 });
 
 export const getSlugCertStatus = createServerFn({ method: "GET" })
-  .inputValidator((d: unknown) => CertStatusInput.parse(d))
+  .middleware([requirePlutoAdmin]).inputValidator((d: unknown) => CertStatusInput.parse(d))
   .handler(async ({ data }): Promise<SlugCertStatus> => {
     const base = getVpsBaseUrl();
     const sandboxUrl = (envFirst("PLUTO_SANDBOX_URL") || `${base}/sandbox`).replace(/\/+$/, "");
@@ -231,7 +232,7 @@ const BatchInput = z.object({
 });
 
 export const batchIssuePerSlugCerts = createServerFn({ method: "POST" })
-  .inputValidator((d: unknown) => BatchInput.parse(d))
+  .middleware([requirePlutoAdmin]).inputValidator((d: unknown) => BatchInput.parse(d))
   .handler(async ({ data }): Promise<{ results: BatchIssueResult[] }> => {
     const base = getVpsBaseUrl();
     const sandboxUrl = (envFirst("PLUTO_SANDBOX_URL") || `${base}/sandbox`).replace(/\/+$/, "");

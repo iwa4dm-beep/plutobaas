@@ -3,6 +3,7 @@
 // Each fn returns a `debug` field with the raw request URL/method/status/body
 // (request body redacted-truncated) so the UI can render live per-step logs.
 import { createServerFn } from "@tanstack/react-start";
+import { requirePlutoAdmin } from "./admin-middleware";
 import { z } from "zod";
 import { getVpsBaseUrl, getServiceRoleKey } from "./vps-client";
 
@@ -192,7 +193,7 @@ export type PushMigrationResult =
   | { ok: false; error: string; status: number; debug: StepDebug | null };
 
 export const pushMigrations = createServerFn({ method: "POST" })
-  .inputValidator((d: unknown) => MigrationInput.parse(d))
+  .middleware([requirePlutoAdmin]).inputValidator((d: unknown) => MigrationInput.parse(d))
   .handler(async ({ data }): Promise<PushMigrationResult> => {
     const headers = await serviceHeaders({ "content-type": "application/json" });
     if ("error" in headers) return { ok: false, error: headers.error, status: 500, debug: null };
@@ -263,7 +264,7 @@ export type UploadBundleResult =
   | { ok: false; error: string; status: number; debug: StepDebug | null };
 
 export const uploadBundle = createServerFn({ method: "POST" })
-  .inputValidator((d: unknown) => UploadInput.parse(d))
+  .middleware([requirePlutoAdmin]).inputValidator((d: unknown) => UploadInput.parse(d))
   .handler(async ({ data }): Promise<UploadBundleResult> => {
     const headers = await serviceHeaders({
       "x-workspace-id": data.workspaceId,
@@ -295,7 +296,7 @@ export type VerifyDeployResult =
   | { ok: false; error: string; status: number; debug: StepDebug | null };
 
 export const verifyDeploy = createServerFn({ method: "POST" })
-  .inputValidator((d: unknown) => VerifyInput.parse(d))
+  .middleware([requirePlutoAdmin]).inputValidator((d: unknown) => VerifyInput.parse(d))
   .handler(async ({ data }): Promise<VerifyDeployResult> => {
     const headers = await serviceHeaders();
     if ("error" in headers) return { ok: false, error: headers.error, status: 500, debug: null };
@@ -350,7 +351,7 @@ function validateSqlText(sql: string): { ok: boolean; detail: string } {
 }
 
 export const dryRunDeploy = createServerFn({ method: "POST" })
-  .inputValidator((d: unknown) => DryRunInput.parse(d))
+  .middleware([requirePlutoAdmin]).inputValidator((d: unknown) => DryRunInput.parse(d))
   .handler(async ({ data }): Promise<DryRunResult> => {
     const steps: DryRunStep[] = [];
 
@@ -414,7 +415,7 @@ export type EnsureInfraStep = { key: string; label: string; ok: boolean; detail:
 export type EnsureInfraResult = { ok: boolean; steps: EnsureInfraStep[] };
 
 export const ensureDeployInfra = createServerFn({ method: "POST" })
-  .inputValidator((d: unknown) => EnsureInfraInput.parse(d))
+  .middleware([requirePlutoAdmin]).inputValidator((d: unknown) => EnsureInfraInput.parse(d))
   .handler(async ({ data }): Promise<EnsureInfraResult> => {
     const headers = await serviceHeaders({}, data.operatorToken);
     if ("error" in headers) return { ok: false, steps: [{ key: "auth", label: "Auth", ok: false, detail: headers.error, debug: null }] };
@@ -656,7 +657,7 @@ async function withRetry(
 }
 
 export const deployAll = createServerFn({ method: "POST" })
-  .inputValidator((d: unknown) => DeployAllInput.parse(d))
+  .middleware([requirePlutoAdmin]).inputValidator((d: unknown) => DeployAllInput.parse(d))
   .handler(async ({ data }): Promise<DeployAllResult> => {
     const t0 = Date.now();
     const headers = await serviceHeaders({ "content-type": "application/json" }, data.operatorToken);
@@ -1153,7 +1154,7 @@ export type PostDeployHealth = {
 };
 
 export const postDeployHealth = createServerFn({ method: "POST" })
-  .inputValidator((d: unknown) => PostDeployHealthInput.parse(d))
+  .middleware([requirePlutoAdmin]).inputValidator((d: unknown) => PostDeployHealthInput.parse(d))
   .handler(async (): Promise<PostDeployHealth> => {
     const headers = await serviceHeaders({ "content-type": "application/json" });
     if ("error" in headers) {
@@ -1180,7 +1181,7 @@ const ServedSiteDiagnosticsInput = z.object({
 });
 
 export const diagnoseServedSite = createServerFn({ method: "POST" })
-  .inputValidator((d: unknown) => ServedSiteDiagnosticsInput.parse(d))
+  .middleware([requirePlutoAdmin]).inputValidator((d: unknown) => ServedSiteDiagnosticsInput.parse(d))
   .handler(async ({ data }): Promise<ServedSiteDiagnostics> => {
     const base = getVpsBaseUrl();
     const sandboxUrl = (firstNonEmptyEnv("PLUTO_SANDBOX_URL") || `${base}/sandbox`).replace(/\/+$/, "");
@@ -1256,7 +1257,7 @@ export type VerifyBootstrapResult = {
 };
 
 export const verifyBootstrap = createServerFn({ method: "POST" })
-  .handler(async (): Promise<VerifyBootstrapResult> => {
+  .middleware([requirePlutoAdmin]).handler(async (): Promise<VerifyBootstrapResult> => {
     const headers = await serviceHeaders({ "content-type": "application/json" });
     const base = getVpsBaseUrl();
     const invokeUrl = `${base}/functions/v1/invoke/bootstrap`;

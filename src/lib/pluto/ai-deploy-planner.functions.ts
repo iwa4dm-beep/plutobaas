@@ -12,6 +12,7 @@
 // so the UI keeps working offline.
 
 import { createServerFn } from "@tanstack/react-start";
+import { requirePlutoAdmin } from "./admin-middleware";
 import { z } from "zod";
 
 const MODEL = "google/gemini-2.5-flash";
@@ -44,7 +45,7 @@ const PlanInput = z.object({
 });
 
 export const planDeploy = createServerFn({ method: "POST" })
-  .inputValidator((raw: unknown) => PlanInput.parse(raw))
+  .middleware([requirePlutoAdmin]).inputValidator((raw: unknown) => PlanInput.parse(raw))
   .handler(async ({ data }): Promise<DeployPlan> => {
     const key = process.env.LOVABLE_API_KEY;
     const fallback = heuristicPlan(data);
@@ -108,7 +109,7 @@ export type VpsGuide = {
 };
 
 export const generateVpsGuide = createServerFn({ method: "POST" })
-  .inputValidator((raw: unknown) => GuideInput.parse(raw))
+  .middleware([requirePlutoAdmin]).inputValidator((raw: unknown) => GuideInput.parse(raw))
   .handler(async ({ data }): Promise<VpsGuide> => {
     // Deterministic script — reliable and copy-pasteable. AI is only used to
     // annotate the checklist with plain-language notes.
@@ -202,7 +203,7 @@ const UninstallInput = z.object({
 });
 
 export const generateUninstallScript = createServerFn({ method: "POST" })
-  .inputValidator((raw: unknown) => UninstallInput.parse(raw))
+  .middleware([requirePlutoAdmin]).inputValidator((raw: unknown) => UninstallInput.parse(raw))
   .handler(async ({ data }): Promise<{ script: string }> => {
     const subdomain = `app.${data.domain}`.replace(/^app\.app\./, "app.");
     const script = `#!/usr/bin/env bash
@@ -248,7 +249,7 @@ const PreflightInput = z.object({
 export type PreflightCheck = { name: string; ok: boolean; detail: string; kind: "secret" | "input" | "network" };
 
 export const runPreflight = createServerFn({ method: "POST" })
-  .inputValidator((raw: unknown) => PreflightInput.parse(raw))
+  .middleware([requirePlutoAdmin]).inputValidator((raw: unknown) => PreflightInput.parse(raw))
   .handler(async ({ data }): Promise<{ ok: boolean; checks: PreflightCheck[] }> => {
     const checks: PreflightCheck[] = [];
 
@@ -387,7 +388,7 @@ export const checkPortsReachable = createServerFn({ method: "POST" })
 
 // ── Consolidated verification (health + ports + DNS hint) ──────────────────
 export const runFullVerification = createServerFn({ method: "POST" })
-  .inputValidator((raw: unknown) => PortsInput.parse(raw))
+  .middleware([requirePlutoAdmin]).inputValidator((raw: unknown) => PortsInput.parse(raw))
   .handler(async ({ data }) => {
     const host = `app.${data.domain}`.replace(/^app\.app\./, "app.");
     const probes: HealthProbe[] = [];
