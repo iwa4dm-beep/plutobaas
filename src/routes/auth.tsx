@@ -20,7 +20,7 @@ function AuthPage() {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
 
   useEffect(() => {
     if (!loading && session) navigate({ to: "/dashboard" });
