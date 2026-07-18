@@ -5,6 +5,7 @@
 // the keys ONCE. This replaces the previous 3-step flow that relied on a
 // non-existent `/auth/v1/admin/users` endpoint.
 import { createServerFn } from "@tanstack/react-start";
+import { requirePlutoAdmin } from "./admin-middleware";
 import { z } from "zod";
 import { vpsFetch, VpsError } from "./vps-client";
 
@@ -101,6 +102,6 @@ export async function provisionWorkspaceCore(
 }
 
 export const provisionWorkspace = createServerFn({ method: "POST" })
-  .inputValidator((data: unknown) => InputSchema.parse(data))
+  .middleware([requirePlutoAdmin]).inputValidator((data: unknown) => InputSchema.parse(data))
   .handler(async ({ data }): Promise<ProvisionResult> => provisionWorkspaceCore(data));
 
