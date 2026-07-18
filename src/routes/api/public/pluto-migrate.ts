@@ -23,7 +23,7 @@ type ExecResult = {
 };
 
 async function runMigration(request: Request) {
-  const token = request.headers.get("authorization");
+  const token = request.headers.get("authorization") ?? "";
   if (!(await isValidServiceToken(token))) {
     return new Response(
       JSON.stringify({ ok: false, error: "unauthorized" }),
