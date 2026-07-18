@@ -44,7 +44,7 @@ export function useServerAction<TFn extends (...args: never[]) => Promise<unknow
       setIsPending(true);
       setError(null);
       try {
-        const result = (await (fn as (...a: unknown[]) => Promise<unknown>)(...args)) as TResult;
+        const result = (await (fn as unknown as (...a: unknown[]) => Promise<unknown>)(...args)) as TResult;
         if (myId !== callIdRef.current) return undefined;
         setData(result);
         if (opts.successMessage) toast.success(opts.successMessage);
