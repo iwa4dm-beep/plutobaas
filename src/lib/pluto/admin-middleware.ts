@@ -63,29 +63,47 @@ async function verifyAdminToken(authHeader: string): Promise<VerifiedAdmin> {
   try {
     res = await fetch(url, {
       method: "GET",
-      headers: {
-        Authorization: authHeader,
-        Accept: "application/json",
-      },
+      headers: { Authorization: authHeader, Accept: "application/json" },
     });
   } catch (err) {
     throw new Response(
       JSON.stringify({
         error: "auth_upstream_unreachable",
-        message: err instanceof Error ? err.message : String(err),
+        message: "Authentication backend unreachable",
+        hint: "Pluto backend health check করুন — /auth/v1/user endpoint accessible নয়।",
+        details: err instanceof Error ? err.message : String(err),
       }),
       { status: 503, headers: { "content-type": "application/json" } },
     );
   }
-  if (res.status === 401 || res.status === 403) {
+  if (res.status === 401) {
     throw new Response(
-      JSON.stringify({ error: "unauthorized" }),
+      JSON.stringify({
+        error: "unauthorized",
+        message: "Session expired",
+        hint: "আবার sign in করে token refresh করুন।",
+      }),
       { status: 401, headers: { "content-type": "application/json" } },
+    );
+  }
+  if (res.status === 403) {
+    throw new Response(
+      JSON.stringify({
+        error: "forbidden",
+        message: "Access denied",
+        hint: "এই action-এর জন্য admin role দরকার।",
+      }),
+      { status: 403, headers: { "content-type": "application/json" } },
     );
   }
   if (!res.ok) {
     throw new Response(
-      JSON.stringify({ error: "auth_verify_failed", status: res.status }),
+      JSON.stringify({
+        error: "auth_verify_failed",
+        message: `Auth verification failed (HTTP ${res.status})`,
+        hint: "Pluto backend logs check করুন।",
+        status: res.status,
+      }),
       { status: 502, headers: { "content-type": "application/json" } },
     );
   }
@@ -96,7 +114,7 @@ async function verifyAdminToken(authHeader: string): Promise<VerifiedAdmin> {
   const user = (body && "user" in (body as object) ? (body as { user: Record<string, unknown> }).user : (body as Record<string, unknown> | null)) ?? null;
   if (!user || typeof user !== "object") {
     throw new Response(
-      JSON.stringify({ error: "unauthorized" }),
+      JSON.stringify({ error: "unauthorized", message: "Invalid session", hint: "আবার sign in করুন।" }),
       { status: 401, headers: { "content-type": "application/json" } },
     );
   }
@@ -104,7 +122,11 @@ async function verifyAdminToken(authHeader: string): Promise<VerifiedAdmin> {
   const isSuper = Boolean(user.is_superadmin);
   if (!isSuper && role !== "admin") {
     throw new Response(
-      JSON.stringify({ error: "forbidden", message: "Admin role required" }),
+      JSON.stringify({
+        error: "forbidden",
+        message: "Admin role required",
+        hint: "আপনার account-এ admin privilege নেই। Root admin-এর সাথে যোগাযোগ করুন।",
+      }),
       { status: 403, headers: { "content-type": "application/json" } },
     );
   }
