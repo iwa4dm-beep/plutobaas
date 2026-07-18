@@ -1,10 +1,10 @@
 import { useMemo, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { useServerFn } from "@tanstack/react-start";
 import { CheckCircle2, RefreshCw, RotateCw, ShieldAlert, XCircle } from "lucide-react";
-import { toast } from "sonner";
 import { PageHeader } from "@/components/pluto/PageHeader";
+import { ErrorBanner } from "@/components/pluto/ErrorBanner";
+import { useServerAction } from "@/lib/pluto/use-server-action";
 import {
   getRepairHistory,
   getSlugSecretStatus,
@@ -43,28 +43,53 @@ function fmtWhen(iso?: string) {
 }
 
 function VpsRecoveryPage() {
-  const fetchHistory = useServerFn(getRepairHistory);
-  const fetchSecretStatus = useServerFn(getSlugSecretStatus);
-  const rotate = useServerFn(rotateSlugSecret);
-  const revoke = useServerFn(revokeSlugSecret);
-  const provision = useServerFn(provisionSubdomain);
-  const repair = useServerFn(runVpsRepair);
-
   const [slug, setSlug] = useState("");
   const [revealed, setRevealed] = useState<string | null>(null);
-  const [busy, setBusy] = useState<string>("");
 
   const history = useQuery({
     queryKey: ["vps-repair-history"],
-    queryFn: () => fetchHistory({ data: { limit: 25 } }),
+    queryFn: () => getRepairHistory({ data: { limit: 25 } }),
     refetchInterval: 30_000,
   });
 
   const status = useQuery({
     queryKey: ["slug-secret-status", slug],
-    queryFn: () => fetchSecretStatus({ data: { slug } }),
+    queryFn: () => getSlugSecretStatus({ data: { slug } }),
     enabled: !!slug && /^[a-z0-9-]+$/i.test(slug),
   });
+
+  const refetchAll = () => { history.refetch(); status.refetch(); };
+
+  const rotate = useServerAction(rotateSlugSecret, {
+    successMessage: "Secret rotated",
+    errorTitle: "Rotate failed",
+    onSuccess: (r) => {
+      const secret = (r as WorkerJson | undefined)?.secret;
+      if (secret) setRevealed(String(secret));
+      refetchAll();
+    },
+  });
+  const revoke = useServerAction(revokeSlugSecret, {
+    successMessage: "Secret revoked",
+    errorTitle: "Revoke failed",
+    onSuccess: refetchAll,
+  });
+  const provision = useServerAction(provisionSubdomain, {
+    successMessage: "Subdomain provisioned + secret rotated",
+    errorTitle: "Provision failed",
+    onSuccess: (r) => {
+      const inner = (r as WorkerJson | undefined)?.secret as WorkerJson | undefined;
+      if (inner?.secret) setRevealed(String(inner.secret));
+      refetchAll();
+    },
+  });
+  const repair = useServerAction(runVpsRepair, {
+    successMessage: "Repair triggered",
+    errorTitle: "Repair failed",
+    onSuccess: refetchAll,
+  });
+
+  const busy = rotate.isPending || revoke.isPending || provision.isPending || repair.isPending;
 
   const entries = useMemo<HistoryEntry[]>(() => {
     const raw = history.data as WorkerJson | undefined;
@@ -78,12 +103,7 @@ function VpsRecoveryPage() {
     return m;
   }, [entries]);
 
-  async function withBusy(key: string, fn: () => Promise<unknown>, okMsg: string) {
-    setBusy(key);
-    try { const r = await fn() as WorkerJson; if (r?.ok === false) throw new Error(String(r?.error || "failed")); toast.success(okMsg); }
-    catch (e) { toast.error((e as Error).message); }
-    finally { setBusy(""); history.refetch(); status.refetch(); }
-  }
+
 
   return (
     <div className="space-y-6 p-6">
