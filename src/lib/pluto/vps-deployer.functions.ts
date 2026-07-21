@@ -460,40 +460,49 @@ const EnsureInfraInput = z.object({ bucket: z.string().min(1).max(64).default("d
 export type EnsureInfraStep = { key: string; label: string; ok: boolean; detail: string; debug: StepDebug | null };
 export type EnsureInfraResult = { ok: boolean; steps: EnsureInfraStep[] };
 
+/** Internal: idempotently create service user + bucket. Verifies the service
+ *  credential first via loginServiceUser() so this never runs unauthenticated. */
+async function runEnsureDeployInfra(input: { bucket: string; operatorToken?: string }): Promise<EnsureInfraResult> {
+  const session = await loginServiceUser(input.operatorToken);
+  if ("error" in session) {
+    return { ok: false, steps: [{ key: "service-login", label: "Service user login (preflight)", ok: false, detail: session.error, debug: session.debug }] };
+  }
+  const headers = session.headers;
+  const base = getVpsBaseUrl();
+  const steps: EnsureInfraStep[] = [{
+    key: "service-login", label: "Service user login (preflight)", ok: true,
+    detail: "verified service_role credential against /admin/v1/workspaces",
+    debug: null,
+  }];
+
+  // 1. Ensure service auth.users row exists — storage.objects.owner_id FKs to auth.users(id).
+  const seedUser = `insert into auth.users (id, email, role, is_superadmin, email_verified) values ('${SERVICE_USER_ID}', '${SERVICE_USER_EMAIL}', 'service_role', true, true) on conflict (id) do nothing;`;
+  const userRes = await sqlExec(seedUser, headers);
+  steps.push({ key: "service-user", label: "Ensure service auth.users row", ok: userRes.ok, detail: userRes.ok ? "seeded (or already present)" : userRes.text.slice(0, 300), debug: userRes.debug });
+
+  // 2. Check bucket via storage API
+  const bucketGet = await rawFetch(`${base}/storage/v1/bucket/${encodeURIComponent(input.bucket)}`, "GET", headers, null, null, 10_000);
+  if (bucketGet.ok) {
+    steps.push({ key: "bucket", label: `Ensure bucket "${input.bucket}"`, ok: true, detail: "already exists", debug: bucketGet.debug });
+  } else if (bucketGet.status === 404) {
+    const seedBucket = `insert into storage.buckets (id, name, public) values ('${input.bucket.replace(/'/g, "''")}', '${input.bucket.replace(/'/g, "''")}', false) on conflict (id) do nothing;`;
+    const b = await sqlExec(seedBucket, headers);
+    steps.push({ key: "bucket", label: `Create bucket "${input.bucket}"`, ok: b.ok, detail: b.ok ? "created via SQL" : b.text.slice(0, 300), debug: b.debug });
+  } else {
+    steps.push({ key: "bucket", label: `Check bucket "${input.bucket}"`, ok: false, detail: `HTTP ${bucketGet.status}: ${bucketGet.text.slice(0, 200)}`, debug: bucketGet.debug });
+  }
+
+  // 3. Re-verify bucket now reachable via storage API
+  const finalCheck = await rawFetch(`${base}/storage/v1/bucket/${encodeURIComponent(input.bucket)}`, "GET", headers, null, null, 10_000);
+  steps.push({ key: "bucket-verify", label: "Verify bucket reachable", ok: finalCheck.ok, detail: finalCheck.ok ? `bucket "${input.bucket}" reachable` : `HTTP ${finalCheck.status}: ${finalCheck.text.slice(0, 200)}`, debug: finalCheck.debug });
+
+  return { ok: steps.every(s => s.ok), steps };
+}
+
 export const ensureDeployInfra = createServerFn({ method: "POST" })
   .middleware([requirePlutoAdmin]).inputValidator((d: unknown) => EnsureInfraInput.parse(d))
   .handler(async ({ data }): Promise<EnsureInfraResult> => {
-    const headers = await serviceHeaders({}, data.operatorToken);
-    if ("error" in headers) return { ok: false, steps: [{ key: "auth", label: "Auth", ok: false, detail: headers.error, debug: null }] };
-
-    const base = getVpsBaseUrl();
-    const steps: EnsureInfraStep[] = [];
-
-    // 1. Ensure service auth.users row exists — storage.objects.owner_id FKs to auth.users(id).
-    //    Without it, uploads by the zero-uuid service caller trigger 23503 FK errors.
-    const seedUser = `insert into auth.users (id, email, role, is_superadmin, email_verified) values ('${SERVICE_USER_ID}', '${SERVICE_USER_EMAIL}', 'service_role', true, true) on conflict (id) do nothing;`;
-    const userRes = await sqlExec(seedUser, headers);
-    steps.push({ key: "service-user", label: "Ensure service auth.users row", ok: userRes.ok, detail: userRes.ok ? "seeded (or already present)" : userRes.text.slice(0, 300), debug: userRes.debug });
-
-    // 2. Check bucket via storage API
-    const bucketGet = await rawFetch(`${base}/storage/v1/bucket/${encodeURIComponent(data.bucket)}`, "GET", headers, null, null, 10_000);
-    if (bucketGet.ok) {
-      steps.push({ key: "bucket", label: `Ensure bucket "${data.bucket}"`, ok: true, detail: "already exists", debug: bucketGet.debug });
-    } else if (bucketGet.status === 404) {
-      // 3. Seed bucket row directly (storage.buckets.owner_id is nullable; the /storage/v1/bucket POST
-      //    always tries to set owner_id = auth.uid() = zero-uuid, which now exists after step 1).
-      const seedBucket = `insert into storage.buckets (id, name, public) values ('${data.bucket.replace(/'/g, "''")}', '${data.bucket.replace(/'/g, "''")}', false) on conflict (id) do nothing;`;
-      const b = await sqlExec(seedBucket, headers);
-      steps.push({ key: "bucket", label: `Create bucket "${data.bucket}"`, ok: b.ok, detail: b.ok ? "created via SQL" : b.text.slice(0, 300), debug: b.debug });
-    } else {
-      steps.push({ key: "bucket", label: `Check bucket "${data.bucket}"`, ok: false, detail: `HTTP ${bucketGet.status}: ${bucketGet.text.slice(0, 200)}`, debug: bucketGet.debug });
-    }
-
-    // 4. Re-verify bucket now reachable via storage API
-    const finalCheck = await rawFetch(`${base}/storage/v1/bucket/${encodeURIComponent(data.bucket)}`, "GET", headers, null, null, 10_000);
-    steps.push({ key: "bucket-verify", label: "Verify bucket reachable", ok: finalCheck.ok, detail: finalCheck.ok ? `bucket "${data.bucket}" reachable` : `HTTP ${finalCheck.status}: ${finalCheck.text.slice(0, 200)}`, debug: finalCheck.debug });
-
-    return { ok: steps.every(s => s.ok), steps };
+    return runEnsureDeployInfra({ bucket: data.bucket, operatorToken: data.operatorToken });
   });
 
 // ---------- deployAll: orchestrated pushMigrations + uploadBundle + verifyDeploy with retries ----------
