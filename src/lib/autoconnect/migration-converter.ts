@@ -9,7 +9,8 @@ export function tableToSql(t: TableDef): string {
 
   const cols: string[] = [];
   const hasId = t.columns.some((c) => c.name === "id");
-  if (!hasId) {
+  const hasExplicitPk = t.columns.some((c) => c.primary);
+  if (!hasId && !hasExplicitPk) {
     cols.push(`  id uuid PRIMARY KEY DEFAULT gen_random_uuid()`);
   }
   for (const c of t.columns) {
