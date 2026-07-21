@@ -10,7 +10,7 @@
 #   sudo SECRET='আসল-shared-secret' \
 #        SERVICE_KEY='sb_secret_xxx...' \
 #        UPSTREAM='https://abcxyz.supabase.co' \
-#        WILDCARD='app.timescard.cloud' \
+#        WILDCARD='app.timescard.app' \
 #        ACME_EMAIL='admin@timescard.cloud' \
 #        SLUG='dbhstock-8myjt4' \
 #        bash deploy/nuke-and-rebuild-sandbox.sh
@@ -26,7 +26,7 @@ set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/.." && pwd)"
 PORT="${PORT:-8787}"
-WILDCARD="${WILDCARD:-app.timescard.cloud}"
+WILDCARD="${WILDCARD:-app.timescard.app}"
 ACME_EMAIL="${ACME_EMAIL:-admin@${WILDCARD#*.}}"
 SITES_ROOT="${SITES_ROOT:-/var/lib/pluto/sites}"
 TAKEOVER_PORT="${TAKEOVER_PORT:-1}"

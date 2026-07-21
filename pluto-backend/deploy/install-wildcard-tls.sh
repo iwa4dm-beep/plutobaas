@@ -2,7 +2,7 @@
 # Issue (or renew) a wildcard TLS cert for *.<APEX> via Let's Encrypt DNS-01.
 #
 # Usage:
-#   sudo bash pluto-backend/deploy/install-wildcard-tls.sh app.timescard.cloud
+#   sudo bash pluto-backend/deploy/install-wildcard-tls.sh app.timescard.app
 #
 # You must provide DNS-01 credentials for your provider. This script supports
 # Cloudflare out of the box (most common); adapt the plugin/creds section for
@@ -18,7 +18,7 @@
 # Manual DNS (any provider): re-run with FORCE_MANUAL=1 to use certbot manual.
 set -euo pipefail
 
-APEX="${1:-app.timescard.cloud}"
+APEX="${1:-app.timescard.app}"
 EMAIL="${ACME_EMAIL:-admin@$(echo "$APEX" | cut -d. -f2-)}"
 CF_INI="${CF_INI:-/etc/letsencrypt/cloudflare.ini}"
 SUDO=""; [ "$(id -u)" != "0" ] && SUDO="sudo"

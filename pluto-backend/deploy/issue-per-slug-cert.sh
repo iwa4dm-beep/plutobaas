@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Issue an HTTP-01 (webroot) Let's Encrypt certificate for a single Pluto slug
 # subdomain and install a dedicated nginx vhost for it. Use this when the base
-# domain (default: app.timescard.cloud) is NOT on Cloudflare / a DNS provider
+# domain (default: app.timescard.app) is NOT on Cloudflare / a DNS provider
 # supported by certbot, so wildcard DNS-01 isn't available.
 #
 # Usage:
@@ -25,8 +25,8 @@ if [ "$(id -u)" -ne 0 ]; then
 fi
 
 SLUG="${1:-}"
-BASE="${2:-app.timescard.cloud}"
-EMAIL="${3:-${CERT_EMAIL:-admin@timescard.cloud}}"
+BASE="${2:-app.timescard.app}"
+EMAIL="${3:-${CERT_EMAIL:-admin@${BASE#*.}}}"
 
 if [[ -z "$SLUG" ]]; then
   echo "Usage: $0 <slug> [base-domain] [admin-email]" >&2

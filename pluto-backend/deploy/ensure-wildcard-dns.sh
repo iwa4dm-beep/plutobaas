@@ -12,12 +12,12 @@
 # Otherwise it prints the exact manual DNS records to add.
 #
 # Usage:
-#   sudo bash deploy/ensure-wildcard-dns.sh app.timescard.cloud
-#   sudo VPS_IP=72.62.67.83 bash deploy/ensure-wildcard-dns.sh app.timescard.cloud
+#   sudo bash deploy/ensure-wildcard-dns.sh app.timescard.app
+#   sudo VPS_IP=185.158.133.1 bash deploy/ensure-wildcard-dns.sh app.timescard.app
 
 set -euo pipefail
 
-APEX="${1:-${WILDCARD:-app.timescard.cloud}}"
+APEX="${1:-${WILDCARD:-app.timescard.app}}"
 CF_INI="${CF_INI:-/etc/letsencrypt/cloudflare.ini}"
 CF_ZONE_ID="${CF_ZONE_ID:-}"
 CF_PROXY="${CF_PROXY:-false}"

@@ -15,7 +15,7 @@
 
 set -uo pipefail
 SLUG="${1:-}"
-BASE="${2:-app.timescard.cloud}"
+BASE="${2:-app.timescard.app}"
 LOG="/var/log/letsencrypt/letsencrypt.log"
 
 red()   { printf "\033[31m%s\033[0m\n" "$*"; }
@@ -43,8 +43,8 @@ if hit "Specified mismatched certificate name" || hit "did you intend to make th
   red "✗ ROOT CAUSE: You cancelled certbot's interactive 'expand cert' prompt (pressed C)."
   cat <<MSG
 
-  certbot found an existing cert named 'app.timescard.cloud' and asked whether
-  to expand it to include '*.app.timescard.cloud'. You answered C (Cancel), so
+  certbot found an existing cert named 'app.${BASE#*.}' and asked whether
+  to expand it to include '*.app.${BASE#*.}'. You answered C (Cancel), so
   the cert was not updated and nginx has no wildcard cert to load.
 
   Fix — rerun WITHOUT the interactive prompt:
