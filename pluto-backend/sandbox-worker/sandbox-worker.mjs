@@ -10,7 +10,7 @@
 //   4. GET /healthz — process liveness.
 //   5. GET /sandbox/health (nginx strips to /health) — authenticated last-deploy status.
 //
-// Nginx (or Caddy) serves the "current" symlink for app.timescard.app, so
+// Nginx (or Caddy) serves the "current" symlink for app.timescard.cloud, so
 // after a successful /unpack the new frontend goes live with zero downtime.
 //
 // Environment:
@@ -40,7 +40,7 @@ const LAST_DEPLOY_FILE = path.join(SITES_ROOT, ".last-deploy.json");
 const SLUG_SECRETS_DIR = path.join(SITES_ROOT, ".slug-secrets");
 const REPAIR_HISTORY_FILE = path.join(SITES_ROOT, ".repair-history.json");
 const REPAIR_HISTORY_MAX = 200;
-const DEFAULT_BASE_DOMAIN = process.env.PLUTO_WILDCARD_HOST || process.env.BASE_DOMAIN || "app.timescard.app";
+const DEFAULT_BASE_DOMAIN = process.env.PLUTO_WILDCARD_HOST || process.env.BASE_DOMAIN || "app.timescard.cloud";
 const NGINX_SITES_ENABLED = process.env.NGINX_SITES_ENABLED || "/etc/nginx/sites-enabled";
 const NGINX_SITES_AVAILABLE = process.env.NGINX_SITES_AVAILABLE || "/etc/nginx/sites-available";
 
@@ -334,24 +334,42 @@ function runUnzip(zipPath, destDir) {
   });
 }
 
-async function pickWebRoot(dir) {
-  // If ZIP unpacked into a single subfolder that contains index.html, promote it.
-  const entries = await fsp.readdir(dir, { withFileTypes: true });
-  if (entries.length === 1 && entries[0].isDirectory()) {
-    const inner = path.join(dir, entries[0].name);
-    const innerEntries = await fsp.readdir(inner);
-    if (innerEntries.includes("index.html") || innerEntries.includes("dist") || innerEntries.includes("build")) return inner;
+async function hasIndexHtml(dir) {
+  try {
+    const st = await fsp.stat(path.join(dir, "index.html"));
+    return st.isFile();
+  } catch {
+    return false;
   }
+}
+
+async function pickWebRoot(dir) {
+  // If ZIP unpacked into a single wrapper folder, promote it before looking
+  // for the actual build output. The final selected web root MUST contain
+  // index.html; otherwise nginx can point primary/current at a non-servable dir.
+  if (await hasIndexHtml(dir)) return dir;
+  const entries = await fsp.readdir(dir, { withFileTypes: true });
+  const dirs = entries.filter((entry) => entry.isDirectory());
+  if (dirs.length === 1) return path.join(dir, dirs[0].name);
   return dir;
 }
 
 async function findServable(root) {
-  // Prefer common build output folders.
-  for (const candidate of ["dist", "build", "public"]) {
+  if (await hasIndexHtml(root)) return root;
+  for (const candidate of ["dist", "build", "public", "out", ".output/public"]) {
     const p = path.join(root, candidate);
-    try { const st = await fsp.stat(p); if (st.isDirectory()) return p; } catch { /* skip */ }
+    try {
+      const st = await fsp.stat(p);
+      if (st.isDirectory() && await hasIndexHtml(p)) return p;
+    } catch { /* skip */ }
   }
-  return root;
+  const entries = await fsp.readdir(root, { withFileTypes: true }).catch(() => []);
+  const dirs = entries.filter((entry) => entry.isDirectory());
+  if (dirs.length === 1) {
+    const nested = await findServable(path.join(root, dirs[0].name));
+    if (await hasIndexHtml(nested)) return nested;
+  }
+  throw new Error(`bundle has no index.html in ${root} or common build folders (dist/build/public/out)`);
 }
 
 // Slug format must match src/lib/pluto/reserved-slugs.ts and migration 0034.
@@ -406,19 +424,24 @@ async function ensurePrimaryDir() {
 }
 
 async function resolveReleaseForPrimary({ workspaceId, slug }) {
+  const withIndex = async (target, key, resolvedWorkspaceId) => {
+    const webRoot = await findServable(target);
+    if (!await hasIndexHtml(webRoot)) throw new Error(`release for '${key}' has no index.html`);
+    return { key, workspaceId: resolvedWorkspaceId, target: webRoot };
+  };
   if (slug) {
     const r = await resolveSlug(slug);
     if (r.ok) {
       const cur = path.join(SITES_ROOT, r.workspaceId, "current");
       const target = await fsp.realpath(cur).catch(() => null);
-      if (target) return { key: slug, workspaceId: r.workspaceId, target };
+      if (target) return withIndex(target, slug, r.workspaceId);
     }
   }
   if (workspaceId) {
     const ws = safeSlug(workspaceId);
     const cur = path.join(SITES_ROOT, ws, "current");
     const target = await fsp.realpath(cur).catch(() => null);
-    if (target) return { key: workspaceId, workspaceId: ws, target };
+    if (target) return withIndex(target, workspaceId, ws);
   }
   throw new Error("no live current release found for workspaceId/slug");
 }
@@ -1535,7 +1558,7 @@ const server = http.createServer(async (req, res) => {
     // Reads /etc/letsencrypt/live/<slug>.<base>/cert.pem (or the wildcard live dir) via `openssl x509`.
     if (req.method === "GET" && (p === "/admin/cert-status" || p === "/sandbox/admin/cert-status")) {
       const slug = String(q.get("slug") || "").toLowerCase().trim();
-      const base = String(q.get("wildcard") || "app.timescard.app").toLowerCase().trim();
+      const base = String(q.get("wildcard") || "app.timescard.cloud").toLowerCase().trim();
       if (!/^[a-z0-9][a-z0-9-]{0,38}[a-z0-9]$/.test(slug)) return json(res, 400, { error: "invalid_slug" });
       if (!/^[a-z0-9.-]{3,253}$/.test(base)) return json(res, 400, { error: "invalid_wildcard" });
       const fqdn = `${slug}.${base}`;
