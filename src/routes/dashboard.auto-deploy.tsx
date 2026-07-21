@@ -663,6 +663,7 @@ function AutoDeployInner() {
     onSuccess: (r) => {
       setLiveProbe(r);
       if (r.reachable) toast.success(`Live URL reachable — HTTP ${r.status}`);
+      else if (r.httpOk) toast.error(`Live URL returned HTTP ${r.status}, but the deployed app is not routed`);
       else toast.error(`Live URL unreachable — HTTP ${r.status || "network error"}`);
     },
   });
@@ -678,6 +679,7 @@ function AutoDeployInner() {
   const servedHint = deployResult?.liveUrls?.servedHint ?? null;
   const backendSaysServed = deployResult?.liveUrls?.served === true;
   const isReachable = liveProbe ? liveProbe.reachable : backendSaysServed;
+  const routeMismatch = Boolean(liveProbe && liveProbe.httpOk && !liveProbe.reachable);
   const busy = phase === "analyzing" || phase === "planning" || phase === "bundling" || phase === "deploying";
   const canRun = !busy && phase !== "awaiting-approval";
 
@@ -922,7 +924,7 @@ function AutoDeployInner() {
 
           {!isReachable && (
             <div className="text-xs text-amber-600 dark:text-amber-400 leading-relaxed">
-              Bundle upload, migrations, bootstrap সব সফল — কিন্তু নিচের URL-এ এখনো কোনো frontend serve হচ্ছে না
+              Bundle upload, migrations, bootstrap সব সফল — কিন্তু নিচের URL-এ {routeMismatch ? "সঠিক deployed frontend route হচ্ছে না" : "এখনো কোনো frontend serve হচ্ছে না"}
               {liveProbe ? ` (HTTP ${liveProbe.status || "network"})` : ""}.
               {servedHint ? ` ${servedHint}` : ""}
             </div>
@@ -959,7 +961,8 @@ function AutoDeployInner() {
 
           {liveProbe && (
             <div className="text-[11px] text-muted-foreground font-mono">
-              Probe: HTTP {liveProbe.status || "-"} · {liveProbe.latencyMs}ms · {liveProbe.contentType ?? "non-html"} · checked just now
+              Probe: HTTP {liveProbe.status || "-"} · {liveProbe.latencyMs}ms · {liveProbe.contentType ?? "non-html"}
+              {liveProbe.httpOk && !liveProbe.reachable ? ` · route mismatch=${liveProbe.routeMismatchReason ?? "wrong-app"}` : ""} · checked just now
               {liveProbe.snippet ? ` · ${liveProbe.snippet.slice(0, 120)}` : ""}
             </div>
           )}
