@@ -1167,6 +1167,9 @@ export const deployAll = createServerFn({ method: "POST" })
         }
       }
       const looksHtml = /<!DOCTYPE|<html/i.test(p.text);
+      const primaryRequired = probeUrl.replace(/\/+$/, "") === defaultPrimaryServedSiteUrl;
+      const primaryActivation = primaryActivationState.current;
+      served = p.ok && (!primaryRequired || primaryActivation?.ok === true);
       servedSiteProbe = {
         url: probeUrl,
         status: p.status,
@@ -1177,9 +1180,6 @@ export const deployAll = createServerFn({ method: "POST" })
         healNote,
         primaryActivationOk: primaryRequired ? primaryActivation?.ok === true : null,
       };
-      const primaryRequired = probeUrl.replace(/\/+$/, "") === defaultPrimaryServedSiteUrl;
-      const primaryActivation = primaryActivationState.current;
-      served = p.ok && (!primaryRequired || primaryActivation?.ok === true);
       if (!p.ok) {
         servedHint = `Bundle uploaded, but ${probeUrl} returned HTTP ${p.status} after auto-heal${healNote ? ` (${healNote})` : ""}. The hostname is not wired to nginx / wildcard SSL, or the sandbox worker did not unpack the release. Run One-click Fix or on VPS: sudo SLUG='${deploySlug}' bash deploy/repair-sandbox-worker-and-site.sh.`;
       } else if (primaryRequired && primaryActivation?.ok !== true) {
