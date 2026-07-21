@@ -176,25 +176,21 @@ async function verifyAdminToken(authHeader: string): Promise<VerifiedAdmin> {
 
 export const requirePlutoAdmin = createMiddleware({ type: "function" })
   .client(async ({ next }) => {
-    let authHeader = readClientAuthHeader();
-    // When one server fn calls another on the server, `.client()` still runs
-    // but window/localStorage are absent. Forward the outer request's
-    // Authorization header so nested calls preserve admin context.
-    if (!authHeader && typeof window === "undefined") {
-      try {
-        const mod = await import("@tanstack/react-start/server");
-        const h = mod.getRequestHeader?.("authorization");
-        if (h) authHeader = h;
-      } catch {
-        // outside a request context — leave empty
-      }
-    }
+    const authHeader = readClientAuthHeader();
     return next({
       sendContext: { __plutoAuthHeader: authHeader ?? "" },
     });
   })
   .server(async ({ next, context }) => {
-    const header = (context as { __plutoAuthHeader?: string }).__plutoAuthHeader ?? "";
+    let header = (context as { __plutoAuthHeader?: string }).__plutoAuthHeader ?? "";
+    // Nested server-fn calls: `.client()` runs on the server with no
+    // localStorage and sends an empty header. Recover by reading the outer
+    // request's Authorization header from the server-only helper.
+    if (!header || !/^Bearer\s+\S+/i.test(header)) {
+      const { readIncomingAuthHeader } = await import("./admin-request-header.server");
+      const incoming = readIncomingAuthHeader();
+      if (incoming) header = incoming;
+    }
     if (!header || !/^Bearer\s+\S+/i.test(header)) {
       throw authError(401, {
         error: "unauthorized",
@@ -207,3 +203,4 @@ export const requirePlutoAdmin = createMiddleware({ type: "function" })
   });
 
 export type PlutoAdminContext = { plutoAdmin: VerifiedAdmin };
+
