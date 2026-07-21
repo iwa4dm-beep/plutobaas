@@ -123,8 +123,43 @@ async function verifyAdminToken(authHeader: string): Promise<VerifiedAdmin> {
     throw authError(401, { error: "unauthorized", message: "Invalid session", hint: "আবার sign in করুন।" });
   }
   const role = (user.role as string | undefined) ?? "";
-  const isSuper = Boolean(user.is_superadmin);
-  if (!isSuper && role !== "admin") {
+  const appMeta = (user.app_metadata as Record<string, unknown> | undefined) ?? {};
+  const userMeta = (user.user_metadata as Record<string, unknown> | undefined) ?? {};
+  const metaRole = String(appMeta.role ?? userMeta.role ?? "");
+  const rolesArr = [
+    ...(Array.isArray(appMeta.roles) ? (appMeta.roles as unknown[]) : []),
+    ...(Array.isArray(userMeta.roles) ? (userMeta.roles as unknown[]) : []),
+  ].map((r) => String(r));
+  const isSuper =
+    Boolean(user.is_superadmin) ||
+    Boolean(appMeta.is_superadmin) ||
+    Boolean(appMeta.superadmin) ||
+    Boolean(userMeta.is_superadmin);
+  const isAdmin =
+    isSuper ||
+    role === "admin" ||
+    metaRole === "admin" ||
+    metaRole === "superadmin" ||
+    rolesArr.includes("admin") ||
+    rolesArr.includes("superadmin");
+
+  // Fallback: probe a privileged admin endpoint. If the backend allows the
+  // caller to list workspaces, they ARE an admin — even if the /auth/v1/user
+  // payload doesn't expose a role flag (Supabase's default response omits
+  // custom claims when app_metadata is empty).
+  let allowed = isAdmin;
+  if (!allowed) {
+    try {
+      const probe = await fetch(`${serverPlutoUrl()}/admin/v1/workspaces?limit=1`, {
+        method: "GET",
+        headers: { Authorization: authHeader, Accept: "application/json" },
+      });
+      if (probe.ok) allowed = true;
+    } catch {
+      // ignore — fall through to 403
+    }
+  }
+  if (!allowed) {
     throw authError(403, {
       error: "forbidden",
       message: "Admin role required",
