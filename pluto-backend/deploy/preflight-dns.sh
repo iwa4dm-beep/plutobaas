@@ -3,7 +3,7 @@
 #
 # Usage:
 #   sudo bash pluto-backend/deploy/preflight-dns.sh <slug> [base]
-#     base defaults to app.timescard.cloud
+#     base defaults to app.timescard.app
 #
 # Exit codes:
 #   0  everything green (either exact A or covered by wildcard)
@@ -18,7 +18,7 @@
 
 set -uo pipefail
 SLUG="${1:-}"
-BASE="${2:-app.timescard.cloud}"
+BASE="${2:-app.timescard.app}"
 
 red()   { printf "\033[31m%s\033[0m\n" "$*"; }
 green() { printf "\033[32m%s\033[0m\n" "$*"; }
@@ -100,7 +100,7 @@ done
 
 FQDN="${SLUG}.${BASE}"
 WILDCARD_LABEL="*.${BASE#*.}"   # wildcard host for the base zone segment
-ZONE_ROOT="${BASE#*.}"          # e.g. app.timescard.cloud → timescard.cloud
+ZONE_ROOT="${BASE#*.}"          # e.g. app.timescard.app → timescard.app
 WEBROOT="/var/www/certbot"
 
 bold "▸ Preflight for ${FQDN}"

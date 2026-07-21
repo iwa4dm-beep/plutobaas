@@ -10,7 +10,7 @@
 //   4. GET /healthz — process liveness.
 //   5. GET /sandbox/health (nginx strips to /health) — authenticated last-deploy status.
 //
-// Nginx (or Caddy) serves the "current" symlink for app.timescard.cloud, so
+// Nginx (or Caddy) serves the "current" symlink for app.timescard.app, so
 // after a successful /unpack the new frontend goes live with zero downtime.
 //
 // Environment:
@@ -40,7 +40,7 @@ const LAST_DEPLOY_FILE = path.join(SITES_ROOT, ".last-deploy.json");
 const SLUG_SECRETS_DIR = path.join(SITES_ROOT, ".slug-secrets");
 const REPAIR_HISTORY_FILE = path.join(SITES_ROOT, ".repair-history.json");
 const REPAIR_HISTORY_MAX = 200;
-const DEFAULT_BASE_DOMAIN = process.env.PLUTO_WILDCARD_HOST || process.env.BASE_DOMAIN || "app.timescard.cloud";
+const DEFAULT_BASE_DOMAIN = process.env.PLUTO_WILDCARD_HOST || process.env.BASE_DOMAIN || "app.timescard.app";
 const NGINX_SITES_ENABLED = process.env.NGINX_SITES_ENABLED || "/etc/nginx/sites-enabled";
 const NGINX_SITES_AVAILABLE = process.env.NGINX_SITES_AVAILABLE || "/etc/nginx/sites-available";
 
@@ -1535,7 +1535,7 @@ const server = http.createServer(async (req, res) => {
     // Reads /etc/letsencrypt/live/<slug>.<base>/cert.pem (or the wildcard live dir) via `openssl x509`.
     if (req.method === "GET" && (p === "/admin/cert-status" || p === "/sandbox/admin/cert-status")) {
       const slug = String(q.get("slug") || "").toLowerCase().trim();
-      const base = String(q.get("wildcard") || "app.timescard.cloud").toLowerCase().trim();
+      const base = String(q.get("wildcard") || "app.timescard.app").toLowerCase().trim();
       if (!/^[a-z0-9][a-z0-9-]{0,38}[a-z0-9]$/.test(slug)) return json(res, 400, { error: "invalid_slug" });
       if (!/^[a-z0-9.-]{3,253}$/.test(base)) return json(res, 400, { error: "invalid_wildcard" });
       const fqdn = `${slug}.${base}`;

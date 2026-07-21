@@ -21,7 +21,7 @@
 #   SKIP_PULL=1 skip git pull step
 #   SKIP_MIGRATIONS=1 skip migration preflight gate
 #   SKIP_SSL=1        pass through to install-sites-proxy.sh (no cert issuance)
-#   ENABLE_WILDCARD_SUBDOMAINS=1 also install wildcard <slug>.app.timescard.cloud vhost
+#   ENABLE_WILDCARD_SUBDOMAINS=1 also install wildcard <slug>.app.timescard.app vhost
 #   UPSTREAM    required on first install; existing env value is preserved later
 #   SERVICE_KEY required on first install for /sandbox/unpack; existing value is preserved later
 set -euo pipefail
@@ -62,7 +62,7 @@ if [ -z "${SECRET:-}" ] && { [ -x "$DEPLOY/print-sandbox-secret.sh" ] || [ -r "$
 fi
 [ -n "${SECRET:-}" ] || die "SECRET env is required. Run: sudo bash deploy/print-sandbox-secret.sh"
 
-WILDCARD="${WILDCARD:-app.timescard.cloud}"
+WILDCARD="${WILDCARD:-app.timescard.app}"
 ACME_EMAIL="${ACME_EMAIL:-admin@${WILDCARD#*.}}"
 
 # 1) pull
@@ -122,7 +122,7 @@ else
   die "missing $DEPLOY/refresh-worker.sh — git pull did not bring the current deploy scripts"
 fi
 
-# 3) nginx sites-proxy. Primary frontend is the default: app.timescard.cloud
+# 3) nginx sites-proxy. Primary frontend is the default: app.timescard.app
 # serves the latest activated project, so wildcard/per-slug SSL is optional.
 if [ "${SKIP_WILDCARD:-0}" = "1" ] || [ "${ENABLE_WILDCARD_SUBDOMAINS:-0}" != "1" ]; then
   log "install sites-proxy (API routes only; wildcard vhost skipped; primary frontend mode)"
