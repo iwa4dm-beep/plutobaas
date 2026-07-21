@@ -179,12 +179,13 @@ set -euo pipefail
 umask 022
 DEPLOY_DIR="${DEPLOY_DIR}"
 ACTION="\${1:-}"; shift || true
-SLUG=""; WILDCARD=""; ACME_EMAIL=""
+SLUG=""; WILDCARD=""; ACME_EMAIL=""; UPSTREAM=""
 while [ \$# -gt 0 ]; do
   case "\$1" in
     --slug) SLUG="\${2:-}"; shift 2;;
     --wildcard) WILDCARD="\${2:-}"; shift 2;;
     --acme-email) ACME_EMAIL="\${2:-}"; shift 2;;
+    --upstream) UPSTREAM="\${2:-}"; shift 2;;
     *) echo "unknown arg: \$1" >&2; exit 2;;
   esac
 done
@@ -198,6 +199,10 @@ run_one() {
       [ -n "\$SLUG" ] && APEX_DOMAIN="\${WILDCARD:-app.timescard.cloud}" bash "\$DEPLOY_DIR/set-primary-frontend.sh" --activate "\$SLUG"
       ;;
     deploy-and-verify) SLUG="\$SLUG" bash "\$DEPLOY_DIR/deploy-and-verify.sh";;
+    set-upstream)
+      [ -n "\$UPSTREAM" ] || { echo "set-upstream requires --upstream <url>" >&2; exit 2; }
+      UPSTREAM="\$UPSTREAM" bash "\$DEPLOY_DIR/set-upstream-env.sh"
+      ;;
     *) echo "unknown action: \$1" >&2; exit 2;;
   esac
 }
@@ -207,7 +212,7 @@ case "\$ACTION" in
     run_one primary-frontend
     run_one deploy-and-verify
     ;;
-  worker-and-site|wildcard-ssl|per-slug-ssl|primary-frontend|deploy-and-verify) run_one "\$ACTION";;
+  worker-and-site|wildcard-ssl|per-slug-ssl|primary-frontend|deploy-and-verify|set-upstream) run_one "\$ACTION";;
   *) echo "invalid action: \$ACTION" >&2; exit 2;;
 esac
 PLUTO_REPAIR_EOF
