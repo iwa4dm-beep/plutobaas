@@ -52,7 +52,7 @@ disable_conflicting_vhosts() {
     [ -L "$conf" ] && real="$(readlink -f "$conf" 2>/dev/null || echo "$conf")"
     [ "$conf" = "$NGX_ENABL" ] && continue
     [ "$real" = "$NGX_AVAIL" ] && continue
-    grep -Eq "server_name[[:space:]][^;]*\b${APEX//./\\.}\b" "$real" 2>/dev/null || continue
+    grep -Eq "server_name[[:space:]][^;]*${APEX//./\\.}([[:space:];]|$)" "$real" 2>/dev/null || continue
 
     mkdir -p "$CONFLICT_BACKUP_DIR"
     dest="$CONFLICT_BACKUP_DIR/${stamp}-$(basename "$conf")"
