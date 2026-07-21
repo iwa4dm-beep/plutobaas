@@ -1104,8 +1104,8 @@ export const deployAll = createServerFn({ method: "POST" })
     const autoDerivedCandidates: string[] = [];
     if (template) autoDerivedCandidates.push(expandTemplate(template));
     autoDerivedCandidates.push(defaultPrimaryServedSiteUrl);
-    autoDerivedCandidates.push(`https://${deploySlug}.app.timescard.app`);
-    autoDerivedCandidates.push(`https://${deploySlug}-dev.app.timescard.app`);
+    autoDerivedCandidates.push(`https://${deploySlug}.app.timescard.cloud`);
+    autoDerivedCandidates.push(`https://${deploySlug}-dev.app.timescard.cloud`);
     if (sandboxBase) autoDerivedCandidates.push(`${sandboxBase}/sites/${deploySlug}`);
     autoDerivedCandidates.push(`${base}/sites/${deploySlug}`);
     autoDerivedCandidates.push(`${base}/sandbox/sites/${deploySlug}`);
