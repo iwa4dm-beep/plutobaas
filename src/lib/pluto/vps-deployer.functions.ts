@@ -611,7 +611,10 @@ export type ServedSiteDiagnostics = {
   hint?: string;
 };
 
-const DEFAULT_PRIMARY_FRONTEND_URL = "https://app.timescard.app";
+// app.timescard.cloud resolves to the VPS (72.62.67.83). app.timescard.app has
+// no DNS record, so defaulting to it makes every served-site probe fail with
+// "fetch failed". Callers can override via PLUTO_PRIMARY_FRONTEND_URL.
+const DEFAULT_PRIMARY_FRONTEND_URL = "https://app.timescard.cloud";
 
 function primaryFrontendUrl(): string {
   return (process.env.PLUTO_PRIMARY_FRONTEND_URL || DEFAULT_PRIMARY_FRONTEND_URL).replace(/\/+$/, "");
@@ -1101,8 +1104,8 @@ export const deployAll = createServerFn({ method: "POST" })
     const autoDerivedCandidates: string[] = [];
     if (template) autoDerivedCandidates.push(expandTemplate(template));
     autoDerivedCandidates.push(defaultPrimaryServedSiteUrl);
-    autoDerivedCandidates.push(`https://${deploySlug}.app.timescard.app`);
-    autoDerivedCandidates.push(`https://${deploySlug}-dev.app.timescard.app`);
+    autoDerivedCandidates.push(`https://${deploySlug}.app.timescard.cloud`);
+    autoDerivedCandidates.push(`https://${deploySlug}-dev.app.timescard.cloud`);
     if (sandboxBase) autoDerivedCandidates.push(`${sandboxBase}/sites/${deploySlug}`);
     autoDerivedCandidates.push(`${base}/sites/${deploySlug}`);
     autoDerivedCandidates.push(`${base}/sandbox/sites/${deploySlug}`);

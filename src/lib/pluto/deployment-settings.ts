@@ -16,14 +16,19 @@ export const DEFAULT_SETTINGS: DeploymentSettings = {
   autoDeployOnPush: false,
   strictServedSite: true,
   strictSsl: false,
-  servedSiteUrl: "https://app.timescard.app",
+  // app.timescard.cloud is the apex that currently resolves to the VPS
+  // (72.62.67.83). app.timescard.app has no DNS record, so using it as the
+  // default causes every served-site probe to fail with "fetch failed".
+  servedSiteUrl: "https://app.timescard.cloud",
   servedSiteUrlTemplate: "",
   notifyEmail: "",
   defaultBranch: "main",
 };
 
 const LEGACY_SLUG_TEMPLATE = "https://{slug}.app.timescard.cloud";
-const LEGACY_PRIMARY_URL = "https://app.timescard.cloud";
+// Historical default that pointed at a non-resolving apex — migrate to the
+// current DEFAULT_SETTINGS.servedSiteUrl on load.
+const LEGACY_PRIMARY_URL = "https://app.timescard.app";
 
 const LEGACY_KEYS = {
   servedSiteUrl: "pluto:servedSiteUrl",
