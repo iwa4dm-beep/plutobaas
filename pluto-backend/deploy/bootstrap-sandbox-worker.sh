@@ -33,6 +33,7 @@ PORT="${PORT:-8787}"
 SITES_ROOT="${SITES_ROOT:-/var/lib/pluto/sites}"
 UNIT="${UNIT:-pluto-sandbox-worker}"
 ENV_FILE="${ENV_FILE:-/etc/pluto/sandbox-worker.env}"
+WILDCARD="${WILDCARD:-${PLUTO_WILDCARD_HOST:-app.timescard.cloud}}"
 SECRET="${SECRET:-${SANDBOX_SHARED_SECRET:-${PLUTO_SANDBOX_WORKER_SECRET:-}}}"
 SERVICE_KEY="${SERVICE_KEY:-${PLUTO_SERVICE_ROLE_KEY:-}}"
 UPSTREAM="${UPSTREAM:-${PLUTO_UPSTREAM_URL:-}}"
@@ -160,6 +161,7 @@ SANDBOX_WORKER_PORT=${PORT}
 SITES_ROOT=${SITES_ROOT}
 SANDBOX_SITES_ROOT=${SITES_ROOT}
 PLUTO_UPSTREAM_URL=${UPSTREAM}
+PLUTO_WILDCARD_HOST=${WILDCARD}
 EOF
 if [ -n "$SERVICE_KEY" ]; then
   echo "PLUTO_SERVICE_ROLE_KEY=${SERVICE_KEY}" >> "$TMP"
@@ -192,11 +194,11 @@ done
 run_one() {
   case "\$1" in
     worker-and-site) SLUG="\$SLUG" WILDCARD="\$WILDCARD" ACME_EMAIL="\$ACME_EMAIL" bash "\$DEPLOY_DIR/repair-sandbox-worker-and-site.sh";;
-    wildcard-ssl)    APEX="\${WILDCARD:-app.timescard.app}" ACME_EMAIL="\$ACME_EMAIL" bash "\$DEPLOY_DIR/fix-wildcard-ssl.sh" "\$SLUG";;
-    per-slug-ssl)    bash "\$DEPLOY_DIR/issue-per-slug-cert.sh" "\$SLUG" "\${WILDCARD:-app.timescard.app}" "\${ACME_EMAIL:-admin@timescard.cloud}";;
+    wildcard-ssl)    APEX="\${WILDCARD:-app.timescard.cloud}" ACME_EMAIL="\$ACME_EMAIL" bash "\$DEPLOY_DIR/fix-wildcard-ssl.sh" "\$SLUG";;
+    per-slug-ssl)    bash "\$DEPLOY_DIR/issue-per-slug-cert.sh" "\$SLUG" "\${WILDCARD:-app.timescard.cloud}" "\${ACME_EMAIL:-admin@timescard.cloud}";;
     primary-frontend)
-      APEX_DOMAIN="\${WILDCARD:-app.timescard.app}" bash "\$DEPLOY_DIR/set-primary-frontend.sh" --install --email "\${ACME_EMAIL:-admin@timescard.cloud}"
-      [ -n "\$SLUG" ] && APEX_DOMAIN="\${WILDCARD:-app.timescard.app}" bash "\$DEPLOY_DIR/set-primary-frontend.sh" --activate "\$SLUG"
+      APEX_DOMAIN="\${WILDCARD:-app.timescard.cloud}" bash "\$DEPLOY_DIR/set-primary-frontend.sh" --install --email "\${ACME_EMAIL:-admin@timescard.cloud}"
+      [ -n "\$SLUG" ] && APEX_DOMAIN="\${WILDCARD:-app.timescard.cloud}" bash "\$DEPLOY_DIR/set-primary-frontend.sh" --activate "\$SLUG"
       ;;
     deploy-and-verify) SLUG="\$SLUG" bash "\$DEPLOY_DIR/deploy-and-verify.sh";;
     set-upstream)

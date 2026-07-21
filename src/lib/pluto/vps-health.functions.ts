@@ -90,7 +90,7 @@ export async function fetchActiveSubdomains(baseDomain?: string): Promise<Active
   const base = getVpsBaseUrl();
   const sandboxUrl = (envFirst("PLUTO_SANDBOX_URL") || `${base}/sandbox`).replace(/\/+$/, "");
   const secret = envFirst("PLUTO_SANDBOX_SECRET", "PLUTO_SANDBOX_WORKER_SECRET", "SANDBOX_SHARED_SECRET");
-  const domain = (baseDomain || process.env.PLUTO_WILDCARD_HOST || "app.timescard.app").replace(/^\*\./, "").replace(/^https?:\/\//, "").replace(/\/+$/, "");
+  const domain = (baseDomain || process.env.PLUTO_WILDCARD_HOST || "app.timescard.cloud").replace(/^\*\./, "").replace(/^https?:\/\//, "").replace(/\/+$/, "");
   if (!secret) {
     return {
       ok: false,

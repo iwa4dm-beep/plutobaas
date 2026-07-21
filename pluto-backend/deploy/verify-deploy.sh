@@ -9,13 +9,13 @@
 #
 # Usage:
 #   bash pluto-backend/deploy/verify-deploy.sh <slug>
-#   APEX=app.timescard.app API=api.timescard.cloud bash ... <slug>
+#   APEX=app.timescard.cloud API=api.timescard.cloud bash ... <slug>
 
 set -uo pipefail
 
 SLUG="${1:-}"
 [ -z "$SLUG" ] && { echo "Usage: $0 <slug>"; exit 2; }
-APEX="${APEX:-app.timescard.app}"
+APEX="${APEX:-app.timescard.cloud}"
 API="${API:-api.timescard.cloud}"
 here="$(cd "$(dirname "$0")" && pwd)"
 

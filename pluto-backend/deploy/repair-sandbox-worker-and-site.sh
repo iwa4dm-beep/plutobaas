@@ -21,7 +21,7 @@ ROOT="$(cd "$HERE/.." && pwd)"
 SLUG="${SLUG:-${1:-}}"
 PORT="${PORT:-8787}"
 SITES_ROOT="${SITES_ROOT:-/var/lib/pluto/sites}"
-WILDCARD="${WILDCARD:-app.timescard.app}"
+WILDCARD="${WILDCARD:-app.timescard.cloud}"
 ACME_EMAIL="${ACME_EMAIL:-admin@${WILDCARD#*.}}"
 
 [ -n "$SLUG" ] || { echo "Usage: sudo SLUG='<slug>' bash deploy/repair-sandbox-worker-and-site.sh"; exit 2; }
