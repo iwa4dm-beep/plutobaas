@@ -435,7 +435,7 @@ async function atomicSymlink(linkPath, targetRelPath) {
   await fsp.rename(tmp, linkPath);
 }
 
-async function unpack({ workspaceId, slug, bucket, key, env, channel, migrations, serviceKey }) {
+async function unpack({ workspaceId, slug, bucket, key, env, channel, migrations, serviceKey, storageBase }) {
   // Keep two workspace forms:
   //   rawWorkspaceId  → auth/storage routing header (must preserve UUID hyphens)
   //   ws              → filesystem-safe directory name
@@ -458,7 +458,7 @@ async function unpack({ workspaceId, slug, bucket, key, env, channel, migrations
   const releaseDir = path.join(wsRoot, `release-${stamp}-${randomUUID().slice(0, 8)}`);
   await fsp.mkdir(releaseDir, { recursive: true });
 
-  const zipBytes = await fetchBundle(bucket, key, { serviceKey, workspaceId: rawWorkspaceId || ws });
+  const zipBytes = await fetchBundle(bucket, key, { serviceKey, storageBase, workspaceId: rawWorkspaceId || ws });
   const zipPath = path.join(wsRoot, `bundle-${stamp}.zip`);
   await fsp.writeFile(zipPath, zipBytes);
 
