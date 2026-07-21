@@ -1,7 +1,8 @@
 # Wildcard vhost: *.app.timescard.cloud → pluto-sandbox-worker /sites/<slug>/
 # For <slug>-dev.app.timescard.cloud → /preview/<slug>/  (preview channel)
 #
-# Requires a wildcard TLS cert for *.app.timescard.cloud + app.timescard.cloud
+# Requires a wildcard TLS cert for *.app.timescard.cloud. The apex
+# app.timescard.cloud is intentionally reserved for the primary frontend vhost.
 # (issue via: sudo bash deploy/install-wildcard-tls.sh app.timescard.cloud)
 #
 # Rendered/installed by: deploy/install-sites-proxy.sh --wildcard
@@ -11,7 +12,7 @@
 server {
     listen 80;
     listen [::]:80;
-    server_name *.__APEX__ __APEX__;
+    server_name *.__APEX__;
     location /.well-known/acme-challenge/ { root /var/www/certbot; }
     location / { return 301 https://$host$request_uri; }
 }

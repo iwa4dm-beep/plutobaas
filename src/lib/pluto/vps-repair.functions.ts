@@ -11,7 +11,7 @@ import { requirePlutoAdmin } from "./admin-middleware";
 import { z } from "zod";
 import { getVpsBaseUrl } from "./vps-client";
 
-export type RepairAction = "worker-and-site" | "wildcard-ssl" | "per-slug-ssl" | "deploy-and-verify" | "all";
+export type RepairAction = "worker-and-site" | "wildcard-ssl" | "per-slug-ssl" | "primary-frontend" | "deploy-and-verify" | "all";
 
 export type RepairResult = {
   ok: boolean;
@@ -33,7 +33,7 @@ function envFirst(...keys: string[]): string {
 }
 
 const Input = z.object({
-  action: z.enum(["worker-and-site", "wildcard-ssl", "per-slug-ssl", "deploy-and-verify", "all"]),
+  action: z.enum(["worker-and-site", "wildcard-ssl", "per-slug-ssl", "primary-frontend", "deploy-and-verify", "all"]),
   slug: z.string().min(1).max(128).optional(),
   wildcard: z.string().min(3).max(253).optional(),
   acmeEmail: z.string().email().max(254).optional(),

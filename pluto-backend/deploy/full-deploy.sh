@@ -5,7 +5,7 @@
 #   1) safe git pull (keeps whitelisted files via KEEP="a b c")
 #   2) migration preflight (roles → plan → dry-run → apply → verify)
 #   3) bootstrap / refresh pluto-sandbox-worker (systemd + env)
-#   4) install / refresh nginx sites-proxy (wildcard SSL if requested)
+#   4) install / refresh nginx sites-proxy + primary frontend vhost
 #   5) nginx -t && systemctl reload nginx
 #   6) verify-deploy.sh <slug>   (if SLUG given)
 #
@@ -21,6 +21,7 @@
 #   SKIP_PULL=1 skip git pull step
 #   SKIP_MIGRATIONS=1 skip migration preflight gate
 #   SKIP_SSL=1        pass through to install-sites-proxy.sh (no cert issuance)
+#   ENABLE_WILDCARD_SUBDOMAINS=1 also install wildcard <slug>.app.timescard.cloud vhost
 #   UPSTREAM    required on first install; existing env value is preserved later
 #   SERVICE_KEY required on first install for /sandbox/unpack; existing value is preserved later
 set -euo pipefail
@@ -121,9 +122,10 @@ else
   die "missing $DEPLOY/refresh-worker.sh — git pull did not bring the current deploy scripts"
 fi
 
-# 3) nginx sites-proxy
-if [ "${SKIP_WILDCARD:-0}" = "1" ]; then
-  log "install sites-proxy (API routes only; wildcard vhost skipped)"
+# 3) nginx sites-proxy. Primary frontend is the default: app.timescard.cloud
+# serves the latest activated project, so wildcard/per-slug SSL is optional.
+if [ "${SKIP_WILDCARD:-0}" = "1" ] || [ "${ENABLE_WILDCARD_SUBDOMAINS:-0}" != "1" ]; then
+  log "install sites-proxy (API routes only; wildcard vhost skipped; primary frontend mode)"
   ACME_EMAIL="$ACME_EMAIL" bash "$DEPLOY/install-sites-proxy.sh" || die "install-sites-proxy failed"
   WILDCARD_LINK="/etc/nginx/sites-enabled/pluto-wildcard-${WILDCARD}.conf"
   WILDCARD_CERT="/etc/letsencrypt/live/${WILDCARD}/fullchain.pem"
@@ -139,6 +141,11 @@ else
   [ "${SKIP_SSL:-0}" = "1" ] && SKIP_SSL_ARG="--skip-ssl"
   ACME_EMAIL="$ACME_EMAIL" bash "$DEPLOY/install-sites-proxy.sh" \
     --wildcard "$WILDCARD" $SKIP_SSL_ARG || die "install-sites-proxy failed"
+fi
+
+if [ "${SKIP_PRIMARY_FRONTEND:-0}" != "1" ] && [ -f "$DEPLOY/set-primary-frontend.sh" ]; then
+  log "install primary frontend vhost ($WILDCARD)"
+  APEX_DOMAIN="$WILDCARD" bash "$DEPLOY/set-primary-frontend.sh" --install --email "$ACME_EMAIL" || die "primary frontend install failed"
 fi
 
 # 4) nginx reload

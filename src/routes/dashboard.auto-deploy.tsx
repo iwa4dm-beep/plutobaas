@@ -787,9 +787,9 @@ function AutoDeployInner() {
         </summary>
         <div className="mt-3 space-y-3 text-sm">
           <p className="text-xs text-muted-foreground">
-            Health check-এর served-site probe এই URL থেকে হবে। empty রাখলে <code className="font-mono">PLUTO_SERVED_SITE_URL</code> /
-            <code className="font-mono"> _TEMPLATE</code> env, তারপর autodetect (worker, nginx <code>/sites/&lt;slug&gt;</code>) fallback হবে।
-            Bundle unpack হওয়ার পর served-site 404 হলে deploy auto-heal চালাবে; তবুও serve না হলে strict mode deploy fail করবে।
+            Health check-এর served-site probe এই URL থেকে হবে। default হিসেবে প্রতিটি deploy একই primary frontend
+            <code className="font-mono"> https://app.timescard.cloud</code> এ flip হবে; empty রাখলে env/autodetect fallback ব্যবহার হবে।
+            Bundle unpack হওয়ার পর served-site fail হলে deploy auto-heal চালাবে; তবুও serve না হলে strict mode deploy fail করবে।
           </p>
           <div>
             <label className="text-xs text-muted-foreground">Explicit URL (highest priority)</label>
@@ -797,7 +797,7 @@ function AutoDeployInner() {
               type="text"
               value={servedSiteUrl}
               onChange={(e) => saveServedSiteConfig({ url: e.target.value })}
-              placeholder="https://myapp.example.com"
+              placeholder="https://app.timescard.cloud"
               className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm font-mono"
             />
           </div>
@@ -809,7 +809,7 @@ function AutoDeployInner() {
               type="text"
               value={servedSiteUrlTemplate}
               onChange={(e) => saveServedSiteConfig({ template: e.target.value })}
-              placeholder="https://{slug}.app.timescard.cloud"
+              placeholder="optional, e.g. https://api.timescard.cloud/sites/{slug}"
               className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm font-mono"
             />
           </div>
