@@ -120,12 +120,21 @@ function wrapDefault(v: string, type: string): string | null {
   // Bare identifier or expression: to avoid Postgres treating it as a
   // column reference ("cannot use column reference in DEFAULT expression"),
   // treat it as a string literal only if the target type is text-like.
-  const isTextLike = /^(text|citext|varchar|character|char|uuid|inet|cidr|bytea|name)/.test(lowerType) || lowerType.startsWith('"') || /^[a-z_][a-z0-9_]*$/i.test(lowerType);
+  // NOTE: previously this fell through to a broad `/^[a-z_]\w*$/` identifier
+  // check, which matched non-text types like `boolean`, `jsonb`, `date`, etc.
+  // and produced `DEFAULT 'BOOLEAN'` on boolean columns → Postgres 22P02
+  // ("invalid input syntax for type boolean: \"BOOLEAN\"").
+  const isTextLike =
+    /^(text|citext|varchar|character\s+varying|character|char|nvarchar|varchar2|uuid|inet|cidr|macaddr|bytea|name|xml|ltree|tsvector|tsquery)\b/.test(lowerType) ||
+    lowerType.startsWith('"') ||
+    lowerType.endsWith("[]") && /^(text|varchar|char|uuid)/.test(lowerType);
   if (isTextLike) {
     return `'${trimmed.replace(/'/g, "''")}'`;
   }
 
-  // Unknown/unsafe expression for a non-text type — drop the DEFAULT.
+  // For booleans: any non-standard token (e.g. bare `BOOLEAN`, `TRUE()`, …)
+  // is unsafe — drop the DEFAULT rather than emit a broken literal.
+  // For numeric/date/enum/other: also drop unknown bare identifiers.
   return null;
 }
 

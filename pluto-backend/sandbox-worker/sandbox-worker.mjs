@@ -276,30 +276,47 @@ async function sandboxHealth(filter = {}) {
   };
 }
 
+function pickStorageBase(overrideBase) {
+  const clean = (u) => String(u || "").trim().replace(/\/+$/, "");
+  const isValidHttp = (u) => /^https?:\/\/[A-Za-z0-9._-]+(:\d+)?(\/.*)?$/.test(u);
+  const isPlaceholder = (u) => /<[^>]+>|your-project|example\.com|placeholder|supabase-ref/i.test(u);
+  const ovr = clean(overrideBase);
+  if (ovr && isValidHttp(ovr) && !isPlaceholder(ovr)) return { base: ovr, source: "request-body storageBase" };
+  const up = clean(UPSTREAM);
+  if (up && isValidHttp(up) && !isPlaceholder(up)) return { base: up, source: "env PLUTO_UPSTREAM_URL" };
+  return { base: "", source: "", reason: !up ? "PLUTO_UPSTREAM_URL is empty" : (isPlaceholder(up) ? `PLUTO_UPSTREAM_URL contains placeholder "${up}"` : `PLUTO_UPSTREAM_URL is not a valid URL "${up}"`) };
+}
+
 async function fetchBundle(bucket, key, opts = {}) {
   const overrideKey = typeof opts.serviceKey === "string" && opts.serviceKey.trim() ? opts.serviceKey.trim() : "";
   const effectiveKey = overrideKey || SERVICE_KEY;
   if (!effectiveKey) throw new Error("PLUTO_SERVICE_ROLE_KEY is required for POST /unpack (and no serviceKey was supplied in the request body)");
-  const url = `${UPSTREAM}/storage/v1/object/${encodeURIComponent(bucket)}/${key.split("/").map(encodeURIComponent).join("/")}`;
+  const picked = pickStorageBase(opts.storageBase);
+  if (!picked.base) {
+    throw new Error(
+      `storage base URL is not usable: ${picked.reason || "no valid base"}. ` +
+      `Fix: pass "storageBase" in the /unpack body (e.g. https://api.timescard.cloud), ` +
+      `or set PLUTO_UPSTREAM_URL in /etc/pluto/sandbox-worker.env to a real URL and restart the worker.`
+    );
+  }
+  const url = `${picked.base}/storage/v1/object/${encodeURIComponent(bucket)}/${key.split("/").map(encodeURIComponent).join("/")}`;
   const headers = { apikey: effectiveKey, authorization: `Bearer ${effectiveKey}` };
   if (opts.workspaceId) headers["x-workspace-id"] = String(opts.workspaceId);
   let res;
   try {
     res = await fetch(url, { headers });
   } catch (e) {
-    // undici throws a generic TypeError('fetch failed') on ECONNREFUSED / DNS / TLS
-    // errors. Surface the URL and root cause so operators can see the misconfig.
     const cause = e?.cause?.code || e?.cause?.message || e?.cause || e?.message || String(e);
-    const hint = /127\.0\.0\.1|localhost/.test(UPSTREAM)
-      ? ` — PLUTO_UPSTREAM_URL points at ${UPSTREAM}, which likely has no Supabase Storage listening. Set PLUTO_UPSTREAM_URL in /etc/pluto/sandbox-worker.env to your real Supabase project URL (e.g. https://<project-ref>.supabase.co) and restart the worker.`
-      : "";
+    const hint = /127\.0\.0\.1|localhost/.test(picked.base)
+      ? ` — storage base ${picked.base} (${picked.source}) likely has no Supabase Storage listening. Set PLUTO_UPSTREAM_URL to your real Supabase project URL, or pass storageBase in the /unpack body.`
+      : ` — resolved from ${picked.source}`;
     throw new Error(`storage GET network error for ${url}: ${cause}${hint}`);
   }
   if (!res.ok) {
     const body = (await res.text()).slice(0, 200);
     const source = overrideKey ? "request-body serviceKey" : "env PLUTO_SERVICE_ROLE_KEY";
     const hint = res.status === 401 || res.status === 403
-      ? ` — the ${source} was rejected by ${UPSTREAM}. Ensure Lovable Cloud's PLUTO_SERVICE_ROLE_KEY matches the service-role key configured on the VPS storage backend, or that the caller passes a fresh serviceKey in the /unpack body.`
+      ? ` — the ${source} was rejected by ${picked.base} (${picked.source}). Ensure Lovable Cloud's PLUTO_SERVICE_ROLE_KEY matches the service-role key configured on the VPS storage backend, or that the caller passes a fresh serviceKey in the /unpack body.`
       : "";
     throw new Error(`storage GET HTTP ${res.status} from ${url}: ${body}${hint}`);
   }
@@ -418,7 +435,7 @@ async function atomicSymlink(linkPath, targetRelPath) {
   await fsp.rename(tmp, linkPath);
 }
 
-async function unpack({ workspaceId, slug, bucket, key, env, channel, migrations, serviceKey }) {
+async function unpack({ workspaceId, slug, bucket, key, env, channel, migrations, serviceKey, storageBase }) {
   // Keep two workspace forms:
   //   rawWorkspaceId  → auth/storage routing header (must preserve UUID hyphens)
   //   ws              → filesystem-safe directory name
@@ -441,7 +458,7 @@ async function unpack({ workspaceId, slug, bucket, key, env, channel, migrations
   const releaseDir = path.join(wsRoot, `release-${stamp}-${randomUUID().slice(0, 8)}`);
   await fsp.mkdir(releaseDir, { recursive: true });
 
-  const zipBytes = await fetchBundle(bucket, key, { serviceKey, workspaceId: rawWorkspaceId || ws });
+  const zipBytes = await fetchBundle(bucket, key, { serviceKey, storageBase, workspaceId: rawWorkspaceId || ws });
   const zipPath = path.join(wsRoot, `bundle-${stamp}.zip`);
   await fsp.writeFile(zipPath, zipBytes);
 
