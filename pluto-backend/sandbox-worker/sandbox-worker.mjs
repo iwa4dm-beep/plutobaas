@@ -514,7 +514,24 @@ function channelLinkName(ch) { return ch === "production" ? "current" : "preview
 async function atomicSymlink(linkPath, targetRelPath) {
   const tmp = `${linkPath}.tmp-${randomUUID().slice(0, 6)}`;
   await fsp.symlink(targetRelPath, tmp);
-  await fsp.rename(tmp, linkPath);
+  try {
+    await fsp.rename(tmp, linkPath);
+  } catch (e) {
+    // Some older cert/bootstrap scripts accidentally created current/preview as
+    // real directories. Replace only those channel placeholders; release dirs
+    // are never named exactly current/preview.
+    const name = path.basename(linkPath);
+    const st = await fsp.lstat(linkPath).catch(() => null);
+    if (st?.isDirectory() && (name === "current" || name === "preview")) {
+      const backup = `${linkPath}.dir-backup-${Date.now()}`;
+      await fsp.rename(linkPath, backup);
+      await fsp.rename(tmp, linkPath);
+      await fsp.rm(backup, { recursive: true, force: true }).catch(() => {});
+      return;
+    }
+    await fsp.unlink(tmp).catch(() => {});
+    throw e;
+  }
 }
 
 async function unpack({ workspaceId, slug, bucket, key, env, channel, migrations, serviceKey, storageBase }) {
