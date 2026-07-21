@@ -93,6 +93,12 @@ export async function getServiceRoleKey(): Promise<string | undefined> {
   return stored || undefined;
 }
 
+/** Invalidate the cached auto-minted service JWT so the next getServiceRoleKey()
+ *  call mints a fresh one. Used by the 401-retry path in deployAll. */
+export function resetServiceRoleKeyCache(): void {
+  cachedMintedJwt = null;
+}
+
 export function getAnonKey(): string | undefined {
   return process.env.PLUTO_ANON_KEY || undefined;
 }

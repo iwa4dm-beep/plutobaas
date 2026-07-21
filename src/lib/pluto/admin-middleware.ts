@@ -174,31 +174,70 @@ async function verifyAdminToken(authHeader: string): Promise<VerifiedAdmin> {
   };
 }
 
+const DEBUG_AUTH = () => {
+  const env = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env ?? {};
+  return env.PLUTO_DEBUG_AUTH === "1" || env.PLUTO_DEBUG_AUTH === "true";
+};
+
+function debugAuth(stage: string, info: Record<string, unknown>): void {
+  if (!DEBUG_AUTH()) return;
+  // Redact token payload — log only length + first 8 chars for correlation.
+  const safe: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(info)) {
+    if (typeof v === "string" && /Bearer\s+\S+/i.test(v)) {
+      const tok = v.replace(/^Bearer\s+/i, "");
+      safe[k] = `Bearer ${tok.slice(0, 8)}…(${tok.length})`;
+    } else {
+      safe[k] = v;
+    }
+  }
+  // eslint-disable-next-line no-console
+  console.log(`[pluto-auth] ${stage}`, safe);
+}
+
 export const requirePlutoAdmin = createMiddleware({ type: "function" })
   .client(async ({ next }) => {
     const authHeader = readClientAuthHeader();
+    debugAuth("client.phase", {
+      hasWindow: typeof window !== "undefined",
+      headerFound: !!authHeader,
+      header: authHeader ?? "(empty)",
+    });
     return next({
       sendContext: { __plutoAuthHeader: authHeader ?? "" },
     });
   })
   .server(async ({ next, context }) => {
     let header = (context as { __plutoAuthHeader?: string }).__plutoAuthHeader ?? "";
+    const source = header && /^Bearer\s+\S+/i.test(header) ? "sendContext" : "empty";
     // Nested server-fn calls: `.client()` runs on the server with no
     // localStorage and sends an empty header. Recover by reading the outer
-    // request's Authorization header from the server-only helper.
+    // request's Authorization header or the AsyncLocalStorage store set by
+    // the outer verified caller.
+    let recovered: "als" | "request-header" | null = null;
     if (!header || !/^Bearer\s+\S+/i.test(header)) {
       const { readIncomingAuthHeader } = await import("./admin-request-header.server");
       const incoming = readIncomingAuthHeader();
-      if (incoming) header = incoming;
+      if (incoming) {
+        header = incoming;
+        recovered = "als";
+      }
     }
+    debugAuth("server.phase", {
+      source,
+      recovered,
+      finalHeader: header || "(empty)",
+    });
     if (!header || !/^Bearer\s+\S+/i.test(header)) {
       throw authError(401, {
         error: "unauthorized",
         message: "Sign in required",
         hint: "Session token পাওয়া যায়নি। আবার sign in করুন।",
+        details: DEBUG_AUTH() ? `source=${source} recovered=${recovered ?? "none"}` : undefined,
       });
     }
     const admin = await verifyAdminToken(header);
+    debugAuth("server.verified", { userId: admin.userId, email: admin.email });
     // Stash the verified header in AsyncLocalStorage so nested server-fn
     // calls (whose `.client()` runs server-side without localStorage) can
     // recover it even when the outer HTTP request has no Authorization header.

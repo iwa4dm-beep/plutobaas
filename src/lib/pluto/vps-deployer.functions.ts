@@ -5,7 +5,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { requirePlutoAdmin } from "./admin-middleware";
 import { z } from "zod";
-import { getVpsBaseUrl, getServiceRoleKey } from "./vps-client";
+import { getVpsBaseUrl, getServiceRoleKey, resetServiceRoleKeyCache } from "./vps-client";
 
 /** Version tag embedded into the bootstrap function code. Bump when the
  *  bootstrap handler shape changes so `verifyBootstrap` can confirm the VPS
@@ -178,6 +178,52 @@ async function serviceHeaders(extra: Record<string, string> = {}, override?: str
   const key = (override && override.trim()) || (await getServiceRoleKey());
   if (!key) return { error: "PLUTO_SERVICE_ROLE_KEY not configured" };
   return { apikey: key, authorization: `Bearer ${key}`, accept: "application/json", ...extra };
+}
+
+/**
+ * "Service user login": preflight the VPS admin API with the current service
+ * token by hitting a cheap admin endpoint. On success returns the working
+ * headers; on 401 the auto-minted JWT cache is cleared and re-minted once, so
+ * ensureDeployInfra never runs with a stale/expired service credential.
+ */
+type ServiceSession = { headers: Record<string, string>; token: string };
+async function loginServiceUser(override?: string): Promise<ServiceSession | { error: string; status: number; debug: StepDebug | null }> {
+  const base = getVpsBaseUrl();
+  const tryOnce = async (): Promise<{ ok: boolean; status: number; text: string; debug: StepDebug; headers: Record<string, string>; token: string } | { ok: false; error: string; status: number; debug: null }> => {
+    const h = await serviceHeaders({}, override);
+    if ("error" in h) return { ok: false, error: h.error, status: 500, debug: null };
+    const probe = await rawFetch(`${base}/admin/v1/workspaces?limit=1`, "GET", h, null, null, 15_000);
+    return { ok: probe.ok, status: probe.status, text: probe.text, debug: probe.debug, headers: h, token: h.authorization?.replace(/^Bearer\s+/i, "") ?? "" };
+  };
+  let first = await tryOnce();
+  if ("error" in first) return { error: first.error, status: first.status, debug: null };
+  if (first.ok) return { headers: first.headers, token: first.token };
+  if (first.status === 401 || first.status === 403) {
+    // Refresh: drop the cached auto-minted JWT and retry once.
+    resetServiceRoleKeyCache();
+    const second = await tryOnce();
+    if ("error" in second) return { error: second.error, status: second.status, debug: null };
+    if (second.ok) return { headers: second.headers, token: second.token };
+    return { error: `service login failed after refresh (HTTP ${second.status}): ${second.text.slice(0, 200)}`, status: second.status, debug: second.debug };
+  }
+  return { error: `service login failed (HTTP ${first.status}): ${first.text.slice(0, 200)}`, status: first.status, debug: first.debug };
+}
+
+/** Wrap a rawFetch call: on 401/403 invalidate the service JWT cache, refresh
+ *  headers, retry once. `mkHeaders` receives the freshly-minted headers. */
+async function serviceFetchWithRefresh(
+  mkHeaders: () => Promise<Record<string, string> | { error: string }>,
+  doFetch: (headers: Record<string, string>) => Promise<{ ok: boolean; status: number; text: string; debug: StepDebug }>,
+): Promise<{ ok: boolean; status: number; text: string; debug: StepDebug | null; refreshed: boolean }> {
+  const h1 = await mkHeaders();
+  if ("error" in h1) return { ok: false, status: 500, text: h1.error, debug: null, refreshed: false };
+  const r1 = await doFetch(h1);
+  if (r1.ok || (r1.status !== 401 && r1.status !== 403)) return { ...r1, refreshed: false };
+  resetServiceRoleKeyCache();
+  const h2 = await mkHeaders();
+  if ("error" in h2) return { ok: false, status: 500, text: h2.error, debug: r1.debug, refreshed: true };
+  const r2 = await doFetch(h2);
+  return { ...r2, refreshed: true };
 }
 
 
@@ -414,40 +460,49 @@ const EnsureInfraInput = z.object({ bucket: z.string().min(1).max(64).default("d
 export type EnsureInfraStep = { key: string; label: string; ok: boolean; detail: string; debug: StepDebug | null };
 export type EnsureInfraResult = { ok: boolean; steps: EnsureInfraStep[] };
 
+/** Internal: idempotently create service user + bucket. Verifies the service
+ *  credential first via loginServiceUser() so this never runs unauthenticated. */
+async function runEnsureDeployInfra(input: { bucket: string; operatorToken?: string }): Promise<EnsureInfraResult> {
+  const session = await loginServiceUser(input.operatorToken);
+  if ("error" in session) {
+    return { ok: false, steps: [{ key: "service-login", label: "Service user login (preflight)", ok: false, detail: session.error, debug: session.debug }] };
+  }
+  const headers = session.headers;
+  const base = getVpsBaseUrl();
+  const steps: EnsureInfraStep[] = [{
+    key: "service-login", label: "Service user login (preflight)", ok: true,
+    detail: "verified service_role credential against /admin/v1/workspaces",
+    debug: null,
+  }];
+
+  // 1. Ensure service auth.users row exists — storage.objects.owner_id FKs to auth.users(id).
+  const seedUser = `insert into auth.users (id, email, role, is_superadmin, email_verified) values ('${SERVICE_USER_ID}', '${SERVICE_USER_EMAIL}', 'service_role', true, true) on conflict (id) do nothing;`;
+  const userRes = await sqlExec(seedUser, headers);
+  steps.push({ key: "service-user", label: "Ensure service auth.users row", ok: userRes.ok, detail: userRes.ok ? "seeded (or already present)" : userRes.text.slice(0, 300), debug: userRes.debug });
+
+  // 2. Check bucket via storage API
+  const bucketGet = await rawFetch(`${base}/storage/v1/bucket/${encodeURIComponent(input.bucket)}`, "GET", headers, null, null, 10_000);
+  if (bucketGet.ok) {
+    steps.push({ key: "bucket", label: `Ensure bucket "${input.bucket}"`, ok: true, detail: "already exists", debug: bucketGet.debug });
+  } else if (bucketGet.status === 404) {
+    const seedBucket = `insert into storage.buckets (id, name, public) values ('${input.bucket.replace(/'/g, "''")}', '${input.bucket.replace(/'/g, "''")}', false) on conflict (id) do nothing;`;
+    const b = await sqlExec(seedBucket, headers);
+    steps.push({ key: "bucket", label: `Create bucket "${input.bucket}"`, ok: b.ok, detail: b.ok ? "created via SQL" : b.text.slice(0, 300), debug: b.debug });
+  } else {
+    steps.push({ key: "bucket", label: `Check bucket "${input.bucket}"`, ok: false, detail: `HTTP ${bucketGet.status}: ${bucketGet.text.slice(0, 200)}`, debug: bucketGet.debug });
+  }
+
+  // 3. Re-verify bucket now reachable via storage API
+  const finalCheck = await rawFetch(`${base}/storage/v1/bucket/${encodeURIComponent(input.bucket)}`, "GET", headers, null, null, 10_000);
+  steps.push({ key: "bucket-verify", label: "Verify bucket reachable", ok: finalCheck.ok, detail: finalCheck.ok ? `bucket "${input.bucket}" reachable` : `HTTP ${finalCheck.status}: ${finalCheck.text.slice(0, 200)}`, debug: finalCheck.debug });
+
+  return { ok: steps.every(s => s.ok), steps };
+}
+
 export const ensureDeployInfra = createServerFn({ method: "POST" })
   .middleware([requirePlutoAdmin]).inputValidator((d: unknown) => EnsureInfraInput.parse(d))
   .handler(async ({ data }): Promise<EnsureInfraResult> => {
-    const headers = await serviceHeaders({}, data.operatorToken);
-    if ("error" in headers) return { ok: false, steps: [{ key: "auth", label: "Auth", ok: false, detail: headers.error, debug: null }] };
-
-    const base = getVpsBaseUrl();
-    const steps: EnsureInfraStep[] = [];
-
-    // 1. Ensure service auth.users row exists — storage.objects.owner_id FKs to auth.users(id).
-    //    Without it, uploads by the zero-uuid service caller trigger 23503 FK errors.
-    const seedUser = `insert into auth.users (id, email, role, is_superadmin, email_verified) values ('${SERVICE_USER_ID}', '${SERVICE_USER_EMAIL}', 'service_role', true, true) on conflict (id) do nothing;`;
-    const userRes = await sqlExec(seedUser, headers);
-    steps.push({ key: "service-user", label: "Ensure service auth.users row", ok: userRes.ok, detail: userRes.ok ? "seeded (or already present)" : userRes.text.slice(0, 300), debug: userRes.debug });
-
-    // 2. Check bucket via storage API
-    const bucketGet = await rawFetch(`${base}/storage/v1/bucket/${encodeURIComponent(data.bucket)}`, "GET", headers, null, null, 10_000);
-    if (bucketGet.ok) {
-      steps.push({ key: "bucket", label: `Ensure bucket "${data.bucket}"`, ok: true, detail: "already exists", debug: bucketGet.debug });
-    } else if (bucketGet.status === 404) {
-      // 3. Seed bucket row directly (storage.buckets.owner_id is nullable; the /storage/v1/bucket POST
-      //    always tries to set owner_id = auth.uid() = zero-uuid, which now exists after step 1).
-      const seedBucket = `insert into storage.buckets (id, name, public) values ('${data.bucket.replace(/'/g, "''")}', '${data.bucket.replace(/'/g, "''")}', false) on conflict (id) do nothing;`;
-      const b = await sqlExec(seedBucket, headers);
-      steps.push({ key: "bucket", label: `Create bucket "${data.bucket}"`, ok: b.ok, detail: b.ok ? "created via SQL" : b.text.slice(0, 300), debug: b.debug });
-    } else {
-      steps.push({ key: "bucket", label: `Check bucket "${data.bucket}"`, ok: false, detail: `HTTP ${bucketGet.status}: ${bucketGet.text.slice(0, 200)}`, debug: bucketGet.debug });
-    }
-
-    // 4. Re-verify bucket now reachable via storage API
-    const finalCheck = await rawFetch(`${base}/storage/v1/bucket/${encodeURIComponent(data.bucket)}`, "GET", headers, null, null, 10_000);
-    steps.push({ key: "bucket-verify", label: "Verify bucket reachable", ok: finalCheck.ok, detail: finalCheck.ok ? `bucket "${data.bucket}" reachable` : `HTTP ${finalCheck.status}: ${finalCheck.text.slice(0, 200)}`, debug: finalCheck.debug });
-
-    return { ok: steps.every(s => s.ok), steps };
+    return runEnsureDeployInfra({ bucket: data.bucket, operatorToken: data.operatorToken });
   });
 
 // ---------- deployAll: orchestrated pushMigrations + uploadBundle + verifyDeploy with retries ----------
@@ -474,7 +529,7 @@ const DeployAllInput = z.object({
 
 
 
-export type DeployStepKey = "ensure-infra" | "push-migrations" | "upload-bundle" | "verify-deploy" | "unpack-serve" | "activate-service" | "health-check" | "verify-ssl";
+export type DeployStepKey = "service-login" | "ensure-infra" | "push-migrations" | "upload-bundle" | "verify-deploy" | "unpack-serve" | "activate-service" | "health-check" | "verify-ssl";
 export type DeployStepAttempt = { attempt: number; ok: boolean; detail: string; debug: StepDebug | null; startedAt: string; latencyMs: number };
 export type DeployStepLog = { key: DeployStepKey; label: string; ok: boolean; attempts: DeployStepAttempt[]; result: string | null };
 export type LiveUrlProbe = { url: string; status: number; reachable: boolean; contentType: string | null; snippet: string; latencyMs: number; healNote?: string | null };
@@ -660,23 +715,32 @@ export const deployAll = createServerFn({ method: "POST" })
   .middleware([requirePlutoAdmin]).inputValidator((d: unknown) => DeployAllInput.parse(d))
   .handler(async ({ data }): Promise<DeployAllResult> => {
     const t0 = Date.now();
-    const headers = await serviceHeaders({ "content-type": "application/json" }, data.operatorToken);
-    if ("error" in headers) {
-      return { ok: false, workspaceId: data.workspaceId, totalMs: 0, steps: [{ key: "ensure-infra", label: "Auth", ok: false, attempts: [{ attempt: 1, ok: false, detail: headers.error, debug: null, startedAt: nowIso(), latencyMs: 0 }], result: null }] };
-    }
-
-    const base = getVpsBaseUrl();
     const steps: DeployStepLog[] = [];
 
-    // Step 0: infra
+    // Step -1: service user login (preflight). Verifies + refreshes the
+    // service_role credential once BEFORE any admin call, so downstream steps
+    // never hit 401 due to stale/expired auto-minted JWTs.
+    const login = await loginServiceUser(data.operatorToken);
+    if ("error" in login) {
+      steps.push({ key: "service-login", label: "Service user login (preflight)", ok: false, attempts: [{ attempt: 1, ok: false, detail: login.error, debug: login.debug, startedAt: nowIso(), latencyMs: 0 }], result: null });
+      return { ok: false, workspaceId: data.workspaceId, totalMs: Date.now() - t0, steps };
+    }
+    steps.push({ key: "service-login", label: "Service user login (preflight)", ok: true, attempts: [{ attempt: 1, ok: true, detail: "service_role credential verified", debug: null, startedAt: nowIso(), latencyMs: 0 }], result: null });
+
+    const headers = { ...login.headers, "content-type": "application/json" };
+    const base = getVpsBaseUrl();
+
+    // Step 0: infra — call the internal function directly (no nested server-fn
+    // RPC, so the admin auth header cannot get lost across the boundary).
     if (data.ensureInfra) {
       const infra = await withRetry("ensure-infra", "Ensure infra (service user + bucket)", data.maxRetries, async () => {
-        const r = await ensureDeployInfra({ data: { bucket: data.bucket, operatorToken: data.operatorToken } });
+        const r = await runEnsureDeployInfra({ bucket: data.bucket, operatorToken: data.operatorToken });
         return { ok: r.ok, detail: r.steps.map(s => `${s.ok ? "✓" : "✗"} ${s.label}: ${s.detail}`).join(" | "), debug: null, result: r };
       });
       steps.push(infra);
       if (!infra.ok) return { ok: false, workspaceId: data.workspaceId, totalMs: Date.now() - t0, steps };
     }
+
 
     // Step 1: push migrations (create + apply)
     const migName = ((data.label ?? `deploy-${Date.now()}`)).replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 120);
