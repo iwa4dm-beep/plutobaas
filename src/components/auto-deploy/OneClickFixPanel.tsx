@@ -45,6 +45,7 @@ export function OneClickFixPanel({ slug, wildcard, acmeEmail, onAutoHealChange }
   const [batchInput, setBatchInput] = useState("");
   const [batchBusy, setBatchBusy] = useState(false);
   const [batchResults, setBatchResults] = useState<BatchIssueResult[] | null>(null);
+  const [upstreamInput, setUpstreamInput] = useState("");
   const runRepair = useServerFn(runVpsRepair);
   const runPreflight = useServerFn(preflightAndHeal);
   const fetchCertStatus = useServerFn(getSlugCertStatus);
@@ -114,16 +115,25 @@ export function OneClickFixPanel({ slug, wildcard, acmeEmail, onAutoHealChange }
     finally { setPreflightBusy(false); }
   }, [runPreflight, slug, wildcard]);
 
-  const doRepair = useCallback(async (action: RepairAction) => {
+  const doRepair = useCallback(async (action: RepairAction, extra?: { upstream?: string }) => {
     setBusy(action);
     try {
-      const r = await runRepair({ data: { action, slug, wildcard, acmeEmail } });
+      const r = await runRepair({ data: { action, slug, wildcard, acmeEmail, upstream: extra?.upstream } });
       setResults((prev) => ({ ...prev, [action]: r }));
       if (r.ok) toast.success(`${ACTION_LABELS[action].label} — ok (${r.durationMs}ms)`);
       else toast.error(`${ACTION_LABELS[action].label} — failed (exit ${r.exitCode})`);
     } catch (e) { toast.error(`${ACTION_LABELS[action].label} failed: ${(e as Error).message}`); }
     finally { setBusy(null); }
   }, [runRepair, slug, wildcard, acmeEmail]);
+
+  const parsedUpstream = upstreamInput.trim();
+  const upstreamValid =
+    /^https?:\/\/[A-Za-z0-9._-]+(:\d+)?(\/.*)?$/.test(parsedUpstream) &&
+    !/<[^>]+>|your-project|example\.com|placeholder|supabase-ref/i.test(parsedUpstream);
+  const doSetUpstream = useCallback(() => {
+    if (!upstreamValid) { toast.error("Enter a real https://…supabase.co URL (no placeholders)"); return; }
+    doRepair("set-upstream", { upstream: parsedUpstream });
+  }, [doRepair, upstreamValid, parsedUpstream]);
 
   return (
     <section className="rounded-xl border border-border bg-card">
