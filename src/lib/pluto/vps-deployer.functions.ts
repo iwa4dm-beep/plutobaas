@@ -143,13 +143,15 @@ async function rawFetch(
   body: BodyInit | null,
   reqBodyForPreview: string | null,
   timeoutMs = 60_000,
-): Promise<{ status: number; text: string; debug: StepDebug; ok: boolean }> {
+): Promise<{ status: number; text: string; debug: StepDebug; ok: boolean; headers: Record<string, string> }> {
   const ac = new AbortController();
   const t = setTimeout(() => ac.abort(), timeoutMs);
   const started = Date.now();
   try {
     const res = await fetch(url, { method, headers, body, signal: ac.signal });
     const text = await res.text();
+    const hdrs: Record<string, string> = {};
+    res.headers.forEach((v, k) => { hdrs[k.toLowerCase()] = v; });
     const debug: StepDebug = {
       url,
       method,
@@ -158,7 +160,7 @@ async function rawFetch(
       reqBodyPreview: reqBodyForPreview ? truncate(reqBodyForPreview) : null,
       resBodyPreview: truncate(text || "(empty)"),
     };
-    return { status: res.status, text, debug, ok: res.ok };
+    return { status: res.status, text, debug, ok: res.ok, headers: hdrs };
   } catch (e) {
     const debug: StepDebug = {
       url,
@@ -168,7 +170,7 @@ async function rawFetch(
       reqBodyPreview: reqBodyForPreview ? truncate(reqBodyForPreview) : null,
       resBodyPreview: (e as Error).message,
     };
-    return { status: 0, text: (e as Error).message, debug, ok: false };
+    return { status: 0, text: (e as Error).message, debug, ok: false, headers: {} };
   } finally {
     clearTimeout(t);
   }
@@ -1169,7 +1171,23 @@ export const deployAll = createServerFn({ method: "POST" })
       const looksHtml = /<!DOCTYPE|<html/i.test(p.text);
       const primaryRequired = probeUrl.replace(/\/+$/, "") === defaultPrimaryServedSiteUrl;
       const primaryActivation = primaryActivationState.current;
-      served = p.ok && (!primaryRequired || primaryActivation?.ok === true);
+      // A correctly installed primary vhost stamps `X-Pluto-Primary` on every
+      // response. If we hit `app.timescard.cloud` and that header is missing
+      // (or the body still shows Pluto BaaS's own marketing page), nginx is
+      // routing this hostname to the BaaS app itself instead of the
+      // `_primary/current` release symlink. Auto-run the `primary-frontend`
+      // repair once to install the vhost + issue the cert + flip the symlink.
+      let primaryVhostInstalled = primaryRequired
+        ? Boolean(p.headers["x-pluto-primary"]) && !/Pluto\s*BaaS/i.test(p.text)
+        : true;
+      if (primaryRequired && !primaryVhostInstalled && sandboxSecret) {
+        const repairBody = JSON.stringify({ action: "primary-frontend", slug: deploySlug, wildcard: "app.timescard.cloud" });
+        const repair = await rawFetch(`${sandboxEndpointBase}/admin/repair`, "POST", { "content-type": "application/json", "x-sandbox-secret": sandboxSecret, accept: "application/json" }, repairBody, repairBody, 240_000);
+        healNote = `${healNote ? healNote + "; " : ""}primary vhost install HTTP ${repair.status}`;
+        p = await rawFetch(probeUrl, "GET", { accept: "text/html,*/*" }, null, null, 12_000);
+        primaryVhostInstalled = Boolean(p.headers["x-pluto-primary"]) && !/Pluto\s*BaaS/i.test(p.text);
+      }
+      served = p.ok && (!primaryRequired || (primaryActivation?.ok === true && primaryVhostInstalled));
       servedSiteProbe = {
         url: probeUrl,
         status: p.status,
@@ -1182,6 +1200,8 @@ export const deployAll = createServerFn({ method: "POST" })
       };
       if (!p.ok) {
         servedHint = `Bundle uploaded, but ${probeUrl} returned HTTP ${p.status} after auto-heal${healNote ? ` (${healNote})` : ""}. The hostname is not wired to nginx / wildcard SSL, or the sandbox worker did not unpack the release. Run One-click Fix or on VPS: sudo SLUG='${deploySlug}' bash deploy/repair-sandbox-worker-and-site.sh.`;
+      } else if (primaryRequired && !primaryVhostInstalled) {
+        servedHint = `${probeUrl} responded 200, but nginx is still serving the Pluto BaaS marketing app on this hostname (X-Pluto-Primary header missing). Run One-click Fix → Activate primary frontend, or on VPS: sudo bash deploy/set-primary-frontend.sh --install --email admin@timescard.cloud && sudo bash deploy/set-primary-frontend.sh --activate '${deploySlug}'.`;
       } else if (primaryRequired && primaryActivation?.ok !== true) {
         servedHint = `Primary frontend ${probeUrl} responded, but it was not flipped to this release (activation HTTP ${primaryActivation?.status ?? 0}). Run One-click Fix → Activate primary frontend, or on VPS: sudo bash deploy/set-primary-frontend.sh --activate '${deploySlug}'.`;
       }
