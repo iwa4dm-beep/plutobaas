@@ -57,11 +57,14 @@ function computeChecks(result: DeployAllResult): CheckRow[] {
   });
 
   // Served site
+  const servedRouteMismatch = servedProbe?.httpOk === true && servedProbe.reachable === false;
   rows.push({
     id: "served-site",
-    label: "Served site responds 2xx",
-    status: !servedProbe ? "skip" : servedProbe.reachable && servedProbe.status < 400 ? "pass" : "warn",
-    detail: servedProbe ? `HTTP ${servedProbe.status} · ${servedProbe.latencyMs}ms · ${servedProbe.url}` : "no served-site URL resolved",
+    label: "Served site routes deployed app",
+    status: !servedProbe ? "skip" : servedProbe.reachable ? "pass" : "warn",
+    detail: servedProbe
+      ? `HTTP ${servedProbe.status} · ${servedProbe.latencyMs}ms · ${servedRouteMismatch ? `route mismatch: ${servedProbe.routeMismatchReason ?? "wrong app"} · ` : ""}${servedProbe.url}`
+      : "no served-site URL resolved",
   });
 
   // SSL valid

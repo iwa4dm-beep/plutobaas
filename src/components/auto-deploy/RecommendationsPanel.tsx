@@ -40,6 +40,7 @@ function computeRecommendations(
 
   const ssl = (result.liveUrls as { sslProbe?: SslProbe } | undefined)?.sslProbe;
   const servedProbe = (result.liveUrls as { servedSiteProbe?: LiveUrlProbe } | undefined)?.servedSiteProbe;
+  const servedHint = result.liveUrls?.servedHint;
   const stepBy = Object.fromEntries(result.steps.map((s) => [s.key, s] as const));
 
   // SSL expiring
@@ -64,19 +65,23 @@ function computeRecommendations(
     });
   }
 
-  // Served site failing
-  if (servedProbe && (!servedProbe.reachable || servedProbe.status >= 400)) {
+  // Served site failing or returning 2xx for the wrong upstream app.
+  if (servedProbe && !servedProbe.reachable) {
+    const routeMismatch = servedProbe.httpOk === true;
     recs.push({
       id: "served-site-bad",
       severity: "warn",
-      title: `Served site returned HTTP ${servedProbe.status || "000"}`,
-      detail:
-        "Bundle may be unpacked but not routed. Open the Diagnose served-site panel above, or check nginx sites-proxy + DNS wildcard.",
+      title: routeMismatch
+        ? `Served site returned HTTP ${servedProbe.status}, but the deployed app is not routed`
+        : `Served site returned HTTP ${servedProbe.status || "000"}`,
+      detail: servedHint || (routeMismatch
+        ? `The hostname is reachable, but route validation failed (${servedProbe.routeMismatchReason ?? "wrong app"}). Run One-click Fix → Activate primary frontend.`
+        : "Bundle may be unpacked but not routed. Open the Diagnose served-site panel above, or check nginx sites-proxy + DNS wildcard."),
     });
   }
 
   // Strict served-site off but warnings present
-  if (!settings.strictServedSite && servedProbe && (!servedProbe.reachable || servedProbe.status >= 400)) {
+  if (!settings.strictServedSite && servedProbe && !servedProbe.reachable) {
     recs.push({
       id: "enable-strict-served",
       severity: "info",

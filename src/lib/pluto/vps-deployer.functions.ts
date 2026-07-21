@@ -534,7 +534,21 @@ const DeployAllInput = z.object({
 export type DeployStepKey = "service-login" | "ensure-infra" | "push-migrations" | "upload-bundle" | "verify-deploy" | "unpack-serve" | "activate-service" | "health-check" | "verify-ssl";
 export type DeployStepAttempt = { attempt: number; ok: boolean; detail: string; debug: StepDebug | null; startedAt: string; latencyMs: number };
 export type DeployStepLog = { key: DeployStepKey; label: string; ok: boolean; attempts: DeployStepAttempt[]; result: string | null };
-export type LiveUrlProbe = { url: string; status: number; reachable: boolean; contentType: string | null; snippet: string; latencyMs: number; healNote?: string | null; primaryActivationOk?: boolean | null };
+export type LiveUrlProbe = {
+  url: string;
+  status: number;
+  /** True only when the URL is serving the deployed release, not merely returning HTTP 2xx. */
+  reachable: boolean;
+  /** Raw HTTP reachability before route/content validation. */
+  httpOk?: boolean;
+  contentType: string | null;
+  snippet: string;
+  latencyMs: number;
+  healNote?: string | null;
+  primaryActivationOk?: boolean | null;
+  primaryVhostInstalled?: boolean | null;
+  routeMismatchReason?: string | null;
+};
 export type SslProbe = {
   url: string;
   ok: boolean;
@@ -1131,6 +1145,9 @@ export const deployAll = createServerFn({ method: "POST" })
           const repairBody = JSON.stringify({ action: "primary-frontend", slug: deploySlug, wildcard: "app.timescard.cloud" });
           const repair = await rawFetch(`${sandboxEndpointBase}/admin/repair`, "POST", { "content-type": "application/json", "x-sandbox-secret": sandboxSecret, accept: "application/json" }, repairBody, repairBody, 240_000);
           healNote = `${healNote ? healNote + "; " : ""}primary vhost install HTTP ${repair.status}`;
+          if (repair.ok && (!primaryActivationState.current || primaryActivationState.current.ok !== true)) {
+            primaryActivationState.current = { ok: true, status: repair.status, detail: "primary frontend installed + activated by repair" };
+          }
           s = await rawFetch(probeUrl, "GET", { accept: "text/html" }, null, null, 15_000);
           primaryVhostInstalled = Boolean(s.headers["x-pluto-primary"]) && !/Pluto\s*BaaS/i.test(s.text);
         }
@@ -1198,26 +1215,38 @@ export const deployAll = createServerFn({ method: "POST" })
         const repairBody = JSON.stringify({ action: "primary-frontend", slug: deploySlug, wildcard: "app.timescard.cloud" });
         const repair = await rawFetch(`${sandboxEndpointBase}/admin/repair`, "POST", { "content-type": "application/json", "x-sandbox-secret": sandboxSecret, accept: "application/json" }, repairBody, repairBody, 240_000);
         healNote = `${healNote ? healNote + "; " : ""}primary vhost install HTTP ${repair.status}`;
+        if (repair.ok && (!primaryActivationState.current || primaryActivationState.current.ok !== true)) {
+          primaryActivationState.current = { ok: true, status: repair.status, detail: "primary frontend installed + activated by repair" };
+        }
         p = await rawFetch(probeUrl, "GET", { accept: "text/html,*/*" }, null, null, 12_000);
         primaryVhostInstalled = Boolean(p.headers["x-pluto-primary"]) && !/Pluto\s*BaaS/i.test(p.text);
       }
-      served = p.ok && (!primaryRequired || (primaryActivation?.ok === true && primaryVhostInstalled));
+      const refreshedPrimaryActivation = primaryActivationState.current;
+      served = p.ok && (!primaryRequired || (refreshedPrimaryActivation?.ok === true && primaryVhostInstalled));
+      const routeMismatchReason = primaryRequired && p.ok && !primaryVhostInstalled
+        ? "primary-vhost-missing"
+        : primaryRequired && p.ok && refreshedPrimaryActivation?.ok !== true
+          ? "primary-not-activated"
+          : null;
       servedSiteProbe = {
         url: probeUrl,
         status: p.status,
         reachable: served,
+        httpOk: p.ok,
         contentType: looksHtml ? "text/html" : null,
         snippet: p.text.slice(0, 240),
         latencyMs: p.debug.latencyMs,
         healNote,
-        primaryActivationOk: primaryRequired ? primaryActivation?.ok === true : null,
+        primaryActivationOk: primaryRequired ? refreshedPrimaryActivation?.ok === true : null,
+        primaryVhostInstalled: primaryRequired ? primaryVhostInstalled : null,
+        routeMismatchReason,
       };
       if (!p.ok) {
         servedHint = `Bundle uploaded, but ${probeUrl} returned HTTP ${p.status} after auto-heal${healNote ? ` (${healNote})` : ""}. The hostname is not wired to nginx / wildcard SSL, or the sandbox worker did not unpack the release. Run One-click Fix or on VPS: sudo SLUG='${deploySlug}' bash deploy/repair-sandbox-worker-and-site.sh.`;
       } else if (primaryRequired && !primaryVhostInstalled) {
         servedHint = `${probeUrl} responded 200, but nginx is still serving the Pluto BaaS marketing app on this hostname (X-Pluto-Primary header missing). Run One-click Fix → Activate primary frontend, or on VPS: sudo bash deploy/set-primary-frontend.sh --install --email admin@timescard.cloud && sudo bash deploy/set-primary-frontend.sh --activate '${deploySlug}'.`;
-      } else if (primaryRequired && primaryActivation?.ok !== true) {
-        servedHint = `Primary frontend ${probeUrl} responded, but it was not flipped to this release (activation HTTP ${primaryActivation?.status ?? 0}). Run One-click Fix → Activate primary frontend, or on VPS: sudo bash deploy/set-primary-frontend.sh --activate '${deploySlug}'.`;
+      } else if (primaryRequired && refreshedPrimaryActivation?.ok !== true) {
+        servedHint = `Primary frontend ${probeUrl} responded, but it was not flipped to this release (activation HTTP ${refreshedPrimaryActivation?.status ?? 0}). Run One-click Fix → Activate primary frontend, or on VPS: sudo bash deploy/set-primary-frontend.sh --activate '${deploySlug}'.`;
       }
     } else {
       servedHint = `Auto-detect could not find a reachable served site. Tried: ${autoDerivedCandidates.join(", ")}. To fix permanently, choose one: (a) set PLUTO_SERVED_SITE_URL_TEMPLATE (e.g. "https://{slug}.app.timescard.cloud" or "https://api.timescard.cloud/sites/{slug}/") so the URL is auto-computed per deploy; (b) set PLUTO_SERVED_SITE_URL to a static origin; or (c) install pluto-backend/sandbox-worker on the VPS — it now exposes GET /sites/<slug>/* which nginx can proxy at /sites/ or /sandbox/sites/.`;
@@ -1445,13 +1474,21 @@ export const probeLiveUrl = createServerFn({ method: "POST" })
     const probeUrl = data.url.endsWith("/") ? data.url : `${data.url}/`;
     const r = await rawFetch(probeUrl, "GET", { accept: "text/html,*/*" }, null, null, 12_000);
     const looksHtml = /<!DOCTYPE|<html/i.test(r.text);
+    const primaryRequired = probeUrl.replace(/\/+$/, "") === primaryFrontendUrl();
+    const primaryVhostInstalled = primaryRequired
+      ? Boolean(r.headers["x-pluto-primary"]) && !/Pluto\s*BaaS/i.test(r.text)
+      : null;
+    const routeMismatchReason = primaryRequired && r.ok && !primaryVhostInstalled ? "primary-vhost-missing" : null;
     return {
       url: probeUrl,
       status: r.status,
-      reachable: r.ok,
+      reachable: r.ok && (!primaryRequired || primaryVhostInstalled === true),
+      httpOk: r.ok,
       contentType: looksHtml ? "text/html" : null,
       snippet: r.text.slice(0, 400),
       latencyMs: r.debug.latencyMs,
+      primaryVhostInstalled,
+      routeMismatchReason,
       checkedAt: new Date().toISOString(),
     };
   });
