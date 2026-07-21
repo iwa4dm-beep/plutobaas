@@ -73,9 +73,13 @@ function computeRecommendations(
       severity: "warn",
       title: routeMismatch
         ? `Served site returned HTTP ${servedProbe.status}, but the deployed app is not routed`
+        : servedProbe.failureReason === "dns-not-resolving"
+          ? "Primary frontend DNS is not resolving"
         : `Served site returned HTTP ${servedProbe.status || "000"}`,
       detail: servedHint || (routeMismatch
         ? `The hostname is reachable, but route validation failed (${servedProbe.routeMismatchReason ?? "wrong app"}). Run One-click Fix → Activate primary frontend.`
+        : servedProbe.failureReason === "dns-not-resolving"
+          ? "Add an A record for app.timescard.app pointing to 185.158.133.1, wait for DNS propagation, then run One-click Fix → Activate primary frontend."
         : "Bundle may be unpacked but not routed. Open the Diagnose served-site panel above, or check nginx sites-proxy + DNS wildcard."),
     });
   }

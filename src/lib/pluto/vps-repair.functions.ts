@@ -211,7 +211,7 @@ export const getSlugCertStatus = createServerFn({ method: "GET" })
     const base = getVpsBaseUrl();
     const sandboxUrl = (envFirst("PLUTO_SANDBOX_URL") || `${base}/sandbox`).replace(/\/+$/, "");
     const secret = envFirst("PLUTO_SANDBOX_SECRET", "PLUTO_SANDBOX_WORKER_SECRET", "SANDBOX_SHARED_SECRET");
-    const wildcard = data.wildcard || envFirst("PLUTO_WILDCARD_HOST") || "app.timescard.cloud";
+    const wildcard = data.wildcard || envFirst("PLUTO_WILDCARD_HOST") || "app.timescard.app";
     const url = `${sandboxUrl}/admin/cert-status?slug=${encodeURIComponent(data.slug)}&wildcard=${encodeURIComponent(wildcard)}`;
     const fqdn = `${data.slug}.${wildcard}`;
     if (!secret) {

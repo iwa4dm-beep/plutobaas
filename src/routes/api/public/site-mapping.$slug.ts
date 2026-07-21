@@ -5,7 +5,7 @@ import { createFileRoute } from '@tanstack/react-router'
 // Returns { slug, apex, apiUrl, prodUrl, previewUrl, workerBase } for the
 // sandbox worker and CLI health checks. No secrets, no PII.
 //
-// Configurable via env: PUBLIC_APEX (default app.timescard.cloud) and
+// Configurable via env: PUBLIC_APEX (default app.timescard.app) and
 // PUBLIC_API_URL (default https://api.<apex>).
 
 const SLUG_RE = /^[a-z0-9](?:[a-z0-9-]{1,38}[a-z0-9])?$/
@@ -33,7 +33,7 @@ export const Route = createFileRoute('/api/public/site-mapping/$slug')({
             { status: 400, headers: corsHeaders() },
           )
         }
-        const apex = process.env.PUBLIC_APEX || 'app.timescard.cloud'
+        const apex = process.env.PUBLIC_APEX || 'app.timescard.app'
         const apiUrl = (process.env.PUBLIC_API_URL || `https://api.${apex.replace(/^app\./, '')}`).replace(/\/+$/, '')
         const body = {
           slug,

@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
-# set-primary-frontend.sh — Make app.timescard.cloud the single, permanent
+# set-primary-frontend.sh — Make app.timescard.app the single, permanent
 # frontend URL for every published Pluto project.
 #
 # Instead of minting a new subdomain + Let's Encrypt cert for every project,
 # this script:
 #   1. Ensures /var/lib/pluto/sites/_primary/ exists with a `current` symlink.
-#   2. Installs a fixed nginx vhost for app.timescard.cloud that serves
+#   2. Installs a fixed nginx vhost for app.timescard.app that serves
 #      /var/lib/pluto/sites/_primary/current (SPA fallback + long-cache assets).
 #   3. On every publish, atomically flips `_primary/current` to the given
 #      workspace's live release, so the *latest* project is what app.
-#      timescard.cloud serves — no DNS change, no cert reissue, ever.
+#      timescard.app serves — no DNS change, no cert reissue, ever.
 #
 # Usage (first time — installs vhost + cert):
 #   sudo bash set-primary-frontend.sh --install --email admin@timescard.cloud
@@ -22,7 +22,7 @@
 
 set -euo pipefail
 
-APEX="${APEX_DOMAIN:-app.timescard.cloud}"
+APEX="${APEX_DOMAIN:-app.timescard.app}"
 SITES_ROOT="${PLUTO_SITES_ROOT:-/var/lib/pluto/sites}"
 PRIMARY_DIR="$SITES_ROOT/_primary"
 PRIMARY_LINK="$PRIMARY_DIR/current"
@@ -38,7 +38,7 @@ die()  { printf "  ✗ %s\n" "$*" >&2; exit 1; }
 need_root() { [ "$(id -u)" -eq 0 ] || die "run as root (sudo)"; }
 
 disable_conflicting_vhosts() {
-  # If another enabled nginx config already claims app.timescard.cloud, nginx
+  # If another enabled nginx config already claims the primary frontend host, nginx
   # can keep serving that older vhost and ignore this managed primary frontend
   # block. Move only enabled configs that explicitly mention this exact
   # server_name; the original files are preserved under CONFLICT_BACKUP_DIR.

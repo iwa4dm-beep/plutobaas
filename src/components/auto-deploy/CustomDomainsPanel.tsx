@@ -17,7 +17,7 @@ import {
 } from "@/lib/pluto/custom-domains-store";
 
 const DEFAULT_TARGET_IP = "185.158.133.1";
-const DEFAULT_CNAME_TARGET = "app.timescard.cloud";
+const DEFAULT_CNAME_TARGET = "app.timescard.app";
 const AUTO_TICK_MS = 60_000; // scheduler tick
 
 const STATUS_STYLES: Record<CustomDomainStatus, string> = {

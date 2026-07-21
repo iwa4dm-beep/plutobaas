@@ -5,14 +5,14 @@
 #
 # Usage:
 #   bash pluto-backend/deploy/verify-served-site.sh <slug>
-#   APEX=app.timescard.cloud API=api.timescard.cloud bash ... <slug>
+#   APEX=app.timescard.app API=api.timescard.cloud bash ... <slug>
 #
 # Exits 0 iff at least one endpoint returned HTTP 2xx.
 
 set -uo pipefail
 
 SLUG="${1:-}"
-APEX="${APEX:-app.timescard.cloud}"
+APEX="${APEX:-app.timescard.app}"
 API="${API:-api.timescard.cloud}"
 
 if [ -z "$SLUG" ]; then

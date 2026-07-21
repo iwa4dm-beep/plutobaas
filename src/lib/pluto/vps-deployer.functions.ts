@@ -162,15 +162,18 @@ async function rawFetch(
     };
     return { status: res.status, text, debug, ok: res.ok, headers: hdrs };
   } catch (e) {
+    const err = e as Error & { cause?: { code?: string; message?: string } };
+    const cause = err.cause?.code || err.cause?.message;
+    const message = cause ? `${err.message} (${cause})` : err.message;
     const debug: StepDebug = {
       url,
       method,
       status: 0,
       latencyMs: Date.now() - started,
       reqBodyPreview: reqBodyForPreview ? truncate(reqBodyForPreview) : null,
-      resBodyPreview: (e as Error).message,
+      resBodyPreview: message,
     };
-    return { status: 0, text: (e as Error).message, debug, ok: false, headers: {} };
+    return { status: 0, text: message, debug, ok: false, headers: {} };
   } finally {
     clearTimeout(t);
   }
@@ -548,6 +551,7 @@ export type LiveUrlProbe = {
   primaryActivationOk?: boolean | null;
   primaryVhostInstalled?: boolean | null;
   routeMismatchReason?: string | null;
+  failureReason?: string | null;
 };
 export type SslProbe = {
   url: string;
@@ -607,10 +611,14 @@ export type ServedSiteDiagnostics = {
   hint?: string;
 };
 
-const DEFAULT_PRIMARY_FRONTEND_URL = "https://app.timescard.cloud";
+const DEFAULT_PRIMARY_FRONTEND_URL = "https://app.timescard.app";
 
 function primaryFrontendUrl(): string {
   return (process.env.PLUTO_PRIMARY_FRONTEND_URL || DEFAULT_PRIMARY_FRONTEND_URL).replace(/\/+$/, "");
+}
+
+function hostFromUrl(url: string): string {
+  try { return new URL(url).hostname; } catch { return url.replace(/^https?:\/\//i, "").replace(/\/.*$/, ""); }
 }
 
 export type DeployAllResult = {
@@ -1093,8 +1101,8 @@ export const deployAll = createServerFn({ method: "POST" })
     const autoDerivedCandidates: string[] = [];
     if (template) autoDerivedCandidates.push(expandTemplate(template));
     autoDerivedCandidates.push(defaultPrimaryServedSiteUrl);
-    autoDerivedCandidates.push(`https://${deploySlug}.app.timescard.cloud`);
-    autoDerivedCandidates.push(`https://${deploySlug}-dev.app.timescard.cloud`);
+    autoDerivedCandidates.push(`https://${deploySlug}.app.timescard.app`);
+    autoDerivedCandidates.push(`https://${deploySlug}-dev.app.timescard.app`);
     if (sandboxBase) autoDerivedCandidates.push(`${sandboxBase}/sites/${deploySlug}`);
     autoDerivedCandidates.push(`${base}/sites/${deploySlug}`);
     autoDerivedCandidates.push(`${base}/sandbox/sites/${deploySlug}`);
@@ -1131,7 +1139,7 @@ export const deployAll = createServerFn({ method: "POST" })
           healNote = seed.ok ? "auto-seed checked" : `auto-seed HTTP ${seed.status}`;
           s = await rawFetch(probeUrl, "GET", { accept: "text/html" }, null, null, 15_000);
           if (!s.ok) {
-            const repairBody = JSON.stringify({ action: "worker-and-site", slug: deploySlug, wildcard: "app.timescard.cloud" });
+            const repairBody = JSON.stringify({ action: "worker-and-site", slug: deploySlug, wildcard: hostFromUrl(defaultPrimaryServedSiteUrl) });
             const repair = await rawFetch(`${sandboxEndpointBase}/admin/repair`, "POST", { "content-type": "application/json", "x-sandbox-secret": sandboxSecret, accept: "application/json" }, repairBody, repairBody, 180_000);
             healNote = `${healNote}; worker/nginx repair HTTP ${repair.status}`;
             s = await rawFetch(probeUrl, "GET", { accept: "text/html" }, null, null, 15_000);
@@ -1142,7 +1150,7 @@ export const deployAll = createServerFn({ method: "POST" })
           ? Boolean(s.headers["x-pluto-primary"]) && !/Pluto\s*BaaS/i.test(s.text)
           : null;
         if (primaryProbe && s.ok && !primaryVhostInstalled && sandboxSecret) {
-          const repairBody = JSON.stringify({ action: "primary-frontend", slug: deploySlug, wildcard: "app.timescard.cloud" });
+          const repairBody = JSON.stringify({ action: "primary-frontend", slug: deploySlug, wildcard: hostFromUrl(defaultPrimaryServedSiteUrl) });
           const repair = await rawFetch(`${sandboxEndpointBase}/admin/repair`, "POST", { "content-type": "application/json", "x-sandbox-secret": sandboxSecret, accept: "application/json" }, repairBody, repairBody, 240_000);
           healNote = `${healNote ? healNote + "; " : ""}primary vhost install HTTP ${repair.status}`;
           if (repair.ok && (!primaryActivationState.current || primaryActivationState.current.ok !== true)) {
@@ -1193,7 +1201,7 @@ export const deployAll = createServerFn({ method: "POST" })
         healNote = seed.ok ? "auto-seed checked" : `auto-seed HTTP ${seed.status}`;
         p = await rawFetch(probeUrl, "GET", { accept: "text/html,*/*" }, null, null, 12_000);
         if (!p.ok) {
-          const repairBody = JSON.stringify({ action: "worker-and-site", slug: deploySlug, wildcard: "app.timescard.cloud" });
+          const repairBody = JSON.stringify({ action: "worker-and-site", slug: deploySlug, wildcard: hostFromUrl(defaultPrimaryServedSiteUrl) });
           const repair = await rawFetch(`${sandboxEndpointBase}/admin/repair`, "POST", { "content-type": "application/json", "x-sandbox-secret": sandboxSecret, accept: "application/json" }, repairBody, repairBody, 180_000);
           healNote = `${healNote}; worker/nginx repair HTTP ${repair.status}`;
           p = await rawFetch(probeUrl, "GET", { accept: "text/html,*/*" }, null, null, 12_000);
@@ -1203,7 +1211,7 @@ export const deployAll = createServerFn({ method: "POST" })
       const primaryRequired = probeUrl.replace(/\/+$/, "") === defaultPrimaryServedSiteUrl;
       const primaryActivation = primaryActivationState.current;
       // A correctly installed primary vhost stamps `X-Pluto-Primary` on every
-      // response. If we hit `app.timescard.cloud` and that header is missing
+      // response. If we hit the primary frontend host and that header is missing
       // (or the body still shows Pluto BaaS's own marketing page), nginx is
       // routing this hostname to the BaaS app itself instead of the
       // `_primary/current` release symlink. Auto-run the `primary-frontend`
@@ -1212,7 +1220,7 @@ export const deployAll = createServerFn({ method: "POST" })
         ? Boolean(p.headers["x-pluto-primary"]) && !/Pluto\s*BaaS/i.test(p.text)
         : true;
       if (primaryRequired && !primaryVhostInstalled && sandboxSecret) {
-        const repairBody = JSON.stringify({ action: "primary-frontend", slug: deploySlug, wildcard: "app.timescard.cloud" });
+        const repairBody = JSON.stringify({ action: "primary-frontend", slug: deploySlug, wildcard: hostFromUrl(defaultPrimaryServedSiteUrl) });
         const repair = await rawFetch(`${sandboxEndpointBase}/admin/repair`, "POST", { "content-type": "application/json", "x-sandbox-secret": sandboxSecret, accept: "application/json" }, repairBody, repairBody, 240_000);
         healNote = `${healNote ? healNote + "; " : ""}primary vhost install HTTP ${repair.status}`;
         if (repair.ok && (!primaryActivationState.current || primaryActivationState.current.ok !== true)) {
@@ -1223,6 +1231,13 @@ export const deployAll = createServerFn({ method: "POST" })
       }
       const refreshedPrimaryActivation = primaryActivationState.current;
       served = p.ok && (!primaryRequired || (refreshedPrimaryActivation?.ok === true && primaryVhostInstalled));
+      const failureReason = !p.ok && p.status === 0 && /ENOTFOUND|Could not resolve|resolve|DNS/i.test(p.text)
+        ? "dns-not-resolving"
+        : !p.ok && p.status === 0
+          ? "network-unreachable"
+          : !p.ok
+            ? `http-${p.status}`
+            : null;
       const routeMismatchReason = primaryRequired && p.ok && !primaryVhostInstalled
         ? "primary-vhost-missing"
         : primaryRequired && p.ok && refreshedPrimaryActivation?.ok !== true
@@ -1240,16 +1255,19 @@ export const deployAll = createServerFn({ method: "POST" })
         primaryActivationOk: primaryRequired ? refreshedPrimaryActivation?.ok === true : null,
         primaryVhostInstalled: primaryRequired ? primaryVhostInstalled : null,
         routeMismatchReason,
+        failureReason,
       };
       if (!p.ok) {
-        servedHint = `Bundle uploaded, but ${probeUrl} returned HTTP ${p.status} after auto-heal${healNote ? ` (${healNote})` : ""}. The hostname is not wired to nginx / wildcard SSL, or the sandbox worker did not unpack the release. Run One-click Fix or on VPS: sudo SLUG='${deploySlug}' bash deploy/repair-sandbox-worker-and-site.sh.`;
+        servedHint = failureReason === "dns-not-resolving"
+          ? `${probeUrl} cannot resolve in DNS. Add an A record for ${hostFromUrl(probeUrl)} pointing to the VPS IP 185.158.133.1, then run One-click Fix → Activate primary frontend.`
+          : `Bundle uploaded, but ${probeUrl} returned HTTP ${p.status} after auto-heal${healNote ? ` (${healNote})` : ""}. The hostname is not wired to nginx / SSL, or the sandbox worker did not unpack the release. Run One-click Fix or on VPS: sudo SLUG='${deploySlug}' bash deploy/repair-sandbox-worker-and-site.sh.`;
       } else if (primaryRequired && !primaryVhostInstalled) {
-        servedHint = `${probeUrl} responded 200, but nginx is still serving the Pluto BaaS marketing app on this hostname (X-Pluto-Primary header missing). Run One-click Fix → Activate primary frontend, or on VPS: sudo bash deploy/set-primary-frontend.sh --install --email admin@timescard.cloud && sudo bash deploy/set-primary-frontend.sh --activate '${deploySlug}'.`;
+        servedHint = `${probeUrl} responded 200, but nginx is still serving the Pluto BaaS marketing app on this hostname (X-Pluto-Primary header missing). Run One-click Fix → Activate primary frontend, or on VPS: sudo APEX_DOMAIN='${hostFromUrl(defaultPrimaryServedSiteUrl)}' bash deploy/set-primary-frontend.sh --install --email admin@timescard.cloud && sudo APEX_DOMAIN='${hostFromUrl(defaultPrimaryServedSiteUrl)}' bash deploy/set-primary-frontend.sh --activate '${deploySlug}'.`;
       } else if (primaryRequired && refreshedPrimaryActivation?.ok !== true) {
         servedHint = `Primary frontend ${probeUrl} responded, but it was not flipped to this release (activation HTTP ${refreshedPrimaryActivation?.status ?? 0}). Run One-click Fix → Activate primary frontend, or on VPS: sudo bash deploy/set-primary-frontend.sh --activate '${deploySlug}'.`;
       }
     } else {
-      servedHint = `Auto-detect could not find a reachable served site. Tried: ${autoDerivedCandidates.join(", ")}. To fix permanently, choose one: (a) set PLUTO_SERVED_SITE_URL_TEMPLATE (e.g. "https://{slug}.app.timescard.cloud" or "https://api.timescard.cloud/sites/{slug}/") so the URL is auto-computed per deploy; (b) set PLUTO_SERVED_SITE_URL to a static origin; or (c) install pluto-backend/sandbox-worker on the VPS — it now exposes GET /sites/<slug>/* which nginx can proxy at /sites/ or /sandbox/sites/.`;
+      servedHint = `Auto-detect could not find a reachable served site. Tried: ${autoDerivedCandidates.join(", ")}. To fix permanently, set PLUTO_PRIMARY_FRONTEND_URL=https://app.timescard.app and add DNS A record app.timescard.app → 185.158.133.1, or set PLUTO_SERVED_SITE_URL_TEMPLATE (e.g. "https://{slug}.app.timescard.app" or "https://api.timescard.cloud/sites/{slug}/").`;
     }
 
     // Step: Verify SSL / HTTPS on the resolved served-site URL (non-fatal on
@@ -1280,8 +1298,8 @@ export const deployAll = createServerFn({ method: "POST" })
         try {
           const isPrimaryTarget = target.replace(/\/+$/, "") === defaultPrimaryServedSiteUrl;
           const repairBody = JSON.stringify(isPrimaryTarget
-            ? { action: "primary-frontend", slug: deploySlug, wildcard: "app.timescard.cloud" }
-            : { action: "wildcard-ssl", wildcard: "app.timescard.cloud" });
+            ? { action: "primary-frontend", slug: deploySlug, wildcard: hostFromUrl(defaultPrimaryServedSiteUrl) }
+            : { action: "wildcard-ssl", wildcard: hostFromUrl(defaultPrimaryServedSiteUrl) });
           const repair = await rawFetch(`${sandboxEndpointBase}/admin/repair`, "POST", { "content-type": "application/json", "x-sandbox-secret": sandboxSecret, accept: "application/json" }, repairBody, repairBody, 240_000);
           healNote = `${isPrimaryTarget ? "primary-frontend" : "wildcard-ssl"} repair HTTP ${repair.status}`;
           // Re-probe after repair — Let's Encrypt issuance can take ~30-90s.

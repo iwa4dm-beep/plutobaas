@@ -5,14 +5,14 @@
 #
 # Usage:
 #   bash deploy/diagnose-slug.sh <slug> [--json]
-#   APEX=app.timescard.cloud API=api.timescard.cloud bash deploy/diagnose-slug.sh <slug>
+#   APEX=app.timescard.app API=api.timescard.cloud bash deploy/diagnose-slug.sh <slug>
 set -uo pipefail
 
 SLUG="${1:-}"
 [ -z "$SLUG" ] && { echo "Usage: $0 <slug> [--json]" >&2; exit 2; }
 FMT="human"; [ "${2:-}" = "--json" ] && FMT="json"
 
-APEX="${APEX:-app.timescard.cloud}"
+APEX="${APEX:-app.timescard.app}"
 API="${API:-api.timescard.cloud}"
 here="$(cd "$(dirname "$0")" && pwd)"
 

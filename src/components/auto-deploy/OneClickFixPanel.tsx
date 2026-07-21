@@ -26,7 +26,7 @@ const ACTION_LABELS: Record<RepairAction, { label: string; icon: React.Component
   "worker-and-site": { label: "Repair worker + site", icon: Server, hint: "Restart pluto-sandbox-worker, free port 8787, rebuild slug symlinks." },
   "wildcard-ssl": { label: "Fix wildcard SSL", icon: ShieldCheck, hint: "Issue/renew *.<wildcard> Let's Encrypt cert via DNS-01, reload nginx." },
   "per-slug-ssl": { label: "Issue per-slug HTTP-01 cert", icon: Globe2, hint: "Single-subdomain Let's Encrypt cert via HTTP-01 webroot — works without Cloudflare/DNS-API." },
-  "primary-frontend": { label: "Activate primary frontend", icon: Globe2, hint: "Flip app.timescard.cloud to the latest deployed release without creating a new subdomain/cert." },
+  "primary-frontend": { label: "Activate primary frontend", icon: Globe2, hint: "Flip app.timescard.app to the latest deployed release without creating a new subdomain/cert." },
   "deploy-and-verify": { label: "Redeploy API + verify", icon: Rocket, hint: "Rebuild pluto-api container, restart, run migrations, probe /admin/v1/health." },
   "set-upstream": { label: "Fix worker upstream URL", icon: Server, hint: "Rewrite PLUTO_UPSTREAM_URL in the VPS worker env — use the form below (needs a real Supabase URL)." },
   "all": { label: "Run all (auto-heal)", icon: Zap, hint: "Sequence worker+site → primary frontend → redeploy+verify." },
@@ -62,7 +62,7 @@ export function OneClickFixPanel({ slug, wildcard, acmeEmail, onAutoHealChange }
     setCertBusy(true);
     fetchCertStatus({ data: { slug, wildcard } })
       .then((r) => { if (!cancelled) setCertStatus(r); })
-      .catch((e) => { if (!cancelled) setCertStatus({ ok: false, fqdn: `${slug}.${wildcard || "app.timescard.cloud"}`, exists: false, source: null, error: (e as Error).message }); })
+      .catch((e) => { if (!cancelled) setCertStatus({ ok: false, fqdn: `${slug}.${wildcard || "app.timescard.app"}`, exists: false, source: null, error: (e as Error).message }); })
       .finally(() => { if (!cancelled) setCertBusy(false); });
     return () => { cancelled = true; };
   }, [slug, wildcard, fetchCertStatus]);
@@ -200,7 +200,7 @@ export function OneClickFixPanel({ slug, wildcard, acmeEmail, onAutoHealChange }
               <Calendar className="h-4 w-4 text-muted-foreground" />
               <div className="text-sm font-medium">SSL cert status</div>
               <span className="ml-2 text-[11px] text-muted-foreground font-mono truncate">
-                {certStatus?.fqdn || `${slug}.${wildcard || "app.timescard.cloud"}`}
+                {certStatus?.fqdn || `${slug}.${wildcard || "app.timescard.app"}`}
               </span>
               <button
                 onClick={refreshCert}

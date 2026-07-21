@@ -8,6 +8,8 @@ import { useServerAction } from "@/lib/pluto/use-server-action";
 import { getActiveSubdomains, type ActiveSubdomain } from "@/lib/pluto/vps-health.functions";
 import { runVpsRepair } from "@/lib/pluto/vps-repair.functions";
 
+const DEFAULT_BASE_DOMAIN = "app.timescard.app";
+
 export const Route = createFileRoute("/dashboard/vps-subdomains")({
   component: VpsSubdomainsPage,
   head: () => ({
@@ -23,7 +25,7 @@ function VpsSubdomainsPage() {
   const [repairingHost, setRepairingHost] = useState("");
   const { data, isLoading, isFetching, refetch, error: queryError } = useQuery({
     queryKey: ["vps-active-subdomains"],
-    queryFn: () => getActiveSubdomains({ data: { baseDomain: "app.timescard.cloud" } }),
+    queryFn: () => getActiveSubdomains({ data: { baseDomain: DEFAULT_BASE_DOMAIN } }),
     refetchInterval: 60_000,
   });
 
@@ -39,7 +41,7 @@ function VpsSubdomainsPage() {
     setRepairingHost(row.host);
     try {
       const action = row.issues.includes("ssl_invalid") || row.issues.includes("ssl_expiring_soon") ? "all" : "worker-and-site";
-      await repair.run({ data: { action, slug: row.slug, wildcard: data?.baseDomain || "app.timescard.cloud" } });
+      await repair.run({ data: { action, slug: row.slug, wildcard: data?.baseDomain || DEFAULT_BASE_DOMAIN } });
     } finally {
       setRepairingHost("");
     }

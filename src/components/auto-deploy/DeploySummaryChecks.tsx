@@ -63,7 +63,7 @@ function computeChecks(result: DeployAllResult): CheckRow[] {
     label: "Served site routes deployed app",
     status: !servedProbe ? "skip" : servedProbe.reachable ? "pass" : "warn",
     detail: servedProbe
-      ? `HTTP ${servedProbe.status} · ${servedProbe.latencyMs}ms · ${servedRouteMismatch ? `route mismatch: ${servedProbe.routeMismatchReason ?? "wrong app"} · ` : ""}${servedProbe.url}`
+      ? `HTTP ${servedProbe.status || "000"} · ${servedProbe.latencyMs}ms · ${servedProbe.failureReason === "dns-not-resolving" ? "DNS not resolving · " : ""}${servedRouteMismatch ? `route mismatch: ${servedProbe.routeMismatchReason ?? "wrong app"} · ` : ""}${servedProbe.url}`
       : "no served-site URL resolved",
   });
 
