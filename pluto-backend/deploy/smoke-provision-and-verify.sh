@@ -3,18 +3,18 @@
 # subdomain serves the app over HTTPS with a valid SSL certificate.
 #
 # Usage:
-#   SLUG=smoke-$(date +%s) APEX=app.timescard.app API=api.timescard.cloud \
+#   SLUG=smoke-$(date +%s) APEX=app.timescard.cloud API=api.timescard.cloud \
 #     SECRET=... bash smoke-provision-and-verify.sh
 #
 # Env:
 #   SLUG    - target slug (default: smoke-<epoch>)
-#   APEX    - wildcard apex (default: app.timescard.app)
+#   APEX    - wildcard apex (default: app.timescard.cloud)
 #   API     - API host used by the worker admin surface (default: api.<APEX-suffix>)
 #   SECRET  - x-sandbox-secret. If unset, read from /etc/pluto/sandbox-worker.env
 #             or PLUTO_SANDBOX_SECRET env var.
 set -euo pipefail
 
-APEX="${APEX:-app.timescard.app}"
+APEX="${APEX:-app.timescard.cloud}"
 SLUG="${SLUG:-smoke-$(date +%s)}"
 API="${API:-api.${APEX#app.}}"
 HOST="${SLUG}.${APEX}"

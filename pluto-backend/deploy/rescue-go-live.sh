@@ -13,7 +13,7 @@
 set -uo pipefail
 
 SLUG="${1:-}"
-BASE="${2:-app.timescard.app}"
+BASE="${2:-app.timescard.cloud}"
 REMOTE="${REMOTE:-origin}"
 
 red()   { printf "\033[31m%s\033[0m\n" "$*" >&2; }

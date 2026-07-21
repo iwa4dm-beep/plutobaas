@@ -14,7 +14,7 @@ ROOT="$(cd "$HERE/.." && pwd)"
 ENV_FILE="${ENV_FILE:-$ROOT/.env}"
 COMPOSE_FILE="${COMPOSE_FILE:-$ROOT/docker/docker-compose.yml}"
 SLUG="${SLUG:-${1:-}}"
-WILDCARD="${WILDCARD:-app.timescard.app}"
+WILDCARD="${WILDCARD:-app.timescard.cloud}"
 ACME_EMAIL="${ACME_EMAIL:-admin@${WILDCARD#*.}}"
 
 log(){ printf '\n\033[1;36m▶ %s\033[0m\n' "$*"; }

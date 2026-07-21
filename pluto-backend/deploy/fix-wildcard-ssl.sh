@@ -10,7 +10,7 @@
 #   sudo bash deploy/fix-wildcard-ssl.sh dbhstock-8myjt4
 #
 # Env:
-#   APEX          default: app.timescard.app
+#   APEX          default: app.timescard.cloud
 #   ACME_EMAIL    default: admin@<zone>
 #   CF_API_TOKEN  optional; auto-writes /etc/letsencrypt/cloudflare.ini
 
@@ -18,7 +18,7 @@ set -euo pipefail
 [ "$(id -u)" -eq 0 ] || { echo "✗ run as root (sudo)"; exit 2; }
 
 SLUG="${1:-}"
-APEX="${APEX:-app.timescard.app}"
+APEX="${APEX:-app.timescard.cloud}"
 ACME_EMAIL="${ACME_EMAIL:-admin@${APEX#*.}}"
 here="$(cd "$(dirname "$0")" && pwd)"
 

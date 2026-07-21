@@ -15,7 +15,7 @@
 
 set -uo pipefail
 SLUG="${1:-}"
-BASE="${2:-app.timescard.app}"
+BASE="${2:-app.timescard.cloud}"
 LOG="/var/log/letsencrypt/letsencrypt.log"
 
 red()   { printf "\033[31m%s\033[0m\n" "$*"; }

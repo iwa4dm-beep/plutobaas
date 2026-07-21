@@ -14,7 +14,7 @@
 #
 # Usage:
 #   sudo bash pluto-backend/deploy/install-sites-proxy.sh
-#   sudo bash pluto-backend/deploy/install-sites-proxy.sh --wildcard app.timescard.app
+#   sudo bash pluto-backend/deploy/install-sites-proxy.sh --wildcard app.timescard.cloud
 #   sudo bash pluto-backend/deploy/install-sites-proxy.sh --api-conf /etc/nginx/sites-enabled/api.timescard.cloud.conf
 #
 # Env:
@@ -35,7 +35,7 @@ WILDCARD_APEX=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --api-conf)  API_CONF="$2"; shift 2 ;;
-    --wildcard)  WILDCARD_APEX="${2:-app.timescard.app}"; shift 2 ;;
+    --wildcard)  WILDCARD_APEX="${2:-app.timescard.cloud}"; shift 2 ;;
     --skip-ssl)  SKIP_SSL=1; shift ;;
     --help|-h)   sed -n '2,25p' "$0"; exit 0 ;;
     *) echo "unknown flag: $1" >&2; exit 2 ;;

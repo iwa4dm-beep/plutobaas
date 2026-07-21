@@ -10,7 +10,7 @@
 #   sudo SECRET='আসল-shared-secret' \
 #        SERVICE_KEY='sb_secret_xxx...' \
 #        UPSTREAM='https://abcxyz.supabase.co' \
-#        WILDCARD='app.timescard.app' \
+#        WILDCARD='app.timescard.cloud' \
 #        ACME_EMAIL='admin@timescard.cloud' \
 #        SLUG='dbhstock-8myjt4' \
 #        bash deploy/nuke-and-rebuild-sandbox.sh
@@ -26,7 +26,7 @@ set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/.." && pwd)"
 PORT="${PORT:-8787}"
-WILDCARD="${WILDCARD:-app.timescard.app}"
+WILDCARD="${WILDCARD:-app.timescard.cloud}"
 ACME_EMAIL="${ACME_EMAIL:-admin@${WILDCARD#*.}}"
 SITES_ROOT="${SITES_ROOT:-/var/lib/pluto/sites}"
 TAKEOVER_PORT="${TAKEOVER_PORT:-1}"
@@ -124,6 +124,7 @@ SITES_ROOT=${SITES_ROOT}
 SANDBOX_SITES_ROOT=${SITES_ROOT}
 PLUTO_UPSTREAM_URL=${UPSTREAM}
 PLUTO_SERVICE_ROLE_KEY=${SERVICE_KEY}
+PLUTO_WILDCARD_HOST=${WILDCARD}
 EOF
 install -m 0640 -o root -g www-data "$TMP" /etc/pluto/sandbox-worker.env 2>/dev/null \
   || install -m 0600 "$TMP" /etc/pluto/sandbox-worker.env

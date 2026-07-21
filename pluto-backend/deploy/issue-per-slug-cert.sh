@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Issue an HTTP-01 (webroot) Let's Encrypt certificate for a single Pluto slug
 # subdomain and install a dedicated nginx vhost for it. Use this when the base
-# domain (default: app.timescard.app) is NOT on Cloudflare / a DNS provider
+# domain (default: app.timescard.cloud) is NOT on Cloudflare / a DNS provider
 # supported by certbot, so wildcard DNS-01 isn't available.
 #
 # Usage:
@@ -25,7 +25,7 @@ if [ "$(id -u)" -ne 0 ]; then
 fi
 
 SLUG="${1:-}"
-BASE="${2:-app.timescard.app}"
+BASE="${2:-app.timescard.cloud}"
 EMAIL="${3:-${CERT_EMAIL:-admin@${BASE#*.}}}"
 
 if [[ -z "$SLUG" ]]; then
@@ -125,10 +125,18 @@ fi
 mkdir -p "$WEBROOT/.well-known/acme-challenge"
 chown -R www-data:www-data "$WEBROOT" 2>/dev/null || true
 
-# 3) Ensure the site tree exists so nginx can start after we install the vhost
-mkdir -p "$SITE_ROOT/current" "$SITE_ROOT/preview"
-if [[ ! -f "$SITE_ROOT/current/index.html" ]]; then
-  cat > "$SITE_ROOT/current/index.html" <<HTML
+# 3) Ensure the site tree exists so nginx can start after we install the vhost.
+# Never create current/preview as real directories when absent; the worker owns
+# those paths as atomic symlinks. Use a placeholder release and symlink to it.
+mkdir -p "$SITE_ROOT/_placeholder"
+if [[ ! -e "$SITE_ROOT/current" ]]; then
+  ln -sfn "_placeholder" "$SITE_ROOT/current"
+fi
+if [[ ! -e "$SITE_ROOT/preview" ]]; then
+  ln -sfn "_placeholder" "$SITE_ROOT/preview"
+fi
+if [[ ! -f "$SITE_ROOT/_placeholder/index.html" ]]; then
+  cat > "$SITE_ROOT/_placeholder/index.html" <<HTML
 <!doctype html><meta charset=utf-8><title>${SLUG}</title>
 <body style="font-family:system-ui;padding:3rem;max-width:36rem;margin:auto">
 <h1>Placeholder</h1><p>Slug <code>${SLUG}</code> is registered. Push a build to activate.</p>

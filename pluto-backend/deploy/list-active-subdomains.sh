@@ -11,12 +11,12 @@
 #
 # Usage (VPS-এ SSH করে):
 #   sudo bash /opt/pluto-backend/deploy/list-active-subdomains.sh
-#   sudo bash list-active-subdomains.sh --domain app.timescard.app
+#   sudo bash list-active-subdomains.sh --domain app.timescard.cloud
 #   sudo bash list-active-subdomains.sh --json
 # --------------------------------------------------------------
 set -euo pipefail
 
-BASE_DOMAIN="${BASE_DOMAIN:-app.timescard.app}"
+BASE_DOMAIN="${BASE_DOMAIN:-app.timescard.cloud}"
 NGINX_SITES_ENABLED="${NGINX_SITES_ENABLED:-/etc/nginx/sites-enabled}"
 NGINX_SITES_AVAILABLE="${NGINX_SITES_AVAILABLE:-/etc/nginx/sites-available}"
 WORKER_SITES_ROOT="${WORKER_SITES_ROOT:-/var/lib/pluto/sites}"

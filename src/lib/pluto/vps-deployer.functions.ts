@@ -1270,7 +1270,7 @@ export const deployAll = createServerFn({ method: "POST" })
         servedHint = `Primary frontend ${probeUrl} responded, but it was not flipped to this release (activation HTTP ${refreshedPrimaryActivation?.status ?? 0}). Run One-click Fix → Activate primary frontend, or on VPS: sudo bash deploy/set-primary-frontend.sh --activate '${deploySlug}'.`;
       }
     } else {
-      servedHint = `Auto-detect could not find a reachable served site. Tried: ${autoDerivedCandidates.join(", ")}. To fix permanently, set PLUTO_PRIMARY_FRONTEND_URL=https://app.timescard.app and add DNS A record app.timescard.app → 185.158.133.1, or set PLUTO_SERVED_SITE_URL_TEMPLATE (e.g. "https://{slug}.app.timescard.app" or "https://api.timescard.cloud/sites/{slug}/").`;
+      servedHint = `Auto-detect could not find a reachable served site. Tried: ${autoDerivedCandidates.join(", ")}. To fix permanently, keep PLUTO_PRIMARY_FRONTEND_URL=https://app.timescard.cloud and run One-click Fix → Activate primary frontend, or set PLUTO_SERVED_SITE_URL_TEMPLATE (e.g. "https://{slug}.app.timescard.cloud" or "https://api.timescard.cloud/sites/{slug}/").`;
     }
 
     // Step: Verify SSL / HTTPS on the resolved served-site URL (non-fatal on

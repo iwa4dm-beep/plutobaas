@@ -47,7 +47,7 @@ export function coerceSlug(raw: string): string {
 /** Build the preview subdomain URL for a slug. */
 export function previewSubdomainUrl(
   slug: string,
-  apex: string = (typeof import.meta !== "undefined" && (import.meta as { env?: Record<string, string> }).env?.VITE_PLUTO_APP_HOST) || "app.timescard.app",
+  apex: string = (typeof import.meta !== "undefined" && (import.meta as { env?: Record<string, string> }).env?.VITE_PLUTO_APP_HOST) || "app.timescard.cloud",
 ): string {
   return `https://${slug}.${apex}`;
 }

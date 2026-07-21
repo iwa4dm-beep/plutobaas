@@ -11,7 +11,7 @@
 #
 # Usage:
 #   sudo bash /path/to/go-live.sh <slug> [base]
-#     base defaults to app.timescard.app
+#     base defaults to app.timescard.cloud
 #
 # If you do not know the repo path, run rescue-go-live.sh first; it finds the
 # repo, syncs the latest scripts, then calls this file.
@@ -28,7 +28,7 @@
 
 set -uo pipefail
 SLUG="${1:-}"
-BASE="${2:-app.timescard.app}"
+BASE="${2:-app.timescard.cloud}"
 
 red()   { printf "\033[31m%s\033[0m\n" "$*" >&2; }
 green() { printf "\033[32m%s\033[0m\n" "$*"; }

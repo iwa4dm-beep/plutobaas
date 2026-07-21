@@ -2,8 +2,8 @@
 # setup-wildcard-subdomains.sh — Vercel/Lovable-style dynamic subdomain setup.
 #
 # Run once on the VPS. After this, every slug is served automatically as:
-#   https://<slug>.app.timescard.app/
-#   https://<slug>-dev.app.timescard.app/
+#   https://<slug>.app.timescard.cloud/
+#   https://<slug>-dev.app.timescard.cloud/
 # No per-slug DNS record or nginx vhost is needed.
 #
 # Usage:
@@ -13,7 +13,7 @@
 #        bash deploy/setup-wildcard-subdomains.sh
 #
 # Optional:
-#   APEX=app.timescard.app
+#   APEX=app.timescard.cloud
 #   ACME_EMAIL=admin@timescard.cloud
 #   SLUG=frfrom-he3wm0          # verify/seed one slug after setup
 #   SECRET=<shared-secret>      # otherwise existing/generated worker secret is used
@@ -24,7 +24,7 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/.." && pwd)"
-APEX="${APEX:-${WILDCARD:-app.timescard.app}}"
+APEX="${APEX:-${WILDCARD:-app.timescard.cloud}}"
 ACME_EMAIL="${ACME_EMAIL:-admin@${APEX#*.}}"
 SLUG="${SLUG:-${1:-}}"
 
