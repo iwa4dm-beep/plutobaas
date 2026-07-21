@@ -390,6 +390,65 @@ async function ensureSlugSymlink(wsDir, slug) {
   return slugPath;
 }
 
+async function ensurePrimaryDir() {
+  const primaryDir = path.join(SITES_ROOT, "_primary");
+  const placeholder = path.join(primaryDir, "_placeholder");
+  await fsp.mkdir(placeholder, { recursive: true });
+  const indexPath = path.join(placeholder, "index.html");
+  try { await fsp.access(indexPath); }
+  catch {
+    await fsp.writeFile(indexPath, `<!doctype html><meta charset="utf-8"><title>Pluto</title><h1>No active project</h1>`);
+  }
+  const current = path.join(primaryDir, "current");
+  const st = await fsp.lstat(current).catch(() => null);
+  if (!st) await fsp.symlink(path.relative(primaryDir, placeholder), current);
+  return { primaryDir, current };
+}
+
+async function resolveReleaseForPrimary({ workspaceId, slug }) {
+  if (slug) {
+    const r = await resolveSlug(slug);
+    if (r.ok) {
+      const cur = path.join(SITES_ROOT, r.workspaceId, "current");
+      const target = await fsp.realpath(cur).catch(() => null);
+      if (target) return { key: slug, workspaceId: r.workspaceId, target };
+    }
+  }
+  if (workspaceId) {
+    const ws = safeSlug(workspaceId);
+    const cur = path.join(SITES_ROOT, ws, "current");
+    const target = await fsp.realpath(cur).catch(() => null);
+    if (target) return { key: workspaceId, workspaceId: ws, target };
+  }
+  throw new Error("no live current release found for workspaceId/slug");
+}
+
+async function activatePrimaryFrontend({ workspaceId, slug }) {
+  const { primaryDir, current } = await ensurePrimaryDir();
+  const resolved = await resolveReleaseForPrimary({ workspaceId, slug });
+  const tmp = path.join(primaryDir, `.current.tmp-${randomUUID().slice(0, 8)}`);
+  await fsp.symlink(resolved.target, tmp);
+  await fsp.rename(tmp, current);
+  const manifest = {
+    ok: true,
+    activatedAt: new Date().toISOString(),
+    workspaceId: resolved.workspaceId,
+    slug: slug || null,
+    target: resolved.target,
+    url: `https://${DEFAULT_BASE_DOMAIN}/`,
+  };
+  await fsp.writeFile(path.join(primaryDir, "current.json"), JSON.stringify(manifest, null, 2));
+  return manifest;
+}
+
+async function primaryStatus() {
+  const { current, primaryDir } = await ensurePrimaryDir();
+  const target = await fsp.realpath(current).catch(() => null);
+  let manifest = null;
+  try { manifest = JSON.parse(await fsp.readFile(path.join(primaryDir, "current.json"), "utf-8")); } catch { /* no activation yet */ }
+  return { ok: !!target, url: `https://${DEFAULT_BASE_DOMAIN}/`, target, manifest };
+}
+
 function routeFromWildcardHost(req) {
   const rawHost = String(req.headers.host || "").split(":")[0].trim().toLowerCase();
   const base = safeDomain(DEFAULT_BASE_DOMAIN);
@@ -1258,6 +1317,11 @@ const server = http.createServer(async (req, res) => {
     }
     // Public static routes — no shared secret, safe to expose behind nginx.
     const wildcardRoute = req.method === "GET" ? routeFromWildcardHost(req) : null;
+    const rawHost = String(req.headers.host || "").split(":")[0].trim().toLowerCase();
+    if (req.method === "GET" && rawHost === safeDomain(DEFAULT_BASE_DOMAIN) && !p.startsWith("/sites/") && !p.startsWith("/preview/") && !p.startsWith("/site-status/") && !p.startsWith("/sandbox/") && !p.startsWith("/admin/")) {
+      const { primaryDir } = await ensurePrimaryDir();
+      return serveStatic(req, res, primaryDir, "current", p);
+    }
     if (wildcardRoute && !p.startsWith("/sites/") && !p.startsWith("/preview/") && !p.startsWith("/site-status/") && !p.startsWith("/sandbox/")) {
       const r = await resolveSlug(wildcardRoute.slug);
       if (!r.ok) return json(res, 404, { error: r.error, slug: wildcardRoute.slug });
@@ -1307,6 +1371,19 @@ const server = http.createServer(async (req, res) => {
       const slug = normalizeSlug(q.get("slug"));
       const workspaceId = q.get("workspaceId") ? safeSlug(q.get("workspaceId")) : "";
       return json(res, 200, await sandboxHealth({ slug, workspaceId }));
+    }
+
+    if (req.method === "GET" && (p === "/admin/primary/status" || p === "/sandbox/admin/primary/status")) {
+      return json(res, 200, await primaryStatus());
+    }
+
+    if (req.method === "POST" && (p === "/admin/primary/activate" || p === "/sandbox/admin/primary/activate")) {
+      try {
+        const body = await readJson(req).catch(() => ({}));
+        return json(res, 200, await activatePrimaryFrontend({ workspaceId: body?.workspaceId, slug: body?.slug }));
+      } catch (e) {
+        return json(res, 400, { ok: false, error: e?.message || String(e) });
+      }
     }
 
     // Authenticated JSON API for dashboards/automation:
@@ -1395,11 +1472,11 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, r);
     }
     // POST /admin/repair — whitelisted repair scripts, sudo-run via /usr/local/sbin/pluto-repair.
-    // Body: { action: "worker-and-site"|"wildcard-ssl"|"per-slug-ssl"|"deploy-and-verify"|"all", slug?, wildcard?, acmeEmail? }
+    // Body: { action: "worker-and-site"|"wildcard-ssl"|"per-slug-ssl"|"primary-frontend"|"deploy-and-verify"|"all", slug?, wildcard?, acmeEmail? }
     if (req.method === "POST" && (p === "/admin/repair" || p === "/sandbox/admin/repair")) {
       const body = await readJson(req).catch(() => ({}));
       const action = String(body?.action || "").trim();
-      const allowed = new Set(["worker-and-site", "wildcard-ssl", "per-slug-ssl", "deploy-and-verify", "all"]);
+      const allowed = new Set(["worker-and-site", "wildcard-ssl", "per-slug-ssl", "primary-frontend", "deploy-and-verify", "all"]);
       if (!allowed.has(action)) return json(res, 400, { error: "invalid_action", allowed: [...allowed] });
       const args = [action];
       const safeArg = (v) => typeof v === "string" && /^[A-Za-z0-9._@:/-]{0,253}$/.test(v);

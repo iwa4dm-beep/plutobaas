@@ -17,6 +17,12 @@ function statusIcon(s: CheckStatus) {
   return <Clock className="h-4 w-4 text-muted-foreground" />;
 }
 
+function stepDetail(step: DeployAllResult["steps"][number] | undefined, fallback = "not run") {
+  if (!step) return fallback;
+  const last = step.attempts[step.attempts.length - 1];
+  return last?.detail || (typeof step.result === "string" && step.result ? step.result : fallback);
+}
+
 function computeChecks(result: DeployAllResult): CheckRow[] {
   const rows: CheckRow[] = [];
   const stepBy = Object.fromEntries(result.steps.map((s) => [s.key, s] as const));
@@ -29,7 +35,7 @@ function computeChecks(result: DeployAllResult): CheckRow[] {
     id: "migrations",
     label: "Database migrations applied",
     status: !mig ? "skip" : mig.ok ? "pass" : "fail",
-    detail: mig?.result ?? "not run",
+    detail: stepDetail(mig),
   });
 
   // Bundle unpack
@@ -38,7 +44,7 @@ function computeChecks(result: DeployAllResult): CheckRow[] {
     id: "unpack",
     label: "Bundle unpacked on worker",
     status: !unpack ? "skip" : unpack.ok ? "pass" : "fail",
-    detail: unpack?.result ?? "not run",
+    detail: stepDetail(unpack),
   });
 
   // Health
@@ -47,7 +53,7 @@ function computeChecks(result: DeployAllResult): CheckRow[] {
     id: "health",
     label: "Health probes reachable",
     status: !health ? "skip" : health.ok ? "pass" : "warn",
-    detail: health?.result ?? "not run",
+    detail: stepDetail(health),
   });
 
   // Served site

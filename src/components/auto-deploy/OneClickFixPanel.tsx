@@ -26,8 +26,9 @@ const ACTION_LABELS: Record<RepairAction, { label: string; icon: React.Component
   "worker-and-site": { label: "Repair worker + site", icon: Server, hint: "Restart pluto-sandbox-worker, free port 8787, rebuild slug symlinks." },
   "wildcard-ssl": { label: "Fix wildcard SSL", icon: ShieldCheck, hint: "Issue/renew *.<wildcard> Let's Encrypt cert via DNS-01, reload nginx." },
   "per-slug-ssl": { label: "Issue per-slug HTTP-01 cert", icon: Globe2, hint: "Single-subdomain Let's Encrypt cert via HTTP-01 webroot — works without Cloudflare/DNS-API." },
+  "primary-frontend": { label: "Activate primary frontend", icon: Globe2, hint: "Flip app.timescard.cloud to the latest deployed release without creating a new subdomain/cert." },
   "deploy-and-verify": { label: "Redeploy API + verify", icon: Rocket, hint: "Rebuild pluto-api container, restart, run migrations, probe /admin/v1/health." },
-  "all": { label: "Run all (auto-heal)", icon: Zap, hint: "Sequence worker+site → wildcard SSL → redeploy+verify." },
+  "all": { label: "Run all (auto-heal)", icon: Zap, hint: "Sequence worker+site → primary frontend → redeploy+verify." },
 };
 
 const AUTOHEAL_KEY = "pluto:auto-heal-before-deploy";

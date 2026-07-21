@@ -532,7 +532,7 @@ const DeployAllInput = z.object({
 export type DeployStepKey = "service-login" | "ensure-infra" | "push-migrations" | "upload-bundle" | "verify-deploy" | "unpack-serve" | "activate-service" | "health-check" | "verify-ssl";
 export type DeployStepAttempt = { attempt: number; ok: boolean; detail: string; debug: StepDebug | null; startedAt: string; latencyMs: number };
 export type DeployStepLog = { key: DeployStepKey; label: string; ok: boolean; attempts: DeployStepAttempt[]; result: string | null };
-export type LiveUrlProbe = { url: string; status: number; reachable: boolean; contentType: string | null; snippet: string; latencyMs: number; healNote?: string | null };
+export type LiveUrlProbe = { url: string; status: number; reachable: boolean; contentType: string | null; snippet: string; latencyMs: number; healNote?: string | null; primaryActivationOk?: boolean | null };
 export type SslProbe = {
   url: string;
   ok: boolean;
@@ -590,6 +590,13 @@ export type ServedSiteDiagnostics = {
   siteStatus?: JsonValue;
   hint?: string;
 };
+
+const DEFAULT_PRIMARY_FRONTEND_URL = "https://app.timescard.cloud";
+
+function primaryFrontendUrl(): string {
+  return (process.env.PLUTO_PRIMARY_FRONTEND_URL || DEFAULT_PRIMARY_FRONTEND_URL).replace(/\/+$/, "");
+}
+
 export type DeployAllResult = {
   ok: boolean;
   workspaceId: string;
@@ -816,8 +823,11 @@ export const deployAll = createServerFn({ method: "POST" })
     //           the pipeline safe to run on hosts where the worker isn't installed.
     const bundleKey = `${data.bucket}/${cleanPath}`;
     const sandboxUrl = (firstNonEmptyEnv("PLUTO_SANDBOX_URL") || `${base}/sandbox`).replace(/\/+$/, "");
+    const sandboxEndpointBase = /\/sandbox$/i.test(sandboxUrl) ? sandboxUrl : `${sandboxUrl}/sandbox`;
     const sandboxSecret = firstNonEmptyEnv("PLUTO_SANDBOX_SECRET", "PLUTO_SANDBOX_WORKER_SECRET", "SANDBOX_SHARED_SECRET");
     const servedSiteFromWorker: { url?: string } = {};
+    type PrimaryActivation = { ok: boolean; status: number; detail: string };
+    const primaryActivationState: { current: PrimaryActivation | null } = { current: null };
     const deploySlug = (filename.replace(/\.zip$/i, "") || data.workspaceId).replace(/[^a-zA-Z0-9._-]/g, "-").toLowerCase();
     const unpackStep = await withRetry("unpack-serve", "Unpack bundle + serve (sandbox worker)", data.maxRetries, async () => {
       if (!sandboxUrl || !sandboxSecret) {
@@ -834,8 +844,7 @@ export const deployAll = createServerFn({ method: "POST" })
       // "unpack HTTP 401 sandbox secret mismatch" failure — which used to
       // surface only after the retry loop finished — into an immediate,
       // actionable error with fix steps.
-      const healthBase = /\/sandbox$/i.test(sandboxUrl) ? sandboxUrl : `${sandboxUrl}/sandbox`;
-      const healthUrl = `${healthBase}/health`;
+      const healthUrl = `${sandboxEndpointBase}/health`;
       const hp = await rawFetch(
         healthUrl,
         "GET",
@@ -959,12 +968,28 @@ export const deployAll = createServerFn({ method: "POST" })
 
       let parsed: { webRoot?: string; releaseDir?: string; servedAt?: string; sizeBytes?: number; durationMs?: number } = {};
       try { parsed = JSON.parse(r.text); } catch { /* ignore */ }
-      servedSiteFromWorker.url = `https://${deploySlug}.app.timescard.cloud`;
+      const primaryUrl = primaryFrontendUrl();
+      try {
+        const activateBody = JSON.stringify({ workspaceId: data.workspaceId, slug: deploySlug });
+        const activate = await rawFetch(
+          `${sandboxEndpointBase}/admin/primary/activate`,
+          "POST",
+          { "content-type": "application/json", "x-sandbox-secret": sandboxSecret, accept: "application/json" },
+          activateBody,
+          activateBody,
+          30_000,
+        );
+        primaryActivationState.current = { ok: activate.ok, status: activate.status, detail: activate.text.slice(0, 240) };
+        if (activate.ok) servedSiteFromWorker.url = primaryUrl;
+      } catch (e) {
+        primaryActivationState.current = { ok: false, status: 0, detail: e instanceof Error ? e.message : String(e) };
+      }
+      servedSiteFromWorker.url = servedSiteFromWorker.url || primaryUrl;
       return {
         ok: true,
-        detail: `unpacked ${parsed.sizeBytes ?? "?"} bytes in ${parsed.durationMs ?? "?"}ms → ${parsed.webRoot ?? "(root)"}`,
+        detail: `unpacked ${parsed.sizeBytes ?? "?"} bytes in ${parsed.durationMs ?? "?"}ms → ${parsed.webRoot ?? "(root)"}; primary frontend ${primaryActivationState.current?.ok ? "activated" : `activation pending (HTTP ${primaryActivationState.current?.status ?? 0})`}`,
         debug: r.debug,
-        result: parsed,
+        result: { ...parsed, primaryFrontend: primaryUrl, primaryActivated: primaryActivationState.current },
       };
     });
     steps.push(unpackStep);
@@ -1033,11 +1058,13 @@ export const deployAll = createServerFn({ method: "POST" })
     const inputTemplate = (data.servedSiteUrlTemplate ?? "").trim();
     const expandTemplate = (tpl: string) => tpl.replace(/\{slug\}/g, deploySlug).replace(/\/+$/, "");
 
+    const defaultPrimaryServedSiteUrl = primaryFrontendUrl();
     const configuredServedSiteUrl =
       inputServedSiteUrl ||
       (inputTemplate ? expandTemplate(inputTemplate) : "") ||
       envServedSiteUrl ||
-      (envTemplate ? expandTemplate(envTemplate) : "");
+      (envTemplate ? expandTemplate(envTemplate) : "") ||
+      defaultPrimaryServedSiteUrl;
 
     // Legacy alias so downstream references keep working.
     const servedSiteUrl = configuredServedSiteUrl;
@@ -1049,6 +1076,7 @@ export const deployAll = createServerFn({ method: "POST" })
     const sandboxBase = (process.env.PLUTO_SANDBOX_URL ?? "").replace(/\/+$/, "");
     const autoDerivedCandidates: string[] = [];
     if (template) autoDerivedCandidates.push(expandTemplate(template));
+    autoDerivedCandidates.push(defaultPrimaryServedSiteUrl);
     autoDerivedCandidates.push(`https://${deploySlug}.app.timescard.cloud`);
     autoDerivedCandidates.push(`https://${deploySlug}-dev.app.timescard.cloud`);
     if (sandboxBase) autoDerivedCandidates.push(`${sandboxBase}/sites/${deploySlug}`);
@@ -1064,7 +1092,9 @@ export const deployAll = createServerFn({ method: "POST" })
 
       // Resolve the site URL: explicit env → worker webRoot → auto-derived probe.
       let effectiveSite = servedSiteUrl || servedSiteFromWorker.url || "";
-      let autoSource: "env" | "worker" | "auto-derived" | "none" = servedSiteUrl ? "env" : (servedSiteFromWorker.url ? "worker" : "none");
+      let autoSource: "env" | "primary" | "worker" | "auto-derived" | "none" = servedSiteUrl
+        ? (siteExplicitlyConfigured ? "env" : "primary")
+        : (servedSiteFromWorker.url ? "worker" : "none");
       let siteResult: { status: number; url: string; snippet: string; healNote?: string | null } | null = null;
 
       if (!effectiveSite) {
@@ -1086,7 +1116,7 @@ export const deployAll = createServerFn({ method: "POST" })
           s = await rawFetch(probeUrl, "GET", { accept: "text/html" }, null, null, 15_000);
           if (!s.ok) {
             const repairBody = JSON.stringify({ action: "worker-and-site", slug: deploySlug, wildcard: "app.timescard.cloud" });
-            const repair = await rawFetch(`${sandboxUrl}/admin/repair`, "POST", { "content-type": "application/json", "x-sandbox-secret": sandboxSecret, accept: "application/json" }, repairBody, repairBody, 180_000);
+            const repair = await rawFetch(`${sandboxEndpointBase}/admin/repair`, "POST", { "content-type": "application/json", "x-sandbox-secret": sandboxSecret, accept: "application/json" }, repairBody, repairBody, 180_000);
             healNote = `${healNote}; worker/nginx repair HTTP ${repair.status}`;
             s = await rawFetch(probeUrl, "GET", { accept: "text/html" }, null, null, 15_000);
           }
@@ -1099,13 +1129,17 @@ export const deployAll = createServerFn({ method: "POST" })
       }
       const runtimeOk = h.ok;
       const invokeOk = inv.ok;
-      const siteOk = siteResult ? siteResult.status >= 200 && siteResult.status < 400 : false;
+      const primaryRequired = effectiveSite.replace(/\/+$/, "") === defaultPrimaryServedSiteUrl;
+      const primaryActivation = primaryActivationState.current;
+      const primaryOk = !primaryRequired || primaryActivation?.ok === true;
+      const siteOk = siteResult ? siteResult.status >= 200 && siteResult.status < 400 && primaryOk : false;
       const detail = [
         `runtime: ${runtimeOk ? `✓ HTTP ${h.status}` : `✗ HTTP ${h.status}`} (${h.text.slice(0, 120)})`,
         `bootstrap invoke: ${invokeOk ? `✓ HTTP ${inv.status}` : `✗ HTTP ${inv.status}`} (${inv.text.slice(0, 160)})`,
         siteLine,
-      ].join(" | ");
-      return { ok: runtimeOk && (!data.strictServedSite || siteOk), detail, debug: h.debug, result: { runtime: { status: h.status, body: h.text.slice(0, 400) }, invoke: { status: inv.status, body: inv.text.slice(0, 400) }, site: siteResult, autoSource, autoDerivedCandidates, siteExplicitlyConfigured, strictServedSite: data.strictServedSite } };
+        primaryRequired && !primaryOk ? `primary activation: ✗ HTTP ${primaryActivation?.status ?? 0} (${primaryActivation?.detail?.slice(0, 120) ?? "not attempted"})` : null,
+      ].filter(Boolean).join(" | ");
+      return { ok: runtimeOk && (!data.strictServedSite || siteOk), detail, debug: h.debug, result: { runtime: { status: h.status, body: h.text.slice(0, 400) }, invoke: { status: inv.status, body: inv.text.slice(0, 400) }, site: siteResult, primaryActivation, autoSource, autoDerivedCandidates, siteExplicitlyConfigured, strictServedSite: data.strictServedSite } };
     });
     steps.push(healthStep);
 
@@ -1127,24 +1161,29 @@ export const deployAll = createServerFn({ method: "POST" })
         p = await rawFetch(probeUrl, "GET", { accept: "text/html,*/*" }, null, null, 12_000);
         if (!p.ok) {
           const repairBody = JSON.stringify({ action: "worker-and-site", slug: deploySlug, wildcard: "app.timescard.cloud" });
-          const repair = await rawFetch(`${sandboxUrl}/admin/repair`, "POST", { "content-type": "application/json", "x-sandbox-secret": sandboxSecret, accept: "application/json" }, repairBody, repairBody, 180_000);
+          const repair = await rawFetch(`${sandboxEndpointBase}/admin/repair`, "POST", { "content-type": "application/json", "x-sandbox-secret": sandboxSecret, accept: "application/json" }, repairBody, repairBody, 180_000);
           healNote = `${healNote}; worker/nginx repair HTTP ${repair.status}`;
           p = await rawFetch(probeUrl, "GET", { accept: "text/html,*/*" }, null, null, 12_000);
         }
       }
       const looksHtml = /<!DOCTYPE|<html/i.test(p.text);
+      const primaryRequired = probeUrl.replace(/\/+$/, "") === defaultPrimaryServedSiteUrl;
+      const primaryActivation = primaryActivationState.current;
+      served = p.ok && (!primaryRequired || primaryActivation?.ok === true);
       servedSiteProbe = {
         url: probeUrl,
         status: p.status,
-        reachable: p.ok,
+        reachable: served,
         contentType: looksHtml ? "text/html" : null,
         snippet: p.text.slice(0, 240),
         latencyMs: p.debug.latencyMs,
         healNote,
+        primaryActivationOk: primaryRequired ? primaryActivation?.ok === true : null,
       };
-      served = p.ok;
       if (!p.ok) {
         servedHint = `Bundle uploaded, but ${probeUrl} returned HTTP ${p.status} after auto-heal${healNote ? ` (${healNote})` : ""}. The hostname is not wired to nginx / wildcard SSL, or the sandbox worker did not unpack the release. Run One-click Fix or on VPS: sudo SLUG='${deploySlug}' bash deploy/repair-sandbox-worker-and-site.sh.`;
+      } else if (primaryRequired && primaryActivation?.ok !== true) {
+        servedHint = `Primary frontend ${probeUrl} responded, but it was not flipped to this release (activation HTTP ${primaryActivation?.status ?? 0}). Run One-click Fix → Activate primary frontend, or on VPS: sudo bash deploy/set-primary-frontend.sh --activate '${deploySlug}'.`;
       }
     } else {
       servedHint = `Auto-detect could not find a reachable served site. Tried: ${autoDerivedCandidates.join(", ")}. To fix permanently, choose one: (a) set PLUTO_SERVED_SITE_URL_TEMPLATE (e.g. "https://{slug}.app.timescard.cloud" or "https://api.timescard.cloud/sites/{slug}/") so the URL is auto-computed per deploy; (b) set PLUTO_SERVED_SITE_URL to a static origin; or (c) install pluto-backend/sandbox-worker on the VPS — it now exposes GET /sites/<slug>/* which nginx can proxy at /sites/ or /sandbox/sites/.`;
@@ -1176,9 +1215,12 @@ export const deployAll = createServerFn({ method: "POST" })
         );
       if (looksLikeWildcardTlsFailure && sandboxSecret) {
         try {
-          const repairBody = JSON.stringify({ action: "wildcard-ssl", wildcard: "app.timescard.cloud" });
-          const repair = await rawFetch(`${sandboxUrl}/admin/repair`, "POST", { "content-type": "application/json", "x-sandbox-secret": sandboxSecret, accept: "application/json" }, repairBody, repairBody, 240_000);
-          healNote = `wildcard-ssl repair HTTP ${repair.status}`;
+          const isPrimaryTarget = target.replace(/\/+$/, "") === defaultPrimaryServedSiteUrl;
+          const repairBody = JSON.stringify(isPrimaryTarget
+            ? { action: "primary-frontend", slug: deploySlug, wildcard: "app.timescard.cloud" }
+            : { action: "wildcard-ssl", wildcard: "app.timescard.cloud" });
+          const repair = await rawFetch(`${sandboxEndpointBase}/admin/repair`, "POST", { "content-type": "application/json", "x-sandbox-secret": sandboxSecret, accept: "application/json" }, repairBody, repairBody, 240_000);
+          healNote = `${isPrimaryTarget ? "primary-frontend" : "wildcard-ssl"} repair HTTP ${repair.status}`;
           // Re-probe after repair — Let's Encrypt issuance can take ~30-90s.
           sslProbe = await probeSsl(target);
         } catch (e) {

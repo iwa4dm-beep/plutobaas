@@ -193,6 +193,10 @@ run_one() {
     worker-and-site) SLUG="\$SLUG" WILDCARD="\$WILDCARD" ACME_EMAIL="\$ACME_EMAIL" bash "\$DEPLOY_DIR/repair-sandbox-worker-and-site.sh";;
     wildcard-ssl)    APEX="\${WILDCARD:-app.timescard.cloud}" ACME_EMAIL="\$ACME_EMAIL" bash "\$DEPLOY_DIR/fix-wildcard-ssl.sh" "\$SLUG";;
     per-slug-ssl)    bash "\$DEPLOY_DIR/issue-per-slug-cert.sh" "\$SLUG" "\${WILDCARD:-app.timescard.cloud}" "\${ACME_EMAIL:-admin@timescard.cloud}";;
+    primary-frontend)
+      APEX_DOMAIN="\${WILDCARD:-app.timescard.cloud}" bash "\$DEPLOY_DIR/set-primary-frontend.sh" --install --email "\${ACME_EMAIL:-admin@timescard.cloud}"
+      [ -n "\$SLUG" ] && APEX_DOMAIN="\${WILDCARD:-app.timescard.cloud}" bash "\$DEPLOY_DIR/set-primary-frontend.sh" --activate "\$SLUG"
+      ;;
     deploy-and-verify) SLUG="\$SLUG" bash "\$DEPLOY_DIR/deploy-and-verify.sh";;
     *) echo "unknown action: \$1" >&2; exit 2;;
   esac
@@ -200,10 +204,10 @@ run_one() {
 case "\$ACTION" in
   all)
     run_one worker-and-site
-    run_one wildcard-ssl
+    run_one primary-frontend
     run_one deploy-and-verify
     ;;
-  worker-and-site|wildcard-ssl|per-slug-ssl|deploy-and-verify) run_one "\$ACTION";;
+  worker-and-site|wildcard-ssl|per-slug-ssl|primary-frontend|deploy-and-verify) run_one "\$ACTION";;
   *) echo "invalid action: \$ACTION" >&2; exit 2;;
 esac
 PLUTO_REPAIR_EOF

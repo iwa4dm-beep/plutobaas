@@ -16,11 +16,13 @@ export const DEFAULT_SETTINGS: DeploymentSettings = {
   autoDeployOnPush: false,
   strictServedSite: true,
   strictSsl: false,
-  servedSiteUrl: "",
-  servedSiteUrlTemplate: "https://{slug}.app.timescard.cloud",
+  servedSiteUrl: "https://app.timescard.cloud",
+  servedSiteUrlTemplate: "",
   notifyEmail: "",
   defaultBranch: "main",
 };
+
+const LEGACY_SLUG_TEMPLATE = "https://{slug}.app.timescard.cloud";
 
 const LEGACY_KEYS = {
   servedSiteUrl: "pluto:servedSiteUrl",
@@ -51,8 +53,12 @@ export function loadDeploymentSettings(workspaceId: string): DeploymentSettings 
       Object.assign(merged, parsed);
     }
   } catch { /* ignore */ }
-  if (!merged.servedSiteUrlTemplate.trim()) {
-    merged.servedSiteUrlTemplate = DEFAULT_SETTINGS.servedSiteUrlTemplate;
+  // Older builds stored the slug wildcard template as a default in localStorage.
+  // The current deployment model uses one permanent frontend domain and flips it
+  // to the newest release, so silently migrate that stale default.
+  if (!merged.servedSiteUrl.trim() && merged.servedSiteUrlTemplate.trim() === LEGACY_SLUG_TEMPLATE) {
+    merged.servedSiteUrl = DEFAULT_SETTINGS.servedSiteUrl;
+    merged.servedSiteUrlTemplate = "";
   }
   return merged;
 }
