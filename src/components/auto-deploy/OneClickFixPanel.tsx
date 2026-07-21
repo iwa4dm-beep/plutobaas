@@ -28,6 +28,7 @@ const ACTION_LABELS: Record<RepairAction, { label: string; icon: React.Component
   "per-slug-ssl": { label: "Issue per-slug HTTP-01 cert", icon: Globe2, hint: "Single-subdomain Let's Encrypt cert via HTTP-01 webroot — works without Cloudflare/DNS-API." },
   "primary-frontend": { label: "Activate primary frontend", icon: Globe2, hint: "Flip app.timescard.cloud to the latest deployed release without creating a new subdomain/cert." },
   "deploy-and-verify": { label: "Redeploy API + verify", icon: Rocket, hint: "Rebuild pluto-api container, restart, run migrations, probe /admin/v1/health." },
+  "set-upstream": { label: "Fix worker upstream URL", icon: Server, hint: "Rewrite PLUTO_UPSTREAM_URL in the VPS worker env — use the form below (needs a real Supabase URL)." },
   "all": { label: "Run all (auto-heal)", icon: Zap, hint: "Sequence worker+site → primary frontend → redeploy+verify." },
 };
 
@@ -44,6 +45,7 @@ export function OneClickFixPanel({ slug, wildcard, acmeEmail, onAutoHealChange }
   const [batchInput, setBatchInput] = useState("");
   const [batchBusy, setBatchBusy] = useState(false);
   const [batchResults, setBatchResults] = useState<BatchIssueResult[] | null>(null);
+  const [upstreamInput, setUpstreamInput] = useState("");
   const runRepair = useServerFn(runVpsRepair);
   const runPreflight = useServerFn(preflightAndHeal);
   const fetchCertStatus = useServerFn(getSlugCertStatus);
@@ -113,16 +115,25 @@ export function OneClickFixPanel({ slug, wildcard, acmeEmail, onAutoHealChange }
     finally { setPreflightBusy(false); }
   }, [runPreflight, slug, wildcard]);
 
-  const doRepair = useCallback(async (action: RepairAction) => {
+  const doRepair = useCallback(async (action: RepairAction, extra?: { upstream?: string }) => {
     setBusy(action);
     try {
-      const r = await runRepair({ data: { action, slug, wildcard, acmeEmail } });
+      const r = await runRepair({ data: { action, slug, wildcard, acmeEmail, upstream: extra?.upstream } });
       setResults((prev) => ({ ...prev, [action]: r }));
       if (r.ok) toast.success(`${ACTION_LABELS[action].label} — ok (${r.durationMs}ms)`);
       else toast.error(`${ACTION_LABELS[action].label} — failed (exit ${r.exitCode})`);
     } catch (e) { toast.error(`${ACTION_LABELS[action].label} failed: ${(e as Error).message}`); }
     finally { setBusy(null); }
   }, [runRepair, slug, wildcard, acmeEmail]);
+
+  const parsedUpstream = upstreamInput.trim();
+  const upstreamValid =
+    /^https?:\/\/[A-Za-z0-9._-]+(:\d+)?(\/.*)?$/.test(parsedUpstream) &&
+    !/<[^>]+>|your-project|example\.com|placeholder|supabase-ref/i.test(parsedUpstream);
+  const doSetUpstream = useCallback(() => {
+    if (!upstreamValid) { toast.error("Enter a real https://…supabase.co URL (no placeholders)"); return; }
+    doRepair("set-upstream", { upstream: parsedUpstream });
+  }, [doRepair, upstreamValid, parsedUpstream]);
 
   return (
     <section className="rounded-xl border border-border bg-card">
@@ -296,9 +307,58 @@ export function OneClickFixPanel({ slug, wildcard, acmeEmail, onAutoHealChange }
           )}
         </div>
 
+        {/* Fix worker upstream URL (PLUTO_UPSTREAM_URL placeholder → real Supabase URL) */}
+        <div className="rounded-lg border border-border bg-background/60 p-3">
+          <div className="flex items-center gap-2">
+            <Server className="h-4 w-4 text-muted-foreground" />
+            <div className="text-sm font-medium">Fix worker upstream URL</div>
+            {results["set-upstream"] && (
+              <span className="ml-auto">
+                {results["set-upstream"].ok
+                  ? <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+                  : <XCircle className="h-4 w-4 text-destructive" />}
+              </span>
+            )}
+          </div>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Rewrites <code className="font-mono">PLUTO_UPSTREAM_URL</code> in the VPS worker's env file and
+            restarts the sandbox worker. Use this when <code className="font-mono">/healthz</code> shows a
+            placeholder like <code className="font-mono">&lt;supabase-ref&gt;.supabase.co</code>.
+          </p>
+          <div className="mt-2 flex items-center gap-2">
+            <input
+              type="url"
+              value={upstreamInput}
+              onChange={(e) => setUpstreamInput(e.target.value)}
+              placeholder="https://abcd1234.supabase.co"
+              className="flex-1 rounded-md border border-border bg-background px-3 py-1.5 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-primary"
+            />
+            <button
+              onClick={doSetUpstream}
+              disabled={busy !== null || !upstreamValid}
+              className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+            >
+              {busy === "set-upstream" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wrench className="h-3.5 w-3.5" />}
+              Apply & restart worker
+            </button>
+          </div>
+          {upstreamInput && !upstreamValid && (
+            <p className="mt-1 text-[11px] text-destructive">Must be a real https://…supabase.co URL — no placeholders.</p>
+          )}
+          {results["set-upstream"] && (
+            <details className="mt-2">
+              <summary className="cursor-pointer text-[11px] text-muted-foreground">
+                exit {results["set-upstream"].exitCode} · {results["set-upstream"].durationMs}ms · {results["set-upstream"].tail.length} bytes
+              </summary>
+              {results["set-upstream"].hint && <p className="mt-1 text-[11px] text-amber-600 dark:text-amber-400">{results["set-upstream"].hint}</p>}
+              <pre className="mt-1 max-h-40 overflow-auto rounded bg-muted p-2 text-[11px] whitespace-pre-wrap">{results["set-upstream"].tail || "(no output)"}</pre>
+            </details>
+          )}
+        </div>
+
         {/* Repair action buttons */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-          {(Object.keys(ACTION_LABELS) as RepairAction[]).map((action) => {
+          {(Object.keys(ACTION_LABELS) as RepairAction[]).filter((a) => a !== "set-upstream").map((action) => {
             const meta = ACTION_LABELS[action];
             const Icon = meta.icon;
             const r = results[action];

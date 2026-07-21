@@ -1472,17 +1472,30 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, r);
     }
     // POST /admin/repair — whitelisted repair scripts, sudo-run via /usr/local/sbin/pluto-repair.
-    // Body: { action: "worker-and-site"|"wildcard-ssl"|"per-slug-ssl"|"primary-frontend"|"deploy-and-verify"|"all", slug?, wildcard?, acmeEmail? }
+    // Body: { action: "worker-and-site"|"wildcard-ssl"|"per-slug-ssl"|"primary-frontend"|"deploy-and-verify"|"set-upstream"|"all",
+    //         slug?, wildcard?, acmeEmail?, upstream? }
     if (req.method === "POST" && (p === "/admin/repair" || p === "/sandbox/admin/repair")) {
       const body = await readJson(req).catch(() => ({}));
       const action = String(body?.action || "").trim();
-      const allowed = new Set(["worker-and-site", "wildcard-ssl", "per-slug-ssl", "primary-frontend", "deploy-and-verify", "all"]);
+      const allowed = new Set(["worker-and-site", "wildcard-ssl", "per-slug-ssl", "primary-frontend", "deploy-and-verify", "set-upstream", "all"]);
       if (!allowed.has(action)) return json(res, 400, { error: "invalid_action", allowed: [...allowed] });
       const args = [action];
       const safeArg = (v) => typeof v === "string" && /^[A-Za-z0-9._@:/-]{0,253}$/.test(v);
+      // Upstream URLs may contain a path/port; allow the same char class the safeArg check enforces.
+      const safeUpstream = (v) => typeof v === "string" && /^https?:\/\/[A-Za-z0-9._-]+(:[0-9]+)?(\/[A-Za-z0-9._/-]*)?$/.test(v) &&
+        !/<[^>]+>|your-project|example\.com|placeholder|supabase-ref/i.test(v);
       if (body?.slug && safeArg(String(body.slug))) args.push("--slug", String(body.slug));
       if (body?.wildcard && safeArg(String(body.wildcard))) args.push("--wildcard", String(body.wildcard));
       if (body?.acmeEmail && safeArg(String(body.acmeEmail))) args.push("--acme-email", String(body.acmeEmail));
+      if (body?.upstream) {
+        if (!safeUpstream(String(body.upstream))) {
+          return json(res, 400, { error: "invalid_upstream", detail: "upstream must be https://host[:port][/path] and not a placeholder" });
+        }
+        args.push("--upstream", String(body.upstream));
+      }
+      if (action === "set-upstream" && !body?.upstream) {
+        return json(res, 400, { error: "missing_upstream", detail: "set-upstream requires an `upstream` URL in the request body" });
+      }
       const startedIso = new Date().toISOString();
       const startedAt = Date.now();
       const chunks = [];
@@ -1498,6 +1511,7 @@ const server = http.createServer(async (req, res) => {
       const tail = Buffer.concat(chunks).toString("utf8").slice(-4096);
       let hint = null;
       if (exitCode === 127) hint = "/usr/local/sbin/pluto-repair not installed or sudoers rule missing — run `sudo bash pluto-backend/deploy/full-deploy.sh`.";
+      else if (action === "set-upstream" && exitCode === 2) hint = "set-upstream rejected the URL — check that it is a real Supabase project URL (https://<ref>.supabase.co), not a placeholder.";
       else if (exitCode !== 0) hint = "Repair script exited non-zero — inspect tail for the failing step.";
       const durationMs = Date.now() - startedAt;
       await appendRepairHistory({

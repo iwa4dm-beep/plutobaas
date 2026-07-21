@@ -11,7 +11,7 @@ import { requirePlutoAdmin } from "./admin-middleware";
 import { z } from "zod";
 import { getVpsBaseUrl } from "./vps-client";
 
-export type RepairAction = "worker-and-site" | "wildcard-ssl" | "per-slug-ssl" | "primary-frontend" | "deploy-and-verify" | "all";
+export type RepairAction = "worker-and-site" | "wildcard-ssl" | "per-slug-ssl" | "primary-frontend" | "deploy-and-verify" | "set-upstream" | "all";
 
 export type RepairResult = {
   ok: boolean;
@@ -33,10 +33,22 @@ function envFirst(...keys: string[]): string {
 }
 
 const Input = z.object({
-  action: z.enum(["worker-and-site", "wildcard-ssl", "per-slug-ssl", "primary-frontend", "deploy-and-verify", "all"]),
+  action: z.enum(["worker-and-site", "wildcard-ssl", "per-slug-ssl", "primary-frontend", "deploy-and-verify", "set-upstream", "all"]),
   slug: z.string().min(1).max(128).optional(),
   wildcard: z.string().min(3).max(253).optional(),
   acmeEmail: z.string().email().max(254).optional(),
+  // Only used by action="set-upstream" — rewrite PLUTO_UPSTREAM_URL in /etc/pluto/sandbox-worker.env.
+  upstream: z
+    .string()
+    .url()
+    .max(253)
+    .refine((v) => !/<[^>]+>|your-project|example\.com|placeholder|supabase-ref/i.test(v), {
+      message: "upstream cannot be a placeholder (contains <…>, supabase-ref, etc.)",
+    })
+    .optional(),
+}).refine((d) => d.action !== "set-upstream" || !!d.upstream, {
+  message: "action='set-upstream' requires an `upstream` URL",
+  path: ["upstream"],
 });
 
 export const runVpsRepair = createServerFn({ method: "POST" })
@@ -60,6 +72,7 @@ export const runVpsRepair = createServerFn({ method: "POST" })
       slug: data.slug ?? "",
       wildcard: data.wildcard ?? "",
       acmeEmail: data.acmeEmail ?? "",
+      upstream: data.upstream ?? "",
     });
     try {
       const r = await fetch(endpoint, {
