@@ -715,23 +715,32 @@ export const deployAll = createServerFn({ method: "POST" })
   .middleware([requirePlutoAdmin]).inputValidator((d: unknown) => DeployAllInput.parse(d))
   .handler(async ({ data }): Promise<DeployAllResult> => {
     const t0 = Date.now();
-    const headers = await serviceHeaders({ "content-type": "application/json" }, data.operatorToken);
-    if ("error" in headers) {
-      return { ok: false, workspaceId: data.workspaceId, totalMs: 0, steps: [{ key: "ensure-infra", label: "Auth", ok: false, attempts: [{ attempt: 1, ok: false, detail: headers.error, debug: null, startedAt: nowIso(), latencyMs: 0 }], result: null }] };
-    }
-
-    const base = getVpsBaseUrl();
     const steps: DeployStepLog[] = [];
 
-    // Step 0: infra
+    // Step -1: service user login (preflight). Verifies + refreshes the
+    // service_role credential once BEFORE any admin call, so downstream steps
+    // never hit 401 due to stale/expired auto-minted JWTs.
+    const login = await loginServiceUser(data.operatorToken);
+    if ("error" in login) {
+      steps.push({ key: "service-login", label: "Service user login (preflight)", ok: false, attempts: [{ attempt: 1, ok: false, detail: login.error, debug: login.debug, startedAt: nowIso(), latencyMs: 0 }], result: null });
+      return { ok: false, workspaceId: data.workspaceId, totalMs: Date.now() - t0, steps };
+    }
+    steps.push({ key: "service-login", label: "Service user login (preflight)", ok: true, attempts: [{ attempt: 1, ok: true, detail: "service_role credential verified", debug: null, startedAt: nowIso(), latencyMs: 0 }], result: null });
+
+    const headers = { ...login.headers, "content-type": "application/json" };
+    const base = getVpsBaseUrl();
+
+    // Step 0: infra — call the internal function directly (no nested server-fn
+    // RPC, so the admin auth header cannot get lost across the boundary).
     if (data.ensureInfra) {
       const infra = await withRetry("ensure-infra", "Ensure infra (service user + bucket)", data.maxRetries, async () => {
-        const r = await ensureDeployInfra({ data: { bucket: data.bucket, operatorToken: data.operatorToken } });
+        const r = await runEnsureDeployInfra({ bucket: data.bucket, operatorToken: data.operatorToken });
         return { ok: r.ok, detail: r.steps.map(s => `${s.ok ? "✓" : "✗"} ${s.label}: ${s.detail}`).join(" | "), debug: null, result: r };
       });
       steps.push(infra);
       if (!infra.ok) return { ok: false, workspaceId: data.workspaceId, totalMs: Date.now() - t0, steps };
     }
+
 
     // Step 1: push migrations (create + apply)
     const migName = ((data.label ?? `deploy-${Date.now()}`)).replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 120);
