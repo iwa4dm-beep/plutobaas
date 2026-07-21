@@ -28,6 +28,7 @@ PRIMARY_DIR="$SITES_ROOT/_primary"
 PRIMARY_LINK="$PRIMARY_DIR/current"
 NGX_AVAIL="/etc/nginx/sites-available/pluto-primary.conf"
 NGX_ENABL="/etc/nginx/sites-enabled/pluto-primary.conf"
+CONFLICT_BACKUP_DIR="/etc/nginx/pluto-primary-disabled"
 
 log()  { printf "\n▶ %s\n" "$*"; }
 pass() { printf "  ✓ %s\n" "$*"; }
@@ -35,6 +36,36 @@ warn() { printf "  ⚠ %s\n" "$*" >&2; }
 die()  { printf "  ✗ %s\n" "$*" >&2; exit 1; }
 
 need_root() { [ "$(id -u)" -eq 0 ] || die "run as root (sudo)"; }
+
+disable_conflicting_vhosts() {
+  # If another enabled nginx config already claims app.timescard.cloud, nginx
+  # can keep serving that older vhost and ignore this managed primary frontend
+  # block. Move only enabled configs that explicitly mention this exact
+  # server_name; the original files are preserved under CONFLICT_BACKUP_DIR.
+  local changed=0 conf real dest stamp
+  stamp="$(date +%Y%m%d-%H%M%S)"
+
+  shopt -s nullglob
+  for conf in /etc/nginx/sites-enabled/* /etc/nginx/conf.d/*.conf; do
+    [ -e "$conf" ] || [ -L "$conf" ] || continue
+    real="$conf"
+    [ -L "$conf" ] && real="$(readlink -f "$conf" 2>/dev/null || echo "$conf")"
+    [ "$conf" = "$NGX_ENABL" ] && continue
+    [ "$real" = "$NGX_AVAIL" ] && continue
+    grep -Eq "server_name[[:space:]][^;]*${APEX//./\\.}([[:space:];]|$)" "$real" 2>/dev/null || continue
+
+    mkdir -p "$CONFLICT_BACKUP_DIR"
+    dest="$CONFLICT_BACKUP_DIR/${stamp}-$(basename "$conf")"
+    warn "disabling conflicting nginx vhost for $APEX: $conf → $dest"
+    mv -f "$conf" "$dest"
+    changed=1
+  done
+  shopt -u nullglob
+
+  if [ "$changed" -eq 1 ]; then
+    pass "Conflicting $APEX vhost(s) disabled; backups in $CONFLICT_BACKUP_DIR"
+  fi
+}
 
 ensure_primary_dir() {
   mkdir -p "$PRIMARY_DIR"
@@ -56,6 +87,7 @@ HTML
 }
 
 write_vhost() {
+  disable_conflicting_vhosts
   cat > "$NGX_AVAIL" <<NGX
 # Managed by set-primary-frontend.sh — do not edit by hand.
 server {
@@ -109,6 +141,21 @@ reload_nginx() {
   pass "nginx reloaded"
 }
 
+verify_primary_header() {
+  if ! command -v curl >/dev/null 2>&1; then
+    warn "curl not installed; skipping local primary-vhost header check"
+    return 0
+  fi
+  local headers
+  headers="$(curl -k -sS -I --max-time 8 --resolve "$APEX:443:127.0.0.1" "https://$APEX/" 2>/dev/null || true)"
+  if printf '%s\n' "$headers" | grep -qi '^x-pluto-primary:'; then
+    pass "Verified nginx is serving $APEX via pluto-primary vhost"
+    return 0
+  fi
+  printf '%s\n' "$headers" | sed -n '1,12p' >&2
+  die "$APEX is still not served by pluto-primary (X-Pluto-Primary header missing). Check for duplicate server_name blocks with: sudo nginx -T | grep -n \"server_name .*${APEX}\""
+}
+
 issue_cert() {
   local email="$1"
   [ -n "$email" ] || die "--email is required on first --install"
@@ -160,9 +207,11 @@ cmd_install() {
   local email="${1:-}"
   need_root
   ensure_primary_dir
+  disable_conflicting_vhosts
   issue_cert "$email"
   write_vhost
   reload_nginx
+  verify_primary_header
   cat <<EOF
 
 ════════════════════════════════════════════════════════════════
