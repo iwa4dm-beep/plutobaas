@@ -13,9 +13,10 @@ export function tableToSql(t: TableDef): string {
   if (!hasId && !hasExplicitPk) {
     cols.push(`  id uuid PRIMARY KEY DEFAULT gen_random_uuid()`);
   }
+  let pkEmitted = !hasExplicitPk && !hasId ? true : false; // auto id already carries PK
   for (const c of t.columns) {
     let line = `  ${q(c.name)} ${c.type}`;
-    if (c.primary) line += " PRIMARY KEY";
+    if (c.primary && !pkEmitted) { line += " PRIMARY KEY"; pkEmitted = true; }
     if (c.default) {
       const d = wrapDefault(c.default, c.type);
       if (d !== null) line += ` DEFAULT ${d}`;
