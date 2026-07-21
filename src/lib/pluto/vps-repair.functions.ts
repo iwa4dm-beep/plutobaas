@@ -34,7 +34,7 @@ function envFirst(...keys: string[]): string {
 
 const Input = z.object({
   action: z.enum(["worker-and-site", "wildcard-ssl", "per-slug-ssl", "primary-frontend", "deploy-and-verify", "set-upstream", "all"]),
-  slug: z.string().min(1).max(128).optional(),
+  slug: z.string().max(128).optional().transform((v) => (v && v.trim() ? v.trim() : undefined)),
   wildcard: z.string().min(3).max(253).optional(),
   acmeEmail: z.string().email().max(254).optional(),
   // Only used by action="set-upstream" — rewrite PLUTO_UPSTREAM_URL in /etc/pluto/sandbox-worker.env.
