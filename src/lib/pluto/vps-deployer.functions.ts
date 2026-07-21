@@ -1097,7 +1097,7 @@ export const deployAll = createServerFn({ method: "POST" })
       let autoSource: "env" | "primary" | "worker" | "auto-derived" | "none" = servedSiteUrl
         ? (siteExplicitlyConfigured ? "env" : "primary")
         : (servedSiteFromWorker.url ? "worker" : "none");
-      let siteResult: { status: number; url: string; snippet: string; healNote?: string | null } | null = null;
+      let siteResult: { status: number; url: string; snippet: string; healNote?: string | null; primaryVhostInstalled?: boolean | null } | null = null;
 
       if (!effectiveSite) {
         for (const candidate of autoDerivedCandidates) {
@@ -1123,8 +1123,20 @@ export const deployAll = createServerFn({ method: "POST" })
             s = await rawFetch(probeUrl, "GET", { accept: "text/html" }, null, null, 15_000);
           }
         }
-        siteResult = { status: s.status, url: probeUrl, snippet: s.text.slice(0, 240), ...(healNote ? { healNote } : {}) };
+        const primaryProbe = effectiveSite.replace(/\/+$/, "") === defaultPrimaryServedSiteUrl;
+        let primaryVhostInstalled = primaryProbe
+          ? Boolean(s.headers["x-pluto-primary"]) && !/Pluto\s*BaaS/i.test(s.text)
+          : null;
+        if (primaryProbe && s.ok && !primaryVhostInstalled && sandboxSecret) {
+          const repairBody = JSON.stringify({ action: "primary-frontend", slug: deploySlug, wildcard: "app.timescard.cloud" });
+          const repair = await rawFetch(`${sandboxEndpointBase}/admin/repair`, "POST", { "content-type": "application/json", "x-sandbox-secret": sandboxSecret, accept: "application/json" }, repairBody, repairBody, 240_000);
+          healNote = `${healNote ? healNote + "; " : ""}primary vhost install HTTP ${repair.status}`;
+          s = await rawFetch(probeUrl, "GET", { accept: "text/html" }, null, null, 15_000);
+          primaryVhostInstalled = Boolean(s.headers["x-pluto-primary"]) && !/Pluto\s*BaaS/i.test(s.text);
+        }
+        siteResult = { status: s.status, url: probeUrl, snippet: s.text.slice(0, 240), ...(healNote ? { healNote } : {}), ...(primaryProbe ? { primaryVhostInstalled } : {}) };
         siteLine = `served site (${autoSource}): ${s.ok ? `✓ HTTP ${s.status}` : `✗ HTTP ${s.status}`} @ ${effectiveSite}`;
+        if (primaryProbe && primaryVhostInstalled === false) siteLine += " · primary-vhost=missing";
         if (healNote) siteLine += ` · heal=${healNote}`;
         // Cache the auto-derived URL for the resolvedSite block below.
         if (autoSource === "auto-derived") servedSiteFromWorker.url = servedSiteFromWorker.url ?? effectiveSite;
@@ -1133,13 +1145,15 @@ export const deployAll = createServerFn({ method: "POST" })
       const invokeOk = inv.ok;
       const primaryRequired = effectiveSite.replace(/\/+$/, "") === defaultPrimaryServedSiteUrl;
       const primaryActivation = primaryActivationState.current;
-      const primaryOk = !primaryRequired || primaryActivation?.ok === true;
+      const primaryVhostOk = !primaryRequired || siteResult?.primaryVhostInstalled === true;
+      const primaryOk = !primaryRequired || (primaryActivation?.ok === true && primaryVhostOk);
       const siteOk = siteResult ? siteResult.status >= 200 && siteResult.status < 400 && primaryOk : false;
       const detail = [
         `runtime: ${runtimeOk ? `✓ HTTP ${h.status}` : `✗ HTTP ${h.status}`} (${h.text.slice(0, 120)})`,
         `bootstrap invoke: ${invokeOk ? `✓ HTTP ${inv.status}` : `✗ HTTP ${inv.status}`} (${inv.text.slice(0, 160)})`,
         siteLine,
-        primaryRequired && !primaryOk ? `primary activation: ✗ HTTP ${primaryActivation?.status ?? 0} (${primaryActivation?.detail?.slice(0, 120) ?? "not attempted"})` : null,
+        primaryRequired && primaryActivation?.ok !== true ? `primary activation: ✗ HTTP ${primaryActivation?.status ?? 0} (${primaryActivation?.detail?.slice(0, 120) ?? "not attempted"})` : null,
+        primaryRequired && !primaryVhostOk ? "primary vhost: ✗ X-Pluto-Primary header missing" : null,
       ].filter(Boolean).join(" | ");
       return { ok: runtimeOk && (!data.strictServedSite || siteOk), detail, debug: h.debug, result: { runtime: { status: h.status, body: h.text.slice(0, 400) }, invoke: { status: inv.status, body: inv.text.slice(0, 400) }, site: siteResult, primaryActivation, autoSource, autoDerivedCandidates, siteExplicitlyConfigured, strictServedSite: data.strictServedSite } };
     });
