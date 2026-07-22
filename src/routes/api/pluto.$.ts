@@ -5,7 +5,7 @@
 // api.timescard.cloud fallback when the secret isn't injected. Eliminates the
 // `localhost:3000` "Failed to fetch" errors on fresh installs.
 import { createFileRoute } from "@tanstack/react-router";
-import { recordError, recordSuccess, validateSecrets } from "@/lib/pluto/upstream-status";
+import { recordError, recordSuccess } from "@/lib/pluto/upstream-status";
 
 const HOP_BY_HOP = new Set([
   "connection", "keep-alive", "proxy-authenticate", "proxy-authorization",
