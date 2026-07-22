@@ -11,8 +11,9 @@ import {
 } from "lucide-react";
 import {
   runVpsRepair, preflightAndHeal, getSlugCertStatus, batchIssuePerSlugCerts,
+  diagnoseRepairChannel,
   type RepairAction, type RepairResult, type PreflightHealResult,
-  type SlugCertStatus, type BatchIssueResult,
+  type SlugCertStatus, type BatchIssueResult, type RepairChannelDiagnostic,
 } from "@/lib/pluto/vps-repair.functions";
 
 type Props = {
