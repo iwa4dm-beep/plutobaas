@@ -44,7 +44,7 @@ pass "wrote $DIST/env.js (url=$URL, key=${KEY:0:12}…)"
 INDEX="$DIST/index.html"
 SCRUBBED=0
 while IFS= read -r -d '' html; do
-  if grep -qiE '<link[^>]*rel=["'"'](dns-prefetch|preconnect)["'"'][^>]*supabase\.(co|in)|<link[^>]*supabase\.(co|in)[^>]*rel=["'"'](dns-prefetch|preconnect)["'"']' "$html"; then
+  if grep -qiE "<link[^>]*(dns-prefetch|preconnect)[^>]*supabase\.(co|in)|<link[^>]*supabase\.(co|in)[^>]*(dns-prefetch|preconnect)" "$html"; then
     perl -0777 -i -pe '
       s#\s*<link\b(?=[^>]*\brel=["'"'](?:dns-prefetch|preconnect)["'"'])(?=[^>]*\bhref=["'"']https?://[a-z0-9-]+\.supabase\.(?:co|in)[^"'"'>]*["'"'])[^>]*>\s*\n?##gi;
       s#\s*<link\b(?=[^>]*\bhref=["'"']https?://[a-z0-9-]+\.supabase\.(?:co|in)[^"'"'>]*["'"'])(?=[^>]*\brel=["'"'](?:dns-prefetch|preconnect)["'"'])[^>]*>\s*\n?##gi;
