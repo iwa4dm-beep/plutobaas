@@ -483,3 +483,72 @@ export const diagnoseRepairChannel = createServerFn({ method: "POST" })
     else if (out.actions.some((a) => !a.wired)) out.hint = "Some repair actions are not accepted by the installed wrapper — pull latest and rerun full-deploy.sh on the VPS.";
     return out;
   });
+
+// ---- Live primary-frontend header verification (curl -I equivalent) ---------
+// Called after each Auto Deploy to give a red/green status of whether the
+// primary vhost is actually routing (X-Pluto-Primary header is stamped) at
+// app.timescard.cloud. Also usable ad-hoc from any panel.
+
+export type PrimaryVerifyResult = {
+  ok: boolean;                // true only if HTTP 2xx AND x-pluto-primary is present
+  url: string;
+  status: number;             // 0 on network failure
+  durationMs: number;
+  server: string | null;
+  primaryHeader: string | null;   // value of x-pluto-primary, or null
+  releaseHeader: string | null;   // value of x-pluto-release, or null
+  contentType: string | null;
+  bodyPreview: string;        // first ~240 bytes of GET body (for red-flag diagnosis)
+  headers: Record<string, string>;
+  hint: string | null;
+  checkedAt: string;
+};
+
+const VerifyInput = z.object({
+  url: z.string().url().max(253).optional().transform((v) => (v && v.trim() ? v.trim() : undefined)),
+  slug: z.string().max(128).optional().transform((v) => (v && v.trim() ? v.trim() : undefined)),
+});
+
+export const verifyPrimaryLive = createServerFn({ method: "POST" })
+  .middleware([requirePlutoAdmin])
+  .inputValidator((d: unknown) => VerifyInput.parse(d ?? {}))
+  .handler(async ({ data }): Promise<PrimaryVerifyResult> => {
+    const url = (data.url || envFirst("PLUTO_PRIMARY_FRONTEND_URL") || "https://app.timescard.cloud").replace(/\/+$/, "") + "/";
+    const t0 = Date.now();
+    const checkedAt = new Date().toISOString();
+    try {
+      // GET (not HEAD) — some nginx setups skip custom headers on HEAD, and
+      // we want a body preview to detect "marketing app still routed" cases.
+      const r = await fetch(url, { redirect: "manual" });
+      const buf = await r.arrayBuffer().catch(() => new ArrayBuffer(0));
+      const body = new TextDecoder().decode(buf).slice(0, 240);
+      const headers: Record<string, string> = {};
+      r.headers.forEach((v, k) => { headers[k] = v; });
+      const primaryHeader = r.headers.get("x-pluto-primary");
+      const releaseHeader = r.headers.get("x-pluto-release");
+      const ok = r.ok && !!primaryHeader && primaryHeader.length > 0;
+      let hint: string | null = null;
+      if (!r.ok) {
+        hint = r.status === 0 ? "DNS or network failure — verify wildcard DNS points to the VPS."
+             : r.status === 502 || r.status === 503 ? "nginx is up but the upstream is not — run One-click Fix → Repair worker + site."
+             : `HTTP ${r.status} from ${url} — check nginx vhost.`;
+      } else if (!primaryHeader) {
+        hint = `${url} returned HTTP ${r.status} but the primary vhost is not routing (no X-Pluto-Primary header). Run One-click Fix → Activate primary frontend${data.slug ? ` with slug '${data.slug}'` : ""}.`;
+      }
+      return {
+        ok, url, status: r.status, durationMs: Date.now() - t0,
+        server: r.headers.get("server"),
+        primaryHeader, releaseHeader,
+        contentType: r.headers.get("content-type"),
+        bodyPreview: body, headers, hint, checkedAt,
+      };
+    } catch (e) {
+      return {
+        ok: false, url, status: 0, durationMs: Date.now() - t0,
+        server: null, primaryHeader: null, releaseHeader: null,
+        contentType: null, bodyPreview: "", headers: {},
+        hint: `Network failure reaching ${url}: ${(e as Error).message}. Check DNS + nginx.`,
+        checkedAt,
+      };
+    }
+  });

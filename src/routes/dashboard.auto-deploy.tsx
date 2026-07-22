@@ -30,6 +30,8 @@ import { DeploymentSettingsPanel } from "@/components/auto-deploy/DeploymentSett
 import { RecommendationsPanel } from "@/components/auto-deploy/RecommendationsPanel";
 import { CustomDomainsPanel } from "@/components/auto-deploy/CustomDomainsPanel";
 import { OneClickFixPanel } from "@/components/auto-deploy/OneClickFixPanel";
+import { PrimaryHeaderVerifyCard } from "@/components/auto-deploy/PrimaryHeaderVerifyCard";
+import { LiveRepairLogsPanel } from "@/components/auto-deploy/LiveRepairLogsPanel";
 import { MigrationErrorCard, parseMigrationError } from "@/components/auto-deploy/MigrationErrorCard";
 import { loadDeploymentSettings } from "@/lib/pluto/deployment-settings";
 import { getUpstream } from "@/lib/pluto/upstream";
@@ -198,6 +200,7 @@ function AutoDeployInner() {
   const [plan, setPlan] = useState<IntegrationPlan | null>(null);
   const [logs, setLogs] = useState<string[]>([]);
   const [deployResult, setDeployResult] = useState<DeployAllResult | null>(null);
+  const [verifyRefreshKey, setVerifyRefreshKey] = useState(0);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [slug, setSlug] = useState("");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -529,6 +532,7 @@ function AutoDeployInner() {
         }
         result = await runDeployAttempt(payload, attempt);
         setDeployResult(result);
+        setVerifyRefreshKey((k) => k + 1);
         for (const s of result.steps) {
           log(`${s.ok ? "✓" : "✗"} ${s.label}${s.attempts.at(-1)?.detail ? ` — ${s.attempts.at(-1)!.detail}` : ""}`);
         }
@@ -1037,6 +1041,9 @@ function AutoDeployInner() {
       {/* Deployment settings — Phase 3 */}
       <DeploymentSettingsPanel workspaceId={workspaceId} />
 
+      {/* Live X-Pluto-Primary red/green verification (runs after every deploy) */}
+      <PrimaryHeaderVerifyCard slug={slug} refreshKey={verifyRefreshKey} />
+
       {/* Summary + Checks */}
       {deployResult && <DeploySummaryChecksPanel result={deployResult} />}
 
@@ -1046,11 +1053,15 @@ function AutoDeployInner() {
       {/* Build logs — Phase 2 */}
       {deployResult && <BuildLogsPanel result={deployResult} />}
 
+      {/* Real-time deployer / nginx tail + hint stream */}
+      <LiveRepairLogsPanel slug={slug} refreshKey={verifyRefreshKey} />
+
       {/* Custom domains — Phase 5 */}
       <CustomDomainsPanel workspaceId={workspaceId} currentSlug={slug} />
 
       {/* One-click VPS repair — auto-heal preflight + remediation buttons */}
       <OneClickFixPanel slug={slug} />
+
 
 
       {/* Per-step deploy result */}
