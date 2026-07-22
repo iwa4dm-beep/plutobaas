@@ -200,6 +200,7 @@ function AutoDeployInner() {
   const [plan, setPlan] = useState<IntegrationPlan | null>(null);
   const [logs, setLogs] = useState<string[]>([]);
   const [deployResult, setDeployResult] = useState<DeployAllResult | null>(null);
+  const [verifyRefreshKey, setVerifyRefreshKey] = useState(0);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [slug, setSlug] = useState("");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
