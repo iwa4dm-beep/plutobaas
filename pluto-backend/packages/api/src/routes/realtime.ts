@@ -153,7 +153,7 @@ export async function realtimeRoutes(app: FastifyInstance, cfg: Config) {
       const token = url.searchParams.get('access_token') || url.searchParams.get('apikey') || '';
       if (token) {
         try {
-          const decoded: any = app.jwt.verify(token);
+          const decoded: any = await app.jwt.verify(token);
           userId = decoded?.sub ?? null;
           role = decoded?.role === 'service_role' ? 'service_role' : 'authenticated';
         } catch { /* ignore, stays anon */ }
