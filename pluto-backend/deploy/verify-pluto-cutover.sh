@@ -21,7 +21,7 @@ info()  { printf "\033[1;36m→ %s\033[0m\n" "$*"; }
 FAIL=0
 
 info "Fetching $BASE …"
-HTML=$(curl -sSL --max-time 10 "$BASE/" || true)
+HTML=$(curl -sSL --max-time 10 -H 'cache-control: no-cache' "$BASE/?pluto_verify=$(date +%s)" || true)
 if [[ -z "$HTML" ]]; then red "Site unreachable"; exit 1; fi
 
 # Extract asset URLs from index.html
@@ -33,10 +33,10 @@ fi
 TMP=$(mktemp -d); trap "rm -rf $TMP" EXIT
 printf '%s' "$HTML" > "$TMP/index.html"
 for a in "${ASSETS[@]}"; do
-  curl -sSL --max-time 10 "$BASE$a" >> "$TMP/all.js" 2>/dev/null || true
+  curl -sSL --max-time 10 -H 'cache-control: no-cache' "$BASE$a" >> "$TMP/all.js" 2>/dev/null || true
 done
-curl -sSL --max-time 5 "$BASE/env.js" -o "$TMP/env.js" 2>/dev/null || true
-curl -sSL --max-time 5 "$BASE/sw.js" -o "$TMP/sw.js" 2>/dev/null || true
+curl -sSL --max-time 5 -H 'cache-control: no-cache' "$BASE/env.js?pluto_verify=$(date +%s)" -o "$TMP/env.js" 2>/dev/null || true
+curl -sSL --max-time 5 -H 'cache-control: no-cache' "$BASE/sw.js?pluto_verify=$(date +%s)" -o "$TMP/sw.js" 2>/dev/null || true
 cat "$TMP/index.html" "$TMP/all.js" "$TMP/env.js" "$TMP/sw.js" > "$TMP/all.txt" 2>/dev/null || true
 BYTES=$(wc -c < "$TMP/all.js" 2>/dev/null || echo 0)
 info "Concatenated JS: $BYTES bytes"
