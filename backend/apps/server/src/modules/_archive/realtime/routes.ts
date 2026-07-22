@@ -74,7 +74,7 @@ function parseChannel(input: string): Sub | null {
 export async function realtimeRoutes(app: FastifyInstance) {
   await startListener().catch((e) => app.log.error({ e }, "realtime listener failed"));
 
-  app.get("/", { websocket: true }, async (socket, req) => {
+  const handler = async (socket: any, req: any) => {
     const url = new URL(req.url, "http://x");
     const apikey = url.searchParams.get("apikey");
     if (apikey !== env.ANON_KEY && apikey !== env.SERVICE_ROLE_KEY) {
@@ -106,6 +106,15 @@ export async function realtimeRoutes(app: FastifyInstance) {
     };
     clients.add(client);
     client.send(JSON.stringify({ type: "ready", admin: isAdmin }));
+
+    const initialChannel = url.searchParams.get("channel");
+    if (initialChannel) {
+      const s = parseChannel(initialChannel.includes(":") ? initialChannel : `public:${initialChannel}`);
+      if (s) {
+        client.subs.push(s);
+        client.send(JSON.stringify({ type: "subscribed", channel: initialChannel, status: "SUBSCRIBED" }));
+      }
+    }
 
     socket.on("message", async (raw: Buffer) => {
       let msg: { type?: string; channel?: string; event?: string; payload?: unknown };
@@ -146,5 +155,10 @@ export async function realtimeRoutes(app: FastifyInstance) {
     });
 
     socket.on("close", () => clients.delete(client));
-  });
+  };
+
+  // Register both forms because the prefixed plugin may otherwise expose only
+  // /realtime/v1/ while browser clients commonly open /realtime/v1?apikey=...
+  app.get("/", { websocket: true }, handler);
+  app.get("", { websocket: true }, handler);
 }
