@@ -39,28 +39,26 @@ log() { printf '\n\033[1;36m▶ %s\033[0m\n' "$*"; }
 die() { printf '\n\033[1;31m✗ %s\033[0m\n' "$*" >&2; exit 1; }
 
 [ "$(id -u)" -eq 0 ] || die "run as root (sudo)."
-# Auto-load SECRET from existing worker env if not supplied (sudo strips vars).
-if [ -z "${SECRET:-}" ]; then
-  for envfile in /etc/pluto/sandbox-worker.env /etc/pluto-sandbox-worker.env /etc/default/pluto-sandbox-worker /opt/pluto-sandbox-worker/.env; do
-    [ -r "$envfile" ] || continue
-    for key in SANDBOX_SHARED_SECRET PLUTO_SANDBOX_WORKER_SECRET PLUTO_SANDBOX_SECRET SANDBOX_SECRET SECRET; do
-      val="$(grep -E "^[[:space:]]*${key}[[:space:]]*=" "$envfile" 2>/dev/null | tail -n1 | cut -d= -f2- | sed -e 's/^[[:space:]]*//' -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'$//" -e 's/[[:space:]]*$//')"
-      if [ -n "$val" ]; then
-        SECRET="$val"; export SECRET
-        log "loaded SECRET from $envfile ($key)"
-        break 2
-      fi
-    done
-  done
+# Resolve SECRET via read-sandbox-secret.sh (single source of truth).
+# Falls back to print-sandbox-secret.sh to bootstrap the env file, then re-reads.
+if [ -z "${SECRET:-}" ] && [ -r "$DEPLOY/read-sandbox-secret.sh" ]; then
+  if val="$(bash "$DEPLOY/read-sandbox-secret.sh" 2>/dev/null)" && [ -n "$val" ]; then
+    SECRET="$val"; export SECRET
+    log "loaded SECRET via read-sandbox-secret.sh (len=${#SECRET})"
+  fi
 fi
-# If still missing, auto-run print-sandbox-secret.sh to generate/read it.
-if [ -z "${SECRET:-}" ] && { [ -x "$DEPLOY/print-sandbox-secret.sh" ] || [ -r "$DEPLOY/print-sandbox-secret.sh" ]; }; then
+if [ -z "${SECRET:-}" ] && [ -r "$DEPLOY/print-sandbox-secret.sh" ]; then
   log "no SECRET found — bootstrapping via print-sandbox-secret.sh"
   bash "$DEPLOY/print-sandbox-secret.sh" >/tmp/pluto-secret.out 2>&1 || true
-  val="$(grep -E "^[[:space:]]*SANDBOX_SHARED_SECRET[[:space:]]*=" /etc/pluto/sandbox-worker.env 2>/dev/null | tail -n1 | cut -d= -f2- | sed -e 's/^[[:space:]]*//' -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'$//" -e 's/[[:space:]]*$//')"
-  [ -n "$val" ] && { SECRET="$val"; export SECRET; log "SECRET bootstrapped from /etc/pluto/sandbox-worker.env"; }
+  if val="$(bash "$DEPLOY/read-sandbox-secret.sh" 2>/dev/null)" && [ -n "$val" ]; then
+    SECRET="$val"; export SECRET
+    log "SECRET bootstrapped (len=${#SECRET})"
+  fi
 fi
-[ -n "${SECRET:-}" ] || die "SECRET env is required. Run: sudo bash deploy/print-sandbox-secret.sh"
+if [ -z "${SECRET:-}" ]; then
+  die "SECRET is missing or empty. Run: sudo bash deploy/print-sandbox-secret.sh  (or export SANDBOX_SECRET=<value>)"
+fi
+
 
 WILDCARD="${WILDCARD:-app.timescard.cloud}"
 ACME_EMAIL="${ACME_EMAIL:-admin@${WILDCARD#*.}}"
