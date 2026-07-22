@@ -11,7 +11,7 @@ set -euo pipefail
 
 DOMAIN="${1:-app.timescard.cloud}"
 BASE="https://$DOMAIN"
-PLUTO_API="${PLUTO_API_BASE:-https://api.timescard.cloud}"
+PLUTO_API="${PLUTO_API_BASE:-${PLUTO_API:-https://api.timescard.cloud}}"
 
 red()   { printf "\033[1;31m✗ %s\033[0m\n" "$*"; }
 green() { printf "\033[1;32m✔ %s\033[0m\n" "$*"; }
@@ -21,7 +21,7 @@ info()  { printf "\033[1;36m→ %s\033[0m\n" "$*"; }
 FAIL=0
 
 info "Fetching $BASE …"
-HTML=$(curl -sSL --max-time 10 "$BASE/" || true)
+HTML=$(curl -sSL --max-time 10 -H 'cache-control: no-cache' "$BASE/?pluto_verify=$(date +%s)" || true)
 if [[ -z "$HTML" ]]; then red "Site unreachable"; exit 1; fi
 
 # Extract asset URLs from index.html
@@ -33,10 +33,10 @@ fi
 TMP=$(mktemp -d); trap "rm -rf $TMP" EXIT
 printf '%s' "$HTML" > "$TMP/index.html"
 for a in "${ASSETS[@]}"; do
-  curl -sSL --max-time 10 "$BASE$a" >> "$TMP/all.js" 2>/dev/null || true
+  curl -sSL --max-time 10 -H 'cache-control: no-cache' "$BASE$a" >> "$TMP/all.js" 2>/dev/null || true
 done
-curl -sSL --max-time 5 "$BASE/env.js" -o "$TMP/env.js" 2>/dev/null || true
-curl -sSL --max-time 5 "$BASE/sw.js" -o "$TMP/sw.js" 2>/dev/null || true
+curl -sSL --max-time 5 -H 'cache-control: no-cache' "$BASE/env.js?pluto_verify=$(date +%s)" -o "$TMP/env.js" 2>/dev/null || true
+curl -sSL --max-time 5 -H 'cache-control: no-cache' "$BASE/sw.js?pluto_verify=$(date +%s)" -o "$TMP/sw.js" 2>/dev/null || true
 cat "$TMP/index.html" "$TMP/all.js" "$TMP/env.js" "$TMP/sw.js" > "$TMP/all.txt" 2>/dev/null || true
 BYTES=$(wc -c < "$TMP/all.js" 2>/dev/null || echo 0)
 info "Concatenated JS: $BYTES bytes"
@@ -49,9 +49,9 @@ else
   FAIL=1
 fi
 
-# ---- Check 2: Pluto anon key present ----
-if grep -qE 'pk_anon_[a-zA-Z0-9]+' "$TMP/all.txt" 2>/dev/null; then
-  green "Pluto anon key (pk_anon_…) found in deployed HTML/JS/env"
+# ---- Check 2: Pluto publishable/anon key present ----
+if grep -qE 'pk(_anon)?_[a-zA-Z0-9]+' "$TMP/all.txt" 2>/dev/null; then
+  green "Pluto anon key (pk_…) found in deployed HTML/JS/env"
 else
   red "Pluto anon key NOT found in deployed HTML/JS/env"
   FAIL=1
@@ -75,12 +75,22 @@ else
 fi
 
 # ---- Check 4: Pluto backend reachable ----
-info "Probing $PLUTO_API/health …"
-CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "$PLUTO_API/health" || echo 000)
-if [[ "$CODE" =~ ^2 ]]; then
-  green "Pluto backend healthy ($PLUTO_API/health → $CODE)"
+HEALTH_PATH=""
+HEALTH_CODE="000"
+for p in /health /readyz /healthz; do
+  info "Probing $PLUTO_API$p …"
+  CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "$PLUTO_API$p" || echo 000)
+  if [[ "$CODE" =~ ^2 ]]; then
+    HEALTH_PATH="$p"
+    HEALTH_CODE="$CODE"
+    break
+  fi
+  [[ "$HEALTH_CODE" = "000" ]] && HEALTH_CODE="$CODE"
+done
+if [[ -n "$HEALTH_PATH" ]]; then
+  green "Pluto backend healthy ($PLUTO_API$HEALTH_PATH → $HEALTH_CODE)"
 else
-  warn "Pluto /health returned $CODE (may still be OK if health path differs)"
+  warn "Pluto health probes failed (/health, /readyz, /healthz; last HTTP $HEALTH_CODE)"
 fi
 
 # ---- Check 5: Pluto auth endpoint responsive ----

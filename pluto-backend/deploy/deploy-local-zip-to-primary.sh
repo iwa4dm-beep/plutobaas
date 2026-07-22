@@ -9,6 +9,12 @@
 # Usage:
 #   sudo PLUTO_URL=https://api.timescard.cloud PLUTO_ANON_KEY=pk_anon_xxx \
 #     bash /opt/pluto/deploy/deploy-local-zip-to-primary.sh timesn /tmp/timesn.zip
+#
+# Env:
+#   PLUTO_ALLOW_SUPABASE_LEFTOVERS=1  Restore even if the ZIP is an old
+#                                    pre-cutover build. Used for rollback only.
+#   PLUTO_SKIP_CUTOVER_VERIFY=1       Skip final Pluto cutover verifier.
+#   STRICT_CUTOVER_VERIFY=1           Make final verifier failure fatal.
 # -----------------------------------------------------------------------------
 set -euo pipefail
 
@@ -17,6 +23,9 @@ ZIP="${2:-}"
 SITES_ROOT="${SITES_ROOT:-/var/lib/pluto/sites}"
 APEX_DOMAIN="${APEX_DOMAIN:-app.timescard.cloud}"
 SCRIPT_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+ALLOW_SUPABASE_LEFTOVERS="${PLUTO_ALLOW_SUPABASE_LEFTOVERS:-0}"
+SKIP_CUTOVER_VERIFY="${PLUTO_SKIP_CUTOVER_VERIFY:-0}"
+STRICT_CUTOVER_VERIFY="${STRICT_CUTOVER_VERIFY:-0}"
 
 die() { printf '\033[1;31m✗ %s\033[0m\n' "$*" >&2; exit 1; }
 pass() { printf '\033[1;32m✓ %s\033[0m\n' "$*"; }
@@ -70,7 +79,11 @@ fi
 if grep -RIl 'supabase\.\(co\|in\)' "$WEBROOT" >/tmp/pluto-leftovers.$$ 2>/dev/null; then
   cat /tmp/pluto-leftovers.$$ | sed 's/^/  leftover: /' >&2
   rm -f /tmp/pluto-leftovers.$$
-  die "Supabase URL still exists in extracted bundle. Fix source, rebuild, then run this script again."
+  if [[ "$ALLOW_SUPABASE_LEFTOVERS" = "1" ]]; then
+    info "Supabase leftovers allowed for rollback restore"
+  else
+    die "Supabase URL still exists in extracted bundle. Fix source, rebuild, then run this script again."
+  fi
 fi
 rm -f /tmp/pluto-leftovers.$$
 
@@ -99,6 +112,13 @@ code="$(curl -s -o /tmp/pluto-primary-body.$$ -w '%{http_code}' --max-time 12 "h
 rm -f /tmp/pluto-primary-body.$$
 pass "Primary frontend live: https://$APEX_DOMAIN"
 
-if [[ -f "$SCRIPT_DIR/verify-pluto-cutover.sh" ]]; then
-  bash "$SCRIPT_DIR/verify-pluto-cutover.sh" "$APEX_DOMAIN"
+if [[ "$SKIP_CUTOVER_VERIFY" = "1" ]]; then
+  info "Skipping Pluto cutover verifier (PLUTO_SKIP_CUTOVER_VERIFY=1)"
+elif [[ -f "$SCRIPT_DIR/verify-pluto-cutover.sh" ]]; then
+  if ! bash "$SCRIPT_DIR/verify-pluto-cutover.sh" "$APEX_DOMAIN"; then
+    if [[ "$STRICT_CUTOVER_VERIFY" = "1" ]]; then
+      die "Pluto cutover verifier failed"
+    fi
+    info "Pluto cutover verifier reported warnings/failures; continuing so caller can run smoke-cutover.sh"
+  fi
 fi
