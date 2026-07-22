@@ -1517,7 +1517,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "POST" && (p === "/admin/repair" || p === "/sandbox/admin/repair")) {
       const body = await readJson(req).catch(() => ({}));
       const action = String(body?.action || "").trim();
-      const allowed = new Set(["worker-and-site", "wildcard-ssl", "per-slug-ssl", "primary-frontend", "deploy-and-verify", "set-upstream", "all"]);
+      const allowed = new Set(["worker-and-site", "wildcard-ssl", "per-slug-ssl", "primary-frontend", "deploy-and-verify", "set-upstream", "sync-scripts", "all"]);
       if (!allowed.has(action)) return json(res, 400, { error: "invalid_action", allowed: [...allowed] });
       const args = [action];
       const safeArg = (v) => typeof v === "string" && /^[A-Za-z0-9._@:/-]{0,253}$/.test(v);

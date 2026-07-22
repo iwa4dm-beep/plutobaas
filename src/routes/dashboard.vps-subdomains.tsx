@@ -8,7 +8,7 @@ import { useServerAction } from "@/lib/pluto/use-server-action";
 import { getActiveSubdomains, type ActiveSubdomain } from "@/lib/pluto/vps-health.functions";
 import { runVpsRepair } from "@/lib/pluto/vps-repair.functions";
 
-const DEFAULT_BASE_DOMAIN = "app.timescard.app";
+const DEFAULT_BASE_DOMAIN = "app.timescard.cloud";
 
 export const Route = createFileRoute("/dashboard/vps-subdomains")({
   component: VpsSubdomainsPage,

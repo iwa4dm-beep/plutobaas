@@ -611,9 +611,8 @@ export type ServedSiteDiagnostics = {
   hint?: string;
 };
 
-// app.timescard.cloud resolves to the VPS (72.62.67.83). app.timescard.app has
-// no DNS record, so defaulting to it makes every served-site probe fail with
-// "fetch failed". Callers can override via PLUTO_PRIMARY_FRONTEND_URL.
+// app.timescard.cloud is the single primary frontend for deployed projects.
+// Callers can override via PLUTO_PRIMARY_FRONTEND_URL if infrastructure changes.
 const DEFAULT_PRIMARY_FRONTEND_URL = "https://app.timescard.cloud";
 
 function primaryFrontendUrl(): string {
@@ -640,6 +639,41 @@ function summarizeWorkerRepair(r: { ok: boolean; status: number; text: string })
   } catch {
     return { ok: r.ok, note: `HTTP ${r.status}`, detail: `HTTP ${r.status}: ${r.text.slice(0, 240)}` };
   }
+}
+
+function repairNeedsScriptSync(text: string): boolean {
+  try {
+    const parsed = JSON.parse(text) as { exitCode?: unknown; hint?: unknown; tail?: unknown };
+    return parsed.exitCode === 127 && /No such file or directory|no deploy dir found|deploy scripts moved|backend-joy/i.test(`${parsed.hint ?? ""} ${parsed.tail ?? ""}`);
+  } catch {
+    return /exit=127|No such file or directory|no deploy dir found|deploy scripts moved|backend-joy/i.test(text);
+  }
+}
+
+async function runSandboxRepairWithScriptSync(
+  sandboxEndpointBase: string,
+  sandboxSecret: string,
+  repairBody: string,
+  timeoutMs = 240_000,
+): Promise<Awaited<ReturnType<typeof rawFetch>>> {
+  const endpoint = `${sandboxEndpointBase}/admin/repair`;
+  const headers = { "content-type": "application/json", "x-sandbox-secret": sandboxSecret, accept: "application/json" };
+  const first = await rawFetch(endpoint, "POST", headers, repairBody, repairBody, timeoutMs);
+  if (!repairNeedsScriptSync(first.text)) return first;
+
+  const syncBody = JSON.stringify({ action: "sync-scripts" });
+  const sync = await rawFetch(endpoint, "POST", headers, syncBody, syncBody, 120_000);
+  const syncSummary = summarizeWorkerRepair(sync);
+  if (!syncSummary.ok) return first;
+  const retry = await rawFetch(endpoint, "POST", headers, repairBody, repairBody, timeoutMs);
+  if (retry.text && retry.text.trim().startsWith("{")) {
+    try {
+      const parsed = JSON.parse(retry.text) as Record<string, unknown>;
+      parsed.tail = `Auto-synced deploy scripts, then retried.\n\n${String(parsed.tail ?? "")}`;
+      retry.text = JSON.stringify(parsed);
+    } catch { /* keep raw */ }
+  }
+  return retry;
 }
 
 export type DeployAllResult = {
@@ -1161,7 +1195,7 @@ export const deployAll = createServerFn({ method: "POST" })
           s = await rawFetch(probeUrl, "GET", { accept: "text/html" }, null, null, 15_000);
           if (!s.ok) {
             const repairBody = JSON.stringify({ action: "worker-and-site", slug: deploySlug, wildcard: hostFromUrl(defaultPrimaryServedSiteUrl) });
-            const repair = await rawFetch(`${sandboxEndpointBase}/admin/repair`, "POST", { "content-type": "application/json", "x-sandbox-secret": sandboxSecret, accept: "application/json" }, repairBody, repairBody, 180_000);
+            const repair = await runSandboxRepairWithScriptSync(sandboxEndpointBase, sandboxSecret, repairBody, 180_000);
             healNote = `${healNote}; worker/nginx repair HTTP ${repair.status}`;
             s = await rawFetch(probeUrl, "GET", { accept: "text/html" }, null, null, 15_000);
           }
@@ -1172,7 +1206,7 @@ export const deployAll = createServerFn({ method: "POST" })
           : null;
         if (primaryProbe && s.ok && !primaryVhostInstalled && sandboxSecret) {
           const repairBody = JSON.stringify({ action: "primary-frontend", slug: deploySlug, wildcard: hostFromUrl(defaultPrimaryServedSiteUrl) });
-          const repair = await rawFetch(`${sandboxEndpointBase}/admin/repair`, "POST", { "content-type": "application/json", "x-sandbox-secret": sandboxSecret, accept: "application/json" }, repairBody, repairBody, 240_000);
+          const repair = await runSandboxRepairWithScriptSync(sandboxEndpointBase, sandboxSecret, repairBody, 240_000);
           const repairSummary = summarizeWorkerRepair(repair);
           healNote = `${healNote ? healNote + "; " : ""}primary vhost repair ${repairSummary.note}`;
           if (!repairSummary.ok) {
@@ -1228,7 +1262,7 @@ export const deployAll = createServerFn({ method: "POST" })
         p = await rawFetch(probeUrl, "GET", { accept: "text/html,*/*" }, null, null, 12_000);
         if (!p.ok) {
           const repairBody = JSON.stringify({ action: "worker-and-site", slug: deploySlug, wildcard: hostFromUrl(defaultPrimaryServedSiteUrl) });
-          const repair = await rawFetch(`${sandboxEndpointBase}/admin/repair`, "POST", { "content-type": "application/json", "x-sandbox-secret": sandboxSecret, accept: "application/json" }, repairBody, repairBody, 180_000);
+          const repair = await runSandboxRepairWithScriptSync(sandboxEndpointBase, sandboxSecret, repairBody, 180_000);
           healNote = `${healNote}; worker/nginx repair HTTP ${repair.status}`;
           p = await rawFetch(probeUrl, "GET", { accept: "text/html,*/*" }, null, null, 12_000);
         }
@@ -1247,7 +1281,7 @@ export const deployAll = createServerFn({ method: "POST" })
         : true;
       if (primaryRequired && !primaryVhostInstalled && sandboxSecret) {
         const repairBody = JSON.stringify({ action: "primary-frontend", slug: deploySlug, wildcard: hostFromUrl(defaultPrimaryServedSiteUrl) });
-        const repair = await rawFetch(`${sandboxEndpointBase}/admin/repair`, "POST", { "content-type": "application/json", "x-sandbox-secret": sandboxSecret, accept: "application/json" }, repairBody, repairBody, 240_000);
+        const repair = await runSandboxRepairWithScriptSync(sandboxEndpointBase, sandboxSecret, repairBody, 240_000);
         const repairSummary = summarizeWorkerRepair(repair);
         healNote = `${healNote ? healNote + "; " : ""}primary vhost repair ${repairSummary.note}`;
         if (!repairSummary.ok) {
@@ -1331,7 +1365,7 @@ export const deployAll = createServerFn({ method: "POST" })
           const repairBody = JSON.stringify(isPrimaryTarget
             ? { action: "primary-frontend", slug: deploySlug, wildcard: hostFromUrl(defaultPrimaryServedSiteUrl) }
             : { action: "wildcard-ssl", wildcard: hostFromUrl(defaultPrimaryServedSiteUrl) });
-          const repair = await rawFetch(`${sandboxEndpointBase}/admin/repair`, "POST", { "content-type": "application/json", "x-sandbox-secret": sandboxSecret, accept: "application/json" }, repairBody, repairBody, 240_000);
+          const repair = await runSandboxRepairWithScriptSync(sandboxEndpointBase, sandboxSecret, repairBody, 240_000);
           healNote = `${isPrimaryTarget ? "primary-frontend" : "wildcard-ssl"} repair HTTP ${repair.status}`;
           // Re-probe after repair — Let's Encrypt issuance can take ~30-90s.
           sslProbe = await probeSsl(target);

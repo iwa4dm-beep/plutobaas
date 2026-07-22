@@ -790,7 +790,7 @@ function AutoDeployInner() {
         <div className="mt-3 space-y-3 text-sm">
           <p className="text-xs text-muted-foreground">
             Health check-এর served-site probe এই URL থেকে হবে। default হিসেবে প্রতিটি deploy একই primary frontend
-            <code className="font-mono"> https://app.timescard.app</code> এ flip হবে; empty রাখলে env/autodetect fallback ব্যবহার হবে।
+            <code className="font-mono"> https://app.timescard.cloud</code> এ flip হবে; empty রাখলে env/autodetect fallback ব্যবহার হবে।
             Bundle unpack হওয়ার পর served-site fail হলে deploy auto-heal চালাবে; তবুও serve না হলে strict mode deploy fail করবে।
           </p>
           <div>
@@ -799,7 +799,7 @@ function AutoDeployInner() {
               type="text"
               value={servedSiteUrl}
               onChange={(e) => saveServedSiteConfig({ url: e.target.value })}
-              placeholder="https://app.timescard.app"
+              placeholder="https://app.timescard.cloud"
               className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm font-mono"
             />
           </div>

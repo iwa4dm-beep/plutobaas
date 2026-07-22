@@ -116,7 +116,7 @@ export function DeploymentSettingsPanel({ workspaceId, onSaved }: Props) {
           hint="Exact URL probed after unpack. Leave blank to auto-detect from the sandbox worker."
           value={form.servedSiteUrl}
           onChange={(v) => update("servedSiteUrl", v)}
-          placeholder="https://app.timescard.app"
+          placeholder="https://app.timescard.cloud"
           full
         />
         <Field
@@ -124,7 +124,7 @@ export function DeploymentSettingsPanel({ workspaceId, onSaved }: Props) {
           hint="Pattern with {slug} placeholder. Applied when no explicit URL is set."
           value={form.servedSiteUrlTemplate}
           onChange={(v) => update("servedSiteUrlTemplate", v)}
-          placeholder="https://{slug}.app.timescard.app"
+          placeholder="https://{slug}.app.timescard.cloud"
           full
         />
         <div className="md:col-span-2">

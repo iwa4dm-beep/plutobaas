@@ -11,7 +11,7 @@ import { requirePlutoAdmin } from "./admin-middleware";
 import { z } from "zod";
 import { getVpsBaseUrl } from "./vps-client";
 
-export type RepairAction = "worker-and-site" | "wildcard-ssl" | "per-slug-ssl" | "primary-frontend" | "deploy-and-verify" | "set-upstream" | "all";
+export type RepairAction = "worker-and-site" | "wildcard-ssl" | "per-slug-ssl" | "primary-frontend" | "deploy-and-verify" | "set-upstream" | "sync-scripts" | "all";
 
 export type RepairResult = {
   ok: boolean;
@@ -33,7 +33,7 @@ function envFirst(...keys: string[]): string {
 }
 
 const Input = z.object({
-  action: z.enum(["worker-and-site", "wildcard-ssl", "per-slug-ssl", "primary-frontend", "deploy-and-verify", "set-upstream", "all"]),
+  action: z.enum(["worker-and-site", "wildcard-ssl", "per-slug-ssl", "primary-frontend", "deploy-and-verify", "set-upstream", "sync-scripts", "all"]),
   slug: z.string().max(128).optional().transform((v) => (v && v.trim() ? v.trim() : undefined)),
   wildcard: z.string().max(253).optional().transform((v) => (v && v.trim().length >= 3 ? v.trim() : undefined)),
   acmeEmail: z.string().max(254).optional().transform((v) => (v && v.trim() ? v.trim() : undefined)).pipe(z.string().email().max(254).optional()),
@@ -97,6 +97,56 @@ export const runVpsRepair = createServerFn({ method: "POST" })
       }
       let parsed: { ok?: boolean; exitCode?: number; tail?: string; hint?: string | null } = {};
       try { parsed = JSON.parse(text); } catch { /* keep raw */ }
+      const failedBecauseScriptsMoved = typeof parsed.exitCode === "number" && parsed.exitCode === 127 && /No such file or directory|no deploy dir found|deploy scripts moved|backend-joy/i.test(`${parsed.tail ?? ""} ${parsed.hint ?? ""}`);
+      if (failedBecauseScriptsMoved && data.action !== "sync-scripts") {
+        const syncBody = JSON.stringify({ action: "sync-scripts" });
+        const sync = await fetch(endpoint, {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-sandbox-secret": secret,
+            accept: "application/json",
+          },
+          body: syncBody,
+        });
+        const syncText = await sync.text();
+        let syncParsed: { ok?: boolean; exitCode?: number; tail?: string; hint?: string | null } = {};
+        try { syncParsed = JSON.parse(syncText); } catch { /* keep raw */ }
+        if (sync.ok && syncParsed.ok !== false && (syncParsed.exitCode == null || syncParsed.exitCode === 0)) {
+          const retry = await fetch(endpoint, {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              "x-sandbox-secret": secret,
+              accept: "application/json",
+            },
+            body,
+          });
+          const retryText = await retry.text();
+          try { parsed = JSON.parse(retryText); } catch { parsed = { ok: retry.ok, exitCode: retry.ok ? 0 : retry.status, tail: retryText }; }
+          const retryOk = retry.ok && parsed.ok !== false && (parsed.exitCode == null || parsed.exitCode === 0);
+          return {
+            ok: retryOk,
+            action: data.action,
+            exitCode: typeof parsed.exitCode === "number" ? parsed.exitCode : (retryOk ? 0 : retry.status),
+            durationMs: Date.now() - t0,
+            tail: `Auto-synced deploy scripts via /opt/pluto/deploy, then retried.\n\n${typeof parsed.tail === "string" ? parsed.tail : retryText}`.slice(-4096),
+            hint: retryOk ? null : (typeof parsed.hint === "string" ? parsed.hint : "Repair retry failed after syncing deploy scripts — inspect tail."),
+            startedAt,
+            finishedAt: new Date().toISOString(),
+          };
+        }
+        return {
+          ok: false,
+          action: data.action,
+          exitCode: 127,
+          durationMs: Date.now() - t0,
+          tail: `Original repair failed because deploy scripts were missing. sync-scripts also failed.\n\nOriginal:\n${parsed.tail ?? text}\n\nSync:\n${syncParsed.tail ?? syncText}`.slice(-4096),
+          hint: "The VPS wrapper is stale or cannot find deploy scripts. Run the path-independent bootstrap from the real checkout, then retry: sudo find /root /opt /srv /home -maxdepth 8 -type f -path '*/pluto-backend/deploy/bootstrap-sandbox-worker.sh' -print -quit | xargs -r sudo bash",
+          startedAt,
+          finishedAt: new Date().toISOString(),
+        };
+      }
       return {
         ok: parsed.ok !== false && (parsed.exitCode == null || parsed.exitCode === 0),
         action: data.action,
@@ -143,8 +193,10 @@ export const preflightAndHeal = createServerFn({ method: "POST" })
       try {
         const r = await fetch(url, { headers });
         const text = await r.text();
-        return { status: r.status, ok: r.ok, detail: text.slice(0, 240) };
-      } catch (e) { return { status: 0, ok: false, detail: (e as Error).message }; }
+        const primaryHeader = r.headers.get("x-pluto-primary") || "";
+        const releaseHeader = r.headers.get("x-pluto-release") || "";
+        return { status: r.status, ok: r.ok, detail: `x-pluto-primary=${primaryHeader}; x-pluto-release=${releaseHeader}; ${text.slice(0, 240)}`, primaryHeader };
+      } catch (e) { return { status: 0, ok: false, detail: (e as Error).message, primaryHeader: "" }; }
     }
 
     const api = await probe(`${base}/admin/v1/health`);
@@ -154,13 +206,16 @@ export const preflightAndHeal = createServerFn({ method: "POST" })
     const worker = await probe(`${base}/sandbox/health`, workerSecret ? { "x-sandbox-secret": workerSecret } : {});
     if (!worker.ok) suggestions.add("worker-and-site");
 
-    // Slug served-site probe (uses base + /sites/<slug>/).
+    // Primary served-site probe: this stack publishes every latest project to
+    // app.timescard.cloud, not the legacy /sites/<slug>/ route.
     let slug404 = { ok: true, url: "", status: 0 };
     if (slug) {
-      const url = `${base}/sites/${encodeURIComponent(slug)}/`;
+      const url = envFirst("PLUTO_PRIMARY_FRONTEND_URL") || "https://app.timescard.cloud";
       const p = await probe(url);
-      slug404 = { ok: p.ok, url, status: p.status };
+      const routedToPrimary = p.ok && p.primaryHeader.length > 0;
+      slug404 = { ok: routedToPrimary, url, status: p.status };
       if (!p.ok && (p.status === 404 || p.status === 0)) suggestions.add("worker-and-site");
+      if (p.ok && !routedToPrimary) suggestions.add("primary-frontend");
     }
 
     // Wildcard SSL check — attempt HTTPS handshake to a synthetic subdomain.
@@ -389,7 +444,7 @@ export const diagnoseRepairChannel = createServerFn({ method: "POST" })
     // criteria: response reached the wrapper (status ≠ 404 and ≠ 502/503).
     const probeActions: RepairAction[] = [
       "worker-and-site", "wildcard-ssl", "per-slug-ssl",
-      "primary-frontend", "deploy-and-verify", "all",
+      "primary-frontend", "deploy-and-verify", "sync-scripts", "all",
     ];
     for (const action of probeActions) {
       try {

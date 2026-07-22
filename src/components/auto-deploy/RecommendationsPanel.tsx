@@ -79,7 +79,7 @@ function computeRecommendations(
       detail: servedHint || (routeMismatch
         ? `The hostname is reachable, but route validation failed (${servedProbe.routeMismatchReason ?? "wrong app"}). Run One-click Fix → Activate primary frontend.`
         : servedProbe.failureReason === "dns-not-resolving"
-          ? "Add an A record for app.timescard.app pointing to 185.158.133.1, wait for DNS propagation, then run One-click Fix → Activate primary frontend."
+          ? "Add an A record for app.timescard.cloud pointing to the VPS IP, wait for DNS propagation, then run One-click Fix → Activate primary frontend."
         : "Bundle may be unpacked but not routed. Open the Diagnose served-site panel above, or check nginx sites-proxy + DNS wildcard."),
     });
   }
