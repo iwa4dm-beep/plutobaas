@@ -212,6 +212,51 @@ export function OneClickFixPanel({ slug, wildcard, acmeEmail, onAutoHealChange }
           )}
         </div>
 
+        {/* Repair-channel diagnostic — proves each button is actually wired to the VPS */}
+        <div className="rounded-lg border border-border bg-background/60 p-3">
+          <div className="flex items-center gap-2">
+            <Wrench className="h-4 w-4 text-muted-foreground" />
+            <div className="text-sm font-medium">Repair channel diagnostic</div>
+            <button
+              onClick={doDiagnose}
+              disabled={diagBusy}
+              className="ml-auto inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1 text-xs hover:bg-accent disabled:opacity-50"
+            >
+              {diagBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Activity className="h-3.5 w-3.5" />}
+              Test all buttons
+            </button>
+          </div>
+          <p className="mt-1 text-[11px] text-muted-foreground">
+            Confirms each One-click Fix action is actually reachable on the VPS (secret, worker <code className="font-mono">/healthz</code>, <code className="font-mono">/admin/repair</code> auth, wrapper install, per-action wiring).
+          </p>
+          {diag && (
+            <ul className="mt-2 space-y-1 text-xs">
+              <PreflightRow label="Secret configured" icon={ShieldCheck}
+                ok={diag.secretConfigured} detail={diag.secretConfigured ? "PLUTO_SANDBOX_SECRET set" : "PLUTO_SANDBOX_SECRET missing in Lovable Cloud"} />
+              <PreflightRow label="Worker /healthz" icon={Server}
+                ok={diag.worker.ok} detail={`HTTP ${diag.worker.status} · ${diag.worker.version || diag.worker.detail}`} />
+              <PreflightRow label="/admin/repair auth" icon={ShieldCheck}
+                ok={diag.endpointAuth.ok} detail={diag.endpointAuth.detail} />
+              <PreflightRow label="Wrapper installed" icon={Wrench}
+                ok={diag.wrapperInstalled.ok} detail={diag.wrapperInstalled.detail} />
+              {diag.actions.map((a) => (
+                <PreflightRow key={a.action} label={ACTION_LABELS[a.action]?.label || a.action} icon={ACTION_LABELS[a.action]?.icon || Server}
+                  ok={a.wired} detail={a.detail} />
+              ))}
+              {diag.hint && (
+                <li className="mt-2 flex items-start gap-2 rounded-md bg-amber-500/10 border border-amber-500/30 p-2 text-amber-700 dark:text-amber-300">
+                  <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                  <span>{diag.hint}</span>
+                </li>
+              )}
+              <li className="mt-1 text-[11px] text-muted-foreground font-mono truncate" title={diag.sandboxUrl}>
+                sandboxUrl: {diag.sandboxUrl}
+              </li>
+            </ul>
+          )}
+        </div>
+
+
         {/* Per-slug SSL cert status */}
         {slug && (
           <div className="rounded-lg border border-border bg-background/60 p-3">
