@@ -57,6 +57,16 @@ BACKUP_KEEP="${BACKUP_KEEP:-5}"
 LAST_BACKUP=""
 DEPLOYED_THIS_RUN=0
 
+validate_pluto_key() {
+  local key="${1:-}"
+  case "$key" in
+    ""|pk_anon_REPLACE_ME|REPLACE_ME|CHANGE_ME|YOUR_KEY|YOUR_ANON_KEY|*...*|*…*)
+      return 1
+      ;;
+  esac
+  return 0
+}
+
 # Backward-compat safety for stale copied wrappers or accidental positional flags.
 if [[ "$PROJECT_DIR" = "--rollback" ]]; then
   ROLLBACK=1
@@ -135,7 +145,7 @@ else
   stage preflight
   : "${VITE_PLUTO_URL:?VITE_PLUTO_URL is required (e.g. https://api.timescard.cloud)}"
   : "${VITE_PLUTO_ANON_KEY:?VITE_PLUTO_ANON_KEY is required (pk_anon_...)}"
-  [[ "$VITE_PLUTO_ANON_KEY" != "pk_anon_REPLACE_ME" ]] || die "VITE_PLUTO_ANON_KEY is placeholder"
+  validate_pluto_key "$VITE_PLUTO_ANON_KEY" || die "VITE_PLUTO_ANON_KEY is missing or a placeholder. Use the real publishable/anon key, not pk_..."
   export VITE_PLUTO_URL VITE_PLUTO_ANON_KEY
   [[ -f package.json ]] || die "no package.json in $PROJECT_DIR"
   pass "preflight ok (project=$PROJECT_DIR, dry-run=$DRY_RUN)"
