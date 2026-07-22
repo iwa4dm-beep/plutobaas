@@ -17,6 +17,7 @@
 # Flags:
 #   --dry-run    Print commands + files that would change; no deploy/restart.
 #   --rollback   Restore the most recent backup (or BACKUP_ID=<name>) and skip build.
+#   --backup-id <file|path>  Restore a specific backup with --rollback.
 #
 # Env:
 #   VITE_PLUTO_URL, VITE_PLUTO_ANON_KEY  (required, except --rollback)
@@ -35,13 +36,16 @@ set -euo pipefail
 DRY_RUN=0
 ROLLBACK=0
 POSITIONAL=()
-for a in "$@"; do
+while [[ $# -gt 0 ]]; do
+  a="$1"
   case "$a" in
-    --dry-run)  DRY_RUN=1 ;;
-    --rollback) ROLLBACK=1 ;;
+    --dry-run)  DRY_RUN=1; shift ;;
+    --rollback) ROLLBACK=1; shift ;;
+    --backup-id) BACKUP_ID="${2:-}"; shift 2 ;;
+    --backup-id=*) BACKUP_ID="${a#*=}"; shift ;;
     -h|--help)
-      sed -n '2,35p' "$0"; exit 0 ;;
-    *) POSITIONAL+=("$a") ;;
+      sed -n '2,36p' "$0"; exit 0 ;;
+    *) POSITIONAL+=("$a"); shift ;;
   esac
 done
 set -- "${POSITIONAL[@]:-}"
@@ -50,6 +54,14 @@ PROJECT_DIR="${1:-$PWD}"
 DEPLOY_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 BACKUP_DIR="${BACKUP_DIR:-/var/lib/pluto/backups}"
 BACKUP_KEEP="${BACKUP_KEEP:-5}"
+LAST_BACKUP=""
+DEPLOYED_THIS_RUN=0
+
+# Backward-compat safety for stale copied wrappers or accidental positional flags.
+if [[ "$PROJECT_DIR" = "--rollback" ]]; then
+  ROLLBACK=1
+  PROJECT_DIR="$PWD"
+fi
 
 # ---- logging --------------------------------------------------
 ts()   { date -u +'%Y-%m-%dT%H:%M:%SZ'; }
@@ -72,11 +84,27 @@ run() {
   eval "$@"
 }
 
-[[ -d "$PROJECT_DIR" ]] || { FAIL_STAGE=preflight; die "project dir not found: $PROJECT_DIR"; }
-cd "$PROJECT_DIR"
+restore_backup_zip() {
+  local zip="$1"
+  [[ -n "${SLUG:-}" ]] || die "SLUG=<slug> required for rollback"
+  [[ -f "$zip" ]] || die "rollback ZIP not found: $zip"
+  if [[ $DRY_RUN -eq 1 ]]; then
+    dry "PLUTO_ALLOW_SUPABASE_LEFTOVERS=1 PLUTO_SKIP_CUTOVER_VERIFY=1 deploy-local-zip-to-primary.sh $SLUG $zip"
+  else
+    sudo -E PLUTO_ALLOW_SUPABASE_LEFTOVERS=1 PLUTO_SKIP_CUTOVER_VERIFY=1 \
+      bash "$DEPLOY_DIR/deploy-local-zip-to-primary.sh" "$SLUG" "$zip" || die "restore failed"
+  fi
+}
+
+if [[ $ROLLBACK -eq 0 ]]; then
+  [[ -d "$PROJECT_DIR" ]] || { FAIL_STAGE=preflight; die "project dir not found: $PROJECT_DIR"; }
+  cd "$PROJECT_DIR"
+else
+  [[ -d "$PROJECT_DIR" ]] && cd "$PROJECT_DIR" || true
+fi
 
 # ---- helper: ensure deploy scripts present --------------------
-for f in inject-pluto-env.sh assert-no-supabase.sh smoke-cutover.sh; do
+for f in inject-pluto-env.sh assert-no-supabase.sh smoke-cutover.sh deploy-local-zip-to-primary.sh; do
   [[ -f "$DEPLOY_DIR/$f" ]] || { FAIL_STAGE=preflight; die "missing $DEPLOY_DIR/$f — run: sudo bash pluto-backend/deploy/install-deploy-scripts.sh"; }
 done
 
@@ -92,14 +120,14 @@ if [[ $ROLLBACK -eq 1 ]]; then
   if [[ -z "$TARGET" ]]; then
     TARGET="$(ls -1t "$SLUG_BACKUPS" | head -n1 || true)"
   fi
-  [[ -n "$TARGET" && -f "$SLUG_BACKUPS/$TARGET" ]] || die "backup not found (set BACKUP_ID=<file>)"
-  ZIP="$SLUG_BACKUPS/$TARGET"
-  log "rolling back $SLUG → $TARGET"
-  if [[ $DRY_RUN -eq 1 ]]; then
-    dry "deploy-local-zip-to-primary.sh $SLUG $ZIP"
+  if [[ "$TARGET" = /* ]]; then
+    ZIP="$TARGET"
   else
-    sudo -E bash "$DEPLOY_DIR/deploy-local-zip-to-primary.sh" "$SLUG" "$ZIP" || die "restore failed"
+    ZIP="$SLUG_BACKUPS/$TARGET"
   fi
+  [[ -n "$TARGET" && -f "$ZIP" ]] || die "backup not found (set BACKUP_ID=<file>)"
+  log "rolling back $SLUG → $TARGET"
+  restore_backup_zip "$ZIP"
   pass "rollback complete: $TARGET"
   # fall through to restart+smoke if configured
 else
@@ -197,6 +225,7 @@ else
         if [[ -n "$REAL_PREV" && -d "$REAL_PREV" ]]; then
           ( cd "$REAL_PREV" && sudo zip -qr "$BACKUP_ZIP" . ) && pass "backup: $BACKUP_ZIP" \
             || warn "backup failed (continuing)"
+          [[ -f "$BACKUP_ZIP" ]] && LAST_BACKUP="$BACKUP_ZIP"
         else warn "no previous release to backup"; fi
       else warn "no existing $PREV_CURRENT — first deploy, skipping backup"; fi
       # prune
@@ -212,13 +241,12 @@ else
       if ! sudo -E PLUTO_URL="$VITE_PLUTO_URL" PLUTO_ANON_KEY="$VITE_PLUTO_ANON_KEY" \
             bash "$DEPLOY_DIR/deploy-local-zip-to-primary.sh" "$SLUG" "$ZIP"; then
         warn "deploy failed — attempting auto-rollback"
-        LAST_BACKUP="$(ls -1t "$SLUG_BACKUPS"/*.zip 2>/dev/null | head -n1 || true)"
         if [[ -n "$LAST_BACKUP" ]]; then
-          sudo -E bash "$DEPLOY_DIR/deploy-local-zip-to-primary.sh" "$SLUG" "$LAST_BACKUP" \
-            && warn "rolled back to $LAST_BACKUP" || die "auto-rollback also failed"
+          restore_backup_zip "$LAST_BACKUP" && warn "rolled back to $LAST_BACKUP"
         fi
         die "primary deploy failed"
       fi
+      DEPLOYED_THIS_RUN=1
     fi
   elif [[ -z "${SLUG:-}" ]]; then
     warn "SLUG not set — skipping backup+deploy"
@@ -248,11 +276,25 @@ fi
 stage smoke
 if [[ $DRY_RUN -eq 1 ]]; then
   dry "smoke-cutover.sh --dist ${DIST:-<dist>} ${SITE_URL:+--url $SITE_URL}"
+elif [[ $ROLLBACK -eq 1 && "${ROLLBACK_SMOKE:-0}" != "1" ]]; then
+  if [[ -n "${SITE_URL:-}" ]]; then
+    code="$(curl -s -o /tmp/pluto-rollback-smoke.$$ -w '%{http_code}' --max-time 10 "$SITE_URL/" || echo 000)"
+    rm -f /tmp/pluto-rollback-smoke.$$
+    [[ "$code" =~ ^2 ]] || die "rollback site check failed ($SITE_URL → HTTP $code)"
+    pass "rollback site reachable ($SITE_URL → HTTP $code)"
+  else
+    warn "rollback complete; SITE_URL not set, skipping live smoke"
+  fi
 else
   SMOKE_ARGS=()
   [[ -n "${DIST:-}" ]] && SMOKE_ARGS+=(--dist "$DIST")
   [[ -n "${SITE_URL:-}" ]] && SMOKE_ARGS+=(--url "$SITE_URL")
   if ! bash "$DEPLOY_DIR/smoke-cutover.sh" "${SMOKE_ARGS[@]}"; then
+    if [[ $DEPLOYED_THIS_RUN -eq 1 && -n "$LAST_BACKUP" ]]; then
+      warn "smoke failed — attempting auto-rollback to $LAST_BACKUP"
+      stage rollback-after-smoke
+      restore_backup_zip "$LAST_BACKUP" && warn "rolled back to $LAST_BACKUP after smoke failure"
+    fi
     die "smoke test failed — inspect above for the failing check (dist-guard / health / auth-settings / auth-session)"
   fi
 fi
