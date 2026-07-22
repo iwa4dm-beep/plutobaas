@@ -142,7 +142,25 @@ HTML
   fi
   if [ ! -L "$PRIMARY_LINK" ]; then
     ln -sfn "$PRIMARY_DIR/_placeholder" "$PRIMARY_LINK"
+    chown -h www-data:www-data "$PRIMARY_LINK" 2>/dev/null || true
     pass "Initialized $PRIMARY_LINK → _placeholder"
+  fi
+}
+
+ensure_webroot_permissions() {
+  # CloudPanel/nginx installs often enable `disable_symlinks if_not_owner` at a
+  # global level. If our release/current symlink is owned by root while the
+  # release files are owned by www-data, nginx opens index.html with O_NOFOLLOW
+  # and returns ELOOP/403 ("Too many levels of symbolic links"). Make the whole
+  # path traversable and keep the primary symlink owned by the web user.
+  local target="$1" d
+  for d in /var/lib /var/lib/pluto "$SITES_ROOT" "$PRIMARY_DIR"; do
+    [ -d "$d" ] && chmod 755 "$d" 2>/dev/null || true
+  done
+  if [ -d "$target" ]; then
+    find "$target" -type d -exec chmod 755 {} + 2>/dev/null || true
+    find "$target" -type f -exec chmod 644 {} + 2>/dev/null || true
+    chown -R www-data:www-data "$target" 2>/dev/null || true
   fi
 }
 
@@ -180,14 +198,20 @@ server {
 
     root $PRIMARY_LINK;
     index index.html;
+    disable_symlinks off;
 
-    location / { try_files \$uri \$uri/ /index.html; }
+    location / {
+        add_header X-Pluto-Primary "$APEX" always;
+        try_files \$uri \$uri/ /index.html;
+    }
 
     location ~* \.(?:js|css|woff2?|png|jpg|jpeg|gif|svg|ico|webp)\$ {
         expires 30d; access_log off;
+        add_header X-Pluto-Primary "$APEX" always;
         add_header Cache-Control "public, max-age=2592000, immutable";
     }
     location = /index.html {
+        add_header X-Pluto-Primary "$APEX" always;
         add_header Cache-Control "no-store, must-revalidate";
     }
 
@@ -210,13 +234,23 @@ verify_primary_header() {
     warn "curl not installed; skipping local primary-vhost header check"
     return 0
   fi
-  local headers
-  headers="$(curl -k -sS -I --max-time 8 --resolve "$APEX:443:127.0.0.1" "https://$APEX/" 2>/dev/null || true)"
+  local headers status body_file
+  body_file="/tmp/pluto-primary-check.$$"
+  headers="$(curl -k -sS -D - -o "$body_file" --max-time 8 --resolve "$APEX:443:127.0.0.1" "https://$APEX/" 2>/dev/null || true)"
+  status="$(printf '%s\n' "$headers" | awk 'tolower($1) ~ /^http/ { code=$2 } END { print code }')"
   if printf '%s\n' "$headers" | grep -qi '^x-pluto-primary:'; then
+    if [ "$status" != "200" ]; then
+      printf '%s\n' "$headers" | sed -n '1,16p' >&2
+      [ -f /var/log/nginx/error.log ] && tail -20 /var/log/nginx/error.log >&2 || true
+      rm -f "$body_file"
+      die "$APEX is using the pluto-primary vhost, but returned HTTP ${status:-unknown}. Check release permissions and index.html."
+    fi
+    rm -f "$body_file"
     pass "Verified nginx is serving $APEX via pluto-primary vhost"
     return 0
   fi
   printf '%s\n' "$headers" | sed -n '1,12p' >&2
+  rm -f "$body_file"
   die "$APEX is still not served by pluto-primary (X-Pluto-Primary header missing). Check for duplicate server_name blocks with: sudo nginx -T | grep -n \"server_name .*${APEX}\""
 }
 
@@ -331,8 +365,10 @@ cmd_activate() {
   target=$(resolve_release "$key")
   target=$(resolve_webroot_with_index "$target")
   [ -f "$target/index.html" ] || die "Resolved target has no index.html: $target"
+  ensure_webroot_permissions "$target"
   local tmplink="$PRIMARY_DIR/.current.new"
   ln -sfn "$target" "$tmplink"
+  chown -h www-data:www-data "$tmplink" 2>/dev/null || true
   if [ -e "$PRIMARY_LINK" ] && [ ! -L "$PRIMARY_LINK" ]; then
     local backup="$PRIMARY_DIR/current.backup.$(date +%Y%m%d-%H%M%S)"
     warn "$PRIMARY_LINK exists but is not a symlink; moving it to $backup"
