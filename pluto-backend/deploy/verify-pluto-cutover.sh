@@ -49,9 +49,9 @@ else
   FAIL=1
 fi
 
-# ---- Check 2: Pluto anon key present ----
-if grep -qE 'pk_anon_[a-zA-Z0-9]+' "$TMP/all.txt" 2>/dev/null; then
-  green "Pluto anon key (pk_anon_…) found in deployed HTML/JS/env"
+# ---- Check 2: Pluto publishable/anon key present ----
+if grep -qE 'pk(_anon)?_[a-zA-Z0-9]+' "$TMP/all.txt" 2>/dev/null; then
+  green "Pluto anon key (pk_…) found in deployed HTML/JS/env"
 else
   red "Pluto anon key NOT found in deployed HTML/JS/env"
   FAIL=1

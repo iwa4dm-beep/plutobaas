@@ -77,7 +77,7 @@ scan_url() {
   if ! grep -qE 'api\.timescard\.cloud|VITE_PLUTO_URL' "$tmp/all.txt" 2>/dev/null; then
     REASONS+=("pluto-url-missing-in-live-bundle"); FAIL=1
   fi
-  if ! grep -qE 'pk_anon_[A-Za-z0-9]+' "$tmp/all.txt" 2>/dev/null; then
+  if ! grep -qE 'pk(_anon)?_[A-Za-z0-9]+' "$tmp/all.txt" 2>/dev/null; then
     REASONS+=("pluto-anon-key-missing-in-live-bundle"); FAIL=1
   fi
 }
