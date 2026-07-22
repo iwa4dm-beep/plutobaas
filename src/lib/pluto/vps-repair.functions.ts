@@ -281,3 +281,150 @@ export const batchIssuePerSlugCerts = createServerFn({ method: "POST" })
     }
     return { results };
   });
+
+// ---- Repair channel diagnostic ---------------------------------------------
+// Verifies each One-click Fix feature is actually wired to the VPS:
+//   1. Sandbox URL + secret env presence
+//   2. Worker /healthz reachability + version/features
+//   3. /admin/repair auth (bogus secret → 401 confirms endpoint is live)
+//   4. /admin/repair with real secret + `_probe` action → wrapper install check
+//   5. Per action, calls the wrapper in `dryRun` mode when supported, else
+//      reports "wired" if the endpoint accepts the action shape (2xx / 4xx
+//      other than 404 = wired).
+
+export type RepairChannelActionProbe = {
+  action: RepairAction;
+  wired: boolean;
+  status: number;
+  detail: string;
+};
+
+export type RepairChannelDiagnostic = {
+  sandboxUrl: string;
+  secretConfigured: boolean;
+  worker: { ok: boolean; status: number; version?: string; features?: Record<string, unknown>; detail: string };
+  endpointAuth: { ok: boolean; status: number; detail: string };
+  wrapperInstalled: { ok: boolean; status: number; detail: string };
+  actions: RepairChannelActionProbe[];
+  hint: string | null;
+};
+
+export const diagnoseRepairChannel = createServerFn({ method: "POST" })
+  .middleware([requirePlutoAdmin])
+  .inputValidator(() => ({}))
+  .handler(async (): Promise<RepairChannelDiagnostic> => {
+    const base = getVpsBaseUrl();
+    const sandboxUrl = (envFirst("PLUTO_SANDBOX_URL") || `${base}/sandbox`).replace(/\/+$/, "");
+    const secret = envFirst("PLUTO_SANDBOX_SECRET", "PLUTO_SANDBOX_WORKER_SECRET", "SANDBOX_SHARED_SECRET");
+    const out: RepairChannelDiagnostic = {
+      sandboxUrl,
+      secretConfigured: !!secret,
+      worker: { ok: false, status: 0, detail: "not probed" },
+      endpointAuth: { ok: false, status: 0, detail: "not probed" },
+      wrapperInstalled: { ok: false, status: 0, detail: "not probed" },
+      actions: [],
+      hint: null,
+    };
+
+    // 1. Worker /healthz
+    try {
+      const r = await fetch(`${sandboxUrl}/healthz`);
+      const text = await r.text();
+      out.worker.status = r.status;
+      out.worker.ok = r.ok;
+      out.worker.detail = text.slice(0, 200);
+      try {
+        const j = JSON.parse(text);
+        out.worker.version = j.version;
+        out.worker.features = j.features;
+      } catch { /* keep raw */ }
+    } catch (e) { out.worker.detail = (e as Error).message; }
+
+    // 2. /admin/repair auth check (bogus secret should give 401)
+    try {
+      const r = await fetch(`${sandboxUrl}/admin/repair`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-sandbox-secret": "definitely-bogus-diagnose" },
+        body: JSON.stringify({ action: "worker-and-site" }),
+      });
+      const text = await r.text();
+      out.endpointAuth.status = r.status;
+      out.endpointAuth.ok = r.status === 401;
+      out.endpointAuth.detail = r.status === 401
+        ? "401 as expected — endpoint present, secret enforced"
+        : r.status === 404
+          ? "404 — /admin/repair not installed; run full-deploy.sh"
+          : `unexpected HTTP ${r.status}: ${text.slice(0, 160)}`;
+    } catch (e) { out.endpointAuth.detail = (e as Error).message; }
+
+    if (!secret) {
+      out.hint = "PLUTO_SANDBOX_SECRET is missing in Lovable Cloud → Secrets. Repair buttons will fail with 401. Run `sudo bash pluto-backend/deploy/print-sandbox-secret.sh` on the VPS and paste the value.";
+      return out;
+    }
+
+    // 3. Wrapper install check — with real secret + unknown probe action
+    try {
+      const r = await fetch(`${sandboxUrl}/admin/repair`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-sandbox-secret": secret },
+        body: JSON.stringify({ action: "__diagnose_probe__" }),
+      });
+      const text = await r.text();
+      out.wrapperInstalled.status = r.status;
+      // Anything that reaches the wrapper and reports an unknown-action / bad-arg
+      // error means the wrapper is installed. 200 with tail also means installed.
+      const looksLikeWrapper = /unknown action|invalid action|unsupported|usage:|pluto-repair/i.test(text);
+      out.wrapperInstalled.ok = r.status === 200 || (r.status >= 400 && r.status < 500 && looksLikeWrapper) || r.status === 400 || r.status === 422;
+      out.wrapperInstalled.detail = out.wrapperInstalled.ok
+        ? "wrapper reachable (rejected probe action)"
+        : r.status === 403
+          ? "403 — worker cannot sudo /usr/local/sbin/pluto-repair (sudoers rule missing). Rerun full-deploy.sh."
+          : r.status === 404
+            ? "404 — wrapper not installed. Rerun full-deploy.sh."
+            : `HTTP ${r.status}: ${text.slice(0, 160)}`;
+    } catch (e) { out.wrapperInstalled.detail = (e as Error).message; }
+
+    // 4. Per-action wiring probe — send each action with an obviously invalid
+    // slug/wildcard so the wrapper rejects fast without side effects. Success
+    // criteria: response reached the wrapper (status ≠ 404 and ≠ 502/503).
+    const probeActions: RepairAction[] = [
+      "worker-and-site", "wildcard-ssl", "per-slug-ssl",
+      "primary-frontend", "deploy-and-verify", "all",
+    ];
+    for (const action of probeActions) {
+      try {
+        const r = await fetch(`${sandboxUrl}/admin/repair`, {
+          method: "POST",
+          headers: { "content-type": "application/json", "x-sandbox-secret": secret, "x-pluto-diagnose": "1" },
+          body: JSON.stringify({
+            action,
+            slug: "__diagnose_no_op__",
+            wildcard: "invalid.local",
+            acmeEmail: "diagnose@invalid.local",
+            dryRun: true,
+          }),
+        });
+        const text = await r.text();
+        const wired = r.status !== 404 && r.status !== 502 && r.status !== 503 && r.status !== 0;
+        out.actions.push({
+          action,
+          wired,
+          status: r.status,
+          detail: wired
+            ? `wired (HTTP ${r.status})`
+            : r.status === 404
+              ? "action not accepted by wrapper — update pluto-repair"
+              : r.status === 502 || r.status === 503
+                ? "worker unreachable through nginx"
+                : `HTTP ${r.status}: ${text.slice(0, 120)}`,
+        });
+      } catch (e) {
+        out.actions.push({ action, wired: false, status: 0, detail: (e as Error).message });
+      }
+    }
+
+    if (!out.worker.ok) out.hint = "Sandbox worker /healthz is unreachable. Repair endpoints will fail. Run repair-sandbox-worker.sh on VPS.";
+    else if (!out.wrapperInstalled.ok) out.hint = "The /admin/repair wrapper is not installed or not sudo-authorized. Rerun full-deploy.sh on the VPS.";
+    else if (out.actions.some((a) => !a.wired)) out.hint = "Some repair actions are not accepted by the installed wrapper — pull latest and rerun full-deploy.sh on the VPS.";
+    return out;
+  });
