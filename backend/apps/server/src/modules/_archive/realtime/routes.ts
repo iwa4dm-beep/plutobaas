@@ -157,8 +157,8 @@ export async function realtimeRoutes(app: FastifyInstance) {
     socket.on("close", () => clients.delete(client));
   };
 
-  // Register both forms because the prefixed plugin may otherwise expose only
-  // /realtime/v1/ while browser clients commonly open /realtime/v1?apikey=...
-  app.get("/", { websocket: true }, handler);
-  app.get("", { websocket: true }, handler);
+  // Register both forms because browser clients commonly open
+  // /realtime/v1?apikey=... without a trailing slash.
+  app.get("/realtime/v1", { websocket: true }, handler);
+  app.get("/realtime/v1/", { websocket: true }, handler);
 }

@@ -214,7 +214,7 @@ async function main() {
       da1, da2, da3, vec1, vec2, ov2,
     ] = legacy;
     await app.register(st.storageRoutes, { prefix: "/storage/v1" });
-    await app.register(rt.realtimeRoutes, { prefix: "/realtime/v1" });
+    await app.register(rt.realtimeRoutes);
     await app.register(ed.edgeRoutes, { prefix: "/functions/v1" });
     await app.register(jb.jobsRoutes, { prefix: "/jobs/v1" });
     await app.register(authComp.authCompletionPlugin);
