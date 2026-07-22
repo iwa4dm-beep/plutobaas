@@ -86,6 +86,17 @@ json_get_access_token() {
   python3 -c 'import json,sys; print((json.load(sys.stdin) or {}).get("access_token", ""))' 2>/dev/null || true
 }
 
+json_token_payload() {
+  AUTH_EMAIL_PAYLOAD="$AUTH_EMAIL" AUTH_PASSWORD_PAYLOAD="$AUTH_PASSWORD" python3 - <<'PY'
+import json, os
+print(json.dumps({
+  "grant_type": "password",
+  "email": os.environ.get("AUTH_EMAIL_PAYLOAD", ""),
+  "password": os.environ.get("AUTH_PASSWORD_PAYLOAD", ""),
+}))
+PY
+}
+
 probe_auth_session() {
   local token_body token user_code token_code unauth_code
 
@@ -94,7 +105,7 @@ probe_auth_session() {
     token_code="$(curl -sS -o "$token_body" -w '%{http_code}' --max-time 10 \
       -X POST "$PLUTO_API/auth/v1/token?grant_type=password" \
       -H 'content-type: application/json' \
-      --data "{\"email\":\"$AUTH_EMAIL\",\"password\":\"$AUTH_PASSWORD\",\"grant_type\":\"password\"}" || echo 000)"
+      --data "$(json_token_payload)" || echo 000)"
     if [[ "$token_code" =~ ^2 ]]; then
       AUTH_TOKEN="$(json_get_access_token < "$token_body")"
     else

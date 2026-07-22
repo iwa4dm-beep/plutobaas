@@ -58,6 +58,8 @@ pass "Webroot: $WEBROOT"
 if [[ -n "${PLUTO_URL:-}" || -n "${PLUTO_ANON_KEY:-}" ]]; then
   cat > "$WEBROOT/env.js" <<EOF
 window.__PLUTO_ENV__ = {
+  url: "${PLUTO_URL:-https://api.timescard.cloud}",
+  anonKey: "${PLUTO_ANON_KEY:-}",
   VITE_PLUTO_URL: "${PLUTO_URL:-https://api.timescard.cloud}",
   VITE_PLUTO_ANON_KEY: "${PLUTO_ANON_KEY:-}"
 };
