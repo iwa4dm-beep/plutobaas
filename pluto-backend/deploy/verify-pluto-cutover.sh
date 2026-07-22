@@ -37,7 +37,7 @@ values = [m.group(2).strip() for m in re.finditer(r"\b(?:anonKey|VITE_PLUTO_ANON
 bad = {"", "pk_anon_REPLACE_ME", "REPLACE_ME", "CHANGE_ME", "YOUR_KEY", "YOUR_ANON_KEY"}
 for value in values:
     lower = value.lower()
-    if value not in bad and "replace_me" not in lower and "your_" not in lower and not re.fullmatch(r"pk_?x+", lower):
+    if value not in bad and "..." not in value and "…" not in value and "replace_me" not in lower and "your_" not in lower and not re.fullmatch(r"pk_?x+", lower):
         raise SystemExit(0)
 raise SystemExit(1)
 PY
@@ -73,8 +73,8 @@ else
 fi
 
 # ---- Check 2: Pluto publishable/anon key present ----
-if env_file_has_pluto_key "$TMP/env.js" || grep -qE '(pk|sb_publishable)_[A-Za-z0-9._=-]+' "$TMP/all.txt" 2>/dev/null; then
-  green "Pluto anon key found in deployed env/bundle"
+if env_file_has_pluto_key "$TMP/env.js"; then
+  green "Pluto anon key found in deployed env.js"
 else
   red "Pluto anon key NOT found in deployed HTML/JS/env"
   FAIL=1
