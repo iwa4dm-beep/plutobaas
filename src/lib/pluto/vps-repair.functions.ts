@@ -127,8 +127,8 @@ export type PreflightHealResult = {
 };
 
 const PreflightInput = z.object({
-  slug: z.string().min(1).max(128).optional(),
-  wildcard: z.string().min(3).max(253).optional(),
+  slug: z.string().max(128).optional().transform((v) => (v && v.length > 0 ? v : undefined)),
+  wildcard: z.string().max(253).optional().transform((v) => (v && v.length >= 3 ? v : undefined)),
 });
 
 export const preflightAndHeal = createServerFn({ method: "POST" })
