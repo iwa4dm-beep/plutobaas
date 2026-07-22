@@ -611,9 +611,8 @@ export type ServedSiteDiagnostics = {
   hint?: string;
 };
 
-// app.timescard.cloud resolves to the VPS (72.62.67.83). app.timescard.app has
-// no DNS record, so defaulting to it makes every served-site probe fail with
-// "fetch failed". Callers can override via PLUTO_PRIMARY_FRONTEND_URL.
+// app.timescard.cloud is the single primary frontend for deployed projects.
+// Callers can override via PLUTO_PRIMARY_FRONTEND_URL if infrastructure changes.
 const DEFAULT_PRIMARY_FRONTEND_URL = "https://app.timescard.cloud";
 
 function primaryFrontendUrl(): string {
