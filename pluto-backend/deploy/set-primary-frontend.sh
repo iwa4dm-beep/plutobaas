@@ -230,6 +230,7 @@ issue_cert() {
   # Temporarily disable the HTTPS server block so certbot's HTTP-01 works
   # even before the cert file exists. We do this by writing an ACME-only
   # stub, running certbot, then rewriting the full vhost.
+  rm -f "$NGX_LEGACY_ENABL"
   cat > "$NGX_AVAIL" <<STUB
 server { listen 80; server_name $APEX;
   location /.well-known/acme-challenge/ { root /var/www/html; }
