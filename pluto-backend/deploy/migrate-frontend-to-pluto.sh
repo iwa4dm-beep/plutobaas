@@ -43,13 +43,14 @@ die()  { printf "\033[1;31m[fail]   \033[0m %s\n" "$*" >&2; exit 1; }
 if [[ $DRY -eq 1 ]]; then log "DRY-RUN mode — no files will be written."; fi
 
 # ---------------------------------------------------------------
-# 1. Scan
+# 1. Scan (imports, env vars, hardcoded supabase.co URLs, literal JWT anon keys)
 # ---------------------------------------------------------------
 log "Scanning for Supabase references…"
+SCAN_RE='(@supabase/supabase-js|@/integrations/supabase|VITE_SUPABASE_|https?://[a-z0-9-]+\.supabase\.(co|in)|eyJhbGciOiJIUzI1NiIs)'
 mapfile -t FILES < <(
   find "$ROOT/src" "$ROOT/app" -type f \
     \( -name '*.ts' -o -name '*.tsx' -o -name '*.js' -o -name '*.jsx' \) 2>/dev/null \
-    | xargs -r grep -l -E '(@supabase/supabase-js|@/integrations/supabase|VITE_SUPABASE_)' 2>/dev/null || true
+    | xargs -r grep -l -E "$SCAN_RE" 2>/dev/null || true
 )
 
 if [[ ${#FILES[@]} -eq 0 ]]; then
@@ -66,41 +67,68 @@ if grep -q '"@supabase/supabase-js"' "$ROOT/package.json"; then
   log "package.json: @supabase/supabase-js → @timescard/pluto-js"
   if [[ $DRY -eq 0 ]]; then
     cp -n "$ROOT/package.json" "$ROOT/package.json.bak-supabase" || true
-    # Preserve the version string; just rename the package key.
     sed -i 's#"@supabase/supabase-js"#"@timescard/pluto-js"#g' "$ROOT/package.json"
   fi
 fi
 
 # ---------------------------------------------------------------
-# 3. Rewrite source files
+# 3. Rewrite source files — imports, env names, AND hardcoded literals
 # ---------------------------------------------------------------
+# Placeholders that resolve to Pluto env vars at runtime (safe fallback shape).
+PLUTO_URL_LITERAL='(import.meta.env.VITE_PLUTO_URL as string)'
+PLUTO_KEY_LITERAL='(import.meta.env.VITE_PLUTO_ANON_KEY as string)'
+
 rewrite_file() {
   local f="$1"
-  if [[ $DRY -eq 1 ]]; then
-    echo "--- would rewrite: $f ---"
-    sed -E \
-      -e 's#@supabase/supabase-js#@timescard/pluto-js#g' \
-      -e 's#@/integrations/supabase/client#@/lib/pluto#g' \
-      -e 's#VITE_SUPABASE_URL#VITE_PLUTO_URL#g' \
-      -e 's#VITE_SUPABASE_ANON_KEY#VITE_PLUTO_ANON_KEY#g' \
-      -e 's#VITE_SUPABASE_PUBLISHABLE_KEY#VITE_PLUTO_ANON_KEY#g' \
-      "$f" | diff -u "$f" - | head -40 || true
-    return
+  if [[ $DRY -eq 0 ]]; then
+    cp -n "$f" "$f.bak-supabase"
   fi
-  cp -n "$f" "$f.bak-supabase"
+  # 3a. Import paths + env-var names
   sed -E -i \
     -e 's#@supabase/supabase-js#@timescard/pluto-js#g' \
     -e 's#@/integrations/supabase/client#@/lib/pluto#g' \
+    -e 's#@/integrations/supabase/types#@/lib/pluto#g' \
     -e 's#VITE_SUPABASE_URL#VITE_PLUTO_URL#g' \
     -e 's#VITE_SUPABASE_ANON_KEY#VITE_PLUTO_ANON_KEY#g' \
     -e 's#VITE_SUPABASE_PUBLISHABLE_KEY#VITE_PLUTO_ANON_KEY#g' \
     "$f"
+  # 3b. Hardcoded supabase.co URL literals -> Pluto env expression
+  #     Matches "https://xxx.supabase.co" or 'https://xxx.supabase.co' (with optional trailing path)
+  perl -0777 -i -pe '
+    s#"https?://[a-z0-9-]+\.supabase\.(?:co|in)[^"]*"#'"$PLUTO_URL_LITERAL"'#g;
+    s#'"'"'https?://[a-z0-9-]+\.supabase\.(?:co|in)[^'"'"']*'"'"'#'"$PLUTO_URL_LITERAL"'#g;
+  ' "$f"
+  # 3c. Hardcoded Supabase anon JWT (starts with eyJhbGciOiJIUzI1NiIs) -> Pluto env expression
+  perl -0777 -i -pe '
+    s#"eyJhbGciOiJIUzI1NiIs[A-Za-z0-9_.\-]+"#'"$PLUTO_KEY_LITERAL"'#g;
+    s#'"'"'eyJhbGciOiJIUzI1NiIs[A-Za-z0-9_.\-]+'"'"'#'"$PLUTO_KEY_LITERAL"'#g;
+  ' "$f"
 }
 
 for f in "${FILES[@]:-}"; do
   [[ -z "$f" ]] && continue
-  rewrite_file "$f"
+  if [[ $DRY -eq 1 ]]; then
+    echo "--- would rewrite: $f ---"
+  else
+    rewrite_file "$f"
+  fi
 done
+
+# ---------------------------------------------------------------
+# 3d. Replace the whole legacy client file with a Pluto re-export shim
+# ---------------------------------------------------------------
+LEGACY_DIR="$ROOT/src/integrations/supabase"
+if [[ -d "$LEGACY_DIR" && $DRY -eq 0 ]]; then
+  log "Neutralising legacy client at src/integrations/supabase/client.*"
+  for legacy in "$LEGACY_DIR"/client.ts "$LEGACY_DIR"/client.tsx "$LEGACY_DIR"/client.js; do
+    [[ -f "$legacy" ]] || continue
+    cp -n "$legacy" "$legacy.bak-supabase"
+    cat > "$legacy" <<'LEGACY'
+// Neutralised by migrate-frontend-to-pluto.sh — now re-exports the Pluto client.
+export { pluto, supabase, supabase as default } from "@/lib/pluto";
+LEGACY
+  done
+fi
 
 # ---------------------------------------------------------------
 # 4. Compat shim: src/lib/pluto.ts (exports both `pluto` and `supabase`)
