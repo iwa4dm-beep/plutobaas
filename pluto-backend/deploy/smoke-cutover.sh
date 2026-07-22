@@ -87,10 +87,10 @@ scan_url() {
   local base="$1" tmp
   tmp="$(mktemp -d)"
   trap "rm -rf $tmp" RETURN
-  curl -sSL --max-time 10 "$base/" -o "$tmp/index.html" 2>/dev/null || { REASONS+=("site-unreachable"); FAIL=1; return; }
+  curl -sSL --max-time 10 -H 'cache-control: no-cache' "$base/?pluto_smoke=$(date +%s)" -o "$tmp/index.html" 2>/dev/null || { REASONS+=("site-unreachable"); FAIL=1; return; }
   mapfile -t ASSETS < <(grep -oE '/assets/[A-Za-z0-9._/-]+\.js' "$tmp/index.html" | sort -u | head -20)
-  for a in "${ASSETS[@]}"; do curl -sSL --max-time 10 "$base$a" >> "$tmp/all.js" 2>/dev/null || true; done
-  curl -sSL --max-time 5 "$base/env.js" -o "$tmp/env.js" 2>/dev/null || true
+  for a in "${ASSETS[@]}"; do curl -sSL --max-time 10 -H 'cache-control: no-cache' "$base$a" >> "$tmp/all.js" 2>/dev/null || true; done
+  curl -sSL --max-time 5 -H 'cache-control: no-cache' "$base/env.js?pluto_smoke=$(date +%s)" -o "$tmp/env.js" 2>/dev/null || true
   cat "$tmp/index.html" "$tmp/all.js" "$tmp/env.js" > "$tmp/all.txt" 2>/dev/null || true
   if grep -qE 'https?://[a-z0-9-]+\.supabase\.(co|in)' "$tmp/all.txt" 2>/dev/null; then
     REASONS+=("supabase-url-in-live-bundle"); FAIL=1
