@@ -195,8 +195,8 @@ export const preflightAndHeal = createServerFn({ method: "POST" })
         const text = await r.text();
         const primaryHeader = r.headers.get("x-pluto-primary") || "";
         const releaseHeader = r.headers.get("x-pluto-release") || "";
-        return { status: r.status, ok: r.ok, detail: `x-pluto-primary=${primaryHeader}; x-pluto-release=${releaseHeader}; ${text.slice(0, 240)}` };
-      } catch (e) { return { status: 0, ok: false, detail: (e as Error).message }; }
+        return { status: r.status, ok: r.ok, detail: `x-pluto-primary=${primaryHeader}; x-pluto-release=${releaseHeader}; ${text.slice(0, 240)}`, primaryHeader };
+      } catch (e) { return { status: 0, ok: false, detail: (e as Error).message, primaryHeader: "" }; }
     }
 
     const api = await probe(`${base}/admin/v1/health`);
@@ -212,7 +212,7 @@ export const preflightAndHeal = createServerFn({ method: "POST" })
     if (slug) {
       const url = envFirst("PLUTO_PRIMARY_FRONTEND_URL") || "https://app.timescard.cloud";
       const p = await probe(url);
-      const routedToPrimary = p.ok && /x-pluto-primary|pluto-primary|current\.json|root/i.test(p.detail);
+      const routedToPrimary = p.ok && p.primaryHeader.length > 0;
       slug404 = { ok: routedToPrimary, url, status: p.status };
       if (!p.ok && (p.status === 404 || p.status === 0)) suggestions.add("worker-and-site");
       if (p.ok && !routedToPrimary) suggestions.add("primary-frontend");
