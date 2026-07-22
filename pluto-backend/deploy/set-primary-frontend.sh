@@ -38,32 +38,84 @@ die()  { printf "  ✗ %s\n" "$*" >&2; exit 1; }
 need_root() { [ "$(id -u)" -eq 0 ] || die "run as root (sudo)"; }
 
 disable_conflicting_vhosts() {
-  # If another enabled nginx config already claims the primary frontend host, nginx
-  # can keep serving that older vhost and ignore this managed primary frontend
-  # block. Move only enabled configs that explicitly mention this exact
-  # server_name; the original files are preserved under CONFLICT_BACKUP_DIR.
-  local changed=0 conf real dest stamp
+  # If ANY other nginx config claims the primary frontend host — or is a
+  # default_server on :443/:80 that would catch this hostname when SNI/SSL
+  # fails — nginx can keep serving that older vhost and ignore this managed
+  # primary frontend block. Enumerate every config file nginx actually loads
+  # (`nginx -T`) and quarantine any that either (a) mention this exact
+  # server_name, or (b) declare `default_server` on the HTTP/HTTPS listen
+  # ports, unless the file IS our managed primary vhost.
+  local changed=0 stamp conflict real dest
   stamp="$(date +%Y%m%d-%H%M%S)"
+  mkdir -p "$CONFLICT_BACKUP_DIR"
 
+  # Collect every config file nginx has loaded — includes /etc/nginx/nginx.conf,
+  # sites-enabled/*, conf.d/*.conf, and any custom include paths.
+  local -a loaded_files=()
+  if command -v nginx >/dev/null 2>&1; then
+    mapfile -t loaded_files < <(nginx -T 2>/dev/null | awk '/^# configuration file /{gsub(":",""); print $4}' | sort -u)
+  fi
+  # Fallback / union with the usual suspects so nothing is missed even if
+  # `nginx -T` fails (e.g. current config is broken).
   shopt -s nullglob
-  for conf in /etc/nginx/sites-enabled/* /etc/nginx/conf.d/*.conf; do
-    [ -e "$conf" ] || [ -L "$conf" ] || continue
-    real="$conf"
-    [ -L "$conf" ] && real="$(readlink -f "$conf" 2>/dev/null || echo "$conf")"
-    [ "$conf" = "$NGX_ENABL" ] && continue
-    [ "$real" = "$NGX_AVAIL" ] && continue
-    grep -Eq "server_name[[:space:]][^;]*${APEX//./\\.}([[:space:];]|$)" "$real" 2>/dev/null || continue
-
-    mkdir -p "$CONFLICT_BACKUP_DIR"
-    dest="$CONFLICT_BACKUP_DIR/${stamp}-$(basename "$conf")"
-    warn "disabling conflicting nginx vhost for $APEX: $conf → $dest"
-    mv -f "$conf" "$dest"
-    changed=1
+  for extra in /etc/nginx/sites-enabled/* /etc/nginx/conf.d/*.conf; do
+    loaded_files+=("$extra")
   done
   shopt -u nullglob
 
+  # Dedup.
+  local -A seen=()
+  local -a files=()
+  for f in "${loaded_files[@]}"; do
+    [ -n "$f" ] || continue
+    [ -f "$f" ] || continue
+    [ -n "${seen[$f]:-}" ] && continue
+    seen[$f]=1
+    files+=("$f")
+  done
+
+  local apex_re="${APEX//./\\.}"
+  for conflict in "${files[@]}"; do
+    real="$(readlink -f "$conflict" 2>/dev/null || echo "$conflict")"
+    # Never quarantine our own managed files or nginx's main config.
+    [ "$real" = "$NGX_AVAIL" ] && continue
+    [ "$conflict" = "$NGX_ENABL" ] && continue
+    [ "$conflict" = "/etc/nginx/nginx.conf" ] && continue
+    case "$conflict" in
+      /etc/nginx/mime.types|/etc/nginx/fastcgi_params|/etc/nginx/proxy_params|/etc/nginx/scgi_params|/etc/nginx/uwsgi_params|/etc/nginx/koi-*|/etc/nginx/win-utf|/etc/nginx/modules-enabled/*|/etc/letsencrypt/options-ssl-nginx.conf)
+        continue ;;
+    esac
+
+    local hit=0
+    # (a) explicit server_name for this apex.
+    if grep -Eq "server_name[[:space:]][^;]*${apex_re}([[:space:];]|$)" "$conflict" 2>/dev/null; then
+      hit=1
+    fi
+    # (b) default_server on :80 or :443 — catches marketing app deployed as
+    # nginx default when no vhost matches the hostname.
+    if [ "$hit" = "0" ] && grep -Eq "listen[[:space:]]+([0-9.:]+:)?(80|443)([[:space:]]+ssl)?([[:space:]]+http2)?[[:space:]]+default_server" "$conflict" 2>/dev/null; then
+      hit=1
+    fi
+    [ "$hit" = "1" ] || continue
+
+    dest="$CONFLICT_BACKUP_DIR/${stamp}-$(printf '%s' "$conflict" | tr '/' '_')"
+    warn "quarantining conflicting nginx config for $APEX: $conflict → $dest"
+    # Preserve the original file; if it's outside sites-enabled/conf.d we
+    # can't simply move it (nginx.conf itself was excluded above), so copy+truncate
+    # is unsafe. Instead move to backup and, if it lives under an `include`d
+    # path, leave a no-op stub so the include doesn't error out.
+    mv -f "$conflict" "$dest"
+    if [[ "$conflict" == /etc/nginx/sites-enabled/* || "$conflict" == /etc/nginx/conf.d/*.conf ]]; then
+      : # nginx globs skip missing entries — safe to leave removed.
+    else
+      # Included by name — leave an empty stub so `include` doesn't fail.
+      printf '# Quarantined by set-primary-frontend.sh on %s → %s\n' "$stamp" "$dest" > "$conflict"
+    fi
+    changed=1
+  done
+
   if [ "$changed" -eq 1 ]; then
-    pass "Conflicting $APEX vhost(s) disabled; backups in $CONFLICT_BACKUP_DIR"
+    pass "Conflicting $APEX vhost(s)/default_server(s) quarantined; backups in $CONFLICT_BACKUP_DIR"
   fi
 }
 
