@@ -302,7 +302,7 @@ export type RepairChannelActionProbe = {
 export type RepairChannelDiagnostic = {
   sandboxUrl: string;
   secretConfigured: boolean;
-  worker: { ok: boolean; status: number; version?: string; features?: Record<string, unknown>; detail: string };
+  worker: { ok: boolean; status: number; version?: string; features?: string; detail: string };
   endpointAuth: { ok: boolean; status: number; detail: string };
   wrapperInstalled: { ok: boolean; status: number; detail: string };
   actions: RepairChannelActionProbe[];
