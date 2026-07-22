@@ -46,6 +46,29 @@ done
 REASONS=()
 FAIL=0
 
+env_file_has_pluto_key() {
+  local file="$1"
+  [[ -f "$file" ]] || return 1
+  python3 - "$file" <<'PY'
+import re
+import sys
+
+path = sys.argv[1]
+try:
+    text = open(path, "r", encoding="utf-8", errors="ignore").read()
+except OSError:
+    raise SystemExit(1)
+
+values = [m.group(2).strip() for m in re.finditer(r"\b(?:anonKey|VITE_PLUTO_ANON_KEY)\s*:\s*(['\"])(.*?)\1", text)]
+bad = {"", "pk_anon_REPLACE_ME", "REPLACE_ME", "CHANGE_ME", "YOUR_KEY", "YOUR_ANON_KEY"}
+for value in values:
+    lower = value.lower()
+    if value not in bad and "..." not in value and "…" not in value and "replace_me" not in lower and "your_" not in lower and not re.fullmatch(r"pk_?x+", lower):
+        raise SystemExit(0)
+raise SystemExit(1)
+PY
+}
+
 scan_dir() {
   local d="$1"
   [[ -d "$d" ]] || { REASONS+=("dist:$d missing"); FAIL=1; return; }
@@ -56,7 +79,7 @@ scan_dir() {
   if [[ ! -f "$d/env.js" ]] || ! grep -q 'VITE_PLUTO_URL' "$d/env.js" 2>/dev/null; then
     REASONS+=("env.js-missing-or-empty")
     FAIL=1
-  elif ! grep -qE 'pk(_anon)?_[A-Za-z0-9]+' "$d/env.js" 2>/dev/null; then
+  elif ! env_file_has_pluto_key "$d/env.js"; then
     REASONS+=("env.js-pluto-anon-key-missing")
     FAIL=1
   elif grep -q 'pk_anon_REPLACE_ME' "$d/env.js" 2>/dev/null; then
@@ -98,7 +121,7 @@ scan_url() {
   if ! grep -qE 'api\.timescard\.cloud|VITE_PLUTO_URL' "$tmp/all.txt" 2>/dev/null; then
     REASONS+=("pluto-url-missing-in-live-bundle"); FAIL=1
   fi
-  if ! grep -qE 'pk(_anon)?_[A-Za-z0-9]+' "$tmp/all.txt" 2>/dev/null; then
+  if ! env_file_has_pluto_key "$tmp/env.js"; then
     REASONS+=("pluto-anon-key-missing-in-live-bundle"); FAIL=1
   fi
 }

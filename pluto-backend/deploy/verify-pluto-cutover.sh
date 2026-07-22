@@ -20,6 +20,29 @@ info()  { printf "\033[1;36m→ %s\033[0m\n" "$*"; }
 
 FAIL=0
 
+env_file_has_pluto_key() {
+  local file="$1"
+  [[ -f "$file" ]] || return 1
+  python3 - "$file" <<'PY'
+import re
+import sys
+
+path = sys.argv[1]
+try:
+    text = open(path, "r", encoding="utf-8", errors="ignore").read()
+except OSError:
+    raise SystemExit(1)
+
+values = [m.group(2).strip() for m in re.finditer(r"\b(?:anonKey|VITE_PLUTO_ANON_KEY)\s*:\s*(['\"])(.*?)\1", text)]
+bad = {"", "pk_anon_REPLACE_ME", "REPLACE_ME", "CHANGE_ME", "YOUR_KEY", "YOUR_ANON_KEY"}
+for value in values:
+    lower = value.lower()
+    if value not in bad and "..." not in value and "…" not in value and "replace_me" not in lower and "your_" not in lower and not re.fullmatch(r"pk_?x+", lower):
+        raise SystemExit(0)
+raise SystemExit(1)
+PY
+}
+
 info "Fetching $BASE …"
 HTML=$(curl -sSL --max-time 10 -H 'cache-control: no-cache' "$BASE/?pluto_verify=$(date +%s)" || true)
 if [[ -z "$HTML" ]]; then red "Site unreachable"; exit 1; fi
@@ -50,8 +73,8 @@ else
 fi
 
 # ---- Check 2: Pluto publishable/anon key present ----
-if grep -qE 'pk(_anon)?_[a-zA-Z0-9]+' "$TMP/all.txt" 2>/dev/null; then
-  green "Pluto anon key (pk_…) found in deployed HTML/JS/env"
+if env_file_has_pluto_key "$TMP/env.js"; then
+  green "Pluto anon key found in deployed env.js"
 else
   red "Pluto anon key NOT found in deployed HTML/JS/env"
   FAIL=1

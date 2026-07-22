@@ -31,6 +31,15 @@ die() { printf '\033[1;31m✗ %s\033[0m\n' "$*" >&2; exit 1; }
 pass() { printf '\033[1;32m✓ %s\033[0m\n' "$*"; }
 info() { printf '\033[1;36m→ %s\033[0m\n' "$*"; }
 
+validate_runtime_key() {
+  local key="${PLUTO_ANON_KEY:-}"
+  case "$key" in
+    ""|pk_anon_REPLACE_ME|REPLACE_ME|CHANGE_ME|YOUR_KEY|YOUR_ANON_KEY|*...*|*…*)
+      die "PLUTO_ANON_KEY is missing or a placeholder. Use the real publishable/anon key, not pk_..."
+      ;;
+  esac
+}
+
 [[ "$(id -u)" -eq 0 ]] || die "run as root (sudo)."
 [[ "$SLUG" =~ ^[a-z0-9]([a-z0-9-]{1,38}[a-z0-9])?$ ]] || die "invalid slug: $SLUG"
 [[ -f "$ZIP" ]] || die "ZIP not found: $ZIP"
@@ -65,6 +74,7 @@ WEBROOT="$(find_webroot "$RELEASE_DIR")" || die "No index.html found inside $ZIP
 pass "Webroot: $WEBROOT"
 
 if [[ -n "${PLUTO_URL:-}" || -n "${PLUTO_ANON_KEY:-}" ]]; then
+  validate_runtime_key
   cat > "$WEBROOT/env.js" <<EOF
 window.__PLUTO_ENV__ = {
   url: "${PLUTO_URL:-https://api.timescard.cloud}",
