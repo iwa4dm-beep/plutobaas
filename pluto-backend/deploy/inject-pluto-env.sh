@@ -5,6 +5,9 @@
 # VITE_PLUTO_ANON_KEY so the built bundle always has a runtime API
 # URL + anon key regardless of how it was built. Also injects the
 # <script src="/env.js"></script> tag into dist/index.html if missing.
+# As a cutover convenience, it also removes stale Supabase dns-prefetch /
+# preconnect <link> hints from built HTML only. It does NOT remove real
+# Supabase API usage from JS; assert-no-supabase.sh still fails those.
 #
 # Usage:
 #   VITE_PLUTO_URL=https://api.timescard.cloud \
@@ -20,6 +23,7 @@ KEY="${VITE_PLUTO_ANON_KEY:-${PLUTO_ANON_KEY:-}}"
 
 die()  { printf '\033[1;31m✗ %s\033[0m\n' "$*" >&2; exit 1; }
 pass() { printf '\033[1;32m✓ %s\033[0m\n' "$*"; }
+warn() { printf '\033[1;33m! %s\033[0m\n' "$*"; }
 
 [[ -d "$DIST" ]] || die "dist dir not found: $DIST (run the frontend build first)"
 [[ -n "$URL" ]]  || die "VITE_PLUTO_URL is required"
@@ -38,6 +42,35 @@ EOF
 pass "wrote $DIST/env.js (url=$URL, key=${KEY:0:12}…)"
 
 INDEX="$DIST/index.html"
+SCRUBBED=0
+while IFS= read -r -d '' html; do
+  if grep -qiE "<link[^>]*(dns-prefetch|preconnect)[^>]*supabase\.(co|in)|<link[^>]*supabase\.(co|in)[^>]*(dns-prefetch|preconnect)" "$html"; then
+    python3 - "$html" <<'PY'
+import re
+import sys
+
+path = sys.argv[1]
+with open(path, "r", encoding="utf-8", errors="ignore") as fh:
+    before = fh.read()
+
+after = re.sub(
+    r"\s*<link\b(?=[^>]*\brel=[\"'](?:dns-prefetch|preconnect)[\"'])(?=[^>]*\bhref=[\"']https?://[a-z0-9-]+\.supabase\.(?:co|in)[^\"'>]*[\"'])[^>]*>\s*\n?",
+    "",
+    before,
+    flags=re.IGNORECASE,
+)
+
+if after != before:
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write(after)
+PY
+    SCRUBBED=$((SCRUBBED + 1))
+  fi
+done < <(find "$DIST" -type f \( -name '*.html' -o -name '*.htm' \) -print0 2>/dev/null)
+if [[ $SCRUBBED -gt 0 ]]; then
+  warn "removed stale Supabase preconnect/dns-prefetch hints from $SCRUBBED HTML file(s)"
+fi
+
 if [[ -f "$INDEX" ]] && ! grep -q 'src="/env.js"' "$INDEX"; then
   # inject before first <script type="module"> or before </head>
   perl -0777 -i -pe '
