@@ -31,36 +31,47 @@ if [[ ${#ASSETS[@]} -eq 0 ]]; then
 fi
 
 TMP=$(mktemp -d); trap "rm -rf $TMP" EXIT
+printf '%s' "$HTML" > "$TMP/index.html"
 for a in "${ASSETS[@]}"; do
   curl -sSL --max-time 10 "$BASE$a" >> "$TMP/all.js" 2>/dev/null || true
 done
+curl -sSL --max-time 5 "$BASE/env.js" -o "$TMP/env.js" 2>/dev/null || true
+curl -sSL --max-time 5 "$BASE/sw.js" -o "$TMP/sw.js" 2>/dev/null || true
+cat "$TMP/index.html" "$TMP/all.js" "$TMP/env.js" "$TMP/sw.js" > "$TMP/all.txt" 2>/dev/null || true
 BYTES=$(wc -c < "$TMP/all.js" 2>/dev/null || echo 0)
 info "Concatenated JS: $BYTES bytes"
 
 # ---- Check 1: Pluto URL present ----
-if grep -qE 'api\.timescard\.cloud' "$TMP/all.js" 2>/dev/null; then
-  green "Pluto API URL (api.timescard.cloud) found in bundle"
+if grep -qE 'api\.timescard\.cloud' "$TMP/all.txt" 2>/dev/null; then
+  green "Pluto API URL (api.timescard.cloud) found in deployed HTML/JS/env"
 else
-  red "Pluto API URL NOT found in bundle"
+  red "Pluto API URL NOT found in deployed HTML/JS/env"
   FAIL=1
 fi
 
 # ---- Check 2: Pluto anon key present ----
-if grep -qE 'pk_anon_[a-zA-Z0-9]+' "$TMP/all.js" 2>/dev/null; then
-  green "Pluto anon key (pk_anon_…) found in bundle"
+if grep -qE 'pk_anon_[a-zA-Z0-9]+' "$TMP/all.txt" 2>/dev/null; then
+  green "Pluto anon key (pk_anon_…) found in deployed HTML/JS/env"
 else
-  red "Pluto anon key NOT found in bundle"
+  red "Pluto anon key NOT found in deployed HTML/JS/env"
+  FAIL=1
+fi
+
+if grep -q 'pk_anon_REPLACE_ME' "$TMP/all.txt" 2>/dev/null; then
+  red "Placeholder pk_anon_REPLACE_ME is still deployed"
   FAIL=1
 fi
 
 # ---- Check 3: Supabase leftovers ----
-LEFT=$(grep -oE 'https://[a-z0-9]+\.supabase\.co' "$TMP/all.js" 2>/dev/null | sort -u || true)
+LEFT=$(grep -oE 'https://[a-z0-9-]+\.supabase\.(co|in)' "$TMP/all.txt" 2>/dev/null | sort -u || true)
 if [[ -n "$LEFT" ]]; then
-  red "Supabase URLs still present in bundle:"
+  red "Supabase URLs still present in deployed HTML/JS/env/sw:"
   echo "$LEFT" | sed 's/^/     /'
+  echo
+  grep -RIn 'supabase\.(co\|in)' "$TMP" 2>/dev/null | sed 's/^/     source: /' | head -20 || true
   FAIL=1
 else
-  green "No supabase.co URLs left in bundle"
+  green "No supabase.co URLs left in deployed HTML/JS/env/sw"
 fi
 
 # ---- Check 4: Pluto backend reachable ----
@@ -90,7 +101,8 @@ else
   echo
   echo "Common fixes:"
   echo "  • Rebuild after editing .env (VITE_PLUTO_URL, VITE_PLUTO_ANON_KEY)"
-  echo "  • Confirm migrate-frontend-to-pluto.sh ran (grep -r supabase.co src/ should be empty)"
-  echo "  • Re-deploy the freshly built dist/"
+  echo "  • Re-run migrate-frontend-to-pluto.sh; it now also cleans index.html preconnects"
+  echo "  • Confirm source is clean: grep -R --exclude='*.bak-supabase' --exclude-dir=node_modules --exclude-dir=dist 'supabase.co' src index.html public"
+  echo "  • Re-deploy the freshly built dist/ (or use deploy-local-zip-to-primary.sh to bypass sandbox-secret issues)"
   exit 1
 fi

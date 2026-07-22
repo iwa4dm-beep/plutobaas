@@ -8,7 +8,7 @@
 #   bash /opt/pluto/deploy/migrate-frontend-to-pluto.sh --dry    # preview only
 #
 # What it does:
-#   1. Scans src/ for Supabase imports and env references
+#   1. Scans source HTML/TS/JS for Supabase imports, preconnects, env refs
 #   2. package.json:   @supabase/supabase-js  →  @timescard/pluto-js
 #   3. All *.ts/.tsx/.js/.jsx:
 #        import { createClient } from "@supabase/supabase-js"
@@ -19,8 +19,9 @@
 #        VITE_SUPABASE_ANON_KEY  → VITE_PLUTO_ANON_KEY
 #   4. Writes a compat shim at src/lib/pluto.ts that re-exports the client
 #      as both `pluto` and `supabase` so existing call sites keep compiling.
-#   5. Updates .env / .env.example
-#   6. Leaves a backup copy of every changed file at <file>.bak-supabase
+#   5. Removes Supabase dns-prefetch/preconnect tags from index.html/public HTML
+#   6. Updates .env / .env.example
+#   7. Leaves a backup copy of every changed file at <file>.bak-supabase
 # ---------------------------------------------------------------
 set -euo pipefail
 
@@ -47,10 +48,22 @@ if [[ $DRY -eq 1 ]]; then log "DRY-RUN mode — no files will be written."; fi
 # ---------------------------------------------------------------
 log "Scanning for Supabase references…"
 SCAN_RE='(@supabase/supabase-js|@/integrations/supabase|VITE_SUPABASE_|https?://[a-z0-9-]+\.supabase\.(co|in)|eyJhbGciOiJIUzI1NiIs)'
+declare -a SEARCH_ROOTS=()
+for d in "$ROOT/src" "$ROOT/app" "$ROOT/public"; do
+  [[ -d "$d" ]] && SEARCH_ROOTS+=("$d")
+done
+
 mapfile -t FILES < <(
-  find "$ROOT/src" "$ROOT/app" -type f \
-    \( -name '*.ts' -o -name '*.tsx' -o -name '*.js' -o -name '*.jsx' \) 2>/dev/null \
-    | xargs -r grep -l -E "$SCAN_RE" 2>/dev/null || true
+  {
+    if [[ ${#SEARCH_ROOTS[@]} -gt 0 ]]; then
+      find "${SEARCH_ROOTS[@]}" -type f \
+        \( -name '*.ts' -o -name '*.tsx' -o -name '*.js' -o -name '*.jsx' -o -name '*.mjs' -o -name '*.cjs' -o -name '*.html' -o -name '*.htm' \) \
+        ! -name '*.bak-supabase' 2>/dev/null
+    fi
+    for f in "$ROOT/index.html" "$ROOT/app.html" "$ROOT/vite.config.ts" "$ROOT/vite.config.js"; do
+      [[ -f "$f" ]] && printf '%s\n' "$f"
+    done
+  } | sort -u | xargs -r grep -l -E "$SCAN_RE" 2>/dev/null || true
 )
 
 if [[ ${#FILES[@]} -eq 0 ]]; then
@@ -80,6 +93,7 @@ PLUTO_KEY_LITERAL='(import.meta.env.VITE_PLUTO_ANON_KEY as string)'
 
 rewrite_file() {
   local f="$1"
+  local ext="${f##*.}"
   if [[ $DRY -eq 0 ]]; then
     cp -n "$f" "$f.bak-supabase"
   fi
@@ -92,6 +106,23 @@ rewrite_file() {
     -e 's#VITE_SUPABASE_ANON_KEY#VITE_PLUTO_ANON_KEY#g' \
     -e 's#VITE_SUPABASE_PUBLISHABLE_KEY#VITE_PLUTO_ANON_KEY#g' \
     "$f"
+
+  if [[ "$ext" == "html" || "$ext" == "htm" ]]; then
+    # HTML cannot contain TypeScript env expressions. Remove stale network hints
+    # such as <link rel="dns-prefetch/preconnect" href="https://xxx.supabase.co">.
+    perl -0777 -i -pe '
+      s#\s*<link\b[^>]*\bhref=["'"'"']https?://[a-z0-9-]+\.supabase\.(?:co|in)[^"'"'"'>]*["'"'"'][^>]*>\s*\n?##gi;
+      if ($ARGV =~ /(?:^|\/)index\.html$/ && $_ !~ /src=["'"'"']\/env\.js["'"'"']/) {
+        if ($_ =~ /<script\b[^>]*\btype=["'"'"']module["'"'"']/i) {
+          s#(\s*<script\b[^>]*\btype=["'"'"']module["'"'"'])#\n    <script src="/env.js"></script>$1#i;
+        } else {
+          s#</head>#    <script src="/env.js"></script>\n  </head>#i;
+        }
+      }
+    ' "$f"
+    return 0
+  fi
+
   # 3b. Hardcoded supabase.co URL literals -> Pluto env expression
   #     Matches "https://xxx.supabase.co" or 'https://xxx.supabase.co' (with optional trailing path)
   perl -0777 -i -pe '
@@ -142,8 +173,22 @@ if [[ $DRY -eq 0 ]]; then
 // so existing `import { supabase } from ...` call sites keep working.
 import { createClient } from "@timescard/pluto-js";
 
-const url     = import.meta.env.VITE_PLUTO_URL as string;
-const anonKey = import.meta.env.VITE_PLUTO_ANON_KEY as string;
+declare global {
+  interface Window {
+    __PLUTO_ENV__?: Record<string, string>;
+  }
+}
+
+const runtimeEnv = typeof window !== "undefined" ? window.__PLUTO_ENV__ ?? {} : {};
+const url =
+  runtimeEnv.VITE_PLUTO_URL ||
+  runtimeEnv.url ||
+  (import.meta.env.VITE_PLUTO_URL as string) ||
+  "https://api.timescard.cloud";
+const anonKey =
+  runtimeEnv.VITE_PLUTO_ANON_KEY ||
+  runtimeEnv.anonKey ||
+  (import.meta.env.VITE_PLUTO_ANON_KEY as string);
 
 if (!url || !anonKey) {
   throw new Error(
@@ -209,6 +254,7 @@ echo "Next steps:"
 echo "  1. Edit .env → set VITE_PLUTO_ANON_KEY (from Pluto Dashboard → Workspace → API Keys)."
 echo "  2. bun remove @supabase/supabase-js  &&  bun add @timescard/pluto-js"
 echo "  3. bun run build"
-echo "  4. Verify: grep -r 'supabase.co' dist/ || echo '✔ no supabase.co left in bundle'"
-echo "  5. Deploy: zip -r /tmp/<slug>.zip dist/* && curl … /unpack"
-echo "  6. bash /opt/pluto/deploy/verify-pluto-cutover.sh <your-domain>"
+echo "  4. Verify source: grep -R --exclude='*.bak-supabase' --exclude-dir=node_modules --exclude-dir=dist 'supabase.co' src index.html public 2>/dev/null || echo '✔ source clean'"
+echo "  5. Verify build:  grep -R 'supabase.co' dist/ || echo '✔ no supabase.co left in bundle'"
+echo "  6. Deploy without worker secret: sudo PLUTO_URL=https://api.timescard.cloud PLUTO_ANON_KEY=<pk_anon...> bash /opt/pluto/deploy/deploy-local-zip-to-primary.sh <slug> /tmp/<slug>.zip"
+echo "  7. bash /opt/pluto/deploy/verify-pluto-cutover.sh <your-domain>"
