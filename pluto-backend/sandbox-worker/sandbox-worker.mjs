@@ -420,7 +420,37 @@ async function ensurePrimaryDir() {
   const current = path.join(primaryDir, "current");
   const st = await fsp.lstat(current).catch(() => null);
   if (!st) await fsp.symlink(path.relative(primaryDir, placeholder), current);
+  await fsp.lchown(current, 33, 33).catch(() => {}); // www-data on Debian/Ubuntu; harmless if unsupported.
   return { primaryDir, current };
+}
+
+async function chmodTree(root) {
+  let entries = [];
+  try { entries = await fsp.readdir(root, { withFileTypes: true }); } catch { return; }
+  await fsp.chmod(root, 0o755).catch(() => {});
+  await fsp.chown(root, 33, 33).catch(() => {});
+  for (const entry of entries) {
+    const p = path.join(root, entry.name);
+    if (entry.isDirectory()) {
+      await chmodTree(p);
+    } else if (entry.isFile()) {
+      await fsp.chmod(p, 0o644).catch(() => {});
+      await fsp.chown(p, 33, 33).catch(() => {});
+    } else if (entry.isSymbolicLink()) {
+      await fsp.lchown(p, 33, 33).catch(() => {});
+    }
+  }
+}
+
+async function ensurePrimaryWebrootPermissions(target) {
+  // CloudPanel/nginx can enable `disable_symlinks if_not_owner` globally. When
+  // _primary/current is root-owned but the release is www-data-owned, nginx can
+  // return 403 with "Too many levels of symbolic links". Normalize ownership
+  // and traversal bits whenever the primary frontend is activated via the API.
+  for (const d of ["/var/lib", path.dirname(SITES_ROOT), SITES_ROOT, path.join(SITES_ROOT, "_primary")]) {
+    await fsp.chmod(d, 0o755).catch(() => {});
+  }
+  await chmodTree(target);
 }
 
 async function resolveReleaseForPrimary({ workspaceId, slug }) {
@@ -449,8 +479,10 @@ async function resolveReleaseForPrimary({ workspaceId, slug }) {
 async function activatePrimaryFrontend({ workspaceId, slug }) {
   const { primaryDir, current } = await ensurePrimaryDir();
   const resolved = await resolveReleaseForPrimary({ workspaceId, slug });
+  await ensurePrimaryWebrootPermissions(resolved.target);
   const tmp = path.join(primaryDir, `.current.tmp-${randomUUID().slice(0, 8)}`);
   await fsp.symlink(resolved.target, tmp);
+  await fsp.lchown(tmp, 33, 33).catch(() => {});
   await fsp.rename(tmp, current);
   const manifest = {
     ok: true,
