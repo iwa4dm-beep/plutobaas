@@ -47,10 +47,28 @@ export function OneClickFixPanel({ slug, wildcard, acmeEmail, onAutoHealChange }
   const [batchBusy, setBatchBusy] = useState(false);
   const [batchResults, setBatchResults] = useState<BatchIssueResult[] | null>(null);
   const [upstreamInput, setUpstreamInput] = useState("");
+  const [diag, setDiag] = useState<RepairChannelDiagnostic | null>(null);
+  const [diagBusy, setDiagBusy] = useState(false);
   const runRepair = useServerFn(runVpsRepair);
   const runPreflight = useServerFn(preflightAndHeal);
   const fetchCertStatus = useServerFn(getSlugCertStatus);
   const runBatch = useServerFn(batchIssuePerSlugCerts);
+  const runDiagnose = useServerFn(diagnoseRepairChannel);
+
+  const doDiagnose = useCallback(async () => {
+    setDiagBusy(true);
+    try {
+      const r = await runDiagnose({ data: {} });
+      setDiag(r);
+      const broken = r.actions.filter((a) => !a.wired).length;
+      if (!r.secretConfigured) toast.error("Sandbox secret is not configured");
+      else if (!r.worker.ok) toast.error("Sandbox worker unreachable");
+      else if (!r.wrapperInstalled.ok) toast.error("Repair wrapper not installed on VPS");
+      else if (broken > 0) toast.warning(`${broken} action(s) not wired to wrapper`);
+      else toast.success("All repair channels wired");
+    } catch (e) { toast.error(`Diagnose failed: ${(e as Error).message}`); }
+    finally { setDiagBusy(false); }
+  }, [runDiagnose]);
 
   useEffect(() => {
     try { setAutoHeal(localStorage.getItem(AUTOHEAL_KEY) === "1"); } catch { /* SSR */ }
