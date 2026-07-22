@@ -146,6 +146,10 @@ fi
 if [ "${SKIP_PRIMARY_FRONTEND:-0}" != "1" ] && [ -f "$DEPLOY/set-primary-frontend.sh" ]; then
   log "install primary frontend vhost ($WILDCARD)"
   APEX_DOMAIN="$WILDCARD" bash "$DEPLOY/set-primary-frontend.sh" --install --email "$ACME_EMAIL" || die "primary frontend install failed"
+  if [ -n "${SLUG:-}" ]; then
+    log "activate primary frontend ($WILDCARD → $SLUG)"
+    APEX_DOMAIN="$WILDCARD" bash "$DEPLOY/set-primary-frontend.sh" --activate "$SLUG" || die "primary frontend activation failed"
+  fi
 fi
 
 # 4) nginx reload
