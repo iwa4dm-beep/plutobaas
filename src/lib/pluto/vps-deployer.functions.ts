@@ -1173,12 +1173,17 @@ export const deployAll = createServerFn({ method: "POST" })
         if (primaryProbe && s.ok && !primaryVhostInstalled && sandboxSecret) {
           const repairBody = JSON.stringify({ action: "primary-frontend", slug: deploySlug, wildcard: hostFromUrl(defaultPrimaryServedSiteUrl) });
           const repair = await rawFetch(`${sandboxEndpointBase}/admin/repair`, "POST", { "content-type": "application/json", "x-sandbox-secret": sandboxSecret, accept: "application/json" }, repairBody, repairBody, 240_000);
-          healNote = `${healNote ? healNote + "; " : ""}primary vhost install HTTP ${repair.status}`;
-          if (repair.ok && (!primaryActivationState.current || primaryActivationState.current.ok !== true)) {
-            primaryActivationState.current = { ok: true, status: repair.status, detail: "primary frontend installed + activated by repair" };
+          const repairSummary = summarizeWorkerRepair(repair);
+          healNote = `${healNote ? healNote + "; " : ""}primary vhost repair ${repairSummary.note}`;
+          if (!repairSummary.ok) {
+            primaryActivationState.current = { ok: false, status: repair.status, detail: repairSummary.detail };
           }
+          if (repairSummary.ok) await sleep(750);
           s = await rawFetch(probeUrl, "GET", { accept: "text/html" }, null, null, 15_000);
           primaryVhostInstalled = Boolean(s.headers["x-pluto-primary"]) && !/Pluto\s*BaaS/i.test(s.text);
+          primaryActivationState.current = primaryVhostInstalled
+            ? { ok: true, status: repair.status, detail: "primary frontend verified by X-Pluto-Primary header after repair" }
+            : { ok: false, status: repair.status, detail: `repair returned ${repairSummary.detail}, but live probe still lacks X-Pluto-Primary` };
         }
         siteResult = { status: s.status, url: probeUrl, snippet: s.text.slice(0, 240), ...(healNote ? { healNote } : {}), ...(primaryProbe ? { primaryVhostInstalled } : {}) };
         siteLine = `served site (${autoSource}): ${s.ok ? `✓ HTTP ${s.status}` : `✗ HTTP ${s.status}`} @ ${effectiveSite}`;
