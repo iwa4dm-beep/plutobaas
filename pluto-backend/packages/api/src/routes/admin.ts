@@ -315,6 +315,125 @@ export async function adminRoutes(app: FastifyInstance, cfg: Config) {
   app.post('/admin/v1/workspaces/:id/keys/:keyId/revoke', revokeWorkspaceKey);
   app.delete('/admin/v1/workspaces/:id/keys/:keyId', revokeWorkspaceKey);
 
+  // --- API key conflict check + resolver (workspace-scoped) ---
+  const conflictBody = z.object({
+    name: z.string().min(1).max(128),
+    kind: z.enum(['anon', 'service_role']),
+    project_id: z.string().uuid().optional(),
+  });
+
+  async function findConflict(cfg: Config, workspaceId: string, name: string, kind: string, projectId?: string) {
+    const sql = getSql(cfg);
+    // Same-kind (blocking under new index) and cross-kind (blocking under legacy index).
+    const rows = await sql<any[]>`
+      select k.id, k.project_id, p.slug as project_slug, p.name as project_name,
+             k.name, k.role as kind, k.key_prefix, k.created_at, k.revoked_at
+      from admin.api_keys k
+      join admin.projects p on p.id = k.project_id
+      where p.workspace_id = ${workspaceId}
+        and k.name = ${name}
+        and k.revoked_at is null
+        ${projectId ? sql`and k.project_id = ${projectId}` : sql``}
+      order by k.created_at desc`;
+    return rows;
+  }
+
+  async function readApiKeysIndexes(cfg: Config) {
+    const sql = getSql(cfg);
+    const rows = await sql<any[]>`
+      select indexname, indexdef
+      from pg_indexes
+      where schemaname = 'admin' and tablename = 'api_keys'
+      order by indexname`;
+    const legacy = rows.find((r) => r.indexname === 'api_keys_project_name_idx');
+    const perKind = rows.find((r) => r.indexname === 'api_keys_project_name_kind_idx');
+    return {
+      indexes: rows,
+      legacy_index_present: !!legacy,
+      per_kind_index_present: !!perKind,
+      migration_0039_applied: !!perKind && !legacy,
+    };
+  }
+
+  app.post<{ Params: { id: string } }>('/admin/v1/workspaces/:id/keys/check-conflict', async (req, reply) => {
+    uuidSchema.parse(req.params.id);
+    const actor = await requireAuth(req, cfg);
+    await requireWorkspaceRole(cfg, req.params.id, actor, ['owner', 'admin', 'developer', 'viewer']);
+    const body = conflictBody.parse(req.body);
+    const idx = await readApiKeysIndexes(cfg);
+    const rows = await findConflict(cfg, req.params.id, body.name, body.kind, body.project_id);
+    // Under the new index (0039), only same-kind blocks. Under legacy, any same-name blocks.
+    const blocking = idx.migration_0039_applied
+      ? rows.filter((r) => r.kind === body.kind)
+      : rows;
+    const suggestion = blocking.length === 0
+      ? null
+      : {
+          rename_to: `${body.name}-${body.kind === 'service_role' ? 'svc' : 'anon'}-${Date.now().toString(36).slice(-4)}`,
+          can_revoke: true,
+        };
+    return reply.send({
+      conflict: blocking.length > 0,
+      blocking_kind_match: idx.migration_0039_applied,
+      existing: rows,
+      blocking,
+      suggestion,
+      index_status: idx,
+    });
+  });
+
+  const resolveBody = z.object({
+    name: z.string().min(1).max(128),
+    kind: z.enum(['anon', 'service_role']),
+    project_id: z.string().uuid().optional(),
+    strategy: z.enum(['revoke', 'rename']),
+    rename_to: z.string().min(1).max(128).optional(),
+  });
+
+  app.post<{ Params: { id: string } }>('/admin/v1/workspaces/:id/keys/resolve-conflict', async (req, reply) => {
+    uuidSchema.parse(req.params.id);
+    const actor = await requireAuth(req, cfg);
+    await requireWorkspaceRole(cfg, req.params.id, actor, ['owner', 'admin']);
+    const body = resolveBody.parse(req.body);
+    const idx = await readApiKeysIndexes(cfg);
+    const rows = await findConflict(cfg, req.params.id, body.name, body.kind, body.project_id);
+    const blocking = idx.migration_0039_applied ? rows.filter((r) => r.kind === body.kind) : rows;
+    if (blocking.length === 0) {
+      return reply.send({ ok: true, resolved: 0, note: 'no_conflict' });
+    }
+    const sql = getSql(cfg);
+    if (body.strategy === 'revoke') {
+      const ids = blocking.map((r) => r.id);
+      await sql`update admin.api_keys set revoked_at = now() where id = any(${ids})`;
+      await logAudit(cfg, { actor_id: actor.userId, action: 'api_key.conflict.revoke', resource_type: 'api_key', resource_id: ids[0], params: { workspace_id: req.params.id, name: body.name, kind: body.kind, count: ids.length } });
+      return reply.send({ ok: true, strategy: 'revoke', resolved: ids.length, ids });
+    }
+    // rename
+    const newName = body.rename_to?.trim() || `${body.name}-legacy-${Date.now().toString(36).slice(-4)}`;
+    const ids = blocking.map((r) => r.id);
+    await sql`update admin.api_keys set name = ${newName} where id = any(${ids})`;
+    await logAudit(cfg, { actor_id: actor.userId, action: 'api_key.conflict.rename', resource_type: 'api_key', resource_id: ids[0], params: { workspace_id: req.params.id, from: body.name, to: newName, count: ids.length } });
+    return reply.send({ ok: true, strategy: 'rename', resolved: ids.length, renamed_to: newName, ids });
+  });
+
+  // --- DB index verifier: api_keys unique constraint ---
+  app.get('/admin/v1/db/api-keys-index', async (req, reply) => {
+    const actor = await requireAuth(req, cfg);
+    if (!actor.isSuperadmin && actor.role !== 'service_role') {
+      // any workspace member may read this; fall back to “must be signed in”
+    }
+    const idx = await readApiKeysIndexes(cfg);
+    const status: 'ok' | 'stale' | 'legacy' =
+      idx.migration_0039_applied ? 'ok'
+      : idx.per_kind_index_present ? 'stale'
+      : 'legacy';
+    const message =
+      status === 'ok'    ? 'Migration 0039 active — anon + service_role can share a name per project.'
+      : status === 'stale' ? 'Per-kind index present but legacy index still exists — re-run migration 0039.'
+      : 'Legacy (project_id, name) unique index still active — apply migration 0039 to allow per-kind names.';
+    return reply.send({ status, message, ...idx });
+  });
+
   // --- Projects ---
   app.get('/admin/v1/projects', async (req, reply) => {
     const actor = await requireAuth(req, cfg);
