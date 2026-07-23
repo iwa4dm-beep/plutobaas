@@ -71,6 +71,12 @@ function AuthPage() {
         </div>
 
         <div className="rounded-lg border border-border bg-card p-6">
+          {search.reason === "session_expired" && !session && (
+            <div className="mb-4 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-200">
+              <strong>Session expired.</strong> নিরাপত্তার কারণে আপনি sign-out হয়ে গেছেন — আবার sign in করুন।
+              {search.redirect ? <> এরপর আপনাকে <code className="rounded bg-background/40 px-1">{search.redirect}</code>-এ ফিরিয়ে নেওয়া হবে।</> : null}
+            </div>
+          )}
           <h1 className="text-lg font-semibold">Admin authentication</h1>
           <p className="text-sm text-muted-foreground mt-1">
             {mode === "signup" ? "প্রথমে root admin account তৈরি করুন।" : "আপনার Pluto instance-এ লগ-ইন করুন।"}
