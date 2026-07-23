@@ -1,14 +1,18 @@
 import { useEffect } from "react";
-import { Link, useRouter } from "@tanstack/react-router";
-import { AlertTriangle, RefreshCw, Home } from "lucide-react";
+import { Link, useRouter, useNavigate, useRouterState } from "@tanstack/react-router";
+import { AlertTriangle, RefreshCw, Home, LogIn } from "lucide-react";
 import { describeError } from "@/lib/pluto/live";
 import { reportLovableError } from "@/lib/lovable-error-reporting";
+import { parseAuthFailure, logAuthFailure } from "@/lib/pluto/auth-error";
 
 /**
  * RouteErrorBoundary — canonical error UI used by every route (and the
  * root router) when an uncaught error escapes a loader / component.
- * Renders the same friendly title + detail + hint layout as ErrorBanner
- * so users see a consistent bilingual message anywhere the app crashes.
+ *
+ * Special-case: `PlutoAuthError_401` / any 401 → auto-navigate to `/auth`
+ * with a return path + `reason=session_expired`, and never show the
+ * generic red banner. This kills the blank-screen behaviour that used to
+ * happen when admin server-fns threw 401.
  */
 export function RouteErrorBoundary({
   error,
@@ -20,13 +24,59 @@ export function RouteErrorBoundary({
   boundary?: string;
 }) {
   const router = useRouter();
+  const navigate = useNavigate();
   const info = describeError(error);
+  const auth = parseAuthFailure(error);
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
 
   useEffect(() => {
     // eslint-disable-next-line no-console
     console.error("[RouteErrorBoundary]", boundary, error);
     reportLovableError(error, { boundary });
-  }, [error, boundary]);
+    if (auth?.status === 401) {
+      logAuthFailure(`route-boundary:${boundary}`, error, { route: pathname });
+    }
+  }, [error, boundary, auth?.status, pathname]);
+
+  // 401 → clean redirect. We use a client-only effect so SSR doesn't try
+  // to touch `window`.
+  useEffect(() => {
+    if (auth?.status !== 401) return;
+    if (typeof window === "undefined") return;
+    // Avoid loop if we're already on /auth.
+    if (pathname.startsWith("/auth")) return;
+    navigate({
+      to: "/auth",
+      search: { redirect: pathname, reason: "session_expired" } as never,
+      replace: true,
+    });
+  }, [auth?.status, navigate, pathname]);
+
+  if (auth?.status === 401) {
+    return (
+      <div className="flex min-h-[40vh] items-center justify-center px-4 py-10">
+        <div className="w-full max-w-md rounded-lg border border-border bg-card p-6 text-sm text-center">
+          <div className="mx-auto mb-3 flex h-9 w-9 items-center justify-center rounded-full bg-primary/10 text-primary">
+            <LogIn className="h-4 w-4" />
+          </div>
+          <h2 className="text-base font-semibold text-foreground">Session expired</h2>
+          <p className="mt-1 text-muted-foreground">
+            আপনার session শেষ হয়ে গেছে — sign in পাতায় নিয়ে যাচ্ছি…
+          </p>
+          <div className="mt-4">
+            <Link
+              to="/auth"
+              search={{ redirect: pathname, reason: "session_expired" } as never}
+              replace
+              className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+            >
+              <LogIn className="h-3.5 w-3.5" /> Sign in again
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const retry = () => {
     router.invalidate();
