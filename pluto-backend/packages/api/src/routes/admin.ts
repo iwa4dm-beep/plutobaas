@@ -501,6 +501,7 @@ export async function adminRoutes(app: FastifyInstance, cfg: Config) {
     if (!row) return reply.code(404).send({ error: 'Not found' });
     await logAudit(cfg, { actor_id: actor.userId, project_id: row.id, action: 'project.update', resource_type: 'project', resource_id: row.id, params: body });
     return reply.send(row);
+  });
 
   app.delete<{ Params: { id: string } }>('/admin/v1/projects/:id', async (req, reply) => {
     uuidSchema.parse(req.params.id);
