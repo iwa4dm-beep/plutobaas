@@ -290,6 +290,12 @@ export const requirePlutoAdmin = createMiddleware({ type: "function" })
       finalHeader: header || "(empty)",
     });
     if (!header || !/^Bearer\s+\S+/i.test(header)) {
+      // eslint-disable-next-line no-console
+      console.warn("[pluto-auth] server.401", {
+        at: new Date().toISOString(),
+        source, recovered,
+        route: (() => { try { const { getRequest } = require("@tanstack/react-start/server"); return new URL(getRequest().url).pathname; } catch { return undefined; } })(),
+      });
       throw authError(401, {
         error: "unauthorized",
         message: "Sign in required",
