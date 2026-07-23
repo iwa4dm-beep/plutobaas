@@ -32,20 +32,56 @@ case "$KEY" in
     ;;
 esac
 
-PRIMARY_ROOT="${PRIMARY_ROOT:-/var/lib/pluto/sites/_primary/current}"
-if [[ ! -d "$PRIMARY_ROOT" ]]; then
-  # follow symlink or search
-  alt="$(readlink -f /var/lib/pluto/sites/_primary/current 2>/dev/null || true)"
-  [[ -n "$alt" && -d "$alt" ]] && PRIMARY_ROOT="$alt"
-fi
-[[ -d "$PRIMARY_ROOT" ]] || die "Primary webroot not found: $PRIMARY_ROOT"
+PRIMARY_LINK="/var/lib/pluto/sites/_primary/current"
+PRIMARY_ROOT="${PRIMARY_ROOT:-$PRIMARY_LINK}"
 
-# resolve to real dir (handles nested current/dist layouts)
-if [[ ! -f "$PRIMARY_ROOT/index.html" ]]; then
-  found="$(find "$PRIMARY_ROOT" -maxdepth 3 -type f -name index.html 2>/dev/null | head -1 || true)"
-  [[ -n "$found" ]] && PRIMARY_ROOT="$(dirname "$found")"
+resolve_primary_root() {
+  local root="$1"
+  local found=""
+
+  if [[ -e "$root" || -L "$root" ]]; then
+    local resolved=""
+    resolved="$(readlink -f "$root" 2>/dev/null || true)"
+    if [[ -n "$resolved" && -d "$resolved" ]]; then
+      root="$resolved"
+    fi
+  fi
+
+  if [[ -d "$root" && -f "$root/index.html" ]]; then
+    printf '%s\n' "$root"
+    return 0
+  fi
+
+  if [[ -d "$root" ]]; then
+    found="$(find -L "$root" -maxdepth 8 -type f -name index.html 2>/dev/null | head -1 || true)"
+    if [[ -n "$found" ]]; then
+      dirname "$found"
+      return 0
+    fi
+  fi
+
+  # Last resort: primary symlink is stale/broken, so search deployed releases.
+  found="$({
+    find -L /var/lib/pluto/sites/_primary /var/lib/pluto/sites -maxdepth 8 -type f -name index.html 2>/dev/null || true
+  } | grep -v '/node_modules/' | sort | tail -1)"
+  if [[ -n "$found" ]]; then
+    dirname "$found"
+    return 0
+  fi
+
+  return 1
+}
+
+PRIMARY_ROOT="$(resolve_primary_root "$PRIMARY_ROOT" || true)"
+[[ -n "$PRIMARY_ROOT" && -f "$PRIMARY_ROOT/index.html" ]] || die "index.html not found. No built frontend release exists under /var/lib/pluto/sites. Deploy/cutover a dist zip first, then rerun this script."
+
+# Repair stale _primary/current symlink so nginx serves the located release.
+mkdir -p /var/lib/pluto/sites/_primary
+if [[ "$(readlink -f "$PRIMARY_LINK" 2>/dev/null || true)" != "$PRIMARY_ROOT" ]]; then
+  rm -f "$PRIMARY_LINK"
+  ln -s "$PRIMARY_ROOT" "$PRIMARY_LINK"
+  pass "repaired primary symlink: $PRIMARY_LINK -> $PRIMARY_ROOT"
 fi
-[[ -f "$PRIMARY_ROOT/index.html" ]] || die "index.html not found under primary webroot"
 
 info "Primary webroot: $PRIMARY_ROOT"
 
