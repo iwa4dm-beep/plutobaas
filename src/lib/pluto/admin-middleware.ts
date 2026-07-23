@@ -221,15 +221,52 @@ function debugAuth(stage: string, info: Record<string, unknown>): void {
 
 export const requirePlutoAdmin = createMiddleware({ type: "function" })
   .client(async ({ next }) => {
-    const authHeader = readClientAuthHeader();
+    // Proactively refresh a near-expiry token so most 401s never happen.
+    await refreshIfExpiringSoon();
+    let authHeader = readClientAuthHeader();
+    const sess = readClientSession();
     debugAuth("client.phase", {
       hasWindow: typeof window !== "undefined",
       headerFound: !!authHeader,
+      userId: sess?.user?.id ?? null,
+      expiresIn: sess?.expires_at ? sess.expires_at * 1000 - Date.now() : null,
+      route: typeof window !== "undefined" ? window.location.pathname : undefined,
       header: authHeader ?? "(empty)",
     });
-    return next({
-      sendContext: { __plutoAuthHeader: authHeader ?? "" },
-    });
+    try {
+      const result = await next({
+        sendContext: { __plutoAuthHeader: authHeader ?? "" },
+      });
+      return result;
+    } catch (err) {
+      // Server phase surfaced a 401 — attempt a single refresh + retry so a
+      // token that expired mid-flight doesn't force the user to re-sign-in.
+      const isAuthErr = err instanceof Error && /PlutoAuthError_401|"status":\s*401/.test(err.message + " " + err.name);
+      if (!isAuthErr || typeof window === "undefined") {
+        // eslint-disable-next-line no-console
+        if (isAuthErr) console.warn("[pluto-auth] client.401 (no-window, cannot retry)", {
+          route: undefined, userId: sess?.user?.id ?? null,
+        });
+        throw err;
+      }
+      try {
+        const { live } = await import("./live");
+        const ok = await live.auth.refresh().then(() => true).catch(() => false);
+        // eslint-disable-next-line no-console
+        console.warn("[pluto-auth] client.401 → refresh+retry", {
+          at: new Date().toISOString(),
+          route: window.location.pathname,
+          userId: sess?.user?.id ?? null,
+          refreshed: ok,
+        });
+        if (!ok) throw err;
+        authHeader = readClientAuthHeader();
+        if (!authHeader) throw err;
+        return await next({ sendContext: { __plutoAuthHeader: authHeader } });
+      } catch {
+        throw err;
+      }
+    }
   })
   .server(async ({ next, context }) => {
     let header = (context as { __plutoAuthHeader?: string }).__plutoAuthHeader ?? "";
