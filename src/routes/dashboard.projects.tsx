@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Copy, ExternalLink, FolderKanban, KeyRound, Plus, Trash2 } from "lucide-react";
+import { Check, Copy, ExternalLink, FolderKanban, KeyRound, Pencil, Plus, Trash2, X } from "lucide-react";
 import { PageHeader } from "@/components/pluto/PageHeader";
 import { HelpPanel } from "@/components/help/HelpPanel";
 import { dashboardProjectsHelp } from "@/content/help/dashboard.projects";
