@@ -53,4 +53,11 @@ served="$(curl -sk -I "https://${DOMAIN}/" | tr -d '\r' | awk 'tolower($1)=="ser
 title="$(curl -sk "https://${DOMAIN}/" | grep -oiE '<title>[^<]*' | head -1)"
 log "Server header: ${served:-?}"
 log "Title: ${title:-?}"
+root_code="$(curl -sk -o /dev/null -w "%{http_code}" "https://${DOMAIN}/")"
+root_location="$(curl -skI "https://${DOMAIN}/" | tr -d '\r' | awk 'tolower($1)=="location:"{print $2; exit}')"
+if [ "$root_code" = "301" ] || [ "$root_code" = "302" ]; then
+  log "Root redirect: HTTP ${root_code} -> ${root_location:-?}"
+else
+  log "Root response: HTTP ${root_code} (if this shows marketing HTML, re-run fix-dashboard-assets.sh)"
+fi
 log "✅ dedupe complete. Hard-refresh https://${DOMAIN}/"

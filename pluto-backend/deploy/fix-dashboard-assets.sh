@@ -8,6 +8,7 @@
 set -euo pipefail
 
 DOMAIN="${DOMAIN:-dashboard.timescard.cloud}"
+DASHBOARD_ENTRY="${DASHBOARD_ENTRY:-/dashboard}"
 
 # Auto-detect BUILD_DIR: prefer .output/public (Nitro), fall back to dist.
 detect_build_dir() {
@@ -114,14 +115,19 @@ ln -sf "$CONF" "$NGINX_ENABLED/$(basename "$CONF")"
 
 cp -a "$CONF" "${CONF}.bak.$(date -u +%Y%m%dT%H%M%SZ)"
 
-# Patch: set correct `root`, drop stale /assets/ blocks, add fresh alias.
-python3 - "$CONF" "$BUILD_DIR" <<'PY'
+# Patch: set correct `root`, drop stale /assets/ blocks, add fresh alias, and
+# make the bare dashboard domain open the dashboard app instead of the marketing
+# landing route. The dashboard application still serves deep links via SSR;
+# this only fixes the exact `/` URL on dashboard.timescard.cloud.
+python3 - "$CONF" "$BUILD_DIR" "$DASHBOARD_ENTRY" <<'PY'
 import re, sys, pathlib
-conf_path, build_dir = sys.argv[1], sys.argv[2]
+conf_path, build_dir, dashboard_entry = sys.argv[1], sys.argv[2], sys.argv[3]
 src = pathlib.Path(conf_path).read_text()
 
 # 1. Remove any prior /assets/ location blocks (both alias and root variants).
 src = re.sub(r'\n\s*location\s+\^?~?\s*/assets/\s*\{[^}]*\}\s*', '\n', src)
+# Remove older exact-root redirects inserted by this script so it stays idempotent.
+src = re.sub(r'\n\s*location\s+=\s+/\s*\{\s*return\s+302\s+[^;]+;\s*\}\s*', '\n', src)
 
 # 2. Replace any existing top-level `root ...;` inside the 443 server block
 #    with the correct build_dir. Also insert if missing.
@@ -149,6 +155,15 @@ def fix_server(m):
     }}
 """
         body = re.sub(r'(server_name[^;]*;\n)', r'\1' + alias_block, body, count=1)
+    # Exact bare-root dashboard domain should not show the product/marketing
+    # landing page. Send it to the actual admin console route.
+    if 'location = /' not in body:
+        root_redirect = f"""
+    location = / {{
+        return 302 {dashboard_entry};
+    }}
+"""
+        body = re.sub(r'(server_name[^;]*;\n)', r'\1' + root_redirect, body, count=1)
     return body
 
 # Match each server { ... } block conservatively.
@@ -175,7 +190,7 @@ def replace_blocks(text):
 
 new = re.sub(r'server\s*\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', fix_server, src)
 pathlib.Path(conf_path).write_text(new)
-print("patched root + /assets/ →", build_dir)
+print("patched root + /assets/ + bare-domain redirect →", build_dir, dashboard_entry)
 PY
 
 ln -sf "$CONF" "$NGINX_ENABLED/$(basename "$CONF")"
@@ -190,4 +205,20 @@ code=$(curl -sk -o /dev/null -w "%{http_code}" "https://${DOMAIN}/assets/${FIRST
 [ "$code" = "200" ] || die "Asset still 404: /assets/${FIRST_ASSET} -> HTTP $code (check nginx error log: journalctl -u nginx -n 50)"
 log "OK: /assets/${FIRST_ASSET} -> HTTP 200"
 
-log "✅ dashboard root+assets fix complete. Hard-refresh https://${DOMAIN}/"
+root_code=$(curl -sk -o /dev/null -w "%{http_code}" "https://${DOMAIN}/")
+root_location=$(curl -skI "https://${DOMAIN}/" | tr -d '\r' | awk 'tolower($1)=="location:"{print $2; exit}')
+if [ "$root_code" != "302" ] && [ "$root_code" != "301" ]; then
+  die "Bare root still serves HTTP $root_code instead of redirecting to ${DASHBOARD_ENTRY}. A duplicate vhost may still be winning. Run dedupe-dashboard-vhost.sh."
+fi
+case "$root_location" in
+  "$DASHBOARD_ENTRY"|"https://${DOMAIN}${DASHBOARD_ENTRY}"*) log "OK: / redirects to ${root_location}" ;;
+  *) die "Bare root redirects to '${root_location:-?}', expected ${DASHBOARD_ENTRY}" ;;
+esac
+
+dash_title=$(curl -skL "https://${DOMAIN}${DASHBOARD_ENTRY}" | grep -oiE '<title>[^<]*' | head -1 || true)
+case "$dash_title" in
+  *Dashboard*|*Sign\ in*) log "OK: ${DASHBOARD_ENTRY} serves app title: ${dash_title#<title>}" ;;
+  *) die "${DASHBOARD_ENTRY} does not look like the dashboard app. Title: ${dash_title:-?}" ;;
+esac
+
+log "✅ dashboard root+assets fix complete. Open https://${DOMAIN}${DASHBOARD_ENTRY}"
