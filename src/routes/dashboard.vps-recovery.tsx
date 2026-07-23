@@ -40,7 +40,8 @@ function AuthErrorFallback({ error, reset }: { error: Error; reset: () => void }
   }
   return (
     <div className="p-6 space-y-3">
-      <ErrorBanner title="VPS Recovery unavailable" description={error.message} />
+      <ErrorBanner error={error} onRetry={() => { reset(); router.invalidate(); }} />
+      <p className="text-sm text-muted-foreground">VPS Recovery unavailable.</p>
       <button className="text-sm underline" onClick={() => { reset(); router.invalidate(); }}>Retry</button>
     </div>
   );
