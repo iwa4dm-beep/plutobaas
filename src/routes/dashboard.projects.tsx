@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Check, Copy, ExternalLink, FolderKanban, KeyRound, Pencil, Plus, Trash2, X } from "lucide-react";
+import { AlertTriangle, Check, Copy, Database, ExternalLink, FolderKanban, KeyRound, Pencil, Plus, ShieldCheck, Trash2, X } from "lucide-react";
 import { PageHeader } from "@/components/pluto/PageHeader";
 import { HelpPanel } from "@/components/help/HelpPanel";
 import { dashboardProjectsHelp } from "@/content/help/dashboard.projects";
@@ -8,9 +8,13 @@ import { ErrorBanner } from "@/components/pluto/ErrorBanner";
 import { checkSlug, coerceSlug, previewSubdomainUrl, slugReasonMessage } from "@/lib/pluto/reserved-slugs";
 import { isLive, live, type Workspace, type WorkspaceKey } from "@/lib/pluto/live";
 
+type ConflictInfo = Awaited<ReturnType<typeof live.admin.apiKeys.checkConflict>>;
+type IndexStatus = Awaited<ReturnType<typeof live.admin.apiKeys.verifyIndex>>;
+
 export const Route = createFileRoute("/dashboard/projects")({
   component: ProjectsPage,
 });
+
 
 
 function ProjectsPage() {
