@@ -8,6 +8,7 @@ import { HelpPanel } from "@/components/help/HelpPanel";
 import { dashboardIndexHelp } from "@/content/help/dashboard.index";
 
 import { pluto } from "@/lib/pluto/client";
+import { useAuth } from "@/lib/pluto/auth-context";
 import { isLive, live } from "@/lib/pluto/live";
 import { OnboardingWizard, type Plan } from "@/components/pluto/OnboardingWizard";
 
