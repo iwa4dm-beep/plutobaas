@@ -79,6 +79,15 @@ export const Route = createFileRoute("/dashboard/")({
 function Overview() {
   const search = Route.useSearch() as { plan?: Plan };
   const navigate = Route.useNavigate();
+  const { session, loading: authLoading } = useAuth();
+
+  // Auth-gate: redirect to /auth when unauthenticated (client-only).
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (authLoading) return;
+    if (!session) navigate({ to: "/auth" });
+  }, [authLoading, session, navigate]);
+
   const [stats, setStats] = useState({ users: 0, tables: 0, buckets: 0, logs: 0 });
   const [loaded, setLoaded] = useState(false);
   const [err, setErr] = useState<string | null>(null);
