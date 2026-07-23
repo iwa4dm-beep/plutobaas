@@ -12,17 +12,35 @@ log() { printf '\033[1;36m[%s]\033[0m %s\n' "$(date -u +%H:%M:%SZ)" "$*"; }
 die() { printf '\033[1;31m[FAIL]\033[0m %s\n' "$*" >&2; exit 1; }
 
 [ -f "$KEEP" ] || die "Canonical vhost not found: $KEEP (run fix-dashboard-assets.sh first)"
+KEEP_REAL="$(readlink -f "$KEEP" 2>/dev/null || printf '%s' "$KEEP")"
 
 log "Keeping canonical: $KEEP"
 log "Scanning for other vhosts claiming $DOMAIN ..."
 
-mapfile -t HITS < <(grep -rlE "server_name[[:space:]]+[^;]*\b${DOMAIN}\b" \
-  /etc/nginx 2>/dev/null | grep -v '\.bak\.' | grep -Fv "$KEEP" || true)
+mapfile -t HITS < <(grep -RrlE "server_name[[:space:]]+[^;]*\b${DOMAIN}\b" \
+  /etc/nginx 2>/dev/null | grep -v '\.bak\.' || true)
+
+# Same config can be included twice: directly from /etc/nginx/lovable-sites and
+# again via a sites-enabled symlink. Nginx reports this as a conflicting
+# server_name, but grep may still show only the canonical content. Remove those
+# duplicate symlink aliases first.
+while IFS= read -r link; do
+  [ -n "$link" ] || continue
+  link_real="$(readlink -f "$link" 2>/dev/null || true)"
+  if [ "$link_real" = "$KEEP_REAL" ] && [ "$link" != "$KEEP" ]; then
+    log "Removing duplicate include symlink: $link -> $KEEP_REAL"
+    rm -f "$link"
+  fi
+done < <(find /etc/nginx/sites-enabled -maxdepth 1 -type l -print 2>/dev/null || true)
 
 if [ "${#HITS[@]}" -eq 0 ]; then
   log "No duplicates found."
 else
   for f in "${HITS[@]}"; do
+    f_real="$(readlink -f "$f" 2>/dev/null || printf '%s' "$f")"
+    if [ "$f" = "$KEEP" ] || [ "$f_real" = "$KEEP_REAL" ]; then
+      continue
+    fi
     log "Cleaning duplicate: $f"
     cp -a "$f" "${f}.bak.$(date -u +%Y%m%dT%H%M%SZ)"
     # Strip DOMAIN token from server_name lines. If server_name becomes empty,

@@ -51,6 +51,7 @@ find "$BUILD_DIR" -type f -exec chmod 644 {} + 2>/dev/null || true
 find_vhost() {
   local paths=(
     /etc/nginx/sites-available
+    /etc/nginx/lovable-sites
     /etc/nginx/sites-enabled
     /etc/nginx/conf.d
     /etc/nginx
@@ -65,6 +66,32 @@ find_vhost() {
 }
 
 CONF="$(find_vhost || true)"
+
+enable_conf_once() {
+  local conf="$1"
+  local base real link link_real
+  base="$(basename "$conf")"
+  real="$(readlink -f "$conf" 2>/dev/null || printf '%s' "$conf")"
+
+  # If the canonical vhost already lives in an included directory like
+  # /etc/nginx/lovable-sites, do NOT also symlink it into sites-enabled. That
+  # double-includes the same server block and causes nginx's:
+  #   conflicting server name "dashboard.timescard.cloud" ... ignored
+  if [ "${conf#/etc/nginx/sites-available/}" != "$conf" ]; then
+    ln -sf "$conf" "$NGINX_ENABLED/$base"
+    return 0
+  fi
+
+  mkdir -p "$NGINX_ENABLED"
+  while IFS= read -r link; do
+    [ -n "$link" ] || continue
+    link_real="$(readlink -f "$link" 2>/dev/null || true)"
+    if [ "$link_real" = "$real" ]; then
+      log "Removing duplicate sites-enabled include: $link -> $real"
+      rm -f "$link"
+    fi
+  done < <(find "$NGINX_ENABLED" -maxdepth 1 -type l -name "$base" -print 2>/dev/null || true)
+}
 
 if [ -z "$CONF" ]; then
   log "No existing vhost for $DOMAIN — creating a new one."
@@ -110,7 +137,7 @@ EOF
 fi
 
 log "Vhost: $CONF"
-ln -sf "$CONF" "$NGINX_ENABLED/$(basename "$CONF")"
+enable_conf_once "$CONF"
 
 
 cp -a "$CONF" "${CONF}.bak.$(date -u +%Y%m%dT%H%M%SZ)"
@@ -193,7 +220,7 @@ pathlib.Path(conf_path).write_text(new)
 print("patched root + /assets/ + bare-domain redirect →", build_dir, dashboard_entry)
 PY
 
-ln -sf "$CONF" "$NGINX_ENABLED/$(basename "$CONF")"
+enable_conf_once "$CONF"
 
 nginx -t
 systemctl reload nginx
@@ -215,9 +242,9 @@ case "$root_location" in
   *) die "Bare root redirects to '${root_location:-?}', expected ${DASHBOARD_ENTRY}" ;;
 esac
 
-dash_title=$(curl -skL "https://${DOMAIN}${DASHBOARD_ENTRY}" | grep -oiE '<title>[^<]*' | head -1 || true)
+dash_title=$(curl -skL --compressed "https://${DOMAIN}${DASHBOARD_ENTRY}" | python3 -c 'import re,sys; s=sys.stdin.buffer.read().decode("utf-8","ignore"); m=re.search(r"<title>(.*?)</title>", s, re.I|re.S); print(m.group(1).strip() if m else "")' || true)
 case "$dash_title" in
-  *Dashboard*|*Sign\ in*) log "OK: ${DASHBOARD_ENTRY} serves app title: ${dash_title#<title>}" ;;
+  *Dashboard*|*Sign\ in*) log "OK: ${DASHBOARD_ENTRY} serves app title: ${dash_title}" ;;
   *) die "${DASHBOARD_ENTRY} does not look like the dashboard app. Title: ${dash_title:-?}" ;;
 esac
 
