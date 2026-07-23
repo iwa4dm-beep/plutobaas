@@ -44,10 +44,73 @@ chown -R root:www-data "$BUILD_DIR" 2>/dev/null || true
 find "$BUILD_DIR" -type d -exec chmod 755 {} + 2>/dev/null || true
 find "$BUILD_DIR" -type f -exec chmod 644 {} + 2>/dev/null || true
 
-# Find the nginx vhost file for this domain
-CONF="$(grep -rlE "server_name[[:space:]]+[^;]*\b${DOMAIN}\b" "$NGINX_AVAILABLE" 2>/dev/null | head -1 || true)"
-[ -n "$CONF" ] || die "No nginx vhost found for $DOMAIN under $NGINX_AVAILABLE."
+# Find the nginx vhost file for this domain. Search sites-available first, then
+# every nginx include path (conf.d, sites-enabled, /etc/nginx itself). If we
+# still can't find one, create a fresh vhost so the domain can be served.
+find_vhost() {
+  local paths=(
+    /etc/nginx/sites-available
+    /etc/nginx/sites-enabled
+    /etc/nginx/conf.d
+    /etc/nginx
+  )
+  for p in "${paths[@]}"; do
+    [ -d "$p" ] || continue
+    local hit
+    hit="$(grep -rlE "server_name[[:space:]]+[^;]*\b${DOMAIN}\b" "$p" 2>/dev/null | grep -v '\.bak\.' | head -1 || true)"
+    [ -n "$hit" ] && { echo "$hit"; return; }
+  done
+  return 1
+}
+
+CONF="$(find_vhost || true)"
+
+if [ -z "$CONF" ]; then
+  log "No existing vhost for $DOMAIN — creating a new one."
+  mkdir -p "$NGINX_AVAILABLE" "$NGINX_ENABLED"
+  CONF="$NGINX_AVAILABLE/${DOMAIN}.conf"
+  CERT="/etc/letsencrypt/live/${DOMAIN}"
+  if [ -f "$CERT/fullchain.pem" ] && [ -f "$CERT/privkey.pem" ]; then
+    cat > "$CONF" <<EOF
+server {
+    listen 80;
+    listen [::]:80;
+    server_name ${DOMAIN};
+    location /.well-known/acme-challenge/ { root /var/www/html; }
+    location / { return 301 https://\$host\$request_uri; }
+}
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    http2 on;
+    server_name ${DOMAIN};
+    ssl_certificate     ${CERT}/fullchain.pem;
+    ssl_certificate_key ${CERT}/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    root ${BUILD_DIR};
+    index index.html;
+    location / { try_files \$uri \$uri/ /index.html; }
+}
+EOF
+  else
+    log "No TLS cert at ${CERT} — creating HTTP-only vhost. Run certbot afterwards: certbot --nginx -d ${DOMAIN}"
+    cat > "$CONF" <<EOF
+server {
+    listen 80;
+    listen [::]:80;
+    server_name ${DOMAIN};
+    root ${BUILD_DIR};
+    index index.html;
+    location / { try_files \$uri \$uri/ /index.html; }
+}
+EOF
+  fi
+fi
+
 log "Vhost: $CONF"
+ln -sf "$CONF" "$NGINX_ENABLED/$(basename "$CONF")"
+
 
 cp -a "$CONF" "${CONF}.bak.$(date -u +%Y%m%dT%H%M%SZ)"
 
