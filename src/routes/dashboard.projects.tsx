@@ -25,7 +25,9 @@ function ProjectsPage() {
   const [newKind, setNewKind] = useState<"anon" | "service_role">("anon");
   const [projectName, setProjectName] = useState("");
   const [projectSlug, setProjectSlug] = useState("");
+  const [editing, setEditing] = useState<{ id: string; name: string; slug: string } | null>(null);
   const slugStatus = useMemo(() => checkSlug(projectSlug), [projectSlug]);
+  const editSlugStatus = useMemo(() => (editing ? checkSlug(editing.slug) : { ok: true as const }), [editing]);
 
   const loadTop = useCallback(async () => {
     if (!isLive()) return;
