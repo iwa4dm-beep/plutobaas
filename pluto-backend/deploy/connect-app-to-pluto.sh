@@ -67,8 +67,21 @@ info "PLUTO_URL=$PLUTO_URL  ANON_KEY=${PLUTO_ANON_KEY:0:10}…"
 
 # ── 1. Fetch + install code via install-dashboard-from-github.sh ────────────
 info "[1/6] cloning + building $REPO into $APP_DIR (service=$SERVICE port=$PORT)"
-DOMAIN="$DOMAIN" APP_DIR="$APP_DIR" SERVICE="$SERVICE" PORT="$PORT" \
-  bash "$HERE/install-dashboard-from-github.sh" "$REPO" || die "install-dashboard-from-github.sh failed"
+
+# install-dashboard-from-github.sh reads REPO_URL from env (positional args are ignored).
+# If APP_DIR exists but is NOT a git checkout of the requested repo, wipe it so
+# the installer can clone fresh (fixes "APP_DIR is not a git checkout and REPO_URL is not set").
+if [[ -d "$APP_DIR" ]]; then
+  existing_remote="$(git -C "$APP_DIR" config --get remote.origin.url 2>/dev/null || true)"
+  if [[ -z "$existing_remote" || "$existing_remote" != "$REPO" ]]; then
+    warn "wiping $APP_DIR (existing remote='${existing_remote:-<none>}', want='$REPO')"
+    systemctl stop "$SERVICE" 2>/dev/null || true
+    rm -rf "$APP_DIR"
+  fi
+fi
+
+REPO_URL="$REPO" DOMAIN="$DOMAIN" APP_DIR="$APP_DIR" SERVICE="$SERVICE" PORT="$PORT" \
+  bash "$HERE/install-dashboard-from-github.sh" || die "install-dashboard-from-github.sh failed"
 
 # ── 2. Rewrite source: @supabase/supabase-js → @timescard/pluto-js ──────────
 info "[2/6] rewriting Supabase client imports → Pluto (source-level)"
