@@ -126,7 +126,10 @@ src = re.sub(r'\n\s*location\s+\^?~?\s*/assets/\s*\{[^}]*\}\s*', '\n', src)
 # 2. Replace any existing top-level `root ...;` inside the 443 server block
 #    with the correct build_dir. Also insert if missing.
 def fix_server(m):
-    body = m.group(0)
+    # Accept either a regex match object or a plain server-block string. Older
+    # script versions accidentally passed m.group(0), which made Python crash
+    # with: AttributeError: 'str' object has no attribute 'group'.
+    body = m.group(0) if hasattr(m, 'group') else str(m)
     if 'listen' not in body or '443' not in body:
         return body
     if re.search(r'^\s*root\s+[^;]+;', body, re.M):
@@ -170,7 +173,7 @@ def replace_blocks(text):
     # Fallback: simple regex if the above didn't rewrite anything
     return text
 
-new = re.sub(r'server\s*\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', lambda m: fix_server(m.group(0)), src)
+new = re.sub(r'server\s*\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', fix_server, src)
 pathlib.Path(conf_path).write_text(new)
 print("patched root + /assets/ →", build_dir)
 PY
