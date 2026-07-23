@@ -1,5 +1,5 @@
-import { useMemo, useState } from "react";
-import { createFileRoute } from "@tanstack/react-router";
+import { useEffect, useMemo, useState } from "react";
+import { createFileRoute, useNavigate, useRouter } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { CheckCircle2, RefreshCw, RotateCw, ShieldAlert, XCircle } from "lucide-react";
 import { PageHeader } from "@/components/pluto/PageHeader";
@@ -15,8 +15,40 @@ import {
 } from "@/lib/pluto/slug-secrets.functions";
 import { runVpsRepair } from "@/lib/pluto/vps-repair.functions";
 
+function parseAuthStatus(err: unknown): number | null {
+  if (!(err instanceof Error)) return null;
+  const m = /^PlutoAuthError_(\d+)$/.exec(err.name);
+  if (m) return Number(m[1]);
+  try {
+    const p = JSON.parse(err.message);
+    if (p && typeof p.status === "number") return p.status;
+  } catch { /* noop */ }
+  return null;
+}
+
+function AuthErrorFallback({ error, reset }: { error: Error; reset: () => void }) {
+  const navigate = useNavigate();
+  const router = useRouter();
+  const status = parseAuthStatus(error);
+  useEffect(() => {
+    if (status === 401) {
+      navigate({ to: "/auth", search: { redirect: "/dashboard/vps-recovery" } as never, replace: true });
+    }
+  }, [status, navigate]);
+  if (status === 401) {
+    return <div className="p-6 text-sm text-muted-foreground">Session expired — redirecting to sign in…</div>;
+  }
+  return (
+    <div className="p-6 space-y-3">
+      <ErrorBanner title="VPS Recovery unavailable" description={error.message} />
+      <button className="text-sm underline" onClick={() => { reset(); router.invalidate(); }}>Retry</button>
+    </div>
+  );
+}
+
 export const Route = createFileRoute("/dashboard/vps-recovery")({
   component: VpsRecoveryPage,
+  errorComponent: AuthErrorFallback,
   head: () => ({
     meta: [
       { title: "VPS Recovery — Pluto Admin" },
