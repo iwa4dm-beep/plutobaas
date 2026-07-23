@@ -826,6 +826,32 @@ export const live = {
         ),
       revoke: (wsId: string, keyId: string) =>
         api(`/admin/v1/workspaces/${wsId}/keys/${keyId}`, { method: "DELETE", service: true }),
+      checkConflict: (wsId: string, name: string, kind: "anon" | "service_role", project_id?: string) =>
+        api<{
+          conflict: boolean;
+          blocking_kind_match: boolean;
+          existing: Array<{ id: string; project_id: string; project_slug: string; project_name: string; name: string; kind: string; key_prefix: string; created_at: string; revoked_at: string | null }>;
+          blocking: Array<{ id: string; name: string; kind: string; project_slug: string }>;
+          suggestion: { rename_to: string; can_revoke: boolean } | null;
+          index_status: { legacy_index_present: boolean; per_kind_index_present: boolean; migration_0039_applied: boolean };
+        }>(`/admin/v1/workspaces/${wsId}/keys/check-conflict`, {
+          method: "POST", service: true,
+          body: JSON.stringify({ name, kind, project_id }),
+        }),
+      resolveConflict: (wsId: string, params: { name: string; kind: "anon" | "service_role"; strategy: "revoke" | "rename"; rename_to?: string; project_id?: string }) =>
+        api<{ ok: boolean; strategy?: string; resolved: number; renamed_to?: string; ids?: string[]; note?: string }>(
+          `/admin/v1/workspaces/${wsId}/keys/resolve-conflict`,
+          { method: "POST", service: true, body: JSON.stringify(params) },
+        ),
+      verifyIndex: () =>
+        api<{
+          status: "ok" | "stale" | "legacy";
+          message: string;
+          legacy_index_present: boolean;
+          per_kind_index_present: boolean;
+          migration_0039_applied: boolean;
+          indexes: Array<{ indexname: string; indexdef: string }>;
+        }>("/admin/v1/db/api-keys-index", { service: true }),
     },
     settings: {
       list:   (wsId?: string) => {
