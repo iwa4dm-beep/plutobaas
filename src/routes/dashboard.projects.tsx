@@ -62,6 +62,21 @@ function ProjectsPage() {
   useEffect(() => { void loadTop(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { void loadKeys(); }, [loadKeys]);
 
+  // Debounced conflict pre-check as user types name / picks kind.
+  useEffect(() => {
+    const name = newName.trim();
+    if (!wsId || !name) { setConflict(null); return; }
+    let cancelled = false;
+    setCheckingConflict(true);
+    const t = setTimeout(async () => {
+      try {
+        const c = await live.admin.apiKeys.checkConflict(wsId, name, newKind);
+        if (!cancelled) setConflict(c);
+      } catch { if (!cancelled) setConflict(null); }
+      finally { if (!cancelled) setCheckingConflict(false); }
+    }, 350);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [wsId, newName, newKind]);
 
   function copy(v: string) {
     navigator.clipboard.writeText(v);
@@ -76,10 +91,41 @@ function ProjectsPage() {
       const r = await live.admin.apiKeys.mint(wsId, newName.trim(), newKind);
       setMinted({ name: r.name, plaintext: r.plaintext });
       setNewName("");
+      setConflict(null);
       const { items } = await live.admin.apiKeys.list(wsId);
       setKeys(items);
     } catch (e) { setErr(e); }
   }
+
+  async function resolveConflict(strategy: "revoke" | "rename") {
+    if (!wsId || !newName.trim() || !conflict) return;
+    setResolving(true);
+    setErr(null);
+    try {
+      await live.admin.apiKeys.resolveConflict(wsId, {
+        name: newName.trim(),
+        kind: newKind,
+        strategy,
+        rename_to: strategy === "rename" ? conflict.suggestion?.rename_to : undefined,
+      });
+      const c = await live.admin.apiKeys.checkConflict(wsId, newName.trim(), newKind);
+      setConflict(c);
+      const { items } = await live.admin.apiKeys.list(wsId);
+      setKeys(items);
+    } catch (e) { setErr(e); }
+    finally { setResolving(false); }
+  }
+
+  async function verifyIndex() {
+    setVerifyingIndex(true);
+    setErr(null);
+    try {
+      const s = await live.admin.apiKeys.verifyIndex();
+      setIndexStatus(s);
+    } catch (e) { setErr(e); }
+    finally { setVerifyingIndex(false); }
+  }
+
 
   async function createProject() {
     if (!wsId || !projectName.trim() || !projectSlug.trim()) return;
