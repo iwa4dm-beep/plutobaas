@@ -1,4 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { useAuth } from "@/lib/pluto/auth-context";
 import {
   Activity, ArrowRight, Boxes, Check, Cloud, Code2, Copy, Database,
   Files, Github, KeyRound, Layers, LineChart, Lock, Radio, Search,
