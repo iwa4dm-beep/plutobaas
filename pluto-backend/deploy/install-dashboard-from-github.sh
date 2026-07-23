@@ -71,10 +71,14 @@ else
   # `npm ci` hard-fails without a lockfile which broke earlier runs.
   if [ -f package-lock.json ] || [ -f npm-shrinkwrap.json ]; then
     log "npm ci"
-    npm ci --no-audit --no-fund
+    if ! npm ci --no-audit --no-fund; then
+      log "npm ci failed (lockfile out of sync) — falling back to npm install"
+      rm -f package-lock.json npm-shrinkwrap.json
+      npm install --no-audit --no-fund --legacy-peer-deps
+    fi
   else
     log "no lockfile — running npm install (bun not available)"
-    npm install --no-audit --no-fund
+    npm install --no-audit --no-fund --legacy-peer-deps
   fi
   log "npm run build"
   npm run build
