@@ -307,6 +307,11 @@ function ProjectsPage() {
             <Plus className="h-3.5 w-3.5" /> Mint
           </button>
         </div>
+        {keys.some((k) => !k.revoked_at && k.name === newName.trim() && k.kind === newKind) && (
+          <p className="-mt-2 mb-3 text-xs text-amber-600">
+            এই workspace-এ "{newName.trim()}" নামের active {newKind} key ইতিমধ্যেই আছে — mint duplicate name reject করবে। ভিন্ন নাম দিন (e.g. <code className="font-mono">{newName.trim()}-2</code>)।
+          </p>
+        )}
 
         <table className="w-full text-sm">
           <thead className="bg-muted/40">
