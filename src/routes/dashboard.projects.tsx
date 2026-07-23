@@ -343,12 +343,49 @@ function ProjectsPage() {
       )}
 
       <div className="rounded-lg border border-border bg-card p-5">
-        <div className="flex items-center gap-2 mb-4">
-          <KeyRound className="h-4 w-4 text-muted-foreground" />
-          <h2 className="font-medium">API keys</h2>
+        <div className="mb-4 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <KeyRound className="h-4 w-4 text-muted-foreground" />
+            <h2 className="font-medium">API keys</h2>
+          </div>
+          <button
+            onClick={verifyIndex}
+            disabled={verifyingIndex}
+            className="inline-flex items-center gap-1.5 rounded-md border border-input px-2.5 py-1 text-xs hover:bg-accent disabled:opacity-50"
+            title="Verify api_keys unique index status"
+          >
+            <Database className="h-3 w-3" /> {verifyingIndex ? "Checking…" : "Verify DB index"}
+          </button>
         </div>
 
-        <div className="mb-4 flex gap-2">
+        {indexStatus && (
+          <div className={
+            "mb-4 rounded-md border p-3 text-xs " +
+            (indexStatus.status === "ok"
+              ? "border-emerald-500/40 bg-emerald-500/5 text-emerald-700 dark:text-emerald-400"
+              : "border-amber-500/40 bg-amber-500/5 text-amber-700 dark:text-amber-400")
+          }>
+            <div className="flex items-start gap-2">
+              {indexStatus.status === "ok"
+                ? <ShieldCheck className="h-4 w-4 mt-0.5 shrink-0" />
+                : <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />}
+              <div className="flex-1">
+                <div className="font-medium">
+                  {indexStatus.status === "ok" ? "Migration 0039 active" : `Index status: ${indexStatus.status}`}
+                </div>
+                <div className="opacity-90">{indexStatus.message}</div>
+                {indexStatus.status !== "ok" && (
+                  <code className="mt-1 block font-mono text-[10px]">
+                    docker exec -i docker-postgres-1 psql -U postgres -d pluto {"<"} pluto-backend/migrations/0039_api_keys_unique_per_kind.sql
+                  </code>
+                )}
+              </div>
+              <button onClick={() => setIndexStatus(null)} className="text-inherit opacity-60 hover:opacity-100"><X className="h-3.5 w-3.5" /></button>
+            </div>
+          </div>
+        )}
+
+        <div className="mb-2 flex gap-2">
           <input
             placeholder="Key name (e.g. mobile-prod)"
             value={newName}
@@ -359,15 +396,63 @@ function ProjectsPage() {
             <option value="anon">anon</option>
             <option value="service_role">service_role</option>
           </select>
-          <button onClick={mint} className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground hover:opacity-90">
+          <button
+            onClick={mint}
+            disabled={!!conflict?.conflict || !newName.trim()}
+            className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground hover:opacity-90 disabled:opacity-50"
+          >
             <Plus className="h-3.5 w-3.5" /> Mint
           </button>
         </div>
-        {keys.some((k) => !k.revoked_at && k.name === newName.trim() && k.kind === newKind) && (
-          <p className="-mt-2 mb-3 text-xs text-amber-600">
-            এই workspace-এ "{newName.trim()}" নামের active {newKind} key ইতিমধ্যেই আছে — mint duplicate name reject করবে। ভিন্ন নাম দিন (e.g. <code className="font-mono">{newName.trim()}-2</code>)।
-          </p>
-        )}
+        <div className="mb-4 min-h-[1rem] text-xs">
+          {checkingConflict && <span className="text-muted-foreground">Checking for conflicts…</span>}
+          {!checkingConflict && conflict?.conflict && (
+            <div className="rounded-md border border-amber-500/40 bg-amber-500/5 p-3">
+              <div className="flex items-start gap-2 text-amber-700 dark:text-amber-400">
+                <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+                <div className="flex-1">
+                  <div className="font-medium">
+                    Duplicate conflict — constraint <code className="font-mono">api_keys_project_name{conflict.blocking_kind_match ? "_kind" : ""}_idx</code> blocks mint.
+                  </div>
+                  <ul className="mt-1 list-disc pl-4 text-[11px] opacity-90">
+                    {conflict.blocking.slice(0, 3).map((b) => (
+                      <li key={b.id}>
+                        <code className="font-mono">{b.name}</code> ({b.kind}) in project <code className="font-mono">{b.project_slug}</code>
+                      </li>
+                    ))}
+                  </ul>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <button
+                      onClick={() => resolveConflict("revoke")}
+                      disabled={resolving}
+                      className="inline-flex items-center gap-1 rounded-md border border-input bg-background px-2 py-1 text-[11px] hover:bg-accent disabled:opacity-50"
+                    >
+                      <Trash2 className="h-3 w-3" /> Revoke conflicting ({conflict.blocking.length})
+                    </button>
+                    {conflict.suggestion && (
+                      <button
+                        onClick={() => resolveConflict("rename")}
+                        disabled={resolving}
+                        className="inline-flex items-center gap-1 rounded-md border border-input bg-background px-2 py-1 text-[11px] hover:bg-accent disabled:opacity-50"
+                      >
+                        <Pencil className="h-3 w-3" /> Rename to <code className="font-mono">{conflict.suggestion.rename_to}</code>
+                      </button>
+                    )}
+                  </div>
+                  {!conflict.blocking_kind_match && (
+                    <p className="mt-2 text-[11px] opacity-80">
+                      Legacy index active — anon + service_role এখনো share name করতে পারছে না। উপরে "Verify DB index" চাপুন এবং migration 0039 apply করুন।
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+          {!checkingConflict && conflict && !conflict.conflict && newName.trim() && (
+            <span className="text-emerald-600">✓ Available — no conflict for "{newName.trim()}" ({newKind}).</span>
+          )}
+        </div>
+
 
         <table className="w-full text-sm">
           <thead className="bg-muted/40">
