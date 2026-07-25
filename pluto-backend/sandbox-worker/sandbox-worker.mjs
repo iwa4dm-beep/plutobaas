@@ -1766,6 +1766,44 @@ const server = http.createServer(async (req, res) => {
           } catch { /* ignore */ }
         }
       }
+      // Parse REPORT_JSON emitted by migrations-plan/dry-run/apply and persist.
+      let reportId = null;
+      if (/^migrations-(plan|dry-run|apply)$/.test(action)) {
+        const m = tail.match(/REPORT_JSON:\s*(\{[^\n]+\})/);
+        if (m) {
+          try {
+            const entry = JSON.parse(m[1]);
+            reportId = entry.id || null;
+            const affectedList = (entry.affected || "").split("|").filter(Boolean);
+            await appendOpsReport({
+              ...entry,
+              action, exitCode,
+              affected: affectedList,
+              tail: tail.slice(-8192),
+            });
+          } catch { /* ignore */ }
+        }
+      }
+      // Retention prune after successful backup-create.
+      if (action === "backup-create" && exitCode === 0) {
+        const c = await getEnvConfig(env);
+        const kd = Number(c.retentionDays || 0);
+        const kc = Number(c.retentionCount || 0);
+        if (kd > 0 || kc > 0) {
+          const pruneArgs = ["backup-prune", "--env", env];
+          if (kd > 0) pruneArgs.push("--keep-days", String(kd));
+          if (kc > 0) pruneArgs.push("--keep-count", String(kc));
+          const pchunks = [];
+          await new Promise((resolve) => {
+            const ch = spawn("sudo", ["-n", "/usr/local/sbin/pluto-ops", ...pruneArgs], { stdio: ["ignore", "pipe", "pipe"] });
+            ch.stdout.on("data", (b) => pchunks.push(b));
+            ch.stderr.on("data", (b) => pchunks.push(b));
+            ch.on("close", resolve);
+            ch.on("error", resolve);
+          });
+          // no-op if prune fails; result already noted in tail
+        }
+      }
       // Audit write-through: actor is forwarded by the caller via headers.
       const actorEmail = String(req.headers["x-actor-email"] || "") || null;
       const actorUserId = String(req.headers["x-actor-user-id"] || "") || null;
@@ -1775,11 +1813,17 @@ const server = http.createServer(async (req, res) => {
         params: { plan: body?.plan ?? null, target: body?.target ?? null, allowMissingDown: !!body?.allowMissingDown, soakSeconds: body?.soakSeconds ?? null, id: body?.id ?? null },
         ok: exitCode === 0, exitCode, durationMs, hint,
         tail: tail.slice(-2048),
-        backupId,
+        backupId, reportId,
         actorEmail, actorUserId,
         startedAt: startedIso, finishedAt: new Date().toISOString(),
       }).catch(() => {});
-      return json(res, 200, { ok: exitCode === 0, action, env, service: body?.service ?? null, exitCode, durationMs, tail, hint, backupId, startedAt: startedIso, finishedAt: new Date().toISOString() });
+      // Fire-and-forget webhook notification.
+      notifyWebhook(env, `ops.${action}`, {
+        ok: exitCode === 0, action, service: body?.service ?? null,
+        exitCode, durationMs, hint, backupId, reportId,
+        actor: actorEmail || actorUserId || null,
+      }).catch(() => {});
+      return json(res, 200, { ok: exitCode === 0, action, env, service: body?.service ?? null, exitCode, durationMs, tail, hint, backupId, reportId, startedAt: startedIso, finishedAt: new Date().toISOString() });
     }
 
     // GET /admin/ops/audit — paginated audit list.
