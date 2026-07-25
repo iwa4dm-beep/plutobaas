@@ -78,6 +78,87 @@ try {
 }
 ```
 
+## File uploads
+
+Upload endpoints (storage, avatars, imports, admissions attachments) share
+one envelope for size, MIME, and shape errors. `fields.file` is populated
+so a form can render the message inline next to the file picker.
+
+| Status | `code`                    | When                                              |
+| ------ | ------------------------- | ------------------------------------------------- |
+| 400    | `empty_file`              | Body ok, but the file part is 0 bytes             |
+| 400    | `missing_file`            | Multipart request contained no file part          |
+| 400    | `too_many_files`          | More files than the endpoint allows               |
+| 400    | `too_many_parts`          | Too many multipart parts overall                  |
+| 400    | `too_many_fields`         | Too many form fields                              |
+| 400    | `invalid_filename`        | Filename contains `/`, `\`, NUL, or is > 255 chars |
+| 413    | `file_too_large`          | A single file exceeds the per-file limit          |
+| 413    | `body_too_large`          | The request body exceeds `BODY_LIMIT_MB`          |
+| 415    | `unsupported_media_type`  | File's Content-Type is not in the allow-list      |
+
+Sample 413:
+
+```json
+{
+  "error": "UploadError",
+  "message": "The uploaded file is 42.10 MiB — the maximum is 20.0 MiB.",
+  "code": "file_too_large",
+  "statusCode": 413,
+  "traceId": "cli_9f8e...",
+  "fields": { "file": "The uploaded file is 42.10 MiB — the maximum is 20.0 MiB." }
+}
+```
+
+Both Fastify's built-in multipart errors (`FST_REQ_FILE_TOO_LARGE`,
+`FST_FILES_LIMIT`, `FST_INVALID_MULTIPART_CONTENT_TYPE`, …) AND
+application-thrown `UploadError` from `src/util/multipart.ts` produce
+this shape. Handlers should call `validateUpload({ size, maxBytes,
+contentType, allowedMime, filename })` per file — the thrown error is
+mapped automatically by the centralized handler.
+
+## Trace lookup endpoint (support only)
+
+For fast incident triage, the API keeps an in-memory ring buffer of the
+~2000 most recent error events (4xx + 5xx). Support / operators fetch
+them by `traceId`:
+
+```
+GET /admin/v1/traces/:traceId       # single event
+GET /admin/v1/traces?limit=50       # most recent (newest first)
+```
+
+Auth: `service_role` JWT OR a superadmin user. Regular authenticated
+users receive `403` — the events may contain `hint`/`detail`/`stack`
+fragments intended for operators.
+
+Response (single event):
+
+```json
+{
+  "event": {
+    "traceId": "cli_9f8e...",
+    "at": "2026-07-25T13:15:22.041Z",
+    "method": "POST",
+    "url": "/admin/v1/projects",
+    "status": 400,
+    "error": "ValidationError",
+    "code": "validation_failed",
+    "tag": "validation",
+    "severity": "warn",
+    "message": "name: Required",
+    "fields": { "name": "Required" },
+    "actorId": "e0d1...",
+    "userAgent": "Mozilla/5.0 ...",
+    "ip": "203.0.113.7"
+  }
+}
+```
+
+`404 trace_not_found` means the event was evicted from the buffer (or
+the request never errored). Fall back to persistent logs:
+`docker logs api --since 24h | grep <traceId>`.
+
+
 ## Correlation IDs
 
 - The API accepts a caller-supplied ID on `x-request-id`, `x-correlation-id`,
