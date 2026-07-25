@@ -295,7 +295,7 @@ describe('upload / multipart error mapping', () => {
     assert.equal(body.code, 'file_too_large');
     assert.equal(body.statusCode, 413);
     assert.ok(body.fields?.file, 'field-level upload error');
-    assert.match(body.fields.file, /larger than/i);
+    assert.match(body.fields.file, /maximum/i);
     assert.equal(body.traceId, 'upl-413');
     await app.close();
   });
