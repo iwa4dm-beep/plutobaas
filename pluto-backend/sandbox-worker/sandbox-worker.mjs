@@ -1601,7 +1601,45 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, { ok: exitCode === 0, action, exitCode, durationMs, tail, hint });
     }
 
-    // GET /admin/repair/history?slug=&limit=25 — recent repair runs (Feature 2).
+    // POST /admin/ops — automated migrations + service restart. Sudo-runs
+    // /usr/local/sbin/pluto-ops (installed by deploy/install-pluto-ops.sh).
+    // Body: { action: "migrations-plan"|"migrations-dry-run"|"migrations-apply"|"service-restart"|"service-health",
+    //         service?: "api"|"realtime"|"worker"|"nginx-reload" }
+    if (req.method === "POST" && (p === "/admin/ops" || p === "/sandbox/admin/ops")) {
+      const body = await readJson(req).catch(() => ({}));
+      const action = String(body?.action || "").trim();
+      const allowedOps = new Set([
+        "migrations-plan", "migrations-dry-run", "migrations-apply",
+        "service-restart", "service-health",
+      ]);
+      if (!allowedOps.has(action)) return json(res, 400, { error: "invalid_action", allowed: [...allowedOps] });
+      const allowedServices = new Set(["api", "realtime", "worker", "nginx-reload"]);
+      const args = [action];
+      if (action === "service-restart") {
+        const svc = String(body?.service || "").trim();
+        if (!allowedServices.has(svc)) return json(res, 400, { error: "invalid_service", allowed: [...allowedServices] });
+        args.push("--service", svc);
+      }
+      const startedIso = new Date().toISOString();
+      const startedAt = Date.now();
+      const chunks = [];
+      let exitCode = -1;
+      await new Promise((resolve) => {
+        const child = spawn("sudo", ["-n", "/usr/local/sbin/pluto-ops", ...args], { stdio: ["ignore", "pipe", "pipe"] });
+        const cap = (b) => { if (chunks.reduce((n, c) => n + c.length, 0) < 65536) chunks.push(b); };
+        child.stdout.on("data", cap);
+        child.stderr.on("data", cap);
+        child.on("close", (code) => { exitCode = code ?? -1; resolve(); });
+        child.on("error", (err) => { chunks.push(Buffer.from(`spawn error: ${err.message}\n`)); exitCode = 127; resolve(); });
+      });
+      const tail = Buffer.concat(chunks).toString("utf8").slice(-4096);
+      let hint = null;
+      if (exitCode === 127) hint = "/usr/local/sbin/pluto-ops not installed or sudoers rule missing — run `sudo bash pluto-backend/deploy/install-pluto-ops.sh`.";
+      else if (exitCode !== 0) hint = "Ops script exited non-zero — inspect tail for details.";
+      const durationMs = Date.now() - startedAt;
+      return json(res, 200, { ok: exitCode === 0, action, service: body?.service ?? null, exitCode, durationMs, tail, hint, startedAt: startedIso, finishedAt: new Date().toISOString() });
+    }
+
     if (req.method === "GET" && (p === "/admin/repair/history" || p === "/sandbox/admin/repair/history")) {
       const list = await readRepairHistory(q.get("limit") || 25, {
         slug: q.get("slug") || undefined, action: q.get("action") || undefined,
