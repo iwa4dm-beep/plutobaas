@@ -218,28 +218,37 @@ async function main() {
     endpoints: ['/livez', '/readyz', '/healthz', '/health/deps', '/metrics', '/docs', '/openapi.json', '/auth/v1/*', '/rest/v1/*', '/storage/v1/*', '/realtime/v1/*', '/admin/v1/*', '/functions/v1/*', '/jobs/v1/*', '/tokens/v1/*'],
   }));
 
-  // Global error handler — always JSON, always echoes traceId + x-request-id
-  // so the client can display it and operators can grep the API log for
-  // the same ID. Postgres RLS/permission errors are surfaced with their
-  // native code + hint fields (e.g. `42501 new row violates row-level
-  // security policy`) instead of a generic 500.
+  // Global error handler — routes every thrown value through the central
+  // mapper (Zod → 400 with field errors, Postgres codes → sensible HTTP
+  // status + friendly text, everything else → safe fallback). The response
+  // envelope is stable: { error, message, code, statusCode, traceId, fields? }.
+  // Structured logs carry traceId + tag + severity + stack (5xx only), and
+  // recurring failures trip a throttled `alert=true` log line so external
+  // sinks (journald/loki/alertmanager) can page without extra infra.
   app.setErrorHandler((err, req, reply) => {
-    const e = err as { statusCode?: number; name?: string; message?: string; code?: string; hint?: string; detail?: string };
     const traceId = (req as any).traceId as string | undefined;
-    // Map Postgres permission/RLS errors → 403
-    let status = e.statusCode || 500;
-    if (typeof e.code === 'string' && /^42501$/.test(e.code)) status = 403;
-    app.log.error({ traceId, code: e.code, hint: e.hint, detail: e.detail }, e.message || 'error');
-    if (traceId) reply.header('x-request-id', traceId);
-    reply.code(status).send({
-      error: e.name || 'Error',
-      message: e.message || 'Internal Server Error',
-      code: e.code,
-      hint: e.hint,
-      detail: e.detail,
-      statusCode: status,
+    const { status, body, tag, severity } = mapError(err, { traceId });
+    const logCtx: Record<string, unknown> = {
       traceId,
-    });
+      tag,
+      method: req.method,
+      url: req.url,
+      status,
+      code: body.code,
+      hint: body.hint,
+    };
+    // Stack traces only for 5xx — keep 4xx logs readable.
+    if (status >= 500 && err instanceof Error && err.stack) logCtx.stack = err.stack;
+    if (body.fields) logCtx.fields = body.fields;
+    (req as any).log?.[severity]?.(logCtx, body.message) ?? app.log[severity](logCtx, body.message);
+
+    // Recurring-failure alert (throttled)
+    const alertKey = status >= 500 ? `5xx:${tag}` : tag === 'validation' ? 'validation' : `4xx:${status}`;
+    const alert = recordFailure(alertKey);
+    if (alert) app.log.error({ alert: true, traceId, ...alert }, `recurring failure: ${alert.tag} (${alert.count} in ${alert.windowMs}ms)`);
+
+    if (traceId) reply.header('x-request-id', traceId);
+    reply.code(status).send(body);
   });
 
 
