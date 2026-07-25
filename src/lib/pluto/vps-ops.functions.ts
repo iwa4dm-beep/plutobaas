@@ -495,6 +495,8 @@ export const getOpsConfig = createServerFn({ method: "POST" })
 const SetConfigInput = z.object({
   env: EnvEnum,
   webhookUrl: z.string().max(500).optional().default(""),
+  /** Send "__keep__" to preserve existing secret; empty string clears it; any other value sets. */
+  webhookSecret: z.string().max(512).optional(),
   retentionDays: z.number().int().min(0).max(3650).optional().default(0),
   retentionCount: z.number().int().min(0).max(1000).optional().default(0),
   approverEmails: z.array(z.string().email()).max(50).optional().default([]),
@@ -504,8 +506,26 @@ export const setOpsConfig = createServerFn({ method: "POST" })
   .middleware([requirePlutoAdmin])
   .inputValidator((d: unknown) => SetConfigInput.parse(d))
   .handler(async ({ data, context }) => {
+    requireOpsRole(context, data.env === "prod" ? "approve" : "view");
     const r = await opsFetch(data.env, "/config", { method: "POST", body: JSON.stringify(data) }, actorFrom(context));
     return { ok: r.ok, status: r.status, config: (r.body as { config?: OpsEnvConfig } | null)?.config ?? null, error: r.error };
+  });
+
+/* Webhook deliveries + test */
+export const listWebhookDeliveries = createServerFn({ method: "POST" })
+  .middleware([requirePlutoAdmin])
+  .inputValidator((d: unknown) => z.object({ env: EnvEnum.default("prod"), limit: z.number().int().min(1).max(500).optional().default(100) }).parse(d ?? {}))
+  .handler(async ({ data, context }): Promise<{ ok: boolean; entries: OpsWebhookDelivery[]; error?: string }> => {
+    const r = await opsFetch(data.env, `/webhook-deliveries?env=${data.env}&limit=${data.limit}`, { method: "GET" }, actorFrom(context));
+    return { ok: r.ok, entries: ((r.body as { entries?: OpsWebhookDelivery[] } | null)?.entries) ?? [], error: r.error };
+  });
+
+export const sendTestWebhook = createServerFn({ method: "POST" })
+  .middleware([requirePlutoAdmin])
+  .inputValidator((d: unknown) => z.object({ env: EnvEnum }).parse(d))
+  .handler(async ({ data, context }) => {
+    const r = await opsFetch(data.env, "/webhook-test", { method: "POST", body: JSON.stringify({ env: data.env }) }, actorFrom(context));
+    return { ok: r.ok, status: r.status, body: r.body, error: r.error };
   });
 
 /* Reports */
