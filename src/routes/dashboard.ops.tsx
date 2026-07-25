@@ -96,9 +96,16 @@ function OpsPageInner() {
           );
         })}
         <Link
+          to="/dashboard/ops/executions"
+          search={{ env, action: "", outcome: "" }}
+          className="ml-auto inline-flex items-center gap-1 rounded-md border border-border px-3 py-1.5 text-xs hover:bg-accent"
+        >
+          <History className="h-3.5 w-3.5" /> Executions
+        </Link>
+        <Link
           to="/dashboard/ops/audit"
           search={{ env }}
-          className="ml-auto inline-flex items-center gap-1 rounded-md border border-border px-3 py-1.5 text-xs hover:bg-accent"
+          className="inline-flex items-center gap-1 rounded-md border border-border px-3 py-1.5 text-xs hover:bg-accent"
         >
           <History className="h-3.5 w-3.5" /> Audit log
         </Link>
