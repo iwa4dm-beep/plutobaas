@@ -18,6 +18,7 @@ export type PlutoUser = {
   role: "admin" | "user";
   created_at: string;
   email_verified: boolean;
+  is_superadmin?: boolean;
 };
 
 export type PlutoSession = {
