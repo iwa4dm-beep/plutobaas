@@ -1577,6 +1577,7 @@ export const adminTraces = {
   },
 };
 
+// ---------------- Phase 19 — Developer Experience -----------------------
 export type ProjectTemplate = { id: string; slug: string; name: string; description: string; category: string; published: boolean; created_at: string };
 export type PersonalToken = { id: string; name: string; scopes: string[]; last_used_at: string | null; expires_at: string | null; revoked_at: string | null; created_at: string };
 export type WebhookSub = { id: string; target_url: string; event_types: string[]; active: boolean; failure_count: number; created_at: string };
