@@ -31,15 +31,21 @@ cd "$(dirname "$0")/.."
 ROOT="$(pwd)"
 DEPLOY="$ROOT/deploy"
 
+# Shared helpers: die/info/ok/warn + require_* + friendly ERR trap
+# shellcheck disable=SC1091
+. "$DEPLOY/_lib.sh"
+trap on_err_trap ERR
+
 if [ -n "${1:-}" ] && [ -z "${SLUG:-}" ]; then
   SLUG="$1"
   export SLUG
 fi
 
-log() { printf '\n\033[1;36m▶ %s\033[0m\n' "$*"; }
-die() { printf '\n\033[1;31m✗ %s\033[0m\n' "$*" >&2; exit 1; }
+# Back-compat shim so existing `log …` calls in this file keep working.
+log() { info "$*"; }
 
-[ "$(id -u)" -eq 0 ] || die "run as root (sudo)."
+require_root
+require_cmd bash curl nginx systemctl
 # Resolve SECRET via read-sandbox-secret.sh (single source of truth).
 # Falls back to print-sandbox-secret.sh to bootstrap the env file, then re-reads.
 if [ -z "${SECRET:-}" ] && [ -r "$DEPLOY/read-sandbox-secret.sh" ]; then

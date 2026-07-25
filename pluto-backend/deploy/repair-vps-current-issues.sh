@@ -26,11 +26,18 @@ SKIP_RLS="${SKIP_RLS:-0}"
 SUDO=""
 [ "$(id -u)" != "0" ] && SUDO="sudo"
 
-green(){ printf '\033[1;32m✓ %s\033[0m\n' "$*"; }
-blue(){ printf '\033[1;36m▶ %s\033[0m\n' "$*"; }
-yellow(){ printf '\033[1;33m! %s\033[0m\n' "$*"; }
-red(){ printf '\033[1;31m✗ %s\033[0m\n' "$*" >&2; }
-die(){ red "$*"; exit 1; }
+# Shared helpers: die/info/ok/warn + require_* + friendly ERR trap.
+# shellcheck disable=SC1091
+. "$(cd "$(dirname "$0")" && pwd)/_lib.sh"
+trap on_err_trap ERR
+
+# Back-compat shims for existing call sites in this file.
+green(){ ok   "$*"; }
+blue() { info "$*"; }
+yellow(){ warn "$*"; }
+red()  { printf '%s✗ %s%s\n' "$_c_red" "$*" "$_c_rst" >&2; }
+
+require_cmd bash curl docker
 
 resolve_root() {
   local here
