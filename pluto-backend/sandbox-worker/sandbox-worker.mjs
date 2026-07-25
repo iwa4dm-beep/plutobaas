@@ -1368,6 +1368,70 @@ async function readJsonListFile(file, limit, filter) {
 }
 async function appendOpsAudit(entry) { return appendJsonListFile(OPS_AUDIT_FILE, entry, OPS_AUDIT_MAX); }
 async function appendOpsBackup(entry) { return appendJsonListFile(OPS_BACKUPS_FILE, entry, OPS_BACKUPS_MAX); }
+async function appendOpsReport(entry) { return appendJsonListFile(OPS_REPORTS_FILE, entry, OPS_REPORTS_MAX); }
+
+// ---------- Ops config (Ops v3) ----------
+// Shape: { dev:{webhookUrl,retentionDays,retentionCount,approverEmails:[]}, staging:{...}, prod:{...} }
+async function readOpsConfig() {
+  try { const j = JSON.parse(await fsp.readFile(OPS_CONFIG_FILE, "utf-8")); return (j && typeof j === "object") ? j : {}; }
+  catch { return {}; }
+}
+async function writeOpsConfig(cfg) {
+  await fsp.mkdir(SITES_ROOT, { recursive: true });
+  await fsp.writeFile(OPS_CONFIG_FILE, JSON.stringify(cfg, null, 2));
+}
+async function getEnvConfig(env) {
+  const all = await readOpsConfig();
+  return all[env] || { webhookUrl: "", retentionDays: 0, retentionCount: 0, approverEmails: [] };
+}
+
+// ---------- Ops approvals (Ops v3) ----------
+// Approval requires: prod env, action in {migrations-apply, migrations-rollback-apply, service-restart, service-rollout, backup-restore},
+// reason non-empty, approver.email !== requester.email, status in {pending,approved,rejected,executed,expired}
+const APPROVAL_ACTIONS = new Set(["migrations-apply", "migrations-rollback-apply", "service-restart", "service-rollout", "backup-restore"]);
+const APPROVAL_TTL_MS = 24 * 60 * 60 * 1000; // 24h
+
+async function readApprovals() {
+  try { const j = JSON.parse(await fsp.readFile(OPS_APPROVALS_FILE, "utf-8")); return Array.isArray(j) ? j : []; }
+  catch { return []; }
+}
+async function writeApprovals(list) {
+  await fsp.mkdir(SITES_ROOT, { recursive: true });
+  await fsp.writeFile(OPS_APPROVALS_FILE, JSON.stringify(list.slice(0, OPS_APPROVALS_MAX), null, 2));
+}
+async function updateApproval(id, patch) {
+  const list = await readApprovals();
+  const idx = list.findIndex((e) => e && e.id === id);
+  if (idx < 0) return null;
+  list[idx] = { ...list[idx], ...patch };
+  await writeApprovals(list);
+  return list[idx];
+}
+
+// ---------- Notifications (Ops v3) ----------
+async function notifyWebhook(env, event, payload) {
+  try {
+    const cfg = await getEnvConfig(env);
+    const url = cfg.webhookUrl && String(cfg.webhookUrl).trim();
+    if (!url || !/^https?:\/\//.test(url)) return;
+    const body = JSON.stringify({ event, env, at: new Date().toISOString(), ...payload });
+    const u = new URL(url);
+    const lib = u.protocol === "https:" ? https : http;
+    await new Promise((resolve) => {
+      const req = lib.request(url, {
+        method: "POST",
+        headers: { "content-type": "application/json", "content-length": Buffer.byteLength(body), "user-agent": "pluto-ops-worker/1" },
+        timeout: 5000,
+      }, (r) => { r.resume(); r.on("end", resolve); r.on("error", () => resolve()); });
+      req.on("error", () => resolve());
+      req.on("timeout", () => { req.destroy(); resolve(); });
+      req.write(body); req.end();
+    });
+  } catch { /* fire-and-forget */ }
+}
+
+
+
 
 
 
