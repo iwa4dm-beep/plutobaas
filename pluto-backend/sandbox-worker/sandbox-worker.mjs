@@ -40,6 +40,10 @@ const LAST_DEPLOY_FILE = path.join(SITES_ROOT, ".last-deploy.json");
 const SLUG_SECRETS_DIR = path.join(SITES_ROOT, ".slug-secrets");
 const REPAIR_HISTORY_FILE = path.join(SITES_ROOT, ".repair-history.json");
 const REPAIR_HISTORY_MAX = 200;
+const OPS_AUDIT_FILE = path.join(SITES_ROOT, ".ops-audit.json");
+const OPS_AUDIT_MAX = 1000;
+const OPS_BACKUPS_FILE = path.join(SITES_ROOT, ".ops-backups.json");
+const OPS_BACKUPS_MAX = 200;
 const DEFAULT_BASE_DOMAIN = process.env.PLUTO_WILDCARD_HOST || process.env.BASE_DOMAIN || "app.timescard.cloud";
 const NGINX_SITES_ENABLED = process.env.NGINX_SITES_ENABLED || "/etc/nginx/sites-enabled";
 const NGINX_SITES_AVAILABLE = process.env.NGINX_SITES_AVAILABLE || "/etc/nginx/sites-available";
@@ -1340,6 +1344,27 @@ async function readRepairHistory(limit = 25, filter = {}) {
   return list.slice(0, Math.max(1, Math.min(200, Number(limit) || 25)));
 }
 
+// ---------- Ops audit + backups (Ops v2) ----------
+async function appendJsonListFile(file, entry, max) {
+  let list = [];
+  try { list = JSON.parse(await fsp.readFile(file, "utf-8")); if (!Array.isArray(list)) list = []; } catch { list = []; }
+  list.unshift(entry);
+  if (list.length > max) list = list.slice(0, max);
+  await fsp.mkdir(SITES_ROOT, { recursive: true });
+  await fsp.writeFile(file, JSON.stringify(list, null, 2));
+}
+async function readJsonListFile(file, limit, filter) {
+  let list = [];
+  try { list = JSON.parse(await fsp.readFile(file, "utf-8")); if (!Array.isArray(list)) list = []; } catch { list = []; }
+  if (filter?.env) list = list.filter((e) => e && e.env === filter.env);
+  if (filter?.action) list = list.filter((e) => e && e.action === filter.action);
+  if (filter?.actor) list = list.filter((e) => e && (e.actorEmail === filter.actor || e.actorUserId === filter.actor));
+  return list.slice(0, Math.max(1, Math.min(500, Number(limit) || 100)));
+}
+async function appendOpsAudit(entry) { return appendJsonListFile(OPS_AUDIT_FILE, entry, OPS_AUDIT_MAX); }
+async function appendOpsBackup(entry) { return appendJsonListFile(OPS_BACKUPS_FILE, entry, OPS_BACKUPS_MAX); }
+
+
 
 const server = http.createServer(async (req, res) => {
   try {
@@ -1601,24 +1626,45 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, { ok: exitCode === 0, action, exitCode, durationMs, tail, hint });
     }
 
-    // POST /admin/ops — automated migrations + service restart. Sudo-runs
-    // /usr/local/sbin/pluto-ops (installed by deploy/install-pluto-ops.sh).
-    // Body: { action: "migrations-plan"|"migrations-dry-run"|"migrations-apply"|"service-restart"|"service-health",
-    //         service?: "api"|"realtime"|"worker"|"nginx-reload" }
+    // POST /admin/ops — automated migrations + service restart + rollback + backup.
+    // Sudo-runs /usr/local/sbin/pluto-ops (installed by deploy/install-pluto-ops.sh).
     if (req.method === "POST" && (p === "/admin/ops" || p === "/sandbox/admin/ops")) {
       const body = await readJson(req).catch(() => ({}));
       const action = String(body?.action || "").trim();
+      const env = String(body?.env || "prod").trim();
       const allowedOps = new Set([
         "migrations-plan", "migrations-dry-run", "migrations-apply",
-        "service-restart", "service-health",
+        "migrations-rollback-plan", "migrations-rollback-apply",
+        "service-restart", "service-rollout", "service-health",
+        "backup-create", "backup-list", "backup-restore",
       ]);
       if (!allowedOps.has(action)) return json(res, 400, { error: "invalid_action", allowed: [...allowedOps] });
+      if (!/^(dev|staging|prod)$/.test(env)) return json(res, 400, { error: "invalid_env" });
       const allowedServices = new Set(["api", "realtime", "worker", "nginx-reload"]);
-      const args = [action];
+      const allowedPlans = new Set(["auto", "workers-only", "canary-api", "full"]);
+      const args = [action, "--env", env];
       if (action === "service-restart") {
         const svc = String(body?.service || "").trim();
         if (!allowedServices.has(svc)) return json(res, 400, { error: "invalid_service", allowed: [...allowedServices] });
         args.push("--service", svc);
+      }
+      if (action === "service-rollout") {
+        const plan = String(body?.plan || "auto").trim();
+        if (!allowedPlans.has(plan)) return json(res, 400, { error: "invalid_plan", allowed: [...allowedPlans] });
+        args.push("--plan", plan);
+        const soak = Number(body?.soakSeconds);
+        if (Number.isFinite(soak) && soak >= 0 && soak <= 300) args.push("--soak", String(Math.floor(soak)));
+      }
+      if (action === "migrations-rollback-plan" || action === "migrations-rollback-apply") {
+        const target = String(body?.target || "").trim();
+        if (!/^[0-9]{1,6}$/.test(target)) return json(res, 400, { error: "invalid_target" });
+        args.push("--target", target);
+        if (body?.allowMissingDown) args.push("--allow-missing-down");
+      }
+      if (action === "backup-restore") {
+        const bid = String(body?.id || "").trim();
+        if (!/^[A-Za-z0-9._-]{4,128}$/.test(bid)) return json(res, 400, { error: "invalid_backup_id" });
+        args.push("--id", bid);
       }
       const startedIso = new Date().toISOString();
       const startedAt = Date.now();
@@ -1635,10 +1681,53 @@ const server = http.createServer(async (req, res) => {
       const tail = Buffer.concat(chunks).toString("utf8").slice(-4096);
       let hint = null;
       if (exitCode === 127) hint = "/usr/local/sbin/pluto-ops not installed or sudoers rule missing — run `sudo bash pluto-backend/deploy/install-pluto-ops.sh`.";
+      else if (exitCode === 3) hint = "action is disabled by /etc/pluto/ops.conf on this host.";
+      else if (exitCode === 4) hint = "rollback aborted: missing down-migrations. Re-run with allowMissingDown=true to force.";
       else if (exitCode !== 0) hint = "Ops script exited non-zero — inspect tail for details.";
       const durationMs = Date.now() - startedAt;
-      return json(res, 200, { ok: exitCode === 0, action, service: body?.service ?? null, exitCode, durationMs, tail, hint, startedAt: startedIso, finishedAt: new Date().toISOString() });
+      // If action was backup-create, parse the BACKUP_JSON line and record it.
+      let backupId = null;
+      if (action === "backup-create" && exitCode === 0) {
+        const m = tail.match(/BACKUP_JSON:\s*(\{[^\n]+\})/);
+        if (m) {
+          try {
+            const entry = JSON.parse(m[1]);
+            backupId = entry.id || null;
+            await appendOpsBackup({ ...entry, env });
+          } catch { /* ignore */ }
+        }
+      }
+      // Audit write-through: actor is forwarded by the caller via headers.
+      const actorEmail = String(req.headers["x-actor-email"] || "") || null;
+      const actorUserId = String(req.headers["x-actor-user-id"] || "") || null;
+      await appendOpsAudit({
+        id: randomUUID(), env, action,
+        service: body?.service ?? null,
+        params: { plan: body?.plan ?? null, target: body?.target ?? null, allowMissingDown: !!body?.allowMissingDown, soakSeconds: body?.soakSeconds ?? null, id: body?.id ?? null },
+        ok: exitCode === 0, exitCode, durationMs, hint,
+        tail: tail.slice(-2048),
+        backupId,
+        actorEmail, actorUserId,
+        startedAt: startedIso, finishedAt: new Date().toISOString(),
+      }).catch(() => {});
+      return json(res, 200, { ok: exitCode === 0, action, env, service: body?.service ?? null, exitCode, durationMs, tail, hint, backupId, startedAt: startedIso, finishedAt: new Date().toISOString() });
     }
+
+    // GET /admin/ops/audit — paginated audit list.
+    if (req.method === "GET" && (p === "/admin/ops/audit" || p === "/sandbox/admin/ops/audit")) {
+      const list = await readJsonListFile(OPS_AUDIT_FILE, q.get("limit") || 100, {
+        env: q.get("env") || undefined, action: q.get("action") || undefined, actor: q.get("actor") || undefined,
+      });
+      return json(res, 200, { ok: true, count: list.length, entries: list });
+    }
+    // GET /admin/ops/backups — recent backups per env.
+    if (req.method === "GET" && (p === "/admin/ops/backups" || p === "/sandbox/admin/ops/backups")) {
+      const list = await readJsonListFile(OPS_BACKUPS_FILE, q.get("limit") || 50, {
+        env: q.get("env") || undefined,
+      });
+      return json(res, 200, { ok: true, count: list.length, entries: list });
+    }
+
 
     if (req.method === "GET" && (p === "/admin/repair/history" || p === "/sandbox/admin/repair/history")) {
       const list = await readRepairHistory(q.get("limit") || 25, {
