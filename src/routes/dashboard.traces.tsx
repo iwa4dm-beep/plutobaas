@@ -15,6 +15,7 @@ import {
   type AdminTraceEvent,
   type AdminTraceFilters,
 } from "@/lib/pluto/live";
+import { TraceAccessGate } from "@/components/pluto/TraceAccessGate";
 
 // Deep-linkable search schema. Everything is optional so operators can share
 // URLs like /dashboard/traces?traceId=xyz or ?minStatus=500&from=...&to=...
@@ -42,8 +43,17 @@ export const Route = createFileRoute("/dashboard/traces")({
       { name: "robots", content: "noindex" },
     ],
   }),
-  component: TracesPage,
+  component: GatedTracesPage,
 });
+
+function GatedTracesPage() {
+  return (
+    <TraceAccessGate permission="view">
+      <TracesPage />
+    </TraceAccessGate>
+  );
+}
+
 
 const STATUS_PRESETS: Array<{ label: string; filters: Partial<AdminTraceFilters> }> = [
   { label: "All",              filters: {} },

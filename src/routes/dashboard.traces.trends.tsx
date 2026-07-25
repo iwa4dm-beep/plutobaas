@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { adminTraces, isLive, type AdminTraceStats } from "@/lib/pluto/live";
+import { TraceAccessGate } from "@/components/pluto/TraceAccessGate";
 
 export const Route = createFileRoute("/dashboard/traces/trends")({
   head: () => ({
@@ -19,8 +20,16 @@ export const Route = createFileRoute("/dashboard/traces/trends")({
       { name: "robots", content: "noindex" },
     ],
   }),
-  component: TrendsPage,
+  component: GatedTrendsPage,
 });
+
+function GatedTrendsPage() {
+  return (
+    <TraceAccessGate permission="view">
+      <TrendsPage />
+    </TraceAccessGate>
+  );
+}
 
 const RANGES: Array<{ label: string; hours: number; bucket: "hour" | "day" }> = [
   { label: "Last 1h",   hours: 1,        bucket: "hour" },
