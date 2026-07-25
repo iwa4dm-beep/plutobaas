@@ -74,10 +74,11 @@ function MigrationCard() {
     setBusy(kind);
     setResult(null);
     try {
-      const r =
+      const r = (
         kind === "plan" ? await plan()
         : kind === "dry" ? await dry()
-        : await apply({ data: { confirm: "APPLY" } });
+        : await apply({ data: { confirm: "APPLY" } })
+      ) as OpsResult;
       setResult(r);
     } catch (e) {
       setResult({
