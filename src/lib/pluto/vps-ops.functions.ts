@@ -392,6 +392,205 @@ export const listOpsAudit = createServerFn({ method: "POST" })
     }
   });
 
+/* ---------------- Config / Reports / Approvals (Ops v3) ---------------- */
+
+export type OpsEnvConfig = {
+  webhookUrl: string;
+  retentionDays: number;
+  retentionCount: number;
+  approverEmails: string[];
+};
+
+export type OpsReportEntry = {
+  id: string;
+  env: OpsEnv;
+  kind: "plan" | "dry-run" | "apply";
+  action: OpsAction;
+  outcome: "ok" | "failed";
+  exitCode?: number;
+  pending?: number;
+  affected: string[];
+  tail?: string;
+  createdAt: string;
+};
+
+export type OpsApprovalStatus = "pending" | "approved" | "rejected" | "executing" | "executed" | "failed" | "expired";
+
+export type OpsApprovalEntry = {
+  id: string;
+  env: OpsEnv;
+  action: OpsAction;
+  reason: string;
+  payload: Record<string, unknown>;
+  requesterEmail: string | null;
+  requesterUserId: string | null;
+  approverEmail: string | null;
+  approverUserId: string | null;
+  status: OpsApprovalStatus;
+  createdAt: string;
+  expiresAt: string;
+  decidedAt: string | null;
+  executedAt: string | null;
+  executionResult: { ok: boolean; exitCode: number; durationMs: number; tail: string; startedAt: string; finishedAt: string } | null;
+  decisionNote?: string | null;
+};
+
+function configEndpointFor(env: OpsEnv, subpath: string): { url: string; secret: string } | { error: string } {
+  const ep = opsEndpointFor(env);
+  if ("error" in ep) return ep;
+  return { url: ep.url.replace(/\/admin\/ops$/, `/admin/ops${subpath}`), secret: ep.secret };
+}
+
+async function opsFetch(env: OpsEnv, subpath: string, init: RequestInit, actor?: { email?: string | null; userId?: string | null }): Promise<{ ok: boolean; status: number; body: unknown; error?: string }> {
+  const cfg = configEndpointFor(env, subpath);
+  if ("error" in cfg) return { ok: false, status: 0, body: null, error: cfg.error };
+  try {
+    const headers = {
+      "content-type": "application/json",
+      "x-sandbox-secret": cfg.secret,
+      "x-actor-email": actor?.email ?? "",
+      "x-actor-user-id": actor?.userId ?? "",
+      accept: "application/json",
+      ...(init.headers as Record<string, string> | undefined),
+    };
+    const r = await fetch(cfg.url, { ...init, headers });
+    const text = await r.text();
+    let parsed: unknown = null;
+    try { parsed = JSON.parse(text); } catch { parsed = text; }
+    return { ok: r.ok, status: r.status, body: parsed };
+  } catch (e) {
+    return { ok: false, status: 0, body: null, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/* Config */
+export const getOpsConfig = createServerFn({ method: "POST" })
+  .middleware([requirePlutoAdmin])
+  .inputValidator((d: unknown) => z.object({ env: EnvEnum.default("prod") }).parse(d ?? {}))
+  .handler(async ({ data, context }) => {
+    const r = await opsFetch(data.env, "/config", { method: "GET" }, actorFrom(context));
+    const cfgAll = (r.body as { config?: Record<string, OpsEnvConfig> } | null)?.config ?? {};
+    const cur = cfgAll[data.env] || { webhookUrl: "", retentionDays: 0, retentionCount: 0, approverEmails: [] };
+    return { ok: r.ok, config: cur as OpsEnvConfig, error: r.error };
+  });
+
+const SetConfigInput = z.object({
+  env: EnvEnum,
+  webhookUrl: z.string().max(500).optional().default(""),
+  retentionDays: z.number().int().min(0).max(3650).optional().default(0),
+  retentionCount: z.number().int().min(0).max(1000).optional().default(0),
+  approverEmails: z.array(z.string().email()).max(50).optional().default([]),
+});
+
+export const setOpsConfig = createServerFn({ method: "POST" })
+  .middleware([requirePlutoAdmin])
+  .inputValidator((d: unknown) => SetConfigInput.parse(d))
+  .handler(async ({ data, context }) => {
+    const r = await opsFetch(data.env, "/config", { method: "POST", body: JSON.stringify(data) }, actorFrom(context));
+    return { ok: r.ok, status: r.status, config: (r.body as { config?: OpsEnvConfig } | null)?.config ?? null, error: r.error };
+  });
+
+/* Reports */
+export const listOpsReports = createServerFn({ method: "POST" })
+  .middleware([requirePlutoAdmin])
+  .inputValidator((d: unknown) => z.object({ env: EnvEnum.default("prod"), limit: z.number().int().min(1).max(200).optional().default(50) }).parse(d ?? {}))
+  .handler(async ({ data, context }): Promise<{ ok: boolean; entries: OpsReportEntry[]; error?: string }> => {
+    const r = await opsFetch(data.env, `/reports?env=${data.env}&limit=${data.limit}`, { method: "GET" }, actorFrom(context));
+    return { ok: r.ok, entries: ((r.body as { entries?: OpsReportEntry[] } | null)?.entries) ?? [], error: r.error };
+  });
+
+/**
+ * Returns a signed short-lived URL surrogate — actually server-fetches the
+ * report body itself so the browser can offer it as a download without
+ * exposing the sandbox secret.
+ */
+export const downloadOpsReport = createServerFn({ method: "POST" })
+  .middleware([requirePlutoAdmin])
+  .inputValidator((d: unknown) => z.object({
+    env: EnvEnum,
+    id: z.string().regex(/^[A-Za-z0-9._-]{4,128}$/),
+    format: z.enum(["json", "md"]).default("md"),
+  }).parse(d))
+  .handler(async ({ data, context }): Promise<{ ok: boolean; content: string; contentType: string; filename: string; error?: string }> => {
+    const cfg = configEndpointFor(data.env, `/reports/${data.id}?format=${data.format}`);
+    if ("error" in cfg) return { ok: false, content: "", contentType: "text/plain", filename: "", error: cfg.error };
+    const actor = actorFrom(context);
+    try {
+      const r = await fetch(cfg.url, {
+        headers: { "x-sandbox-secret": cfg.secret, "x-actor-email": actor.email ?? "", "x-actor-user-id": actor.userId ?? "" },
+      });
+      const text = await r.text();
+      if (!r.ok) return { ok: false, content: text, contentType: "text/plain", filename: "", error: `HTTP ${r.status}` };
+      return {
+        ok: true, content: text,
+        contentType: data.format === "md" ? "text/markdown" : "application/json",
+        filename: `ops-report-${data.id}.${data.format}`,
+      };
+    } catch (e) {
+      return { ok: false, content: "", contentType: "text/plain", filename: "", error: e instanceof Error ? e.message : String(e) };
+    }
+  });
+
+/* Approvals */
+const RequestApprovalInput = z.object({
+  env: z.literal("prod"),
+  action: z.enum(["migrations-apply", "migrations-rollback-apply", "service-restart", "service-rollout", "backup-restore"]),
+  reason: z.string().min(8).max(1000),
+  payload: z.record(z.string(), z.unknown()).optional().default({}),
+});
+
+export const requestOpsApproval = createServerFn({ method: "POST" })
+  .middleware([requirePlutoAdmin])
+  .inputValidator((d: unknown) => RequestApprovalInput.parse(d))
+  .handler(async ({ data, context }): Promise<{ ok: boolean; entry: OpsApprovalEntry | null; error?: string }> => {
+    const r = await opsFetch("prod", "/approvals", { method: "POST", body: JSON.stringify(data) }, actorFrom(context));
+    return { ok: r.ok, entry: (r.body as { entry?: OpsApprovalEntry } | null)?.entry ?? null, error: r.error ?? (r.ok ? undefined : `HTTP ${r.status}`) };
+  });
+
+export const listOpsApprovals = createServerFn({ method: "POST" })
+  .middleware([requirePlutoAdmin])
+  .inputValidator((d: unknown) => z.object({
+    env: EnvEnum.default("prod"),
+    status: z.enum(["pending", "approved", "rejected", "executing", "executed", "failed", "expired"]).optional(),
+    limit: z.number().int().min(1).max(200).optional().default(50),
+  }).parse(d ?? {}))
+  .handler(async ({ data, context }): Promise<{ ok: boolean; entries: OpsApprovalEntry[]; error?: string }> => {
+    const qs = new URLSearchParams({ env: data.env, limit: String(data.limit) });
+    if (data.status) qs.set("status", data.status);
+    const r = await opsFetch(data.env, `/approvals?${qs.toString()}`, { method: "GET" }, actorFrom(context));
+    return { ok: r.ok, entries: ((r.body as { entries?: OpsApprovalEntry[] } | null)?.entries) ?? [], error: r.error };
+  });
+
+const DecideInput = z.object({
+  env: z.literal("prod"),
+  id: z.string().regex(/^[A-Za-z0-9-]{8,64}$/),
+  note: z.string().max(500).optional(),
+});
+
+export const approveOpsRequest = createServerFn({ method: "POST" })
+  .middleware([requirePlutoAdmin])
+  .inputValidator((d: unknown) => DecideInput.parse(d))
+  .handler(async ({ data, context }) => {
+    const r = await opsFetch("prod", `/approvals/${data.id}/approve`, { method: "POST", body: JSON.stringify({ note: data.note ?? "" }) }, actorFrom(context));
+    return { ok: r.ok, entry: (r.body as { entry?: OpsApprovalEntry } | null)?.entry ?? null, error: r.error ?? (r.ok ? undefined : `HTTP ${r.status} ${JSON.stringify(r.body)}`) };
+  });
+
+export const rejectOpsRequest = createServerFn({ method: "POST" })
+  .middleware([requirePlutoAdmin])
+  .inputValidator((d: unknown) => DecideInput.parse(d))
+  .handler(async ({ data, context }) => {
+    const r = await opsFetch("prod", `/approvals/${data.id}/reject`, { method: "POST", body: JSON.stringify({ note: data.note ?? "" }) }, actorFrom(context));
+    return { ok: r.ok, entry: (r.body as { entry?: OpsApprovalEntry } | null)?.entry ?? null, error: r.error ?? (r.ok ? undefined : `HTTP ${r.status}`) };
+  });
+
+export const executeOpsRequest = createServerFn({ method: "POST" })
+  .middleware([requirePlutoAdmin])
+  .inputValidator((d: unknown) => z.object({ env: z.literal("prod"), id: z.string().regex(/^[A-Za-z0-9-]{8,64}$/) }).parse(d))
+  .handler(async ({ data, context }) => {
+    const r = await opsFetch("prod", `/approvals/${data.id}/execute`, { method: "POST", body: JSON.stringify({}) }, actorFrom(context));
+    return { ok: r.ok, entry: (r.body as { entry?: OpsApprovalEntry } | null)?.entry ?? null, error: r.error ?? (r.ok ? undefined : `HTTP ${r.status}`) };
+  });
+
 /* ---------------- helpers ---------------- */
 
 function actorFrom(context: unknown): { email?: string | null; userId?: string | null } {
