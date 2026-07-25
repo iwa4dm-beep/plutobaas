@@ -42,7 +42,19 @@ export const Route = createFileRoute("/dashboard/traces")({
       { name: "robots", content: "noindex" },
     ],
   }),
-  component: TracesPage,
+  component: GatedTracesPage,
+});
+
+function GatedTracesPage() {
+  return (
+    <TraceAccessGate permission="view">
+      <TracesPage />
+    </TraceAccessGate>
+  );
+}
+
+const _dummyClose = createFileRoute("/dashboard/traces")({
+  component: () => null,
 });
 
 const STATUS_PRESETS: Array<{ label: string; filters: Partial<AdminTraceFilters> }> = [
