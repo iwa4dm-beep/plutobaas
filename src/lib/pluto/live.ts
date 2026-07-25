@@ -217,6 +217,16 @@ export async function api<T = unknown>(
   if (!cfg) throw new Error("Pluto backend not configured (set VITE_PLUTO_URL & VITE_PLUTO_ANON_KEY)");
   const { service, skipRefresh, headers, ...rest } = init;
   const hasBody = rest.body != null && rest.body !== "";
+  // Correlation ID — minted per request unless the caller supplied one via
+  // headers. Sent on BOTH x-request-id and x-correlation-id so upstream
+  // proxies (nginx / cloudflare) and the API observability middleware both
+  // recognize it. The server echoes it back on the response and includes
+  // it in the JSON error envelope.
+  const callerHeaders = (headers as Record<string, string> | undefined) ?? {};
+  const suppliedTrace =
+    callerHeaders["x-request-id"] ?? callerHeaders["X-Request-Id"] ??
+    callerHeaders["x-correlation-id"] ?? callerHeaders["X-Correlation-Id"];
+  const traceId = typeof suppliedTrace === "string" && suppliedTrace ? suppliedTrace : newTraceId();
   const doFetch = () => fetch(cfg.url.replace(/\/$/, "") + path, {
     ...rest,
     headers: {
@@ -224,7 +234,9 @@ export async function api<T = unknown>(
       // Only advertise a JSON body when we actually send one.
       ...(hasBody ? { "content-type": "application/json" } : {}),
       ...bearer(service),
-      ...(headers as Record<string, string> | undefined),
+      "x-request-id": traceId,
+      "x-correlation-id": traceId,
+      ...callerHeaders,
     },
   });
   let res = await doFetch();
@@ -256,7 +268,17 @@ export async function api<T = unknown>(
 
   const offline = typeof json === "object" && json && (json as { offline?: unknown }).offline === true;
   if (!res.ok || offline) {
-    throw new ApiError(messageOf(), { status: res.status, path, body: json });
+    // Prefer server-echoed trace id (header) over our client-generated one so
+    // the ID that appears in server logs is what the user sees.
+    const echoedTrace = res.headers.get("x-request-id") || res.headers.get("x-correlation-id") || undefined;
+    const bodyObj = (json && typeof json === "object" ? (json as { traceId?: string; fields?: Record<string, string> }) : {}) || {};
+    throw new ApiError(messageOf(), {
+      status: res.status,
+      path,
+      body: json,
+      traceId: echoedTrace || bodyObj.traceId || traceId,
+      fields: bodyObj.fields,
+    });
   }
   return json as T;
 }
