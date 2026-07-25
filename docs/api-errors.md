@@ -38,7 +38,8 @@ x-correlation-id: cli_9f8e2d13-...   # duplicate for proxies that filter one
 | 403    | `ForbiddenError`    | Authenticated but not permitted (RLS `42501`)     | Show "no permission" state; don't retry  |
 | 404    | `NotFound`          | Resource or route does not exist                  | Empty state / 404 page                   |
 | 409    | `DatabaseError`     | Postgres 23505 / 23503 / 40001                    | Ask user to change the value / retry     |
-| 413    | `PayloadTooLarge`   | Upload exceeds limit                              | Show max size in error                   |
+| 413    | `UploadError`       | File / body larger than the allowed maximum       | Show max size in error via `fields.file` |
+| 415    | `UploadError`       | Unsupported file MIME type                        | List allowed types                       |
 | 422    | `UnprocessableEntity` | Semantic validation                             | Inline field errors                      |
 | 429    | `RateLimitError`    | Rate limit tripped                                | Backoff + retry                          |
 | 500    | `InternalError`     | Unhandled crash                                   | Show trace ID + Contact Support          |
