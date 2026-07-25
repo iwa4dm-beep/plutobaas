@@ -33,6 +33,7 @@ const groups: Group[] = [
       { to: "/dashboard/pluto-admin", label: "Pluto Admin", icon: Server },
       { to: "/dashboard/ops", label: "Operations", icon: Terminal },
       { to: "/dashboard/ops/audit", label: "Ops audit log", icon: ScrollText },
+      { to: "/dashboard/ops/settings", label: "Ops settings", icon: ScrollText },
       { to: "/dashboard/verify", label: "Live checklist", icon: Activity },
       { to: "/dashboard/integrations", label: "Integration health", icon: HeartPulse },
     ],
