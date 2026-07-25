@@ -50,6 +50,7 @@ import { runStartupRoleCheck } from './db/verify-roles.js';
 
 import { metricsPlugin } from './observability/metrics.js';
 import { swaggerPlugin } from './observability/swagger.js';
+import { mapError, recordFailure } from './observability/errors.js';
 
 
 
