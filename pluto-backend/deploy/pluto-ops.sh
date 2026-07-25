@@ -28,6 +28,8 @@ TARGET=""
 BACKUP_ID=""
 ALLOW_MISSING_DOWN="0"
 ENV_NAME="prod"
+KEEP_DAYS=""
+KEEP_COUNT=""
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
