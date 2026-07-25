@@ -109,13 +109,29 @@ export class ApiError extends Error {
   status: number;
   path: string;
   body: unknown;
-  constructor(message: string, opts: { status: number; path: string; body: unknown }) {
+  /** Correlation ID (x-request-id) — echoed from the server so support can grep logs. */
+  traceId?: string;
+  /** Field-level validation errors when status=400 and body follows the standard envelope. */
+  fields?: Record<string, string>;
+  constructor(message: string, opts: { status: number; path: string; body: unknown; traceId?: string; fields?: Record<string, string> }) {
     super(message);
     this.name = "ApiError";
     this.status = opts.status;
     this.path = opts.path;
     this.body = opts.body;
+    this.traceId = opts.traceId;
+    this.fields = opts.fields;
   }
+}
+
+/**
+ * Generate a client-side correlation ID for a request. Format keeps the
+ * server-side regex happy (≤128 chars, URL-safe) and includes a `cli_`
+ * prefix so operators can spot browser-originated traces in server logs.
+ */
+export function newTraceId(): string {
+  const rand = globalThis.crypto?.randomUUID?.() ?? `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
+  return `cli_${rand}`;
 }
 
 export function describeError(e: unknown): { title: string; detail?: string; status?: number; hint?: string } {
