@@ -40,6 +40,8 @@ while [ "$#" -gt 0 ]; do
     --id) BACKUP_ID="${2:-}"; shift 2 ;;
     --allow-missing-down) ALLOW_MISSING_DOWN="1"; shift ;;
     --env) ENV_NAME="${2:-prod}"; shift 2 ;;
+    --keep-days) KEEP_DAYS="${2:-}"; shift 2 ;;
+    --keep-count) KEEP_COUNT="${2:-}"; shift 2 ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
   esac
 done
