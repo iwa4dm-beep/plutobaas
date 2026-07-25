@@ -104,6 +104,7 @@ import { Route as AuthConfirmEmailRouteImport } from './routes/auth.confirm-emai
 import { Route as SdkDownloadFileRouteImport } from './routes/sdk.download.$file'
 import { Route as DashboardTracesTrendsRouteImport } from './routes/dashboard.traces.trends'
 import { Route as DashboardTracesSettingsRouteImport } from './routes/dashboard.traces.settings'
+import { Route as DashboardOpsSettingsRouteImport } from './routes/dashboard.ops.settings'
 import { Route as DashboardOpsAuditRouteImport } from './routes/dashboard.ops.audit'
 import { Route as DashboardIntegrationsLovableFrontendRouteImport } from './routes/dashboard.integrations.lovable-frontend'
 import { Route as DashboardCustomDomainsAuditRouteImport } from './routes/dashboard.custom-domains.audit'
@@ -605,6 +606,11 @@ const DashboardTracesSettingsRoute = DashboardTracesSettingsRouteImport.update({
   path: '/settings',
   getParentRoute: () => DashboardTracesRoute,
 } as any)
+const DashboardOpsSettingsRoute = DashboardOpsSettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => DashboardOpsRoute,
+} as any)
 const DashboardOpsAuditRoute = DashboardOpsAuditRouteImport.update({
   id: '/audit',
   path: '/audit',
@@ -805,6 +811,7 @@ export interface FileRoutesByFullPath {
   '/dashboard/custom-domains/audit': typeof DashboardCustomDomainsAuditRoute
   '/dashboard/integrations/lovable-frontend': typeof DashboardIntegrationsLovableFrontendRoute
   '/dashboard/ops/audit': typeof DashboardOpsAuditRoute
+  '/dashboard/ops/settings': typeof DashboardOpsSettingsRoute
   '/dashboard/traces/settings': typeof DashboardTracesSettingsRoute
   '/dashboard/traces/trends': typeof DashboardTracesTrendsRoute
   '/sdk/download/$file': typeof SdkDownloadFileRoute
@@ -918,6 +925,7 @@ export interface FileRoutesByTo {
   '/dashboard/custom-domains/audit': typeof DashboardCustomDomainsAuditRoute
   '/dashboard/integrations/lovable-frontend': typeof DashboardIntegrationsLovableFrontendRoute
   '/dashboard/ops/audit': typeof DashboardOpsAuditRoute
+  '/dashboard/ops/settings': typeof DashboardOpsSettingsRoute
   '/dashboard/traces/settings': typeof DashboardTracesSettingsRoute
   '/dashboard/traces/trends': typeof DashboardTracesTrendsRoute
   '/sdk/download/$file': typeof SdkDownloadFileRoute
@@ -1033,6 +1041,7 @@ export interface FileRoutesById {
   '/dashboard/custom-domains/audit': typeof DashboardCustomDomainsAuditRoute
   '/dashboard/integrations/lovable-frontend': typeof DashboardIntegrationsLovableFrontendRoute
   '/dashboard/ops/audit': typeof DashboardOpsAuditRoute
+  '/dashboard/ops/settings': typeof DashboardOpsSettingsRoute
   '/dashboard/traces/settings': typeof DashboardTracesSettingsRoute
   '/dashboard/traces/trends': typeof DashboardTracesTrendsRoute
   '/sdk/download/$file': typeof SdkDownloadFileRoute
@@ -1149,6 +1158,7 @@ export interface FileRouteTypes {
     | '/dashboard/custom-domains/audit'
     | '/dashboard/integrations/lovable-frontend'
     | '/dashboard/ops/audit'
+    | '/dashboard/ops/settings'
     | '/dashboard/traces/settings'
     | '/dashboard/traces/trends'
     | '/sdk/download/$file'
@@ -1262,6 +1272,7 @@ export interface FileRouteTypes {
     | '/dashboard/custom-domains/audit'
     | '/dashboard/integrations/lovable-frontend'
     | '/dashboard/ops/audit'
+    | '/dashboard/ops/settings'
     | '/dashboard/traces/settings'
     | '/dashboard/traces/trends'
     | '/sdk/download/$file'
@@ -1376,6 +1387,7 @@ export interface FileRouteTypes {
     | '/dashboard/custom-domains/audit'
     | '/dashboard/integrations/lovable-frontend'
     | '/dashboard/ops/audit'
+    | '/dashboard/ops/settings'
     | '/dashboard/traces/settings'
     | '/dashboard/traces/trends'
     | '/sdk/download/$file'
@@ -2077,6 +2089,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardTracesSettingsRouteImport
       parentRoute: typeof DashboardTracesRoute
     }
+    '/dashboard/ops/settings': {
+      id: '/dashboard/ops/settings'
+      path: '/settings'
+      fullPath: '/dashboard/ops/settings'
+      preLoaderRoute: typeof DashboardOpsSettingsRouteImport
+      parentRoute: typeof DashboardOpsRoute
+    }
     '/dashboard/ops/audit': {
       id: '/dashboard/ops/audit'
       path: '/audit'
@@ -2245,10 +2264,12 @@ const DashboardIntegrationsRouteWithChildren =
 
 interface DashboardOpsRouteChildren {
   DashboardOpsAuditRoute: typeof DashboardOpsAuditRoute
+  DashboardOpsSettingsRoute: typeof DashboardOpsSettingsRoute
 }
 
 const DashboardOpsRouteChildren: DashboardOpsRouteChildren = {
   DashboardOpsAuditRoute: DashboardOpsAuditRoute,
+  DashboardOpsSettingsRoute: DashboardOpsSettingsRoute,
 }
 
 const DashboardOpsRouteWithChildren = DashboardOpsRoute._addFileChildren(
