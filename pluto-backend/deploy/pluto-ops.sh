@@ -28,6 +28,8 @@ TARGET=""
 BACKUP_ID=""
 ALLOW_MISSING_DOWN="0"
 ENV_NAME="prod"
+KEEP_DAYS=""
+KEEP_COUNT=""
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
@@ -38,6 +40,8 @@ while [ "$#" -gt 0 ]; do
     --id) BACKUP_ID="${2:-}"; shift 2 ;;
     --allow-missing-down) ALLOW_MISSING_DOWN="1"; shift ;;
     --env) ENV_NAME="${2:-prod}"; shift 2 ;;
+    --keep-days) KEEP_DAYS="${2:-}"; shift 2 ;;
+    --keep-count) KEEP_COUNT="${2:-}"; shift 2 ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
   esac
 done
@@ -127,19 +131,53 @@ restart_one() {
 }
 
 # ----------- actions -----------
+# ----------- helper: emit report line for migration actions -----------
+emit_report_json() {
+  local kind="$1" outcome="$2" objects_csv="$3" pending_count="$4"
+  local rid; rid="$(cat /proc/sys/kernel/random/uuid 2>/dev/null || echo "rep-$$-$(date +%s)")"
+  printf 'REPORT_JSON: {"id":"%s","env":"%s","kind":"%s","outcome":"%s","affected":"%s","pending":%s,"createdAt":"%s"}\n' \
+    "$rid" "$ENV_NAME" "$kind" "$outcome" "$objects_csv" "${pending_count:-0}" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+}
+
+extract_objects_from_pending() {
+  # scan pending migrations dir if run-migrator surfaced a list; best-effort.
+  local mig_dir="$DEPLOY_DIR/../migrations"; [ -d "$mig_dir" ] || mig_dir="$(dirname "$DEPLOY_DIR")/migrations"
+  [ -d "$mig_dir" ] || return 0
+  grep -hoiE '(CREATE|ALTER|DROP)[[:space:]]+(TABLE|INDEX|VIEW|FUNCTION|SCHEMA|TYPE|POLICY|TRIGGER)[[:space:]]+[A-Za-z0-9_."]+' "$mig_dir"/*.sql 2>/dev/null \
+    | awk '{print $NF}' | tr -d '";,' | sort -u | head -25 | tr '\n' '|' | sed 's/|$//'
+}
+
 case "$ACTION" in
   migrations-plan)
     [ -n "$DEPLOY_DIR" ] || { log "no deploy dir found"; exit 127; }
-    bash "$DEPLOY_DIR/preflight-migrations.sh" --plan-only 2>&1 || \
-      bash "$DEPLOY_DIR/run-migrator.sh" --plan 2>&1
+    tmp_out="$(mktemp)"
+    (bash "$DEPLOY_DIR/preflight-migrations.sh" --plan-only 2>&1 || bash "$DEPLOY_DIR/run-migrator.sh" --plan 2>&1) | tee "$tmp_out"
+    _rc=${PIPESTATUS[0]}
+    _pending=$(grep -cE '^(pending|would apply|→ )' "$tmp_out" 2>/dev/null || echo 0)
+    _outcome=$([ "$_rc" = "0" ] && echo "ok" || echo "failed")
+    emit_report_json "plan" "$_outcome" "$(extract_objects_from_pending)" "$_pending"
+    rm -f "$tmp_out"
+    exit "$_rc"
     ;;
   migrations-dry-run)
     [ -n "$DEPLOY_DIR" ] || { log "no deploy dir found"; exit 127; }
-    bash "$DEPLOY_DIR/run-migrator.sh" --dry-run 2>&1
+    tmp_out="$(mktemp)"
+    bash "$DEPLOY_DIR/run-migrator.sh" --dry-run 2>&1 | tee "$tmp_out"
+    _rc=${PIPESTATUS[0]}
+    _outcome=$([ "$_rc" = "0" ] && echo "ok" || echo "failed")
+    emit_report_json "dry-run" "$_outcome" "$(extract_objects_from_pending)" "0"
+    rm -f "$tmp_out"
+    exit "$_rc"
     ;;
   migrations-apply)
     [ -n "$DEPLOY_DIR" ] || { log "no deploy dir found"; exit 127; }
-    bash "$DEPLOY_DIR/run-migrator.sh" 2>&1
+    tmp_out="$(mktemp)"
+    bash "$DEPLOY_DIR/run-migrator.sh" 2>&1 | tee "$tmp_out"
+    _rc=${PIPESTATUS[0]}
+    _outcome=$([ "$_rc" = "0" ] && echo "ok" || echo "failed")
+    emit_report_json "apply" "$_outcome" "$(extract_objects_from_pending)" "0"
+    rm -f "$tmp_out"
+    exit "$_rc"
     ;;
   migrations-rollback-plan)
     [ -n "$TARGET" ] || { log "--target required"; exit 2; }
@@ -270,9 +308,36 @@ case "$ACTION" in
     fi
     log "restore complete"
     ;;
+  backup-prune)
+    # Enforce retention: delete dumps older than KEEP_DAYS days OR beyond KEEP_COUNT newest.
+    kd="${KEEP_DAYS:-0}"; kc="${KEEP_COUNT:-0}"
+    log "prune keep_days=$kd keep_count=$kc dir=$BACKUP_ROOT"
+    removed=0; kept=0
+    # Age-based first.
+    if [ "$kd" -gt 0 ] 2>/dev/null; then
+      while IFS= read -r f; do
+        [ -f "$f" ] || continue
+        printf 'PRUNE_REMOVE: %s (age)\n' "$f"
+        rm -f "$f" && removed=$((removed+1))
+      done < <(find "$BACKUP_ROOT" -maxdepth 1 -type f -name '*.dump' -mtime "+$kd" 2>/dev/null)
+    fi
+    # Count-based: keep newest kc, delete rest.
+    if [ "$kc" -gt 0 ] 2>/dev/null; then
+      i=0
+      while IFS= read -r f; do
+        i=$((i+1))
+        if [ "$i" -le "$kc" ]; then kept=$((kept+1)); continue; fi
+        printf 'PRUNE_REMOVE: %s (count)\n' "$f"
+        rm -f "$f" && removed=$((removed+1))
+      done < <(ls -1t "$BACKUP_ROOT"/*.dump 2>/dev/null)
+    fi
+    printf 'PRUNE_JSON: {"env":"%s","removed":%s,"kept":%s,"keepDays":%s,"keepCount":%s,"at":"%s"}\n' \
+      "$ENV_NAME" "$removed" "$kept" "${kd:-0}" "${kc:-0}" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    log "prune complete removed=$removed kept=$kept"
+    ;;
   *)
     echo "unknown action: $ACTION" >&2
-    echo "allowed: migrations-plan|dry-run|apply|rollback-plan|rollback-apply, service-restart|rollout|health, backup-create|list|restore" >&2
+    echo "allowed: migrations-plan|dry-run|apply|rollback-plan|rollback-apply, service-restart|rollout|health, backup-create|list|restore|prune" >&2
     exit 2
     ;;
 esac

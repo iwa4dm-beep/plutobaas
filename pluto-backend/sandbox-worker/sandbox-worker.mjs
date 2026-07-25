@@ -44,6 +44,11 @@ const OPS_AUDIT_FILE = path.join(SITES_ROOT, ".ops-audit.json");
 const OPS_AUDIT_MAX = 1000;
 const OPS_BACKUPS_FILE = path.join(SITES_ROOT, ".ops-backups.json");
 const OPS_BACKUPS_MAX = 200;
+const OPS_CONFIG_FILE = path.join(SITES_ROOT, ".ops-config.json");
+const OPS_REPORTS_FILE = path.join(SITES_ROOT, ".ops-reports.json");
+const OPS_REPORTS_MAX = 300;
+const OPS_APPROVALS_FILE = path.join(SITES_ROOT, ".ops-approvals.json");
+const OPS_APPROVALS_MAX = 200;
 const DEFAULT_BASE_DOMAIN = process.env.PLUTO_WILDCARD_HOST || process.env.BASE_DOMAIN || "app.timescard.cloud";
 const NGINX_SITES_ENABLED = process.env.NGINX_SITES_ENABLED || "/etc/nginx/sites-enabled";
 const NGINX_SITES_AVAILABLE = process.env.NGINX_SITES_AVAILABLE || "/etc/nginx/sites-available";
@@ -1363,6 +1368,70 @@ async function readJsonListFile(file, limit, filter) {
 }
 async function appendOpsAudit(entry) { return appendJsonListFile(OPS_AUDIT_FILE, entry, OPS_AUDIT_MAX); }
 async function appendOpsBackup(entry) { return appendJsonListFile(OPS_BACKUPS_FILE, entry, OPS_BACKUPS_MAX); }
+async function appendOpsReport(entry) { return appendJsonListFile(OPS_REPORTS_FILE, entry, OPS_REPORTS_MAX); }
+
+// ---------- Ops config (Ops v3) ----------
+// Shape: { dev:{webhookUrl,retentionDays,retentionCount,approverEmails:[]}, staging:{...}, prod:{...} }
+async function readOpsConfig() {
+  try { const j = JSON.parse(await fsp.readFile(OPS_CONFIG_FILE, "utf-8")); return (j && typeof j === "object") ? j : {}; }
+  catch { return {}; }
+}
+async function writeOpsConfig(cfg) {
+  await fsp.mkdir(SITES_ROOT, { recursive: true });
+  await fsp.writeFile(OPS_CONFIG_FILE, JSON.stringify(cfg, null, 2));
+}
+async function getEnvConfig(env) {
+  const all = await readOpsConfig();
+  return all[env] || { webhookUrl: "", retentionDays: 0, retentionCount: 0, approverEmails: [] };
+}
+
+// ---------- Ops approvals (Ops v3) ----------
+// Approval requires: prod env, action in {migrations-apply, migrations-rollback-apply, service-restart, service-rollout, backup-restore},
+// reason non-empty, approver.email !== requester.email, status in {pending,approved,rejected,executed,expired}
+const APPROVAL_ACTIONS = new Set(["migrations-apply", "migrations-rollback-apply", "service-restart", "service-rollout", "backup-restore"]);
+const APPROVAL_TTL_MS = 24 * 60 * 60 * 1000; // 24h
+
+async function readApprovals() {
+  try { const j = JSON.parse(await fsp.readFile(OPS_APPROVALS_FILE, "utf-8")); return Array.isArray(j) ? j : []; }
+  catch { return []; }
+}
+async function writeApprovals(list) {
+  await fsp.mkdir(SITES_ROOT, { recursive: true });
+  await fsp.writeFile(OPS_APPROVALS_FILE, JSON.stringify(list.slice(0, OPS_APPROVALS_MAX), null, 2));
+}
+async function updateApproval(id, patch) {
+  const list = await readApprovals();
+  const idx = list.findIndex((e) => e && e.id === id);
+  if (idx < 0) return null;
+  list[idx] = { ...list[idx], ...patch };
+  await writeApprovals(list);
+  return list[idx];
+}
+
+// ---------- Notifications (Ops v3) ----------
+async function notifyWebhook(env, event, payload) {
+  try {
+    const cfg = await getEnvConfig(env);
+    const url = cfg.webhookUrl && String(cfg.webhookUrl).trim();
+    if (!url || !/^https?:\/\//.test(url)) return;
+    const body = JSON.stringify({ event, env, at: new Date().toISOString(), ...payload });
+    const u = new URL(url);
+    const lib = u.protocol === "https:" ? https : http;
+    await new Promise((resolve) => {
+      const req = lib.request(url, {
+        method: "POST",
+        headers: { "content-type": "application/json", "content-length": Buffer.byteLength(body), "user-agent": "pluto-ops-worker/1" },
+        timeout: 5000,
+      }, (r) => { r.resume(); r.on("end", resolve); r.on("error", () => resolve()); });
+      req.on("error", () => resolve());
+      req.on("timeout", () => { req.destroy(); resolve(); });
+      req.write(body); req.end();
+    });
+  } catch { /* fire-and-forget */ }
+}
+
+
+
 
 
 
@@ -1697,6 +1766,44 @@ const server = http.createServer(async (req, res) => {
           } catch { /* ignore */ }
         }
       }
+      // Parse REPORT_JSON emitted by migrations-plan/dry-run/apply and persist.
+      let reportId = null;
+      if (/^migrations-(plan|dry-run|apply)$/.test(action)) {
+        const m = tail.match(/REPORT_JSON:\s*(\{[^\n]+\})/);
+        if (m) {
+          try {
+            const entry = JSON.parse(m[1]);
+            reportId = entry.id || null;
+            const affectedList = (entry.affected || "").split("|").filter(Boolean);
+            await appendOpsReport({
+              ...entry,
+              action, exitCode,
+              affected: affectedList,
+              tail: tail.slice(-8192),
+            });
+          } catch { /* ignore */ }
+        }
+      }
+      // Retention prune after successful backup-create.
+      if (action === "backup-create" && exitCode === 0) {
+        const c = await getEnvConfig(env);
+        const kd = Number(c.retentionDays || 0);
+        const kc = Number(c.retentionCount || 0);
+        if (kd > 0 || kc > 0) {
+          const pruneArgs = ["backup-prune", "--env", env];
+          if (kd > 0) pruneArgs.push("--keep-days", String(kd));
+          if (kc > 0) pruneArgs.push("--keep-count", String(kc));
+          const pchunks = [];
+          await new Promise((resolve) => {
+            const ch = spawn("sudo", ["-n", "/usr/local/sbin/pluto-ops", ...pruneArgs], { stdio: ["ignore", "pipe", "pipe"] });
+            ch.stdout.on("data", (b) => pchunks.push(b));
+            ch.stderr.on("data", (b) => pchunks.push(b));
+            ch.on("close", resolve);
+            ch.on("error", resolve);
+          });
+          // no-op if prune fails; result already noted in tail
+        }
+      }
       // Audit write-through: actor is forwarded by the caller via headers.
       const actorEmail = String(req.headers["x-actor-email"] || "") || null;
       const actorUserId = String(req.headers["x-actor-user-id"] || "") || null;
@@ -1706,11 +1813,17 @@ const server = http.createServer(async (req, res) => {
         params: { plan: body?.plan ?? null, target: body?.target ?? null, allowMissingDown: !!body?.allowMissingDown, soakSeconds: body?.soakSeconds ?? null, id: body?.id ?? null },
         ok: exitCode === 0, exitCode, durationMs, hint,
         tail: tail.slice(-2048),
-        backupId,
+        backupId, reportId,
         actorEmail, actorUserId,
         startedAt: startedIso, finishedAt: new Date().toISOString(),
       }).catch(() => {});
-      return json(res, 200, { ok: exitCode === 0, action, env, service: body?.service ?? null, exitCode, durationMs, tail, hint, backupId, startedAt: startedIso, finishedAt: new Date().toISOString() });
+      // Fire-and-forget webhook notification.
+      notifyWebhook(env, `ops.${action}`, {
+        ok: exitCode === 0, action, service: body?.service ?? null,
+        exitCode, durationMs, hint, backupId, reportId,
+        actor: actorEmail || actorUserId || null,
+      }).catch(() => {});
+      return json(res, 200, { ok: exitCode === 0, action, env, service: body?.service ?? null, exitCode, durationMs, tail, hint, backupId, reportId, startedAt: startedIso, finishedAt: new Date().toISOString() });
     }
 
     // GET /admin/ops/audit — paginated audit list.
@@ -1727,6 +1840,201 @@ const server = http.createServer(async (req, res) => {
       });
       return json(res, 200, { ok: true, count: list.length, entries: list });
     }
+
+    // GET /admin/ops/config — return per-env config map.
+    if (req.method === "GET" && (p === "/admin/ops/config" || p === "/sandbox/admin/ops/config")) {
+      const cfg = await readOpsConfig();
+      return json(res, 200, { ok: true, config: cfg });
+    }
+    // POST /admin/ops/config — { env, webhookUrl, retentionDays, retentionCount, approverEmails }
+    if (req.method === "POST" && (p === "/admin/ops/config" || p === "/sandbox/admin/ops/config")) {
+      const b = await readJson(req).catch(() => ({}));
+      const env = String(b?.env || "").trim();
+      if (!/^(dev|staging|prod)$/.test(env)) return json(res, 400, { error: "invalid_env" });
+      const webhookUrl = String(b?.webhookUrl || "").trim();
+      if (webhookUrl && !/^https?:\/\//.test(webhookUrl)) return json(res, 400, { error: "invalid_webhook_url" });
+      const retentionDays = Math.max(0, Math.min(3650, Number(b?.retentionDays) || 0));
+      const retentionCount = Math.max(0, Math.min(1000, Number(b?.retentionCount) || 0));
+      let approverEmails = Array.isArray(b?.approverEmails) ? b.approverEmails.map((x) => String(x).trim().toLowerCase()).filter(Boolean) : [];
+      approverEmails = [...new Set(approverEmails)].slice(0, 50);
+      const all = await readOpsConfig();
+      all[env] = { webhookUrl, retentionDays, retentionCount, approverEmails };
+      await writeOpsConfig(all);
+      return json(res, 200, { ok: true, env, config: all[env] });
+    }
+
+    // GET /admin/ops/reports — list persisted plan/dry-run/apply reports.
+    if (req.method === "GET" && (p === "/admin/ops/reports" || p === "/sandbox/admin/ops/reports")) {
+      const list = await readJsonListFile(OPS_REPORTS_FILE, q.get("limit") || 50, {
+        env: q.get("env") || undefined, action: q.get("action") || undefined,
+      });
+      return json(res, 200, { ok: true, count: list.length, entries: list });
+    }
+    // GET /admin/ops/reports/:id — download (markdown or json)
+    {
+      const m = p.match(/^\/(?:sandbox\/)?admin\/ops\/reports\/([A-Za-z0-9._-]{4,128})$/);
+      if (req.method === "GET" && m) {
+        const rid = m[1];
+        const list = await readJsonListFile(OPS_REPORTS_FILE, 500, {});
+        const entry = list.find((e) => e && e.id === rid);
+        if (!entry) return json(res, 404, { error: "not_found" });
+        const fmt = (q.get("format") || "json").toLowerCase();
+        if (fmt === "md" || fmt === "markdown") {
+          const md = [
+            `# Ops report — ${entry.kind} (${entry.env})`,
+            ``, `- id: \`${entry.id}\``, `- action: ${entry.action}`, `- outcome: **${entry.outcome}**`,
+            `- exitCode: ${entry.exitCode ?? "?"}`, `- pending: ${entry.pending ?? 0}`,
+            `- createdAt: ${entry.createdAt}`, ``,
+            `## Affected objects (${(entry.affected || []).length})`,
+            ...((entry.affected || []).map((x) => `- \`${x}\``)),
+            ``, `## Output tail`, "```", (entry.tail || "").slice(-4096), "```", "",
+          ].join("\n");
+          res.writeHead(200, {
+            "content-type": "text/markdown; charset=utf-8",
+            "content-disposition": `attachment; filename="ops-report-${rid}.md"`,
+          });
+          return res.end(md);
+        }
+        res.writeHead(200, {
+          "content-type": "application/json",
+          "content-disposition": `attachment; filename="ops-report-${rid}.json"`,
+        });
+        return res.end(JSON.stringify(entry, null, 2));
+      }
+    }
+
+    // POST /admin/ops/approvals — request approval for a prod destructive action.
+    if (req.method === "POST" && (p === "/admin/ops/approvals" || p === "/sandbox/admin/ops/approvals")) {
+      const b = await readJson(req).catch(() => ({}));
+      const env = String(b?.env || "").trim();
+      const action = String(b?.action || "").trim();
+      const reason = String(b?.reason || "").trim();
+      if (env !== "prod") return json(res, 400, { error: "approvals_only_for_prod" });
+      if (!APPROVAL_ACTIONS.has(action)) return json(res, 400, { error: "action_not_approvable", allowed: [...APPROVAL_ACTIONS] });
+      if (reason.length < 8) return json(res, 400, { error: "reason_required", hint: "min 8 chars" });
+      const requesterEmail = String(req.headers["x-actor-email"] || "") || null;
+      const requesterUserId = String(req.headers["x-actor-user-id"] || "") || null;
+      const entry = {
+        id: randomUUID(), env, action, reason,
+        payload: b?.payload && typeof b.payload === "object" ? b.payload : {},
+        requesterEmail, requesterUserId,
+        approverEmail: null, approverUserId: null,
+        status: "pending",
+        createdAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + APPROVAL_TTL_MS).toISOString(),
+        decidedAt: null, executedAt: null,
+        executionResult: null,
+      };
+      const list = await readApprovals();
+      list.unshift(entry);
+      await writeApprovals(list);
+      notifyWebhook(env, "ops.approval.requested", { id: entry.id, action, reason, requester: requesterEmail }).catch(() => {});
+      return json(res, 200, { ok: true, entry });
+    }
+    // GET /admin/ops/approvals — list (filter by env/status)
+    if (req.method === "GET" && (p === "/admin/ops/approvals" || p === "/sandbox/admin/ops/approvals")) {
+      let list = await readApprovals();
+      const now = Date.now();
+      // auto-expire pending past TTL
+      let mutated = false;
+      list = list.map((e) => {
+        if (e && e.status === "pending" && e.expiresAt && Date.parse(e.expiresAt) < now) {
+          mutated = true; return { ...e, status: "expired" };
+        }
+        return e;
+      });
+      if (mutated) await writeApprovals(list);
+      const envFilter = q.get("env"); const statusFilter = q.get("status");
+      if (envFilter) list = list.filter((e) => e && e.env === envFilter);
+      if (statusFilter) list = list.filter((e) => e && e.status === statusFilter);
+      const limit = Math.max(1, Math.min(200, Number(q.get("limit")) || 50));
+      return json(res, 200, { ok: true, count: list.length, entries: list.slice(0, limit) });
+    }
+    // POST /admin/ops/approvals/:id/(approve|reject|execute)
+    {
+      const m = p.match(/^\/(?:sandbox\/)?admin\/ops\/approvals\/([A-Za-z0-9-]{8,64})\/(approve|reject|execute)$/);
+      if (req.method === "POST" && m) {
+        const id = m[1]; const op = m[2];
+        const b = await readJson(req).catch(() => ({}));
+        const list = await readApprovals();
+        const entry = list.find((e) => e && e.id === id);
+        if (!entry) return json(res, 404, { error: "not_found" });
+        const actorEmail = String(req.headers["x-actor-email"] || "").toLowerCase() || null;
+        const actorUserId = String(req.headers["x-actor-user-id"] || "") || null;
+        if (op === "approve" || op === "reject") {
+          if (entry.status !== "pending") return json(res, 409, { error: "not_pending", status: entry.status });
+          if (op === "approve") {
+            if (!actorEmail) return json(res, 400, { error: "approver_email_required" });
+            if (actorEmail === (entry.requesterEmail || "").toLowerCase()) return json(res, 403, { error: "self_approval_forbidden" });
+            const cfg = await getEnvConfig(entry.env);
+            if (Array.isArray(cfg.approverEmails) && cfg.approverEmails.length > 0 && !cfg.approverEmails.includes(actorEmail)) {
+              return json(res, 403, { error: "not_in_approver_list" });
+            }
+          }
+          const patch = {
+            status: op === "approve" ? "approved" : "rejected",
+            approverEmail: actorEmail, approverUserId: actorUserId,
+            decidedAt: new Date().toISOString(),
+            decisionNote: String(b?.note || "").slice(0, 500) || null,
+          };
+          const updated = await updateApproval(id, patch);
+          notifyWebhook(entry.env, `ops.approval.${patch.status}`, { id, action: entry.action, approver: actorEmail, requester: entry.requesterEmail }).catch(() => {});
+          return json(res, 200, { ok: true, entry: updated });
+        }
+        // execute — only if approved, and executed at most once
+        if (entry.status !== "approved") return json(res, 409, { error: "not_approved", status: entry.status });
+        // mark executing (best-effort atomicity through file rewrite)
+        await updateApproval(id, { status: "executing" });
+        // Rebuild an /admin/ops-style payload and dispatch inline via sudo.
+        const args = [entry.action, "--env", entry.env];
+        const pl = entry.payload || {};
+        if (entry.action === "service-restart" && pl.service) args.push("--service", String(pl.service));
+        if (entry.action === "service-rollout") {
+          if (pl.plan) args.push("--plan", String(pl.plan));
+          if (Number.isFinite(Number(pl.soakSeconds))) args.push("--soak", String(Math.floor(Number(pl.soakSeconds))));
+        }
+        if (entry.action === "migrations-rollback-apply") {
+          if (pl.target) args.push("--target", String(pl.target));
+          if (pl.allowMissingDown) args.push("--allow-missing-down");
+        }
+        if (entry.action === "backup-restore" && pl.id) args.push("--id", String(pl.id));
+        const startedIso2 = new Date().toISOString();
+        const t0 = Date.now();
+        const chunks2 = [];
+        let ec2 = -1;
+        await new Promise((resolve) => {
+          const ch = spawn("sudo", ["-n", "/usr/local/sbin/pluto-ops", ...args], { stdio: ["ignore", "pipe", "pipe"] });
+          ch.stdout.on("data", (b2) => chunks2.push(b2));
+          ch.stderr.on("data", (b2) => chunks2.push(b2));
+          ch.on("close", (code) => { ec2 = code ?? -1; resolve(); });
+          ch.on("error", (err) => { chunks2.push(Buffer.from(`spawn error: ${err.message}\n`)); ec2 = 127; resolve(); });
+        });
+        const tail2 = Buffer.concat(chunks2).toString("utf8").slice(-4096);
+        const executionResult = {
+          exitCode: ec2, ok: ec2 === 0, durationMs: Date.now() - t0,
+          tail: tail2, startedAt: startedIso2, finishedAt: new Date().toISOString(),
+        };
+        const updated = await updateApproval(id, {
+          status: ec2 === 0 ? "executed" : "failed",
+          executedAt: new Date().toISOString(),
+          executorEmail: actorEmail, executorUserId: actorUserId,
+          executionResult,
+        });
+        // audit + notify
+        await appendOpsAudit({
+          id: randomUUID(), env: entry.env, action: entry.action, service: pl.service ?? null,
+          params: { plan: pl.plan ?? null, target: pl.target ?? null, allowMissingDown: !!pl.allowMissingDown, soakSeconds: pl.soakSeconds ?? null, id: pl.id ?? null },
+          ok: ec2 === 0, exitCode: ec2, durationMs: executionResult.durationMs, hint: null,
+          tail: tail2.slice(-2048), approvalId: id,
+          actorEmail: actorEmail, actorUserId: actorUserId,
+          startedAt: startedIso2, finishedAt: executionResult.finishedAt,
+        }).catch(() => {});
+        notifyWebhook(entry.env, `ops.approval.executed`, { id, action: entry.action, ok: ec2 === 0, exitCode: ec2, executor: actorEmail }).catch(() => {});
+        return json(res, 200, { ok: ec2 === 0, entry: updated });
+      }
+    }
+
+
 
 
     if (req.method === "GET" && (p === "/admin/repair/history" || p === "/sandbox/admin/repair/history")) {
