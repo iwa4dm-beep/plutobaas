@@ -32,6 +32,7 @@ const groups: Group[] = [
       { to: "/dashboard/deployment-compare", label: "Compare Deployments", icon: GitCompare },
       { to: "/dashboard/pluto-admin", label: "Pluto Admin", icon: Server },
       { to: "/dashboard/ops", label: "Operations", icon: Terminal },
+      { to: "/dashboard/ops/executions", label: "Ops executions", icon: ScrollText },
       { to: "/dashboard/ops/audit", label: "Ops audit log", icon: ScrollText },
       { to: "/dashboard/ops/settings", label: "Ops settings", icon: ScrollText },
       { to: "/dashboard/verify", label: "Live checklist", icon: Activity },

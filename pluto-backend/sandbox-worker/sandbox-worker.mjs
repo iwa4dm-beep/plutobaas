@@ -29,7 +29,7 @@ import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
 import { spawn } from "node:child_process";
-import { randomUUID, timingSafeEqual, createHash, randomBytes } from "node:crypto";
+import { randomUUID, timingSafeEqual, createHash, randomBytes, createHmac } from "node:crypto";
 
 const PORT = Number(process.env.PORT ?? process.env.SANDBOX_WORKER_PORT ?? 8787);
 const SECRET = process.env.SANDBOX_SHARED_SECRET ?? "";
@@ -49,6 +49,10 @@ const OPS_REPORTS_FILE = path.join(SITES_ROOT, ".ops-reports.json");
 const OPS_REPORTS_MAX = 300;
 const OPS_APPROVALS_FILE = path.join(SITES_ROOT, ".ops-approvals.json");
 const OPS_APPROVALS_MAX = 200;
+const OPS_DELIVERIES_FILE = path.join(SITES_ROOT, ".ops-webhook-deliveries.json");
+const OPS_DELIVERIES_MAX = 500;
+// Exponential backoff schedule (ms). 5 attempts total (1 initial + 4 retries).
+const WEBHOOK_BACKOFF_MS = [1000, 3000, 9000, 27000, 60000];
 const DEFAULT_BASE_DOMAIN = process.env.PLUTO_WILDCARD_HOST || process.env.BASE_DOMAIN || "app.timescard.cloud";
 const NGINX_SITES_ENABLED = process.env.NGINX_SITES_ENABLED || "/etc/nginx/sites-enabled";
 const NGINX_SITES_AVAILABLE = process.env.NGINX_SITES_AVAILABLE || "/etc/nginx/sites-available";
@@ -1382,7 +1386,14 @@ async function writeOpsConfig(cfg) {
 }
 async function getEnvConfig(env) {
   const all = await readOpsConfig();
-  return all[env] || { webhookUrl: "", retentionDays: 0, retentionCount: 0, approverEmails: [] };
+  const cur = all[env] || {};
+  return {
+    webhookUrl: cur.webhookUrl || "",
+    webhookSecret: cur.webhookSecret || "",
+    retentionDays: Number(cur.retentionDays) || 0,
+    retentionCount: Number(cur.retentionCount) || 0,
+    approverEmails: Array.isArray(cur.approverEmails) ? cur.approverEmails : [],
+  };
 }
 
 // ---------- Ops approvals (Ops v3) ----------
@@ -1408,26 +1419,77 @@ async function updateApproval(id, patch) {
   return list[idx];
 }
 
-// ---------- Notifications (Ops v3) ----------
-async function notifyWebhook(env, event, payload) {
-  try {
-    const cfg = await getEnvConfig(env);
-    const url = cfg.webhookUrl && String(cfg.webhookUrl).trim();
-    if (!url || !/^https?:\/\//.test(url)) return;
-    const body = JSON.stringify({ event, env, at: new Date().toISOString(), ...payload });
-    const u = new URL(url);
+// ---------- Webhook notifications (HMAC signed + exponential-backoff retry) ----------
+async function appendDelivery(entry) { return appendJsonListFile(OPS_DELIVERIES_FILE, entry, OPS_DELIVERIES_MAX); }
+
+/**
+ * Send a webhook once. Resolves with { status, error } — never throws.
+ * When `secret` is set, adds:
+ *   X-Pluto-Timestamp:  unix-ms
+ *   X-Pluto-Signature:  sha256=hex(HMAC(secret, `${timestamp}.${rawBody}`))
+ * Consumers verify by recomputing HMAC and constant-time comparing.
+ */
+function postWebhookOnce({ url, body, secret, event, deliveryId, attempt }) {
+  return new Promise((resolve) => {
+    let u;
+    try { u = new URL(url); } catch (e) { return resolve({ status: 0, error: `invalid_url: ${e.message}` }); }
     const lib = u.protocol === "https:" ? https : http;
-    await new Promise((resolve) => {
-      const req = lib.request(url, {
-        method: "POST",
-        headers: { "content-type": "application/json", "content-length": Buffer.byteLength(body), "user-agent": "pluto-ops-worker/1" },
-        timeout: 5000,
-      }, (r) => { r.resume(); r.on("end", resolve); r.on("error", () => resolve()); });
-      req.on("error", () => resolve());
-      req.on("timeout", () => { req.destroy(); resolve(); });
-      req.write(body); req.end();
+    const ts = Date.now().toString();
+    const headers = {
+      "content-type": "application/json",
+      "content-length": Buffer.byteLength(body),
+      "user-agent": "pluto-ops-worker/2",
+      "x-pluto-event": event,
+      "x-pluto-delivery": deliveryId,
+      "x-pluto-attempt": String(attempt),
+      "x-pluto-timestamp": ts,
+    };
+    if (secret) {
+      const sig = createHmac("sha256", secret).update(`${ts}.${body}`).digest("hex");
+      headers["x-pluto-signature"] = `sha256=${sig}`;
+    }
+    const chunks = [];
+    const req = lib.request(url, { method: "POST", headers, timeout: 8000 }, (r) => {
+      r.on("data", (b) => { if (chunks.reduce((n, c) => n + c.length, 0) < 4096) chunks.push(b); });
+      r.on("end", () => resolve({ status: r.statusCode || 0, error: null, tail: Buffer.concat(chunks).toString("utf8").slice(0, 512) }));
+      r.on("error", (e) => resolve({ status: r.statusCode || 0, error: e.message }));
     });
-  } catch { /* fire-and-forget */ }
+    req.on("error", (e) => resolve({ status: 0, error: e.message }));
+    req.on("timeout", () => { req.destroy(); resolve({ status: 0, error: "timeout" }); });
+    req.write(body); req.end();
+  });
+}
+
+async function notifyWebhook(env, event, payload) {
+  let cfg;
+  try { cfg = await getEnvConfig(env); } catch { return; }
+  const url = cfg.webhookUrl && String(cfg.webhookUrl).trim();
+  if (!url || !/^https?:\/\//.test(url)) return;
+  const secret = cfg.webhookSecret ? String(cfg.webhookSecret) : "";
+  const deliveryId = randomUUID();
+  const enveloped = { event, env, at: new Date().toISOString(), delivery: deliveryId, ...payload };
+  const body = JSON.stringify(enveloped);
+  // Schedule attempt N. On non-2xx or transport error, retry per WEBHOOK_BACKOFF_MS.
+  const attemptOnce = async (attempt) => {
+    const startedAt = new Date().toISOString();
+    const r = await postWebhookOnce({ url, body, secret, event, deliveryId, attempt });
+    const ok = r.status >= 200 && r.status < 300;
+    await appendDelivery({
+      id: `${deliveryId}#${attempt}`,
+      deliveryId, env, event, url,
+      attempt, maxAttempts: WEBHOOK_BACKOFF_MS.length,
+      status: ok ? "delivered" : (attempt >= WEBHOOK_BACKOFF_MS.length ? "failed" : "retry-scheduled"),
+      httpStatus: r.status, error: r.error || null, responseTail: r.tail || null,
+      signed: !!secret, at: startedAt,
+    }).catch(() => {});
+    if (ok) return;
+    if (attempt >= WEBHOOK_BACKOFF_MS.length) return; // exhausted
+    const delay = WEBHOOK_BACKOFF_MS[attempt - 1];
+    // Jitter ±20% to avoid thundering herd.
+    const jittered = Math.floor(delay * (0.8 + Math.random() * 0.4));
+    setTimeout(() => { attemptOnce(attempt + 1).catch(() => {}); }, jittered).unref?.();
+  };
+  attemptOnce(1).catch(() => {});
 }
 
 
@@ -1841,26 +1903,58 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, { ok: true, count: list.length, entries: list });
     }
 
-    // GET /admin/ops/config — return per-env config map.
+    // GET /admin/ops/config — return per-env config map. Secret is redacted to "__set__" or "".
     if (req.method === "GET" && (p === "/admin/ops/config" || p === "/sandbox/admin/ops/config")) {
       const cfg = await readOpsConfig();
-      return json(res, 200, { ok: true, config: cfg });
+      const redacted = {};
+      for (const [k, v] of Object.entries(cfg)) {
+        redacted[k] = { ...v, webhookSecret: v && v.webhookSecret ? "__set__" : "" };
+      }
+      return json(res, 200, { ok: true, config: redacted });
     }
-    // POST /admin/ops/config — { env, webhookUrl, retentionDays, retentionCount, approverEmails }
+    // POST /admin/ops/config — { env, webhookUrl, webhookSecret, retentionDays, retentionCount, approverEmails }
     if (req.method === "POST" && (p === "/admin/ops/config" || p === "/sandbox/admin/ops/config")) {
       const b = await readJson(req).catch(() => ({}));
       const env = String(b?.env || "").trim();
       if (!/^(dev|staging|prod)$/.test(env)) return json(res, 400, { error: "invalid_env" });
       const webhookUrl = String(b?.webhookUrl || "").trim();
       if (webhookUrl && !/^https?:\/\//.test(webhookUrl)) return json(res, 400, { error: "invalid_webhook_url" });
+      // Preserve existing secret when caller sends the sentinel "__keep__" or omits the field.
+      const all = await readOpsConfig();
+      const prev = all[env] || {};
+      let webhookSecret = prev.webhookSecret || "";
+      if (Object.prototype.hasOwnProperty.call(b || {}, "webhookSecret")) {
+        const incoming = String(b.webhookSecret || "");
+        if (incoming !== "__keep__") webhookSecret = incoming.slice(0, 512);
+      }
       const retentionDays = Math.max(0, Math.min(3650, Number(b?.retentionDays) || 0));
       const retentionCount = Math.max(0, Math.min(1000, Number(b?.retentionCount) || 0));
       let approverEmails = Array.isArray(b?.approverEmails) ? b.approverEmails.map((x) => String(x).trim().toLowerCase()).filter(Boolean) : [];
       approverEmails = [...new Set(approverEmails)].slice(0, 50);
-      const all = await readOpsConfig();
-      all[env] = { webhookUrl, retentionDays, retentionCount, approverEmails };
+      all[env] = { webhookUrl, webhookSecret, retentionDays, retentionCount, approverEmails };
       await writeOpsConfig(all);
-      return json(res, 200, { ok: true, env, config: all[env] });
+      // Do not echo the secret back to the client — signal presence instead.
+      const safe = { ...all[env], webhookSecret: webhookSecret ? "__set__" : "" };
+      return json(res, 200, { ok: true, env, config: safe });
+    }
+
+    // GET /admin/ops/webhook-deliveries?env=&limit= — recent delivery attempts.
+    if (req.method === "GET" && (p === "/admin/ops/webhook-deliveries" || p === "/sandbox/admin/ops/webhook-deliveries")) {
+      const list = await readJsonListFile(OPS_DELIVERIES_FILE, q.get("limit") || 100, {
+        env: q.get("env") || undefined,
+      });
+      return json(res, 200, { ok: true, count: list.length, entries: list });
+    }
+    // POST /admin/ops/webhook-test — { env } — sends a signed test event.
+    if (req.method === "POST" && (p === "/admin/ops/webhook-test" || p === "/sandbox/admin/ops/webhook-test")) {
+      const b = await readJson(req).catch(() => ({}));
+      const env = String(b?.env || "").trim();
+      if (!/^(dev|staging|prod)$/.test(env)) return json(res, 400, { error: "invalid_env" });
+      const cfg = await getEnvConfig(env);
+      if (!cfg.webhookUrl) return json(res, 400, { error: "webhook_not_configured" });
+      const actorEmail = String(req.headers["x-actor-email"] || "") || null;
+      notifyWebhook(env, "ops.webhook.test", { ok: true, message: "test event from Pluto Ops", actor: actorEmail }).catch(() => {});
+      return json(res, 200, { ok: true, env, queued: true, signed: !!cfg.webhookSecret });
     }
 
     // GET /admin/ops/reports — list persisted plan/dry-run/apply reports.
