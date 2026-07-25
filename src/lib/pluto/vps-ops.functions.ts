@@ -421,7 +421,7 @@ export type OpsApprovalEntry = {
   env: OpsEnv;
   action: OpsAction;
   reason: string;
-  payload: Record<string, unknown>;
+  payload: Record<string, string | number | boolean | null>;
   requesterEmail: string | null;
   requesterUserId: string | null;
   approverEmail: string | null;
