@@ -131,19 +131,53 @@ restart_one() {
 }
 
 # ----------- actions -----------
+# ----------- helper: emit report line for migration actions -----------
+emit_report_json() {
+  local kind="$1" outcome="$2" objects_csv="$3" pending_count="$4"
+  local rid; rid="$(cat /proc/sys/kernel/random/uuid 2>/dev/null || echo "rep-$$-$(date +%s)")"
+  printf 'REPORT_JSON: {"id":"%s","env":"%s","kind":"%s","outcome":"%s","affected":"%s","pending":%s,"createdAt":"%s"}\n' \
+    "$rid" "$ENV_NAME" "$kind" "$outcome" "$objects_csv" "${pending_count:-0}" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+}
+
+extract_objects_from_pending() {
+  # scan pending migrations dir if run-migrator surfaced a list; best-effort.
+  local mig_dir="$DEPLOY_DIR/../migrations"; [ -d "$mig_dir" ] || mig_dir="$(dirname "$DEPLOY_DIR")/migrations"
+  [ -d "$mig_dir" ] || return 0
+  grep -hoiE '(CREATE|ALTER|DROP)[[:space:]]+(TABLE|INDEX|VIEW|FUNCTION|SCHEMA|TYPE|POLICY|TRIGGER)[[:space:]]+[A-Za-z0-9_."]+' "$mig_dir"/*.sql 2>/dev/null \
+    | awk '{print $NF}' | tr -d '";,' | sort -u | head -25 | tr '\n' '|' | sed 's/|$//'
+}
+
 case "$ACTION" in
   migrations-plan)
     [ -n "$DEPLOY_DIR" ] || { log "no deploy dir found"; exit 127; }
-    bash "$DEPLOY_DIR/preflight-migrations.sh" --plan-only 2>&1 || \
-      bash "$DEPLOY_DIR/run-migrator.sh" --plan 2>&1
+    tmp_out="$(mktemp)"
+    (bash "$DEPLOY_DIR/preflight-migrations.sh" --plan-only 2>&1 || bash "$DEPLOY_DIR/run-migrator.sh" --plan 2>&1) | tee "$tmp_out"
+    _rc=${PIPESTATUS[0]}
+    _pending=$(grep -cE '^(pending|would apply|→ )' "$tmp_out" 2>/dev/null || echo 0)
+    _outcome=$([ "$_rc" = "0" ] && echo "ok" || echo "failed")
+    emit_report_json "plan" "$_outcome" "$(extract_objects_from_pending)" "$_pending"
+    rm -f "$tmp_out"
+    exit "$_rc"
     ;;
   migrations-dry-run)
     [ -n "$DEPLOY_DIR" ] || { log "no deploy dir found"; exit 127; }
-    bash "$DEPLOY_DIR/run-migrator.sh" --dry-run 2>&1
+    tmp_out="$(mktemp)"
+    bash "$DEPLOY_DIR/run-migrator.sh" --dry-run 2>&1 | tee "$tmp_out"
+    _rc=${PIPESTATUS[0]}
+    _outcome=$([ "$_rc" = "0" ] && echo "ok" || echo "failed")
+    emit_report_json "dry-run" "$_outcome" "$(extract_objects_from_pending)" "0"
+    rm -f "$tmp_out"
+    exit "$_rc"
     ;;
   migrations-apply)
     [ -n "$DEPLOY_DIR" ] || { log "no deploy dir found"; exit 127; }
-    bash "$DEPLOY_DIR/run-migrator.sh" 2>&1
+    tmp_out="$(mktemp)"
+    bash "$DEPLOY_DIR/run-migrator.sh" 2>&1 | tee "$tmp_out"
+    _rc=${PIPESTATUS[0]}
+    _outcome=$([ "$_rc" = "0" ] && echo "ok" || echo "failed")
+    emit_report_json "apply" "$_outcome" "$(extract_objects_from_pending)" "0"
+    rm -f "$tmp_out"
+    exit "$_rc"
     ;;
   migrations-rollback-plan)
     [ -n "$TARGET" ] || { log "--target required"; exit 2; }
