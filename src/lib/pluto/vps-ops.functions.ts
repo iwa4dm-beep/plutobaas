@@ -609,6 +609,7 @@ export const approveOpsRequest = createServerFn({ method: "POST" })
   .middleware([requirePlutoAdmin])
   .inputValidator((d: unknown) => DecideInput.parse(d))
   .handler(async ({ data, context }) => {
+    requireOpsRole(context, "approve");
     const r = await opsFetch("prod", `/approvals/${data.id}/approve`, { method: "POST", body: JSON.stringify({ note: data.note ?? "" }) }, actorFrom(context));
     return { ok: r.ok, entry: (r.body as { entry?: OpsApprovalEntry } | null)?.entry ?? null, error: r.error ?? (r.ok ? undefined : `HTTP ${r.status} ${JSON.stringify(r.body)}`) };
   });
@@ -617,6 +618,7 @@ export const rejectOpsRequest = createServerFn({ method: "POST" })
   .middleware([requirePlutoAdmin])
   .inputValidator((d: unknown) => DecideInput.parse(d))
   .handler(async ({ data, context }) => {
+    requireOpsRole(context, "approve");
     const r = await opsFetch("prod", `/approvals/${data.id}/reject`, { method: "POST", body: JSON.stringify({ note: data.note ?? "" }) }, actorFrom(context));
     return { ok: r.ok, entry: (r.body as { entry?: OpsApprovalEntry } | null)?.entry ?? null, error: r.error ?? (r.ok ? undefined : `HTTP ${r.status}`) };
   });
@@ -625,8 +627,72 @@ export const executeOpsRequest = createServerFn({ method: "POST" })
   .middleware([requirePlutoAdmin])
   .inputValidator((d: unknown) => z.object({ env: z.literal("prod"), id: z.string().regex(/^[A-Za-z0-9-]{8,64}$/) }).parse(d))
   .handler(async ({ data, context }) => {
+    requireOpsRole(context, "execute-prod");
     const r = await opsFetch("prod", `/approvals/${data.id}/execute`, { method: "POST", body: JSON.stringify({}) }, actorFrom(context));
     return { ok: r.ok, entry: (r.body as { entry?: OpsApprovalEntry } | null)?.entry ?? null, error: r.error ?? (r.ok ? undefined : `HTTP ${r.status}`) };
+  });
+
+/* ---------------- Ops role helpers (RBAC) ---------------- */
+
+export type OpsRoleLevel = "view" | "approve" | "execute-prod";
+
+/**
+ * Coarse RBAC on top of `requirePlutoAdmin`.
+ *   - "view":         any admin
+ *   - "approve":      workspace owner / service_role / superadmin
+ *   - "execute-prod": workspace owner / service_role / superadmin
+ * The dashboard also gates the UI with the same predicates; this is the
+ * server-side belt-and-braces check so a crafted request cannot bypass it.
+ */
+function requireOpsRole(context: unknown, level: OpsRoleLevel): void {
+  const c = context as { plutoAdmin?: { raw?: Record<string, unknown> } } | undefined;
+  const raw = (c?.plutoAdmin?.raw ?? {}) as Record<string, unknown>;
+  const appMeta = (raw.app_metadata as Record<string, unknown> | undefined) ?? {};
+  const userMeta = (raw.user_metadata as Record<string, unknown> | undefined) ?? {};
+  const roles = new Set<string>();
+  const push = (v: unknown) => { if (typeof v === "string" && v) roles.add(v.toLowerCase()); };
+  push(raw.role); push(appMeta.role); push(userMeta.role);
+  for (const arr of [appMeta.roles, userMeta.roles]) {
+    if (Array.isArray(arr)) for (const r of arr) push(r);
+  }
+  const isSuper =
+    Boolean(raw.is_superadmin) ||
+    Boolean(appMeta.is_superadmin) ||
+    Boolean(appMeta.superadmin) ||
+    Boolean(userMeta.is_superadmin);
+  const allowed = (() => {
+    if (isSuper) return true;
+    if (roles.has("service_role") || roles.has("superadmin") || roles.has("owner")) return true;
+    if (level === "view") return roles.has("admin");
+    return false;
+  })();
+  if (!allowed) {
+    const need =
+      level === "execute-prod"
+        ? "workspace owner (or service_role) to execute prod actions"
+        : level === "approve"
+          ? "workspace owner (or service_role) to approve prod actions"
+          : "admin role";
+    throw new Error(JSON.stringify({
+      status: 403,
+      error: "forbidden",
+      message: `Requires ${need}`,
+      hint: "Ask a workspace owner to grant the required role.",
+    }));
+  }
+}
+
+/**
+ * Public probe — lets the dashboard hide buttons it wouldn't be allowed to
+ * click. Returns `{ view, approve, executeProd }` for the caller's admin.
+ */
+export const getOpsRoleCapabilities = createServerFn({ method: "POST" })
+  .middleware([requirePlutoAdmin])
+  .handler(async ({ context }): Promise<{ view: boolean; approve: boolean; executeProd: boolean }> => {
+    const probe = (level: OpsRoleLevel): boolean => {
+      try { requireOpsRole(context, level); return true; } catch { return false; }
+    };
+    return { view: probe("view"), approve: probe("approve"), executeProd: probe("execute-prod") };
   });
 
 /* ---------------- helpers ---------------- */
