@@ -53,9 +53,6 @@ function GatedTracesPage() {
   );
 }
 
-const _dummyClose = createFileRoute("/dashboard/traces")({
-  component: () => null,
-});
 
 const STATUS_PRESETS: Array<{ label: string; filters: Partial<AdminTraceFilters> }> = [
   { label: "All",              filters: {} },
