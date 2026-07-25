@@ -90,7 +90,9 @@ export async function swaggerPlugin(app: FastifyInstance, cfg: Config) {
         { name: 'admin', description: 'Admin surface (service-role only)' },
       ],
     },
-    // Auto-tag routes by first path segment (e.g. /auth/v1/... → "auth")
+    // Auto-tag routes by first path segment (e.g. /auth/v1/... → "auth") AND
+    // auto-inject the standardized error responses + `x-request-id` request
+    // parameter so every operation in the spec documents the same envelope.
     transform: ({ schema, url }) => {
       const seg = url.split('/').filter(Boolean)[0] ?? 'root';
       const tag =
@@ -99,6 +101,27 @@ export async function swaggerPlugin(app: FastifyInstance, cfg: Config) {
           : seg;
       const s = (schema ?? {}) as Record<string, unknown>;
       if (!s.tags) s.tags = [tag];
+
+      // Default error responses — merge, don't overwrite route-specific ones.
+      const existing = (s.response as Record<string, unknown> | undefined) ?? {};
+      const defaults: Record<string, unknown> = {
+        400: { $ref: '#/components/responses/BadRequest' },
+        401: { $ref: '#/components/responses/Unauthorized' },
+        403: { $ref: '#/components/responses/Forbidden' },
+        404: { $ref: '#/components/responses/NotFound' },
+        409: { $ref: '#/components/responses/Conflict' },
+        429: { $ref: '#/components/responses/TooManyRequests' },
+        500: { $ref: '#/components/responses/InternalError' },
+      };
+      s.response = { ...defaults, ...existing };
+
+      // Correlation-ID parameter — appended once per route.
+      const params = Array.isArray(s.parameters) ? [...(s.parameters as unknown[])] : [];
+      if (!params.some((p) => (p as { name?: string })?.name === 'x-request-id')) {
+        params.push({ $ref: '#/components/parameters/RequestId' });
+      }
+      s.parameters = params;
+
       return { schema: s as any, url };
     },
   });
