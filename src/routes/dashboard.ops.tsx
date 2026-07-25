@@ -187,7 +187,7 @@ function ServiceCard() {
     setPending(service);
     setRestartResult(null);
     try {
-      const r = await restart({ data: { service, confirm: service } });
+      const r = (await restart({ data: { service, confirm: service } })) as OpsResult;
       setRestartResult(r);
       await loadHealth();
     } catch (e) {
