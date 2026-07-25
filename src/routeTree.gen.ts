@@ -106,7 +106,12 @@ import { Route as SdkDownloadFileRouteImport } from './routes/sdk.download.$file
 import { Route as DashboardTracesTrendsRouteImport } from './routes/dashboard.traces.trends'
 import { Route as DashboardTracesSettingsRouteImport } from './routes/dashboard.traces.settings'
 import { Route as DashboardOpsSettingsRouteImport } from './routes/dashboard.ops.settings'
+import { Route as DashboardOpsRlsDebugRouteImport } from './routes/dashboard.ops.rls-debug'
+import { Route as DashboardOpsMigrationsRouteImport } from './routes/dashboard.ops.migrations'
+import { Route as DashboardOpsJwtInspectRouteImport } from './routes/dashboard.ops.jwt-inspect'
+import { Route as DashboardOpsExplainRouteImport } from './routes/dashboard.ops.explain'
 import { Route as DashboardOpsExecutionsRouteImport } from './routes/dashboard.ops.executions'
+import { Route as DashboardOpsDockerCheckRouteImport } from './routes/dashboard.ops.docker-check'
 import { Route as DashboardOpsAuditRouteImport } from './routes/dashboard.ops.audit'
 import { Route as DashboardIntegrationsLovableFrontendRouteImport } from './routes/dashboard.integrations.lovable-frontend'
 import { Route as DashboardCustomDomainsAuditRouteImport } from './routes/dashboard.custom-domains.audit'
@@ -618,9 +623,34 @@ const DashboardOpsSettingsRoute = DashboardOpsSettingsRouteImport.update({
   path: '/settings',
   getParentRoute: () => DashboardOpsRoute,
 } as any)
+const DashboardOpsRlsDebugRoute = DashboardOpsRlsDebugRouteImport.update({
+  id: '/rls-debug',
+  path: '/rls-debug',
+  getParentRoute: () => DashboardOpsRoute,
+} as any)
+const DashboardOpsMigrationsRoute = DashboardOpsMigrationsRouteImport.update({
+  id: '/migrations',
+  path: '/migrations',
+  getParentRoute: () => DashboardOpsRoute,
+} as any)
+const DashboardOpsJwtInspectRoute = DashboardOpsJwtInspectRouteImport.update({
+  id: '/jwt-inspect',
+  path: '/jwt-inspect',
+  getParentRoute: () => DashboardOpsRoute,
+} as any)
+const DashboardOpsExplainRoute = DashboardOpsExplainRouteImport.update({
+  id: '/explain',
+  path: '/explain',
+  getParentRoute: () => DashboardOpsRoute,
+} as any)
 const DashboardOpsExecutionsRoute = DashboardOpsExecutionsRouteImport.update({
   id: '/executions',
   path: '/executions',
+  getParentRoute: () => DashboardOpsRoute,
+} as any)
+const DashboardOpsDockerCheckRoute = DashboardOpsDockerCheckRouteImport.update({
+  id: '/docker-check',
+  path: '/docker-check',
   getParentRoute: () => DashboardOpsRoute,
 } as any)
 const DashboardOpsAuditRoute = DashboardOpsAuditRouteImport.update({
@@ -824,7 +854,12 @@ export interface FileRoutesByFullPath {
   '/dashboard/custom-domains/audit': typeof DashboardCustomDomainsAuditRoute
   '/dashboard/integrations/lovable-frontend': typeof DashboardIntegrationsLovableFrontendRoute
   '/dashboard/ops/audit': typeof DashboardOpsAuditRoute
+  '/dashboard/ops/docker-check': typeof DashboardOpsDockerCheckRoute
   '/dashboard/ops/executions': typeof DashboardOpsExecutionsRoute
+  '/dashboard/ops/explain': typeof DashboardOpsExplainRoute
+  '/dashboard/ops/jwt-inspect': typeof DashboardOpsJwtInspectRoute
+  '/dashboard/ops/migrations': typeof DashboardOpsMigrationsRoute
+  '/dashboard/ops/rls-debug': typeof DashboardOpsRlsDebugRoute
   '/dashboard/ops/settings': typeof DashboardOpsSettingsRoute
   '/dashboard/traces/settings': typeof DashboardTracesSettingsRoute
   '/dashboard/traces/trends': typeof DashboardTracesTrendsRoute
@@ -940,7 +975,12 @@ export interface FileRoutesByTo {
   '/dashboard/custom-domains/audit': typeof DashboardCustomDomainsAuditRoute
   '/dashboard/integrations/lovable-frontend': typeof DashboardIntegrationsLovableFrontendRoute
   '/dashboard/ops/audit': typeof DashboardOpsAuditRoute
+  '/dashboard/ops/docker-check': typeof DashboardOpsDockerCheckRoute
   '/dashboard/ops/executions': typeof DashboardOpsExecutionsRoute
+  '/dashboard/ops/explain': typeof DashboardOpsExplainRoute
+  '/dashboard/ops/jwt-inspect': typeof DashboardOpsJwtInspectRoute
+  '/dashboard/ops/migrations': typeof DashboardOpsMigrationsRoute
+  '/dashboard/ops/rls-debug': typeof DashboardOpsRlsDebugRoute
   '/dashboard/ops/settings': typeof DashboardOpsSettingsRoute
   '/dashboard/traces/settings': typeof DashboardTracesSettingsRoute
   '/dashboard/traces/trends': typeof DashboardTracesTrendsRoute
@@ -1058,7 +1098,12 @@ export interface FileRoutesById {
   '/dashboard/custom-domains/audit': typeof DashboardCustomDomainsAuditRoute
   '/dashboard/integrations/lovable-frontend': typeof DashboardIntegrationsLovableFrontendRoute
   '/dashboard/ops/audit': typeof DashboardOpsAuditRoute
+  '/dashboard/ops/docker-check': typeof DashboardOpsDockerCheckRoute
   '/dashboard/ops/executions': typeof DashboardOpsExecutionsRoute
+  '/dashboard/ops/explain': typeof DashboardOpsExplainRoute
+  '/dashboard/ops/jwt-inspect': typeof DashboardOpsJwtInspectRoute
+  '/dashboard/ops/migrations': typeof DashboardOpsMigrationsRoute
+  '/dashboard/ops/rls-debug': typeof DashboardOpsRlsDebugRoute
   '/dashboard/ops/settings': typeof DashboardOpsSettingsRoute
   '/dashboard/traces/settings': typeof DashboardTracesSettingsRoute
   '/dashboard/traces/trends': typeof DashboardTracesTrendsRoute
@@ -1177,7 +1222,12 @@ export interface FileRouteTypes {
     | '/dashboard/custom-domains/audit'
     | '/dashboard/integrations/lovable-frontend'
     | '/dashboard/ops/audit'
+    | '/dashboard/ops/docker-check'
     | '/dashboard/ops/executions'
+    | '/dashboard/ops/explain'
+    | '/dashboard/ops/jwt-inspect'
+    | '/dashboard/ops/migrations'
+    | '/dashboard/ops/rls-debug'
     | '/dashboard/ops/settings'
     | '/dashboard/traces/settings'
     | '/dashboard/traces/trends'
@@ -1293,7 +1343,12 @@ export interface FileRouteTypes {
     | '/dashboard/custom-domains/audit'
     | '/dashboard/integrations/lovable-frontend'
     | '/dashboard/ops/audit'
+    | '/dashboard/ops/docker-check'
     | '/dashboard/ops/executions'
+    | '/dashboard/ops/explain'
+    | '/dashboard/ops/jwt-inspect'
+    | '/dashboard/ops/migrations'
+    | '/dashboard/ops/rls-debug'
     | '/dashboard/ops/settings'
     | '/dashboard/traces/settings'
     | '/dashboard/traces/trends'
@@ -1410,7 +1465,12 @@ export interface FileRouteTypes {
     | '/dashboard/custom-domains/audit'
     | '/dashboard/integrations/lovable-frontend'
     | '/dashboard/ops/audit'
+    | '/dashboard/ops/docker-check'
     | '/dashboard/ops/executions'
+    | '/dashboard/ops/explain'
+    | '/dashboard/ops/jwt-inspect'
+    | '/dashboard/ops/migrations'
+    | '/dashboard/ops/rls-debug'
     | '/dashboard/ops/settings'
     | '/dashboard/traces/settings'
     | '/dashboard/traces/trends'
@@ -2127,11 +2187,46 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardOpsSettingsRouteImport
       parentRoute: typeof DashboardOpsRoute
     }
+    '/dashboard/ops/rls-debug': {
+      id: '/dashboard/ops/rls-debug'
+      path: '/rls-debug'
+      fullPath: '/dashboard/ops/rls-debug'
+      preLoaderRoute: typeof DashboardOpsRlsDebugRouteImport
+      parentRoute: typeof DashboardOpsRoute
+    }
+    '/dashboard/ops/migrations': {
+      id: '/dashboard/ops/migrations'
+      path: '/migrations'
+      fullPath: '/dashboard/ops/migrations'
+      preLoaderRoute: typeof DashboardOpsMigrationsRouteImport
+      parentRoute: typeof DashboardOpsRoute
+    }
+    '/dashboard/ops/jwt-inspect': {
+      id: '/dashboard/ops/jwt-inspect'
+      path: '/jwt-inspect'
+      fullPath: '/dashboard/ops/jwt-inspect'
+      preLoaderRoute: typeof DashboardOpsJwtInspectRouteImport
+      parentRoute: typeof DashboardOpsRoute
+    }
+    '/dashboard/ops/explain': {
+      id: '/dashboard/ops/explain'
+      path: '/explain'
+      fullPath: '/dashboard/ops/explain'
+      preLoaderRoute: typeof DashboardOpsExplainRouteImport
+      parentRoute: typeof DashboardOpsRoute
+    }
     '/dashboard/ops/executions': {
       id: '/dashboard/ops/executions'
       path: '/executions'
       fullPath: '/dashboard/ops/executions'
       preLoaderRoute: typeof DashboardOpsExecutionsRouteImport
+      parentRoute: typeof DashboardOpsRoute
+    }
+    '/dashboard/ops/docker-check': {
+      id: '/dashboard/ops/docker-check'
+      path: '/docker-check'
+      fullPath: '/dashboard/ops/docker-check'
+      preLoaderRoute: typeof DashboardOpsDockerCheckRouteImport
       parentRoute: typeof DashboardOpsRoute
     }
     '/dashboard/ops/audit': {
@@ -2302,13 +2397,23 @@ const DashboardIntegrationsRouteWithChildren =
 
 interface DashboardOpsRouteChildren {
   DashboardOpsAuditRoute: typeof DashboardOpsAuditRoute
+  DashboardOpsDockerCheckRoute: typeof DashboardOpsDockerCheckRoute
   DashboardOpsExecutionsRoute: typeof DashboardOpsExecutionsRoute
+  DashboardOpsExplainRoute: typeof DashboardOpsExplainRoute
+  DashboardOpsJwtInspectRoute: typeof DashboardOpsJwtInspectRoute
+  DashboardOpsMigrationsRoute: typeof DashboardOpsMigrationsRoute
+  DashboardOpsRlsDebugRoute: typeof DashboardOpsRlsDebugRoute
   DashboardOpsSettingsRoute: typeof DashboardOpsSettingsRoute
 }
 
 const DashboardOpsRouteChildren: DashboardOpsRouteChildren = {
   DashboardOpsAuditRoute: DashboardOpsAuditRoute,
+  DashboardOpsDockerCheckRoute: DashboardOpsDockerCheckRoute,
   DashboardOpsExecutionsRoute: DashboardOpsExecutionsRoute,
+  DashboardOpsExplainRoute: DashboardOpsExplainRoute,
+  DashboardOpsJwtInspectRoute: DashboardOpsJwtInspectRoute,
+  DashboardOpsMigrationsRoute: DashboardOpsMigrationsRoute,
+  DashboardOpsRlsDebugRoute: DashboardOpsRlsDebugRoute,
   DashboardOpsSettingsRoute: DashboardOpsSettingsRoute,
 }
 
