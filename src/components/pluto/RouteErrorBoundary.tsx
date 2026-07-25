@@ -1,9 +1,11 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Link, useRouter, useNavigate, useRouterState } from "@tanstack/react-router";
-import { AlertTriangle, RefreshCw, Home, LogIn } from "lucide-react";
+import { AlertTriangle, RefreshCw, Home, LogIn, Copy, Check, LifeBuoy } from "lucide-react";
 import { describeError } from "@/lib/pluto/live";
 import { reportLovableError } from "@/lib/lovable-error-reporting";
 import { parseAuthFailure, logAuthFailure } from "@/lib/pluto/auth-error";
+
+const SUPPORT_EMAIL = "support@timescard.cloud";
 
 /**
  * RouteErrorBoundary — canonical error UI used by every route (and the
