@@ -29,7 +29,7 @@ import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
 import { spawn } from "node:child_process";
-import { randomUUID, timingSafeEqual, createHash, randomBytes } from "node:crypto";
+import { randomUUID, timingSafeEqual, createHash, randomBytes, createHmac } from "node:crypto";
 
 const PORT = Number(process.env.PORT ?? process.env.SANDBOX_WORKER_PORT ?? 8787);
 const SECRET = process.env.SANDBOX_SHARED_SECRET ?? "";
@@ -49,6 +49,10 @@ const OPS_REPORTS_FILE = path.join(SITES_ROOT, ".ops-reports.json");
 const OPS_REPORTS_MAX = 300;
 const OPS_APPROVALS_FILE = path.join(SITES_ROOT, ".ops-approvals.json");
 const OPS_APPROVALS_MAX = 200;
+const OPS_DELIVERIES_FILE = path.join(SITES_ROOT, ".ops-webhook-deliveries.json");
+const OPS_DELIVERIES_MAX = 500;
+// Exponential backoff schedule (ms). 5 attempts total (1 initial + 4 retries).
+const WEBHOOK_BACKOFF_MS = [1000, 3000, 9000, 27000, 60000];
 const DEFAULT_BASE_DOMAIN = process.env.PLUTO_WILDCARD_HOST || process.env.BASE_DOMAIN || "app.timescard.cloud";
 const NGINX_SITES_ENABLED = process.env.NGINX_SITES_ENABLED || "/etc/nginx/sites-enabled";
 const NGINX_SITES_AVAILABLE = process.env.NGINX_SITES_AVAILABLE || "/etc/nginx/sites-available";
@@ -1382,7 +1386,14 @@ async function writeOpsConfig(cfg) {
 }
 async function getEnvConfig(env) {
   const all = await readOpsConfig();
-  return all[env] || { webhookUrl: "", retentionDays: 0, retentionCount: 0, approverEmails: [] };
+  const cur = all[env] || {};
+  return {
+    webhookUrl: cur.webhookUrl || "",
+    webhookSecret: cur.webhookSecret || "",
+    retentionDays: Number(cur.retentionDays) || 0,
+    retentionCount: Number(cur.retentionCount) || 0,
+    approverEmails: Array.isArray(cur.approverEmails) ? cur.approverEmails : [],
+  };
 }
 
 // ---------- Ops approvals (Ops v3) ----------
@@ -1408,26 +1419,77 @@ async function updateApproval(id, patch) {
   return list[idx];
 }
 
-// ---------- Notifications (Ops v3) ----------
-async function notifyWebhook(env, event, payload) {
-  try {
-    const cfg = await getEnvConfig(env);
-    const url = cfg.webhookUrl && String(cfg.webhookUrl).trim();
-    if (!url || !/^https?:\/\//.test(url)) return;
-    const body = JSON.stringify({ event, env, at: new Date().toISOString(), ...payload });
-    const u = new URL(url);
+// ---------- Webhook notifications (HMAC signed + exponential-backoff retry) ----------
+async function appendDelivery(entry) { return appendJsonListFile(OPS_DELIVERIES_FILE, entry, OPS_DELIVERIES_MAX); }
+
+/**
+ * Send a webhook once. Resolves with { status, error } — never throws.
+ * When `secret` is set, adds:
+ *   X-Pluto-Timestamp:  unix-ms
+ *   X-Pluto-Signature:  sha256=hex(HMAC(secret, `${timestamp}.${rawBody}`))
+ * Consumers verify by recomputing HMAC and constant-time comparing.
+ */
+function postWebhookOnce({ url, body, secret, event, deliveryId, attempt }) {
+  return new Promise((resolve) => {
+    let u;
+    try { u = new URL(url); } catch (e) { return resolve({ status: 0, error: `invalid_url: ${e.message}` }); }
     const lib = u.protocol === "https:" ? https : http;
-    await new Promise((resolve) => {
-      const req = lib.request(url, {
-        method: "POST",
-        headers: { "content-type": "application/json", "content-length": Buffer.byteLength(body), "user-agent": "pluto-ops-worker/1" },
-        timeout: 5000,
-      }, (r) => { r.resume(); r.on("end", resolve); r.on("error", () => resolve()); });
-      req.on("error", () => resolve());
-      req.on("timeout", () => { req.destroy(); resolve(); });
-      req.write(body); req.end();
+    const ts = Date.now().toString();
+    const headers = {
+      "content-type": "application/json",
+      "content-length": Buffer.byteLength(body),
+      "user-agent": "pluto-ops-worker/2",
+      "x-pluto-event": event,
+      "x-pluto-delivery": deliveryId,
+      "x-pluto-attempt": String(attempt),
+      "x-pluto-timestamp": ts,
+    };
+    if (secret) {
+      const sig = createHmac("sha256", secret).update(`${ts}.${body}`).digest("hex");
+      headers["x-pluto-signature"] = `sha256=${sig}`;
+    }
+    const chunks = [];
+    const req = lib.request(url, { method: "POST", headers, timeout: 8000 }, (r) => {
+      r.on("data", (b) => { if (chunks.reduce((n, c) => n + c.length, 0) < 4096) chunks.push(b); });
+      r.on("end", () => resolve({ status: r.statusCode || 0, error: null, tail: Buffer.concat(chunks).toString("utf8").slice(0, 512) }));
+      r.on("error", (e) => resolve({ status: r.statusCode || 0, error: e.message }));
     });
-  } catch { /* fire-and-forget */ }
+    req.on("error", (e) => resolve({ status: 0, error: e.message }));
+    req.on("timeout", () => { req.destroy(); resolve({ status: 0, error: "timeout" }); });
+    req.write(body); req.end();
+  });
+}
+
+async function notifyWebhook(env, event, payload) {
+  let cfg;
+  try { cfg = await getEnvConfig(env); } catch { return; }
+  const url = cfg.webhookUrl && String(cfg.webhookUrl).trim();
+  if (!url || !/^https?:\/\//.test(url)) return;
+  const secret = cfg.webhookSecret ? String(cfg.webhookSecret) : "";
+  const deliveryId = randomUUID();
+  const enveloped = { event, env, at: new Date().toISOString(), delivery: deliveryId, ...payload };
+  const body = JSON.stringify(enveloped);
+  // Schedule attempt N. On non-2xx or transport error, retry per WEBHOOK_BACKOFF_MS.
+  const attemptOnce = async (attempt) => {
+    const startedAt = new Date().toISOString();
+    const r = await postWebhookOnce({ url, body, secret, event, deliveryId, attempt });
+    const ok = r.status >= 200 && r.status < 300;
+    await appendDelivery({
+      id: `${deliveryId}#${attempt}`,
+      deliveryId, env, event, url,
+      attempt, maxAttempts: WEBHOOK_BACKOFF_MS.length,
+      status: ok ? "delivered" : (attempt >= WEBHOOK_BACKOFF_MS.length ? "failed" : "retry-scheduled"),
+      httpStatus: r.status, error: r.error || null, responseTail: r.tail || null,
+      signed: !!secret, at: startedAt,
+    }).catch(() => {});
+    if (ok) return;
+    if (attempt >= WEBHOOK_BACKOFF_MS.length) return; // exhausted
+    const delay = WEBHOOK_BACKOFF_MS[attempt - 1];
+    // Jitter ±20% to avoid thundering herd.
+    const jittered = Math.floor(delay * (0.8 + Math.random() * 0.4));
+    setTimeout(() => { attemptOnce(attempt + 1).catch(() => {}); }, jittered).unref?.();
+  };
+  attemptOnce(1).catch(() => {});
 }
 
 
