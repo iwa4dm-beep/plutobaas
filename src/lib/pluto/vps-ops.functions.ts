@@ -523,9 +523,9 @@ export const listWebhookDeliveries = createServerFn({ method: "POST" })
 export const sendTestWebhook = createServerFn({ method: "POST" })
   .middleware([requirePlutoAdmin])
   .inputValidator((d: unknown) => z.object({ env: EnvEnum }).parse(d))
-  .handler(async ({ data, context }) => {
+  .handler(async ({ data, context }): Promise<{ ok: boolean; status: number; error?: string }> => {
     const r = await opsFetch(data.env, "/webhook-test", { method: "POST", body: JSON.stringify({ env: data.env }) }, actorFrom(context));
-    return { ok: r.ok, status: r.status, body: r.body, error: r.error };
+    return { ok: r.ok, status: r.status, error: r.error };
   });
 
 /* Reports */
