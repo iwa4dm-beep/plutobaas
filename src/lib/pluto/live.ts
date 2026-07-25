@@ -134,9 +134,9 @@ export function newTraceId(): string {
   return `cli_${rand}`;
 }
 
-export function describeError(e: unknown): { title: string; detail?: string; status?: number; hint?: string } {
+export function describeError(e: unknown): { title: string; detail?: string; status?: number; hint?: string; traceId?: string; fields?: Record<string, string> } {
   if (e instanceof ApiError) {
-    const b = e.body as { error?: string; hint?: string; details?: string; message?: string } | null;
+    const b = e.body as { error?: string; hint?: string; details?: string; message?: string; fields?: Record<string, string>; traceId?: string } | null;
     const parts: string[] = [];
     if (b?.error && b.error !== e.message) parts.push(b.error);
     if (b?.hint) parts.push(`hint: ${b.hint}`);
@@ -146,6 +146,8 @@ export function describeError(e: unknown): { title: string; detail?: string; sta
       detail: parts.join(" — ") || undefined,
       status: e.status,
       hint: b?.hint,
+      traceId: e.traceId ?? b?.traceId,
+      fields: e.fields ?? b?.fields,
     };
   }
   if (e instanceof Error) {
