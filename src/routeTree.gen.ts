@@ -67,6 +67,7 @@ import { Route as DashboardPlutoAuthAdvancedRouteImport } from './routes/dashboa
 import { Route as DashboardPlutoAuditRouteImport } from './routes/dashboard.pluto-audit'
 import { Route as DashboardPlutoAiRouteImport } from './routes/dashboard.pluto-ai'
 import { Route as DashboardPlutoAdminRouteImport } from './routes/dashboard.pluto-admin'
+import { Route as DashboardOpsRouteImport } from './routes/dashboard.ops'
 import { Route as DashboardObservabilityRouteImport } from './routes/dashboard.observability'
 import { Route as DashboardMigrationsRouteImport } from './routes/dashboard.migrations'
 import { Route as DashboardMfaRouteImport } from './routes/dashboard.mfa'
@@ -416,6 +417,11 @@ const DashboardPlutoAdminRoute = DashboardPlutoAdminRouteImport.update({
   path: '/pluto-admin',
   getParentRoute: () => DashboardRoute,
 } as any)
+const DashboardOpsRoute = DashboardOpsRouteImport.update({
+  id: '/ops',
+  path: '/ops',
+  getParentRoute: () => DashboardRoute,
+} as any)
 const DashboardObservabilityRoute = DashboardObservabilityRouteImport.update({
   id: '/observability',
   path: '/observability',
@@ -729,6 +735,7 @@ export interface FileRoutesByFullPath {
   '/dashboard/mfa': typeof DashboardMfaRoute
   '/dashboard/migrations': typeof DashboardMigrationsRoute
   '/dashboard/observability': typeof DashboardObservabilityRoute
+  '/dashboard/ops': typeof DashboardOpsRoute
   '/dashboard/pluto-admin': typeof DashboardPlutoAdminRoute
   '/dashboard/pluto-ai': typeof DashboardPlutoAiRoute
   '/dashboard/pluto-audit': typeof DashboardPlutoAuditRoute
@@ -840,6 +847,7 @@ export interface FileRoutesByTo {
   '/dashboard/mfa': typeof DashboardMfaRoute
   '/dashboard/migrations': typeof DashboardMigrationsRoute
   '/dashboard/observability': typeof DashboardObservabilityRoute
+  '/dashboard/ops': typeof DashboardOpsRoute
   '/dashboard/pluto-admin': typeof DashboardPlutoAdminRoute
   '/dashboard/pluto-ai': typeof DashboardPlutoAiRoute
   '/dashboard/pluto-audit': typeof DashboardPlutoAuditRoute
@@ -953,6 +961,7 @@ export interface FileRoutesById {
   '/dashboard/mfa': typeof DashboardMfaRoute
   '/dashboard/migrations': typeof DashboardMigrationsRoute
   '/dashboard/observability': typeof DashboardObservabilityRoute
+  '/dashboard/ops': typeof DashboardOpsRoute
   '/dashboard/pluto-admin': typeof DashboardPlutoAdminRoute
   '/dashboard/pluto-ai': typeof DashboardPlutoAiRoute
   '/dashboard/pluto-audit': typeof DashboardPlutoAuditRoute
@@ -1067,6 +1076,7 @@ export interface FileRouteTypes {
     | '/dashboard/mfa'
     | '/dashboard/migrations'
     | '/dashboard/observability'
+    | '/dashboard/ops'
     | '/dashboard/pluto-admin'
     | '/dashboard/pluto-ai'
     | '/dashboard/pluto-audit'
@@ -1178,6 +1188,7 @@ export interface FileRouteTypes {
     | '/dashboard/mfa'
     | '/dashboard/migrations'
     | '/dashboard/observability'
+    | '/dashboard/ops'
     | '/dashboard/pluto-admin'
     | '/dashboard/pluto-ai'
     | '/dashboard/pluto-audit'
@@ -1290,6 +1301,7 @@ export interface FileRouteTypes {
     | '/dashboard/mfa'
     | '/dashboard/migrations'
     | '/dashboard/observability'
+    | '/dashboard/ops'
     | '/dashboard/pluto-admin'
     | '/dashboard/pluto-ai'
     | '/dashboard/pluto-audit'
@@ -1794,6 +1806,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardPlutoAdminRouteImport
       parentRoute: typeof DashboardRoute
     }
+    '/dashboard/ops': {
+      id: '/dashboard/ops'
+      path: '/ops'
+      fullPath: '/dashboard/ops'
+      preLoaderRoute: typeof DashboardOpsRouteImport
+      parentRoute: typeof DashboardRoute
+    }
     '/dashboard/observability': {
       id: '/dashboard/observability'
       path: '/observability'
@@ -2262,6 +2281,7 @@ interface DashboardRouteChildren {
   DashboardMfaRoute: typeof DashboardMfaRoute
   DashboardMigrationsRoute: typeof DashboardMigrationsRoute
   DashboardObservabilityRoute: typeof DashboardObservabilityRoute
+  DashboardOpsRoute: typeof DashboardOpsRoute
   DashboardPlutoAdminRoute: typeof DashboardPlutoAdminRoute
   DashboardPlutoAiRoute: typeof DashboardPlutoAiRoute
   DashboardPlutoAuditRoute: typeof DashboardPlutoAuditRoute
@@ -2342,6 +2362,7 @@ const DashboardRouteChildren: DashboardRouteChildren = {
   DashboardMfaRoute: DashboardMfaRoute,
   DashboardMigrationsRoute: DashboardMigrationsRoute,
   DashboardObservabilityRoute: DashboardObservabilityRoute,
+  DashboardOpsRoute: DashboardOpsRoute,
   DashboardPlutoAdminRoute: DashboardPlutoAdminRoute,
   DashboardPlutoAiRoute: DashboardPlutoAiRoute,
   DashboardPlutoAuditRoute: DashboardPlutoAuditRoute,

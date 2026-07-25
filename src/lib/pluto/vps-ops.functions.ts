@@ -31,7 +31,7 @@ export type OpsResult = {
   startedAt: string;
   finishedAt: string;
   // Parsed structured output when the wrapper emits JSON on stdout.
-  parsed?: unknown;
+  parsed?: string | null;
 };
 
 function envFirst(...keys: string[]): string {
@@ -90,6 +90,9 @@ async function callOps(body: Record<string, unknown>, action: OpsAction, service
       ok?: boolean; exitCode?: number; tail?: string; hint?: string | null; parsed?: unknown;
     } = {};
     try { parsed = JSON.parse(text); } catch { /* keep raw */ }
+    const parsedJson = parsed.parsed !== undefined
+      ? (() => { try { return JSON.stringify(parsed.parsed); } catch { return null; } })()
+      : null;
     return {
       ok: parsed.ok !== false && (parsed.exitCode == null || parsed.exitCode === 0),
       action, service,
@@ -98,7 +101,7 @@ async function callOps(body: Record<string, unknown>, action: OpsAction, service
       tail: (parsed.tail ?? text).slice(-4096),
       hint: parsed.hint ?? null,
       startedAt, finishedAt,
-      parsed: parsed.parsed,
+      parsed: parsedJson,
     };
   } catch (e) {
     return {

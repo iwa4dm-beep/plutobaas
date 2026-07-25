@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
-import { AlertTriangle, CheckCircle2, HeartPulse, Play, RefreshCw, RotateCcw, ShieldAlert, Terminal } from "lucide-react";
+import { AlertTriangle, CheckCircle2, HeartPulse, Play, RefreshCw, RotateCcw, ShieldAlert } from "lucide-react";
 import { PageHeader } from "@/components/pluto/PageHeader";
 import { TraceAccessGate } from "@/components/pluto/TraceAccessGate";
 import {
@@ -47,8 +47,7 @@ function OpsPageInner() {
     <div className="space-y-6 p-6">
       <PageHeader
         title="Operations"
-        subtitle="Apply migrations and restart services on the VPS backend — no SSH required."
-        icon={<Terminal className="h-5 w-5" />}
+        description="Apply migrations and restart services on the VPS backend — no SSH required."
       />
 
       <div className="grid gap-6 lg:grid-cols-2">
