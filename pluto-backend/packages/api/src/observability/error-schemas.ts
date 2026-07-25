@@ -61,6 +61,22 @@ const UNAUTHORIZED_EXAMPLE = { error: 'UnauthorizedError', message: 'Please sign
 const FORBIDDEN_EXAMPLE = { error: 'ForbiddenError', message: 'You do not have permission to perform this action.', code: '42501', statusCode: 403, traceId: 'cli_...' };
 const NOT_FOUND_EXAMPLE = { error: 'NotFound', message: 'The requested endpoint does not exist.', code: 'route_not_found', statusCode: 404, traceId: 'cli_...' };
 const CONFLICT_EXAMPLE = { error: 'DatabaseError', message: 'That value already exists — please choose another.', code: '23505', statusCode: 409, traceId: 'cli_...' };
+const PAYLOAD_TOO_LARGE_EXAMPLE = {
+  error: 'UploadError',
+  message: 'The uploaded file is 42.10 MiB — the maximum is 20.0 MiB.',
+  code: 'file_too_large',
+  statusCode: 413,
+  traceId: 'cli_...',
+  fields: { file: 'The uploaded file is 42.10 MiB — the maximum is 20.0 MiB.' },
+};
+const UNSUPPORTED_MEDIA_EXAMPLE = {
+  error: 'UploadError',
+  message: 'Files of type "application/x-msdownload" are not accepted. Allowed: image/*, application/pdf.',
+  code: 'unsupported_media_type',
+  statusCode: 415,
+  traceId: 'cli_...',
+  fields: { file: 'Files of type "application/x-msdownload" are not accepted. Allowed: image/*, application/pdf.' },
+};
 const RATE_LIMIT_EXAMPLE = { error: 'RateLimitError', message: 'Too many requests — please slow down and try again.', code: 'rate_limited', statusCode: 429, traceId: 'cli_...' };
 const INTERNAL_EXAMPLE = { error: 'InternalError', message: 'Something went wrong on our side. Please try again.', code: null, statusCode: 500, traceId: 'cli_...' };
 
@@ -69,8 +85,8 @@ const INTERNAL_EXAMPLE = { error: 'InternalError', message: 'Something went wron
  * `schema.response` map. All reference the shared `ApiError` schema so
  * the docs page stays consistent.
  */
-export function standardErrorResponses(opts: { include4xx?: boolean; include5xx?: boolean } = {}) {
-  const { include4xx = true, include5xx = true } = opts;
+export function standardErrorResponses(opts: { include4xx?: boolean; include5xx?: boolean; includeUploads?: boolean } = {}) {
+  const { include4xx = true, include5xx = true, includeUploads = false } = opts;
   const withEx = (example: unknown, description: string) => ({
     description,
     content: { 'application/json': { schema: { $ref: '#/components/schemas/ApiError' }, example } },
@@ -83,6 +99,10 @@ export function standardErrorResponses(opts: { include4xx?: boolean; include5xx?
     out['404'] = withEx(NOT_FOUND_EXAMPLE, 'Resource or route not found.');
     out['409'] = withEx(CONFLICT_EXAMPLE, 'Uniqueness / foreign-key conflict.');
     out['429'] = withEx(RATE_LIMIT_EXAMPLE, 'Rate limit exceeded.');
+  }
+  if (includeUploads) {
+    out['413'] = withEx(PAYLOAD_TOO_LARGE_EXAMPLE, 'Uploaded file or body exceeds the size limit.');
+    out['415'] = withEx(UNSUPPORTED_MEDIA_EXAMPLE, 'Uploaded file type is not accepted.');
   }
   if (include5xx) {
     out['500'] = withEx(INTERNAL_EXAMPLE, 'Unhandled server error. Grep server logs for `traceId`.');
