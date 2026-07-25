@@ -50,8 +50,9 @@ import { runStartupRoleCheck } from './db/verify-roles.js';
 
 import { metricsPlugin } from './observability/metrics.js';
 import { swaggerPlugin } from './observability/swagger.js';
-import { mapError, recordFailure } from './observability/errors.js';
-import { recordErrorEvent } from './observability/error-log.js';
+import { mapError } from './observability/errors.js';
+import { recordErrorEvent, persistErrorEvent } from './observability/error-log.js';
+import { recordFailureWithSample } from './observability/alert-sink.js';
 import { observabilityRoutes } from './routes/observability.js';
 
 
