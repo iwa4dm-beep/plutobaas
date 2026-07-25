@@ -1,6 +1,8 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Loader2, RefreshCw, Search, Download, Copy, ChevronRight, X } from "lucide-react";
+import { z } from "zod";
+import { zodValidator, fallback } from "@tanstack/zod-adapter";
+import { Loader2, RefreshCw, Search, Download, Copy, ChevronRight, X, TrendingUp, Settings2, Link2 } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/pluto/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -14,11 +16,29 @@ import {
   type AdminTraceFilters,
 } from "@/lib/pluto/live";
 
+// Deep-linkable search schema. Everything is optional so operators can share
+// URLs like /dashboard/traces?traceId=xyz or ?minStatus=500&from=...&to=...
+const searchSchema = z.object({
+  traceId:   fallback(z.string(), "").optional(),
+  status:    fallback(z.coerce.number(), 0).optional(),
+  minStatus: fallback(z.coerce.number(), 0).optional(),
+  maxStatus: fallback(z.coerce.number(), 0).optional(),
+  errorCode: fallback(z.string(), "").optional(),
+  tag:       fallback(z.string(), "").optional(),
+  endpoint:  fallback(z.string(), "").optional(),
+  method:    fallback(z.string(), "").optional(),
+  actorId:   fallback(z.string(), "").optional(),
+  from:      fallback(z.string(), "").optional(),
+  to:        fallback(z.string(), "").optional(),
+  limit:     fallback(z.coerce.number(), 50).optional(),
+});
+
 export const Route = createFileRoute("/dashboard/traces")({
+  validateSearch: zodValidator(searchSchema),
   head: () => ({
     meta: [
       { title: "Trace viewer — support triage" },
-      { name: "description", content: "Look up captured error traces by traceId with pagination and filters." },
+      { name: "description", content: "Look up captured error traces by traceId with deep-linkable filters and redacted exports." },
       { name: "robots", content: "noindex" },
     ],
   }),
@@ -41,16 +61,50 @@ function statusTone(status: number): string {
   return "bg-emerald-500/10 text-emerald-600 border-emerald-500/30";
 }
 
+function searchToFilters(s: Record<string, unknown>): AdminTraceFilters {
+  const out: AdminTraceFilters = { limit: (s.limit as number) || 50 };
+  const set = <K extends keyof AdminTraceFilters>(k: K, v: AdminTraceFilters[K] | undefined | "") => {
+    if (v !== undefined && v !== null && v !== "" && v !== 0) (out as any)[k] = v;
+  };
+  set("status",    s.status as number);
+  set("minStatus", s.minStatus as number);
+  set("maxStatus", s.maxStatus as number);
+  set("errorCode", (s.errorCode as string) || undefined);
+  set("tag",       (s.tag as string) || undefined);
+  set("endpoint",  (s.endpoint as string) || undefined);
+  set("method",    ((s.method as string) || "").toUpperCase() as AdminTraceFilters["method"]);
+  set("actorId",   (s.actorId as string) || undefined);
+  set("from",      (s.from as string) || undefined);
+  set("to",        (s.to as string) || undefined);
+  return out;
+}
+
 function TracesPage() {
-  const [lookupId, setLookupId] = useState("");
+  const searchParams = Route.useSearch() as Record<string, unknown>;
+  const navigate = useNavigate({ from: "/dashboard/traces" });
+
+  const [lookupId, setLookupId] = useState((searchParams.traceId as string) || "");
   const [selected, setSelected] = useState<AdminTraceEvent | null>(null);
   const [source, setSource] = useState<"memory" | "database" | null>(null);
 
-  const [filters, setFilters] = useState<AdminTraceFilters>({ limit: 50 });
+  const [filters, setFilters] = useState<AdminTraceFilters>(() => searchToFilters(searchParams));
   const [events, setEvents] = useState<AdminTraceEvent[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [ruleCount, setRuleCount] = useState<number | null>(null);
+
+  // Keep URL in sync with filter state (deep-link out). Debounced-ish via
+  // React batching; navigate replaces search params in place.
+  useEffect(() => {
+    const next: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(filters)) {
+      if (v !== undefined && v !== null && v !== "" && !(k === "limit" && v === 50)) next[k] = v;
+    }
+    if (lookupId) next.traceId = lookupId;
+    void navigate({ search: next, replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filters, lookupId]);
 
   const loadFirstPage = useCallback(async () => {
     if (!isLive()) { setErr("Live backend not configured."); return; }
@@ -59,6 +113,7 @@ function TracesPage() {
       const r = await adminTraces.list(filters);
       setEvents(r.events);
       setCursor(r.nextCursor);
+      if (typeof r.redactionRuleCount === "number") setRuleCount(r.redactionRuleCount);
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
     } finally {
@@ -67,6 +122,13 @@ function TracesPage() {
   }, [filters]);
 
   useEffect(() => { void loadFirstPage(); }, [loadFirstPage]);
+
+  // Auto-lookup if landing with ?traceId=...
+  useEffect(() => {
+    const initial = (searchParams.traceId as string) || "";
+    if (initial) void lookupById(initial);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const loadNextPage = useCallback(async () => {
     if (!cursor || loading) return;
@@ -82,14 +144,15 @@ function TracesPage() {
     }
   }, [filters, cursor, loading]);
 
-  const lookupById = useCallback(async () => {
-    const id = lookupId.trim();
+  const lookupById = useCallback(async (idOverride?: string) => {
+    const id = (idOverride ?? lookupId).trim();
     if (!id) return;
     setLoading(true); setErr(null); setSelected(null); setSource(null);
     try {
       const r = await adminTraces.get(id);
       setSelected(r.event);
       setSource(r.source);
+      if (typeof r.redactionRuleCount === "number") setRuleCount(r.redactionRuleCount);
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
     } finally {
@@ -106,11 +169,26 @@ function TracesPage() {
     catch { toast.error("Copy failed"); }
   };
 
+  // Reproducible-report exports: prepend the filter/time range metadata so a
+  // support bundle is self-describing. CSV uses `# meta` comment lines; JSON
+  // wraps events under { meta, events } so downstream tooling can key off it.
+  const exportMeta = () => ({
+    exportedAt: new Date().toISOString(),
+    filters: { ...filters },
+    lookupTraceId: lookupId || undefined,
+    resultCount: (selected ? 1 : events.length),
+    nextCursorAtExport: cursor,
+    redactionRulesApplied: ruleCount,
+    deepLink: typeof window !== "undefined" ? window.location.href : undefined,
+  });
+
   const exportJson = () => {
     const rows = selected ? [selected] : events;
     if (!rows.length) { toast.error("Nothing to export"); return; }
-    const blob = new Blob([JSON.stringify(rows, null, 2)], { type: "application/json" });
+    const bundle = { meta: exportMeta(), events: rows };
+    const blob = new Blob([JSON.stringify(bundle, null, 2)], { type: "application/json" });
     downloadBlob(blob, `traces-${Date.now()}.json`);
+    toast.success("JSON export includes current filters + time range");
   };
 
   const exportCsv = () => {
@@ -121,9 +199,25 @@ function TracesPage() {
       const s = String(v).replace(/"/g, '""');
       return /[",\n]/.test(s) ? `"${s}"` : s;
     };
+    const meta = exportMeta();
+    const metaLines = [
+      `# Pluto trace export`,
+      `# exportedAt=${meta.exportedAt}`,
+      `# filters=${JSON.stringify(meta.filters)}`,
+      `# resultCount=${meta.resultCount}`,
+      `# redactionRulesApplied=${meta.redactionRulesApplied ?? "unknown"}`,
+      `# deepLink=${meta.deepLink ?? ""}`,
+      "",
+    ].join("\n");
     const header = cols.join(",");
     const body = events.map((e) => cols.map((c) => escape((e as any)[c])).join(",")).join("\n");
-    downloadBlob(new Blob([header + "\n" + body], { type: "text/csv" }), `traces-${Date.now()}.csv`);
+    downloadBlob(new Blob([metaLines + header + "\n" + body], { type: "text/csv" }), `traces-${Date.now()}.csv`);
+    toast.success("CSV export includes current filters + time range");
+  };
+
+  const copyDeepLink = () => {
+    if (typeof window === "undefined") return;
+    void copy(window.location.href, "Deep-link copied");
   };
 
   const activeFilterCount = useMemo(
@@ -135,9 +229,18 @@ function TracesPage() {
     <div className="space-y-6">
       <PageHeader
         title="Trace viewer"
-        description="Look up captured 4xx/5xx errors by traceId. Backed by the in-memory buffer with durable fallback to admin.error_events (30-day retention)."
+        description="Look up captured 4xx/5xx errors by traceId. Filters are deep-linkable; exports include the current filter + time range for reproducible support reports."
         actions={
           <div className="flex items-center gap-2">
+            <Button asChild variant="outline" size="sm">
+              <Link to="/dashboard/traces/trends"><TrendingUp className="h-4 w-4 mr-1.5" /> Trends</Link>
+            </Button>
+            <Button asChild variant="outline" size="sm">
+              <Link to="/dashboard/traces/settings"><Settings2 className="h-4 w-4 mr-1.5" /> Settings</Link>
+            </Button>
+            <Button variant="outline" size="sm" onClick={copyDeepLink}>
+              <Link2 className="h-4 w-4 mr-1.5" /> Copy link
+            </Button>
             <Button variant="outline" size="sm" onClick={exportCsv} disabled={!events.length}>
               <Download className="h-4 w-4 mr-1.5" /> CSV
             </Button>
@@ -152,6 +255,13 @@ function TracesPage() {
         }
       />
 
+      {ruleCount != null && ruleCount > 0 && (
+        <div className="text-xs text-muted-foreground">
+          {ruleCount} PII redaction rule{ruleCount === 1 ? "" : "s"} applied to results & exports.{" "}
+          <Link to="/dashboard/traces/settings" className="underline">Manage</Link>
+        </div>
+      )}
+
       {err && (
         <div className="rounded-md border border-rose-500/40 bg-rose-500/5 px-4 py-3 text-sm text-rose-600">
           {err}
@@ -162,10 +272,7 @@ function TracesPage() {
       <Card>
         <CardHeader><CardTitle className="text-base">Look up by Trace ID</CardTitle></CardHeader>
         <CardContent className="space-y-3">
-          <form
-            onSubmit={(e) => { e.preventDefault(); void lookupById(); }}
-            className="flex gap-2"
-          >
+          <form onSubmit={(e) => { e.preventDefault(); void lookupById(); }} className="flex gap-2">
             <Input
               value={lookupId}
               onChange={(e) => setLookupId(e.target.value)}
@@ -352,7 +459,7 @@ function TraceDetail({ evt, onCopy }: {
       {evt.stack && (
         <details>
           <summary className="cursor-pointer text-xs font-semibold text-rose-600">
-            Stack trace (5xx — server error)
+            Stack trace (5xx — server error, redacted per current rules)
           </summary>
           <pre className="mt-1 text-[11px] whitespace-pre-wrap overflow-auto max-h-64 bg-muted/40 rounded p-2 font-mono">
             {evt.stack}

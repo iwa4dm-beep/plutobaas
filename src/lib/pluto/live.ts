@@ -1561,9 +1561,63 @@ export type AdminTraceFilters = {
   from?: string;
   to?: string;
 };
+export type AdminTraceStatsPoint = {
+  bucket: string;
+  s5xx: number;
+  s4xx: number;
+  validation: number;
+  total: number;
+};
+export type AdminTraceStats = {
+  bucket: "hour" | "day";
+  from: string;
+  to: string;
+  points: AdminTraceStatsPoint[];
+  warning?: string;
+};
+
+export type PiiRule = {
+  id: string;
+  name: string;
+  pattern: string;
+  applies_to: string[];
+  replacement: string;
+  enabled: boolean;
+  note: string | null;
+};
+export type PiiRuleInput = {
+  name: string;
+  pattern: string;
+  applies_to?: string[];
+  replacement?: string;
+  enabled?: boolean;
+  note?: string | null;
+};
+
+export type AlertWebhook = {
+  id: string;
+  name: string;
+  url: string;
+  tag_filter: string[];
+  enabled: boolean;
+  failure_count: number;
+  last_delivery_at: string | null;
+  last_error: string | null;
+  last_status: number | null;
+  created_at: string;
+  has_secret: boolean;
+};
+export type AlertWebhookInput = {
+  name: string;
+  url: string;
+  secret?: string | null;
+  tag_filter?: string[];
+  enabled?: boolean;
+};
+
 export const adminTraces = {
   get: (traceId: string) =>
-    api<{ event: AdminTraceEvent; source: "memory" | "database" }>(
+    api<{ event: AdminTraceEvent; source: "memory" | "database"; redactionRuleCount?: number }>(
       `/admin/v1/traces/${encodeURIComponent(traceId)}`,
       { service: true },
     ),
@@ -1573,8 +1627,35 @@ export const adminTraces = {
       if (v !== undefined && v !== null && v !== "") qs.set(k, String(v));
     }
     const suffix = qs.toString() ? `?${qs}` : "";
-    return api<AdminTraceListResponse>(`/admin/v1/traces${suffix}`, { service: true });
+    return api<AdminTraceListResponse & { redactionRuleCount?: number }>(
+      `/admin/v1/traces${suffix}`,
+      { service: true },
+    );
   },
+  stats: (params: { bucket?: "hour" | "day"; from?: string; to?: string; endpoint?: string; tag?: string } = {}) => {
+    const qs = new URLSearchParams();
+    for (const [k, v] of Object.entries(params)) if (v) qs.set(k, String(v));
+    const s = qs.toString() ? `?${qs}` : "";
+    return api<AdminTraceStats>(`/admin/v1/traces/stats${s}`, { service: true });
+  },
+  // PII redaction rules
+  listRules:   () => api<{ rules: PiiRule[] }>("/admin/v1/pii-rules", { service: true }),
+  createRule:  (r: PiiRuleInput) => api<{ rule: PiiRule }>("/admin/v1/pii-rules",
+    { method: "POST", service: true, body: JSON.stringify(r) }),
+  updateRule:  (id: string, r: Partial<PiiRuleInput>) => api<{ rule: PiiRule }>(`/admin/v1/pii-rules/${id}`,
+    { method: "PATCH", service: true, body: JSON.stringify(r) }),
+  deleteRule:  (id: string) => api<{ ok: true }>(`/admin/v1/pii-rules/${id}`,
+    { method: "DELETE", service: true }),
+  // Alert webhooks
+  listWebhooks: () => api<{ webhooks: AlertWebhook[] }>("/admin/v1/alert-webhooks", { service: true }),
+  createWebhook: (w: AlertWebhookInput) => api<{ webhook: AlertWebhook }>("/admin/v1/alert-webhooks",
+    { method: "POST", service: true, body: JSON.stringify(w) }),
+  updateWebhook: (id: string, w: Partial<AlertWebhookInput>) => api<{ webhook: AlertWebhook }>(`/admin/v1/alert-webhooks/${id}`,
+    { method: "PATCH", service: true, body: JSON.stringify(w) }),
+  deleteWebhook: (id: string) => api<{ ok: true }>(`/admin/v1/alert-webhooks/${id}`,
+    { method: "DELETE", service: true }),
+  testWebhook:   (id: string) => api<{ ok: boolean; status: number | null; error: string | null }>(
+    `/admin/v1/alert-webhooks/${id}/test`, { method: "POST", service: true }),
 };
 
 // ---------------- Phase 19 — Developer Experience -----------------------

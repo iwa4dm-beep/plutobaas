@@ -101,6 +101,8 @@ import { Route as AuthPhoneRouteImport } from './routes/auth.phone'
 import { Route as AuthForgotRouteImport } from './routes/auth.forgot'
 import { Route as AuthConfirmEmailRouteImport } from './routes/auth.confirm-email'
 import { Route as SdkDownloadFileRouteImport } from './routes/sdk.download.$file'
+import { Route as DashboardTracesTrendsRouteImport } from './routes/dashboard.traces.trends'
+import { Route as DashboardTracesSettingsRouteImport } from './routes/dashboard.traces.settings'
 import { Route as DashboardIntegrationsLovableFrontendRouteImport } from './routes/dashboard.integrations.lovable-frontend'
 import { Route as DashboardCustomDomainsAuditRouteImport } from './routes/dashboard.custom-domains.audit'
 import { Route as DashboardAdminInviteRouteImport } from './routes/dashboard.admin.invite'
@@ -586,6 +588,16 @@ const SdkDownloadFileRoute = SdkDownloadFileRouteImport.update({
   path: '/sdk/download/$file',
   getParentRoute: () => rootRouteImport,
 } as any)
+const DashboardTracesTrendsRoute = DashboardTracesTrendsRouteImport.update({
+  id: '/trends',
+  path: '/trends',
+  getParentRoute: () => DashboardTracesRoute,
+} as any)
+const DashboardTracesSettingsRoute = DashboardTracesSettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => DashboardTracesRoute,
+} as any)
 const DashboardIntegrationsLovableFrontendRoute =
   DashboardIntegrationsLovableFrontendRouteImport.update({
     id: '/lovable-frontend',
@@ -754,7 +766,7 @@ export interface FileRoutesByFullPath {
   '/dashboard/sql': typeof DashboardSqlRoute
   '/dashboard/storage': typeof DashboardStorageRoute
   '/dashboard/tokens': typeof DashboardTokensRoute
-  '/dashboard/traces': typeof DashboardTracesRoute
+  '/dashboard/traces': typeof DashboardTracesRouteWithChildren
   '/dashboard/usage': typeof DashboardUsageRoute
   '/dashboard/users': typeof DashboardUsersRoute
   '/dashboard/vector': typeof DashboardVectorRoute
@@ -779,6 +791,8 @@ export interface FileRoutesByFullPath {
   '/dashboard/admin/invite': typeof DashboardAdminInviteRoute
   '/dashboard/custom-domains/audit': typeof DashboardCustomDomainsAuditRoute
   '/dashboard/integrations/lovable-frontend': typeof DashboardIntegrationsLovableFrontendRoute
+  '/dashboard/traces/settings': typeof DashboardTracesSettingsRoute
+  '/dashboard/traces/trends': typeof DashboardTracesTrendsRoute
   '/sdk/download/$file': typeof SdkDownloadFileRoute
   '/api/public/site-mapping/$slug': typeof ApiPublicSiteMappingSlugRoute
   '/dashboard/projects/$slug/env': typeof DashboardProjectsSlugEnvRoute
@@ -863,7 +877,7 @@ export interface FileRoutesByTo {
   '/dashboard/sql': typeof DashboardSqlRoute
   '/dashboard/storage': typeof DashboardStorageRoute
   '/dashboard/tokens': typeof DashboardTokensRoute
-  '/dashboard/traces': typeof DashboardTracesRoute
+  '/dashboard/traces': typeof DashboardTracesRouteWithChildren
   '/dashboard/usage': typeof DashboardUsageRoute
   '/dashboard/users': typeof DashboardUsersRoute
   '/dashboard/vector': typeof DashboardVectorRoute
@@ -888,6 +902,8 @@ export interface FileRoutesByTo {
   '/dashboard/admin/invite': typeof DashboardAdminInviteRoute
   '/dashboard/custom-domains/audit': typeof DashboardCustomDomainsAuditRoute
   '/dashboard/integrations/lovable-frontend': typeof DashboardIntegrationsLovableFrontendRoute
+  '/dashboard/traces/settings': typeof DashboardTracesSettingsRoute
+  '/dashboard/traces/trends': typeof DashboardTracesTrendsRoute
   '/sdk/download/$file': typeof SdkDownloadFileRoute
   '/api/public/site-mapping/$slug': typeof ApiPublicSiteMappingSlugRoute
   '/dashboard/projects/$slug/env': typeof DashboardProjectsSlugEnvRoute
@@ -974,7 +990,7 @@ export interface FileRoutesById {
   '/dashboard/sql': typeof DashboardSqlRoute
   '/dashboard/storage': typeof DashboardStorageRoute
   '/dashboard/tokens': typeof DashboardTokensRoute
-  '/dashboard/traces': typeof DashboardTracesRoute
+  '/dashboard/traces': typeof DashboardTracesRouteWithChildren
   '/dashboard/usage': typeof DashboardUsageRoute
   '/dashboard/users': typeof DashboardUsersRoute
   '/dashboard/vector': typeof DashboardVectorRoute
@@ -999,6 +1015,8 @@ export interface FileRoutesById {
   '/dashboard/admin/invite': typeof DashboardAdminInviteRoute
   '/dashboard/custom-domains/audit': typeof DashboardCustomDomainsAuditRoute
   '/dashboard/integrations/lovable-frontend': typeof DashboardIntegrationsLovableFrontendRoute
+  '/dashboard/traces/settings': typeof DashboardTracesSettingsRoute
+  '/dashboard/traces/trends': typeof DashboardTracesTrendsRoute
   '/sdk/download/$file': typeof SdkDownloadFileRoute
   '/api/public/site-mapping/$slug': typeof ApiPublicSiteMappingSlugRoute
   '/dashboard/projects/$slug/env': typeof DashboardProjectsSlugEnvRoute
@@ -1111,6 +1129,8 @@ export interface FileRouteTypes {
     | '/dashboard/admin/invite'
     | '/dashboard/custom-domains/audit'
     | '/dashboard/integrations/lovable-frontend'
+    | '/dashboard/traces/settings'
+    | '/dashboard/traces/trends'
     | '/sdk/download/$file'
     | '/api/public/site-mapping/$slug'
     | '/dashboard/projects/$slug/env'
@@ -1220,6 +1240,8 @@ export interface FileRouteTypes {
     | '/dashboard/admin/invite'
     | '/dashboard/custom-domains/audit'
     | '/dashboard/integrations/lovable-frontend'
+    | '/dashboard/traces/settings'
+    | '/dashboard/traces/trends'
     | '/sdk/download/$file'
     | '/api/public/site-mapping/$slug'
     | '/dashboard/projects/$slug/env'
@@ -1330,6 +1352,8 @@ export interface FileRouteTypes {
     | '/dashboard/admin/invite'
     | '/dashboard/custom-domains/audit'
     | '/dashboard/integrations/lovable-frontend'
+    | '/dashboard/traces/settings'
+    | '/dashboard/traces/trends'
     | '/sdk/download/$file'
     | '/api/public/site-mapping/$slug'
     | '/dashboard/projects/$slug/env'
@@ -2008,6 +2032,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SdkDownloadFileRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/dashboard/traces/trends': {
+      id: '/dashboard/traces/trends'
+      path: '/trends'
+      fullPath: '/dashboard/traces/trends'
+      preLoaderRoute: typeof DashboardTracesTrendsRouteImport
+      parentRoute: typeof DashboardTracesRoute
+    }
+    '/dashboard/traces/settings': {
+      id: '/dashboard/traces/settings'
+      path: '/settings'
+      fullPath: '/dashboard/traces/settings'
+      preLoaderRoute: typeof DashboardTracesSettingsRouteImport
+      parentRoute: typeof DashboardTracesRoute
+    }
     '/dashboard/integrations/lovable-frontend': {
       id: '/dashboard/integrations/lovable-frontend'
       path: '/lovable-frontend'
@@ -2180,6 +2218,20 @@ const DashboardProjectsRouteChildren: DashboardProjectsRouteChildren = {
 const DashboardProjectsRouteWithChildren =
   DashboardProjectsRoute._addFileChildren(DashboardProjectsRouteChildren)
 
+interface DashboardTracesRouteChildren {
+  DashboardTracesSettingsRoute: typeof DashboardTracesSettingsRoute
+  DashboardTracesTrendsRoute: typeof DashboardTracesTrendsRoute
+}
+
+const DashboardTracesRouteChildren: DashboardTracesRouteChildren = {
+  DashboardTracesSettingsRoute: DashboardTracesSettingsRoute,
+  DashboardTracesTrendsRoute: DashboardTracesTrendsRoute,
+}
+
+const DashboardTracesRouteWithChildren = DashboardTracesRoute._addFileChildren(
+  DashboardTracesRouteChildren,
+)
+
 interface DashboardRouteChildren {
   DashboardAiRoute: typeof DashboardAiRoute
   DashboardApiRoute: typeof DashboardApiRoute
@@ -2247,7 +2299,7 @@ interface DashboardRouteChildren {
   DashboardSqlRoute: typeof DashboardSqlRoute
   DashboardStorageRoute: typeof DashboardStorageRoute
   DashboardTokensRoute: typeof DashboardTokensRoute
-  DashboardTracesRoute: typeof DashboardTracesRoute
+  DashboardTracesRoute: typeof DashboardTracesRouteWithChildren
   DashboardUsageRoute: typeof DashboardUsageRoute
   DashboardUsersRoute: typeof DashboardUsersRoute
   DashboardVectorRoute: typeof DashboardVectorRoute
@@ -2327,7 +2379,7 @@ const DashboardRouteChildren: DashboardRouteChildren = {
   DashboardSqlRoute: DashboardSqlRoute,
   DashboardStorageRoute: DashboardStorageRoute,
   DashboardTokensRoute: DashboardTokensRoute,
-  DashboardTracesRoute: DashboardTracesRoute,
+  DashboardTracesRoute: DashboardTracesRouteWithChildren,
   DashboardUsageRoute: DashboardUsageRoute,
   DashboardUsersRoute: DashboardUsersRoute,
   DashboardVectorRoute: DashboardVectorRoute,

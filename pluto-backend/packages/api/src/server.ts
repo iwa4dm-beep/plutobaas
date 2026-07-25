@@ -53,6 +53,7 @@ import { swaggerPlugin } from './observability/swagger.js';
 import { mapError } from './observability/errors.js';
 import { recordErrorEvent, persistErrorEvent } from './observability/error-log.js';
 import { recordFailureWithSample } from './observability/alert-sink.js';
+import { dispatchAlert } from './observability/alert-webhook.js';
 import { observabilityRoutes } from './routes/observability.js';
 
 
@@ -281,6 +282,8 @@ async function main() {
         { alert: true, traceId, ...alert },
         `spike: ${alert.tag} (${alert.count} in ${alert.windowMs}ms) — look up sample: ${alert.sampleTraceIds[0] ?? '(none)'}`,
       );
+      // Fire-and-forget: forward to any configured admin.alert_webhooks.
+      dispatchAlert(cfg, alert);
     }
 
     // Route-pattern hint for the durable audit (helps filter by endpoint,
