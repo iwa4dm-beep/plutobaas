@@ -1,9 +1,11 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Link, useRouter, useNavigate, useRouterState } from "@tanstack/react-router";
-import { AlertTriangle, RefreshCw, Home, LogIn } from "lucide-react";
+import { AlertTriangle, RefreshCw, Home, LogIn, Copy, Check, LifeBuoy } from "lucide-react";
 import { describeError } from "@/lib/pluto/live";
 import { reportLovableError } from "@/lib/lovable-error-reporting";
 import { parseAuthFailure, logAuthFailure } from "@/lib/pluto/auth-error";
+
+const SUPPORT_EMAIL = "support@timescard.cloud";
 
 /**
  * RouteErrorBoundary — canonical error UI used by every route (and the
@@ -83,6 +85,47 @@ export function RouteErrorBoundary({
     reset?.();
   };
 
+  return <ErrorFallbackCard info={info} onRetry={retry} pathname={pathname} />;
+}
+
+/**
+ * ErrorFallbackCard — the visual shell used by RouteErrorBoundary AND by
+ * standalone client error pages (e.g. lazy-import failures). Exported so
+ * any client route can render the same UX with a custom `info` payload.
+ */
+export function ErrorFallbackCard({
+  info,
+  onRetry,
+  pathname,
+}: {
+  info: { title: string; detail?: string; status?: number; hint?: string; traceId?: string; fields?: Record<string, string> };
+  onRetry?: () => void;
+  pathname?: string;
+}) {
+  const [copied, setCopied] = useState(false);
+  const fieldEntries = info.fields ? Object.entries(info.fields) : [];
+
+  const copyTrace = async () => {
+    if (!info.traceId) return;
+    try {
+      await navigator.clipboard.writeText(info.traceId);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch { /* ignore */ }
+  };
+
+  const supportHref = (() => {
+    const subject = encodeURIComponent(`Error report${info.traceId ? ` — trace ${info.traceId}` : ""}`);
+    const bodyLines = [
+      `Page: ${pathname ?? (typeof window !== "undefined" ? window.location.pathname : "")}`,
+      info.status ? `HTTP: ${info.status}` : "",
+      info.traceId ? `Trace ID: ${info.traceId}` : "",
+      info.title ? `Message: ${info.title}` : "",
+      info.detail ? `Detail: ${info.detail}` : "",
+    ].filter(Boolean).join("\n");
+    return `mailto:${SUPPORT_EMAIL}?subject=${subject}&body=${encodeURIComponent(bodyLines)}`;
+  })();
+
   return (
     <div className="flex min-h-[60vh] items-center justify-center px-4 py-10">
       <div
@@ -107,25 +150,56 @@ export function RouteErrorBoundary({
                 {info.hint}
               </p>
             )}
-            {typeof info.status === "number" && (
-              <p className="mt-2 text-xs text-muted-foreground">
-                HTTP {info.status}
-              </p>
+            {fieldEntries.length > 0 && (
+              <ul className="mt-3 space-y-1 rounded-md border border-border/60 bg-background/40 px-3 py-2 text-xs">
+                {fieldEntries.map(([field, msg]) => (
+                  <li key={field}>
+                    <span className="font-mono font-medium text-foreground">{field}</span>
+                    <span className="text-muted-foreground"> — {msg}</span>
+                  </li>
+                ))}
+              </ul>
             )}
+            <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+              {typeof info.status === "number" && <span>HTTP {info.status}</span>}
+              {info.traceId && (
+                <>
+                  <span aria-hidden="true">·</span>
+                  <span className="font-mono">Trace {info.traceId}</span>
+                  <button
+                    type="button"
+                    onClick={copyTrace}
+                    className="inline-flex items-center gap-1 rounded border border-input bg-background px-1.5 py-0.5 text-[11px] hover:bg-accent"
+                    aria-label="Copy trace ID"
+                  >
+                    {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+                    {copied ? "Copied" : "Copy"}
+                  </button>
+                </>
+              )}
+            </div>
             <div className="mt-4 flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={retry}
-                className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
-              >
-                <RefreshCw className="h-3.5 w-3.5" /> Try again
-              </button>
+              {onRetry && (
+                <button
+                  type="button"
+                  onClick={onRetry}
+                  className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+                >
+                  <RefreshCw className="h-3.5 w-3.5" /> Try again
+                </button>
+              )}
               <Link
                 to="/"
                 className="inline-flex items-center gap-1.5 rounded-md border border-input bg-background px-3 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-accent"
               >
                 <Home className="h-3.5 w-3.5" /> Go home
               </Link>
+              <a
+                href={supportHref}
+                className="inline-flex items-center gap-1.5 rounded-md border border-input bg-background px-3 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-accent"
+              >
+                <LifeBuoy className="h-3.5 w-3.5" /> Contact support
+              </a>
             </div>
           </div>
         </div>

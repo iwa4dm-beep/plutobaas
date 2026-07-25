@@ -109,18 +109,34 @@ export class ApiError extends Error {
   status: number;
   path: string;
   body: unknown;
-  constructor(message: string, opts: { status: number; path: string; body: unknown }) {
+  /** Correlation ID (x-request-id) — echoed from the server so support can grep logs. */
+  traceId?: string;
+  /** Field-level validation errors when status=400 and body follows the standard envelope. */
+  fields?: Record<string, string>;
+  constructor(message: string, opts: { status: number; path: string; body: unknown; traceId?: string; fields?: Record<string, string> }) {
     super(message);
     this.name = "ApiError";
     this.status = opts.status;
     this.path = opts.path;
     this.body = opts.body;
+    this.traceId = opts.traceId;
+    this.fields = opts.fields;
   }
 }
 
-export function describeError(e: unknown): { title: string; detail?: string; status?: number; hint?: string } {
+/**
+ * Generate a client-side correlation ID for a request. Format keeps the
+ * server-side regex happy (≤128 chars, URL-safe) and includes a `cli_`
+ * prefix so operators can spot browser-originated traces in server logs.
+ */
+export function newTraceId(): string {
+  const rand = globalThis.crypto?.randomUUID?.() ?? `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
+  return `cli_${rand}`;
+}
+
+export function describeError(e: unknown): { title: string; detail?: string; status?: number; hint?: string; traceId?: string; fields?: Record<string, string> } {
   if (e instanceof ApiError) {
-    const b = e.body as { error?: string; hint?: string; details?: string; message?: string } | null;
+    const b = e.body as { error?: string; hint?: string; details?: string; message?: string; fields?: Record<string, string>; traceId?: string } | null;
     const parts: string[] = [];
     if (b?.error && b.error !== e.message) parts.push(b.error);
     if (b?.hint) parts.push(`hint: ${b.hint}`);
@@ -130,6 +146,8 @@ export function describeError(e: unknown): { title: string; detail?: string; sta
       detail: parts.join(" — ") || undefined,
       status: e.status,
       hint: b?.hint,
+      traceId: e.traceId ?? b?.traceId,
+      fields: e.fields ?? b?.fields,
     };
   }
   if (e instanceof Error) {
@@ -199,6 +217,16 @@ export async function api<T = unknown>(
   if (!cfg) throw new Error("Pluto backend not configured (set VITE_PLUTO_URL & VITE_PLUTO_ANON_KEY)");
   const { service, skipRefresh, headers, ...rest } = init;
   const hasBody = rest.body != null && rest.body !== "";
+  // Correlation ID — minted per request unless the caller supplied one via
+  // headers. Sent on BOTH x-request-id and x-correlation-id so upstream
+  // proxies (nginx / cloudflare) and the API observability middleware both
+  // recognize it. The server echoes it back on the response and includes
+  // it in the JSON error envelope.
+  const callerHeaders = (headers as Record<string, string> | undefined) ?? {};
+  const suppliedTrace =
+    callerHeaders["x-request-id"] ?? callerHeaders["X-Request-Id"] ??
+    callerHeaders["x-correlation-id"] ?? callerHeaders["X-Correlation-Id"];
+  const traceId = typeof suppliedTrace === "string" && suppliedTrace ? suppliedTrace : newTraceId();
   const doFetch = () => fetch(cfg.url.replace(/\/$/, "") + path, {
     ...rest,
     headers: {
@@ -206,7 +234,9 @@ export async function api<T = unknown>(
       // Only advertise a JSON body when we actually send one.
       ...(hasBody ? { "content-type": "application/json" } : {}),
       ...bearer(service),
-      ...(headers as Record<string, string> | undefined),
+      "x-request-id": traceId,
+      "x-correlation-id": traceId,
+      ...callerHeaders,
     },
   });
   let res = await doFetch();
@@ -238,7 +268,17 @@ export async function api<T = unknown>(
 
   const offline = typeof json === "object" && json && (json as { offline?: unknown }).offline === true;
   if (!res.ok || offline) {
-    throw new ApiError(messageOf(), { status: res.status, path, body: json });
+    // Prefer server-echoed trace id (header) over our client-generated one so
+    // the ID that appears in server logs is what the user sees.
+    const echoedTrace = res.headers.get("x-request-id") || res.headers.get("x-correlation-id") || undefined;
+    const bodyObj = (json && typeof json === "object" ? (json as { traceId?: string; fields?: Record<string, string> }) : {}) || {};
+    throw new ApiError(messageOf(), {
+      status: res.status,
+      path,
+      body: json,
+      traceId: echoedTrace || bodyObj.traceId || traceId,
+      fields: bodyObj.fields,
+    });
   }
   return json as T;
 }
