@@ -175,7 +175,7 @@ function ServiceCard() {
   const [confirm, setConfirm] = useState<{ service: OpsService; text: string } | null>(null);
 
   const loadHealth = useCallback(async () => {
-    try { setHealthResult(await health()); } catch { /* ignore */ }
+    try { setHealthResult((await health()) as OpsResult); } catch { /* ignore */ }
   }, [health]);
 
   useEffect(() => {
