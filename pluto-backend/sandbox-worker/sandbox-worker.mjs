@@ -1903,10 +1903,14 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, { ok: true, count: list.length, entries: list });
     }
 
-    // GET /admin/ops/config — return per-env config map.
+    // GET /admin/ops/config — return per-env config map. Secret is redacted to "__set__" or "".
     if (req.method === "GET" && (p === "/admin/ops/config" || p === "/sandbox/admin/ops/config")) {
       const cfg = await readOpsConfig();
-      return json(res, 200, { ok: true, config: cfg });
+      const redacted = {};
+      for (const [k, v] of Object.entries(cfg)) {
+        redacted[k] = { ...v, webhookSecret: v && v.webhookSecret ? "__set__" : "" };
+      }
+      return json(res, 200, { ok: true, config: redacted });
     }
     // POST /admin/ops/config — { env, webhookUrl, webhookSecret, retentionDays, retentionCount, approverEmails }
     if (req.method === "POST" && (p === "/admin/ops/config" || p === "/sandbox/admin/ops/config")) {
