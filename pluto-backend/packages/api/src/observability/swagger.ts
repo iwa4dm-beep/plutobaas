@@ -112,6 +112,8 @@ export async function swaggerPlugin(app: FastifyInstance, cfg: Config) {
         403: { $ref: '#/components/responses/Forbidden' },
         404: { $ref: '#/components/responses/NotFound' },
         409: { $ref: '#/components/responses/Conflict' },
+        413: { $ref: '#/components/responses/PayloadTooLarge' },
+        415: { $ref: '#/components/responses/UnsupportedMediaType' },
         429: { $ref: '#/components/responses/TooManyRequests' },
         500: { $ref: '#/components/responses/InternalError' },
       };
