@@ -1908,21 +1908,49 @@ const server = http.createServer(async (req, res) => {
       const cfg = await readOpsConfig();
       return json(res, 200, { ok: true, config: cfg });
     }
-    // POST /admin/ops/config — { env, webhookUrl, retentionDays, retentionCount, approverEmails }
+    // POST /admin/ops/config — { env, webhookUrl, webhookSecret, retentionDays, retentionCount, approverEmails }
     if (req.method === "POST" && (p === "/admin/ops/config" || p === "/sandbox/admin/ops/config")) {
       const b = await readJson(req).catch(() => ({}));
       const env = String(b?.env || "").trim();
       if (!/^(dev|staging|prod)$/.test(env)) return json(res, 400, { error: "invalid_env" });
       const webhookUrl = String(b?.webhookUrl || "").trim();
       if (webhookUrl && !/^https?:\/\//.test(webhookUrl)) return json(res, 400, { error: "invalid_webhook_url" });
+      // Preserve existing secret when caller sends the sentinel "__keep__" or omits the field.
+      const all = await readOpsConfig();
+      const prev = all[env] || {};
+      let webhookSecret = prev.webhookSecret || "";
+      if (Object.prototype.hasOwnProperty.call(b || {}, "webhookSecret")) {
+        const incoming = String(b.webhookSecret || "");
+        if (incoming !== "__keep__") webhookSecret = incoming.slice(0, 512);
+      }
       const retentionDays = Math.max(0, Math.min(3650, Number(b?.retentionDays) || 0));
       const retentionCount = Math.max(0, Math.min(1000, Number(b?.retentionCount) || 0));
       let approverEmails = Array.isArray(b?.approverEmails) ? b.approverEmails.map((x) => String(x).trim().toLowerCase()).filter(Boolean) : [];
       approverEmails = [...new Set(approverEmails)].slice(0, 50);
-      const all = await readOpsConfig();
-      all[env] = { webhookUrl, retentionDays, retentionCount, approverEmails };
+      all[env] = { webhookUrl, webhookSecret, retentionDays, retentionCount, approverEmails };
       await writeOpsConfig(all);
-      return json(res, 200, { ok: true, env, config: all[env] });
+      // Do not echo the secret back to the client — signal presence instead.
+      const safe = { ...all[env], webhookSecret: webhookSecret ? "__set__" : "" };
+      return json(res, 200, { ok: true, env, config: safe });
+    }
+
+    // GET /admin/ops/webhook-deliveries?env=&limit= — recent delivery attempts.
+    if (req.method === "GET" && (p === "/admin/ops/webhook-deliveries" || p === "/sandbox/admin/ops/webhook-deliveries")) {
+      const list = await readJsonListFile(OPS_DELIVERIES_FILE, q.get("limit") || 100, {
+        env: q.get("env") || undefined,
+      });
+      return json(res, 200, { ok: true, count: list.length, entries: list });
+    }
+    // POST /admin/ops/webhook-test — { env } — sends a signed test event.
+    if (req.method === "POST" && (p === "/admin/ops/webhook-test" || p === "/sandbox/admin/ops/webhook-test")) {
+      const b = await readJson(req).catch(() => ({}));
+      const env = String(b?.env || "").trim();
+      if (!/^(dev|staging|prod)$/.test(env)) return json(res, 400, { error: "invalid_env" });
+      const cfg = await getEnvConfig(env);
+      if (!cfg.webhookUrl) return json(res, 400, { error: "webhook_not_configured" });
+      const actorEmail = String(req.headers["x-actor-email"] || "") || null;
+      notifyWebhook(env, "ops.webhook.test", { ok: true, message: "test event from Pluto Ops", actor: actorEmail }).catch(() => {});
+      return json(res, 200, { ok: true, env, queued: true, signed: !!cfg.webhookSecret });
     }
 
     // GET /admin/ops/reports — list persisted plan/dry-run/apply reports.
