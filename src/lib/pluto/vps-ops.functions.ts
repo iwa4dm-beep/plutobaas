@@ -56,7 +56,13 @@ export type OpsAuditEntry = {
   env: OpsEnv;
   action: OpsAction;
   service?: OpsService | null;
-  params?: Record<string, unknown>;
+  params?: {
+    plan?: string | null;
+    target?: string | null;
+    allowMissingDown?: boolean;
+    soakSeconds?: number | null;
+    id?: string | null;
+  } | null;
   ok: boolean;
   exitCode: number;
   durationMs: number;
