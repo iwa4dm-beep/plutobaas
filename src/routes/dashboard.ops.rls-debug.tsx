@@ -3,7 +3,7 @@ import { useCallback, useMemo, useState } from "react";
 import { ArrowLeft, CheckCircle2, Loader2, PlayCircle, ShieldAlert, XCircle } from "lucide-react";
 import { PageHeader } from "@/components/pluto/PageHeader";
 import { TraceAccessGate } from "@/components/pluto/TraceAccessGate";
-import { getPluto } from "@/lib/pluto/client";
+import { pluto } from "@/lib/pluto/client";
 import {
   adaptExplainJson, adaptPolicyRows, buildExplain, buildPoliciesQuery,
   buildRlsStateQuery, extractTables, type PlanNode, type PolicyRow,
@@ -62,7 +62,7 @@ function RlsDebugInner() {
   const run = useCallback(async () => {
     setBusy(true);
     try {
-      const pluto = getPluto();
+      
       // 1. Try to actually run the query as the current session to observe the outcome.
       let executionOk = false; let executionError: string | null = null; let executionRows: number | null = null;
       try {
@@ -86,7 +86,7 @@ function RlsDebugInner() {
         tables.length ? pluto.db.runSql(buildRlsStateQuery(tables)) : Promise.resolve({ columns: [], rows: [] }),
       ]);
       const policies = adaptPolicyRows(polRes);
-      const rlsState = rlsRes.rows.map((r) => ({
+      const rlsState = rlsRes.rows.map((r: unknown[]) => ({
         schemaname: String(r[rlsRes.columns.indexOf("schemaname")] ?? ""),
         tablename: String(r[rlsRes.columns.indexOf("tablename")] ?? ""),
         enabled: r[rlsRes.columns.indexOf("rls_enabled")] === true,
@@ -146,7 +146,7 @@ function RlsDebugInner() {
 
       <PageHeader
         title="RLS policy debugger"
-        subtitle="Paste a query — Pluto runs it as the current session, then evaluates every matching USING / WITH CHECK expression to explain why the row was allowed or denied."
+        description="Paste a query — Pluto runs it as the current session, then evaluates every matching USING / WITH CHECK expression to explain why the row was allowed or denied."
       />
 
       <section className="rounded-lg border border-border bg-card p-4 space-y-3">

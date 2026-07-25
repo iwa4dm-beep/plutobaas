@@ -54,7 +54,7 @@ function DockerCheckInner() {
 
       <PageHeader
         title="Docker connectivity checker"
-        subtitle="Container-to-container DNS, required ports, and effective DATABASE_URL as each container sees it — for both VPS and local Docker."
+        description="Container-to-container DNS, required ports, and effective DATABASE_URL as each container sees it — for both VPS and local Docker."
       />
 
       <section className="rounded-lg border border-border bg-card p-4 flex flex-wrap items-center gap-3">

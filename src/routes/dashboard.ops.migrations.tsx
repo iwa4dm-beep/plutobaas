@@ -111,7 +111,7 @@ function MigrationsInner() {
 
       <PageHeader
         title="Migration dry-run & rollback"
-        subtitle={`Environment: ${env} — safely preview pending SQL, apply with automatic pre-backup, and revert a specific version when a down-migration is available.`}
+        description={`Environment: ${env} — safely preview pending SQL, apply with automatic pre-backup, and revert a specific version when a down-migration is available.`}
       />
 
       <div className="flex flex-wrap items-center gap-2">

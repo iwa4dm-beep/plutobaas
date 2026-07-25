@@ -126,7 +126,7 @@ function JwtInspectInner() {
 
       <PageHeader
         title="JWT claims inspector"
-        subtitle="Everything the Pluto backend and your browser know about the current session token — header, claims, expiry, refresh state, and the effective Postgres role."
+        description="Everything the Pluto backend and your browser know about the current session token — header, claims, expiry, refresh state, and the effective Postgres role."
       />
 
       {!session?.access_token && (

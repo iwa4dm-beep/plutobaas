@@ -3,7 +3,7 @@ import { useCallback, useMemo, useState } from "react";
 import { ArrowLeft, Loader2, PlayCircle, Sparkles } from "lucide-react";
 import { PageHeader } from "@/components/pluto/PageHeader";
 import { TraceAccessGate } from "@/components/pluto/TraceAccessGate";
-import { getPluto } from "@/lib/pluto/client";
+import { pluto } from "@/lib/pluto/client";
 import {
   adaptExplainJson, adaptPolicyRows, buildExplain, buildPoliciesQuery,
   buildRlsStateQuery, extractTables, findRlsHints,
@@ -59,7 +59,7 @@ function ExplainInner() {
   const run = useCallback(async () => {
     setBusy(true);
     try {
-      const pluto = getPluto();
+      
       let explainSql: string;
       try { explainSql = buildExplain(sql, analyze); }
       catch (e) { setState({ planTree: null, totalMs: null, policies: [], rlsState: [], tables, rlsHints: [], error: (e as Error).message }); return; }
@@ -75,7 +75,7 @@ function ExplainInner() {
         tables.length ? pluto.db.runSql(buildRlsStateQuery(tables)) : Promise.resolve({ columns: [], rows: [] }),
       ]);
       const policies = adaptPolicyRows(polRes);
-      const rlsState = rlsRes.rows.map((r) => ({
+      const rlsState = rlsRes.rows.map((r: unknown[]) => ({
         schemaname: String(r[rlsRes.columns.indexOf("schemaname")] ?? ""),
         tablename: String(r[rlsRes.columns.indexOf("tablename")] ?? ""),
         enabled: r[rlsRes.columns.indexOf("rls_enabled")] === true,
@@ -98,7 +98,7 @@ function ExplainInner() {
 
       <PageHeader
         title="EXPLAIN / ANALYZE query analyzer"
-        subtitle="Paste the SQL a REST call would run — Pluto shows the plan tree, join/index usage, actual runtime, and which pg_policies rows apply to every referenced table."
+        description="Paste the SQL a REST call would run — Pluto shows the plan tree, join/index usage, actual runtime, and which pg_policies rows apply to every referenced table."
       />
 
       <section className="rounded-lg border border-border bg-card p-4 space-y-3">
