@@ -11,6 +11,7 @@ import {
   adminTraces, isLive,
   type PiiRule, type AlertWebhook,
 } from "@/lib/pluto/live";
+import { TraceAccessGate } from "@/components/pluto/TraceAccessGate";
 
 export const Route = createFileRoute("/dashboard/traces/settings")({
   head: () => ({
@@ -20,8 +21,16 @@ export const Route = createFileRoute("/dashboard/traces/settings")({
       { name: "robots", content: "noindex" },
     ],
   }),
-  component: SettingsPage,
+  component: GatedSettingsPage,
 });
+
+function GatedSettingsPage() {
+  return (
+    <TraceAccessGate permission="manage">
+      <SettingsPage />
+    </TraceAccessGate>
+  );
+}
 
 const APPLIES = ["all","message","hint","detail","stack","url","fields","user_agent"] as const;
 
