@@ -109,6 +109,7 @@ export function mapError(
     hint?: string;
     detail?: string;
     validation?: unknown;
+    fields?: Record<string, string>;
   };
 
   // Fastify built-in schema validation
@@ -129,6 +130,53 @@ export function mapError(
         statusCode: 400,
         traceId: ctx.traceId,
         fields,
+      },
+    };
+  }
+
+  // Fastify multipart / body-limit errors → upload envelope.
+  // Codes surfaced by @fastify/multipart and fastify core.
+  const MULTIPART_MAP: Record<string, { status: number; code: string; message: string; tag: string }> = {
+    FST_REQ_FILE_TOO_LARGE:              { status: 413, code: 'file_too_large',          message: 'The uploaded file is larger than the allowed maximum.', tag: 'upload.too_large' },
+    FST_FILES_LIMIT:                     { status: 400, code: 'too_many_files',          message: 'Too many files in one request.',                        tag: 'upload.too_many' },
+    FST_PARTS_LIMIT:                     { status: 400, code: 'too_many_parts',          message: 'Too many parts in the multipart request.',              tag: 'upload.too_many' },
+    FST_FIELDS_LIMIT:                    { status: 400, code: 'too_many_fields',         message: 'Too many form fields in the multipart request.',        tag: 'upload.too_many' },
+    FST_INVALID_MULTIPART_CONTENT_TYPE:  { status: 415, code: 'unsupported_media_type',  message: 'Expected multipart/form-data content type.',            tag: 'upload.bad_content_type' },
+    FST_ERR_CTP_BODY_TOO_LARGE:          { status: 413, code: 'body_too_large',          message: 'The request body is larger than the allowed maximum.',   tag: 'upload.body_too_large' },
+    FST_ERR_CTP_INVALID_MEDIA_TYPE:      { status: 415, code: 'unsupported_media_type',  message: 'That content type is not supported.',                    tag: 'upload.bad_content_type' },
+  };
+  if (typeof e?.code === 'string' && MULTIPART_MAP[e.code]) {
+    const m = MULTIPART_MAP[e.code];
+    return {
+      status: m.status,
+      severity: 'warn',
+      tag: m.tag,
+      body: {
+        error: 'UploadError',
+        message: m.message,
+        code: m.code,
+        statusCode: m.status,
+        traceId: ctx.traceId,
+        fields: e.fields ?? { file: m.message },
+      },
+    };
+  }
+
+  // Application-thrown UploadError (from util/multipart.ts) — carries
+  // statusCode + code + fields already.
+  if (e?.name === 'UploadError' && typeof e.statusCode === 'number' && e.fields) {
+    return {
+      status: e.statusCode,
+      severity: 'warn',
+      tag: `upload.${e.code || 'error'}`,
+      body: {
+        error: 'UploadError',
+        message: e.message || 'The upload was rejected.',
+        code: e.code,
+        detail: e.detail,
+        statusCode: e.statusCode,
+        traceId: ctx.traceId,
+        fields: e.fields,
       },
     };
   }
@@ -165,7 +213,9 @@ export function mapError(
     severity: status >= 500 ? 'error' : 'warn',
     tag: status >= 500 ? 'internal' : 'client',
     body: {
-      error: e?.name || (status >= 500 ? 'InternalError' : 'RequestError'),
+      // Force `InternalError` on 5xx to avoid leaking internal class names
+      // (e.g. `Error`, `TypeError`, `PostgresConnectionError`) to clients.
+      error: status >= 500 ? 'InternalError' : (e?.name || 'RequestError'),
       message: friendly,
       code: e?.code,
       hint: e?.hint,

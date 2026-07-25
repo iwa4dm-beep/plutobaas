@@ -51,6 +51,8 @@ import { runStartupRoleCheck } from './db/verify-roles.js';
 import { metricsPlugin } from './observability/metrics.js';
 import { swaggerPlugin } from './observability/swagger.js';
 import { mapError, recordFailure } from './observability/errors.js';
+import { recordErrorEvent } from './observability/error-log.js';
+import { observabilityRoutes } from './routes/observability.js';
 
 
 
@@ -210,6 +212,7 @@ async function main() {
   await tokensRoutes(app, cfg);
   await dbioRoutes(app, cfg);
   await admissionsRoutes(app, cfg);
+  await observabilityRoutes(app, cfg);
 
 
 
@@ -267,6 +270,31 @@ async function main() {
     const alertKey = status >= 500 ? `5xx:${tag}` : tag === 'validation' ? 'validation' : `4xx:${status}`;
     const alert = recordFailure(alertKey);
     if (alert) app.log.error({ alert: true, traceId, ...alert }, `recurring failure: ${alert.tag} (${alert.count} in ${alert.windowMs}ms)`);
+
+    // Capture into the in-memory trace buffer for GET /admin/v1/traces/:traceId.
+    // Skip 404 route-not-founds to keep the buffer signal-to-noise high; the
+    // notFoundHandler doesn't route through here anyway.
+    if (traceId) {
+      recordErrorEvent({
+        traceId,
+        at: new Date().toISOString(),
+        method: req.method,
+        url: req.url,
+        status,
+        error: body.error,
+        message: body.message,
+        code: body.code,
+        tag,
+        severity,
+        fields: body.fields,
+        hint: body.hint,
+        detail: body.detail,
+        actorId: (req as any).user?.sub ?? null,
+        userAgent: (req.headers['user-agent'] as string) ?? null,
+        ip: req.ip ?? null,
+        stack: status >= 500 && err instanceof Error ? err.stack : undefined,
+      });
+    }
 
     if (traceId) reply.header('x-request-id', traceId);
     reply.code(status).send(body);
