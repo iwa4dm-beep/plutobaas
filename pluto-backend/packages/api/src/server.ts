@@ -50,8 +50,9 @@ import { runStartupRoleCheck } from './db/verify-roles.js';
 
 import { metricsPlugin } from './observability/metrics.js';
 import { swaggerPlugin } from './observability/swagger.js';
-import { mapError, recordFailure } from './observability/errors.js';
-import { recordErrorEvent } from './observability/error-log.js';
+import { mapError } from './observability/errors.js';
+import { recordErrorEvent, persistErrorEvent } from './observability/error-log.js';
+import { recordFailureWithSample } from './observability/alert-sink.js';
 import { observabilityRoutes } from './routes/observability.js';
 
 
@@ -266,20 +267,33 @@ async function main() {
     if (body.fields) logCtx.fields = body.fields;
     (req as any).log?.[severity]?.(logCtx, body.message) ?? app.log[severity](logCtx, body.message);
 
-    // Recurring-failure alert (throttled)
-    const alertKey = status >= 500 ? `5xx:${tag}` : tag === 'validation' ? 'validation' : `4xx:${status}`;
-    const alert = recordFailure(alertKey);
-    if (alert) app.log.error({ alert: true, traceId, ...alert }, `recurring failure: ${alert.tag} (${alert.count} in ${alert.windowMs}ms)`);
+    // Spike-alert sink: emit `alert=true` when a bucket exceeds threshold in
+    // the rolling window (cooldown-protected). Payload carries traceId
+    // samples + a lookup URL so on-call can jump straight to the trace.
+    const alertKey =
+      status >= 500 ? `5xx:${tag}` :
+      body.code === 'validation_failed' ? 'validation_failed' :
+      tag === 'validation' ? 'validation' :
+      `4xx:${status}`;
+    const alert = recordFailureWithSample(alertKey, traceId);
+    if (alert) {
+      app.log.error(
+        { alert: true, traceId, ...alert },
+        `spike: ${alert.tag} (${alert.count} in ${alert.windowMs}ms) — look up sample: ${alert.sampleTraceIds[0] ?? '(none)'}`,
+      );
+    }
 
-    // Capture into the in-memory trace buffer for GET /admin/v1/traces/:traceId.
-    // Skip 404 route-not-founds to keep the buffer signal-to-noise high; the
-    // notFoundHandler doesn't route through here anyway.
+    // Route-pattern hint for the durable audit (helps filter by endpoint,
+    // e.g. /admin/v1/tokens instead of /admin/v1/tokens/<uuid>).
+    const endpoint = ((req as any).routerPath as string | undefined) ?? undefined;
+
     if (traceId) {
-      recordErrorEvent({
+      const evt = {
         traceId,
         at: new Date().toISOString(),
         method: req.method,
         url: req.url,
+        endpoint,
         status,
         error: body.error,
         message: body.message,
@@ -293,7 +307,10 @@ async function main() {
         userAgent: (req.headers['user-agent'] as string) ?? null,
         ip: req.ip ?? null,
         stack: status >= 500 && err instanceof Error ? err.stack : undefined,
-      });
+      };
+      recordErrorEvent(evt);
+      // Fire-and-forget durable persist to admin.error_events (migration 0040).
+      persistErrorEvent(cfg, evt);
     }
 
     if (traceId) reply.header('x-request-id', traceId);

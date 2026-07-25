@@ -1517,6 +1517,66 @@ export const observability = {
   gdprRun: (id: string) => api<{ ok: boolean }>(`/compliance/v1/gdpr/${id}/run`, { method: "POST", service: true }),
 };
 
+// ---------------- Admin trace viewer ------------------------------------
+// Backed by /admin/v1/traces (see routes/observability.ts). Requires a
+// service_role token OR a signed-in superadmin user; both are handled by
+// the standard `service: true` bearer path.
+export type AdminTraceEvent = {
+  traceId: string;
+  at: string;
+  method: string;
+  url: string;
+  endpoint?: string | null;
+  status: number;
+  error: string;
+  message: string;
+  code?: string;
+  tag: string;
+  severity: "warn" | "error";
+  fields?: Record<string, string>;
+  hint?: string;
+  detail?: string;
+  actorId?: string | null;
+  userAgent?: string | null;
+  ip?: string | null;
+  stack?: string;
+};
+export type AdminTraceListResponse = {
+  count: number;
+  limit: number;
+  nextCursor: string | null;
+  events: AdminTraceEvent[];
+};
+export type AdminTraceFilters = {
+  limit?: number;
+  cursor?: string;
+  status?: number;
+  minStatus?: number;
+  maxStatus?: number;
+  errorCode?: string;
+  tag?: string;
+  endpoint?: string;
+  method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "OPTIONS" | "HEAD";
+  actorId?: string;
+  from?: string;
+  to?: string;
+};
+export const adminTraces = {
+  get: (traceId: string) =>
+    api<{ event: AdminTraceEvent; source: "memory" | "database" }>(
+      `/admin/v1/traces/${encodeURIComponent(traceId)}`,
+      { service: true },
+    ),
+  list: (filters: AdminTraceFilters = {}) => {
+    const qs = new URLSearchParams();
+    for (const [k, v] of Object.entries(filters)) {
+      if (v !== undefined && v !== null && v !== "") qs.set(k, String(v));
+    }
+    const suffix = qs.toString() ? `?${qs}` : "";
+    return api<AdminTraceListResponse>(`/admin/v1/traces${suffix}`, { service: true });
+  },
+};
+
 // ---------------- Phase 19 — Developer Experience -----------------------
 export type ProjectTemplate = { id: string; slug: string; name: string; description: string; category: string; published: boolean; created_at: string };
 export type PersonalToken = { id: string; name: string; scopes: string[]; last_used_at: string | null; expires_at: string | null; revoked_at: string | null; created_at: string };
