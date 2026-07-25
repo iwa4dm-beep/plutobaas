@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import swagger from '@fastify/swagger';
 import swaggerUi from '@fastify/swagger-ui';
 import type { Config } from '../config.js';
+import { ApiErrorSchema } from './error-schemas.js';
 
 /**
  * Registers OpenAPI 3.0 spec generation + Swagger UI.
