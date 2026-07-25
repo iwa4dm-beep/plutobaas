@@ -213,7 +213,9 @@ export function mapError(
     severity: status >= 500 ? 'error' : 'warn',
     tag: status >= 500 ? 'internal' : 'client',
     body: {
-      error: e?.name || (status >= 500 ? 'InternalError' : 'RequestError'),
+      // Force `InternalError` on 5xx to avoid leaking internal class names
+      // (e.g. `Error`, `TypeError`, `PostgresConnectionError`) to clients.
+      error: status >= 500 ? 'InternalError' : (e?.name || 'RequestError'),
       message: friendly,
       code: e?.code,
       hint: e?.hint,
