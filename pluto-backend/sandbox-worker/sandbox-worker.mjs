@@ -1344,6 +1344,27 @@ async function readRepairHistory(limit = 25, filter = {}) {
   return list.slice(0, Math.max(1, Math.min(200, Number(limit) || 25)));
 }
 
+// ---------- Ops audit + backups (Ops v2) ----------
+async function appendJsonListFile(file, entry, max) {
+  let list = [];
+  try { list = JSON.parse(await fsp.readFile(file, "utf-8")); if (!Array.isArray(list)) list = []; } catch { list = []; }
+  list.unshift(entry);
+  if (list.length > max) list = list.slice(0, max);
+  await fsp.mkdir(SITES_ROOT, { recursive: true });
+  await fsp.writeFile(file, JSON.stringify(list, null, 2));
+}
+async function readJsonListFile(file, limit, filter) {
+  let list = [];
+  try { list = JSON.parse(await fsp.readFile(file, "utf-8")); if (!Array.isArray(list)) list = []; } catch { list = []; }
+  if (filter?.env) list = list.filter((e) => e && e.env === filter.env);
+  if (filter?.action) list = list.filter((e) => e && e.action === filter.action);
+  if (filter?.actor) list = list.filter((e) => e && (e.actorEmail === filter.actor || e.actorUserId === filter.actor));
+  return list.slice(0, Math.max(1, Math.min(500, Number(limit) || 100)));
+}
+async function appendOpsAudit(entry) { return appendJsonListFile(OPS_AUDIT_FILE, entry, OPS_AUDIT_MAX); }
+async function appendOpsBackup(entry) { return appendJsonListFile(OPS_BACKUPS_FILE, entry, OPS_BACKUPS_MAX); }
+
+
 
 const server = http.createServer(async (req, res) => {
   try {
