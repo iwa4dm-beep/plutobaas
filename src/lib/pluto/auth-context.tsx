@@ -24,9 +24,10 @@ function liveSessionToPluto(): PlutoSession | null {
     user: {
       id: s.user.id,
       email: s.user.email,
-      role: s.user.role === "admin" ? "admin" : "user",
+      role: s.user.is_superadmin || s.user.role === "admin" ? "admin" : "user",
       created_at: s.user.created_at ?? "",
       email_verified: s.user.email_verified ?? Boolean(s.user.email_confirmed_at),
+      is_superadmin: Boolean(s.user.is_superadmin),
     },
   };
 }
