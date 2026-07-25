@@ -224,6 +224,21 @@ async function main() {
     endpoints: ['/livez', '/readyz', '/healthz', '/health/deps', '/metrics', '/docs', '/openapi.json', '/auth/v1/*', '/rest/v1/*', '/storage/v1/*', '/realtime/v1/*', '/admin/v1/*', '/functions/v1/*', '/jobs/v1/*', '/tokens/v1/*'],
   }));
 
+  // 404 envelope — same shape as errors, so clients can rely on one contract.
+  app.setNotFoundHandler((req, reply) => {
+    const traceId = (req as any).traceId as string | undefined;
+    if (traceId) reply.header('x-request-id', traceId);
+    reply.code(404).send({
+      error: 'NotFound',
+      message: 'The requested endpoint does not exist.',
+      code: 'route_not_found',
+      statusCode: 404,
+      traceId,
+    });
+  });
+
+
+
   // Global error handler — routes every thrown value through the central
   // mapper (Zod → 400 with field errors, Postgres codes → sensible HTTP
   // status + friendly text, everything else → safe fallback). The response
