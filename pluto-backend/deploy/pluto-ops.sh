@@ -308,9 +308,36 @@ case "$ACTION" in
     fi
     log "restore complete"
     ;;
+  backup-prune)
+    # Enforce retention: delete dumps older than KEEP_DAYS days OR beyond KEEP_COUNT newest.
+    kd="${KEEP_DAYS:-0}"; kc="${KEEP_COUNT:-0}"
+    log "prune keep_days=$kd keep_count=$kc dir=$BACKUP_ROOT"
+    removed=0; kept=0
+    # Age-based first.
+    if [ "$kd" -gt 0 ] 2>/dev/null; then
+      while IFS= read -r f; do
+        [ -f "$f" ] || continue
+        printf 'PRUNE_REMOVE: %s (age)\n' "$f"
+        rm -f "$f" && removed=$((removed+1))
+      done < <(find "$BACKUP_ROOT" -maxdepth 1 -type f -name '*.dump' -mtime "+$kd" 2>/dev/null)
+    fi
+    # Count-based: keep newest kc, delete rest.
+    if [ "$kc" -gt 0 ] 2>/dev/null; then
+      i=0
+      while IFS= read -r f; do
+        i=$((i+1))
+        if [ "$i" -le "$kc" ]; then kept=$((kept+1)); continue; fi
+        printf 'PRUNE_REMOVE: %s (count)\n' "$f"
+        rm -f "$f" && removed=$((removed+1))
+      done < <(ls -1t "$BACKUP_ROOT"/*.dump 2>/dev/null)
+    fi
+    printf 'PRUNE_JSON: {"env":"%s","removed":%s,"kept":%s,"keepDays":%s,"keepCount":%s,"at":"%s"}\n' \
+      "$ENV_NAME" "$removed" "$kept" "${kd:-0}" "${kc:-0}" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    log "prune complete removed=$removed kept=$kept"
+    ;;
   *)
     echo "unknown action: $ACTION" >&2
-    echo "allowed: migrations-plan|dry-run|apply|rollback-plan|rollback-apply, service-restart|rollout|health, backup-create|list|restore" >&2
+    echo "allowed: migrations-plan|dry-run|apply|rollback-plan|rollback-apply, service-restart|rollout|health, backup-create|list|restore|prune" >&2
     exit 2
     ;;
 esac
