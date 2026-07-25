@@ -1,60 +1,78 @@
-# Supabase → Pluto Migration Toolkit
+# Automated VPS Migration & Service Restart
 
-`timesn` কোডবেসটি VPS-এ (`/opt/timesn`) — এই Lovable প্রজেক্টে সরাসরি এডিট করা যাবে না। তাই আমি `pluto-backend/deploy/`-এ **তিনটি স্ক্রিপ্ট** যোগ করব যেগুলো VPS-এ চালিয়ে সম্পূর্ণ migration করা যাবে।
+লক্ষ্য: নতুন migration apply করা এবং service restart করা — দুটোই dashboard থেকে এক ক্লিকে, VPS-এ SSH না করে।
 
-## কী তৈরি হবে
+## কোথায় বসাবো (Placement)
 
-### 1. `migrate-frontend-to-pluto.sh`
-Codebase স্ক্যান করে Supabase → Pluto rewrite:
-- `@supabase/supabase-js` → `@pluto/js` (package.json + imports)
-- `createClient(...)` কল-সাইট patch
-- `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` → `VITE_PLUTO_URL` / `VITE_PLUTO_ANON_KEY`
-- `src/integrations/supabase/client.ts` → `src/lib/pluto.ts` shim (backward-compatible export)
-- `.env` template তৈরি
-- Dry-run mode (`--dry`) — কোন file বদলাবে তার diff দেখাবে
+নতুন dedicated page: **`/dashboard/ops`** (Sidebar → "Operations")
 
-### 2. `extract-supabase-schema.sh`
-Supabase project থেকে schema+RLS extract:
-- `pg_dump --schema-only --no-owner` চালিয়ে `schema.sql`
-- RLS policies, functions, triggers আলাদা করে dump
-- Pluto migrator-compatible bundle (`pluto-backend/migrations/tenants/<slug>.sql`)
-- Supabase-specific জিনিস (`auth.uid()` etc.) auto-translate করে Pluto equivalent-এ
+কারণ:
+- `database-import` = schema import/connection wizard, একবারের কাজ
+- `data-studio` = row-level browsing
+- Ops = recurring lifecycle (migration apply, service restart, health)। এদের আলাদা mental model দরকার।
 
-### 3. `verify-pluto-cutover.sh`
-Cutover verify:
-- Deployed bundle scan → `api.timescard.cloud` + `pk_anon_` উপস্থিত কিনা
-- `/auth/v1/token` probe (Pluto login endpoint)
-- Sample data query
-- Red/Green report
+পাশাপাশি existing `OneClickFixPanel` / `MigrationRunner` কার্ডগুলোকেও এই Ops page-এ consolidate করব যাতে "কোথায় কী চালাই" সেই confusion না থাকে।
 
-## Workflow (VPS-এ)
+## Backend (server functions)
+
+নতুন file: `src/lib/ops/vps-ops.functions.ts` — সব `requireSupabaseAuth` + `manage` role gate।
+
+1. **`planMigrations`** — VPS API-তে `POST /admin/migrations/plan` কল করে pending list, drift, checksum ফেরত দেয়। কিছু apply করে না।
+2. **`dryRunMigrations`** — `POST /admin/migrations/dry-run`; transaction-এ চালিয়ে rollback করে, per-file success/error স্ট্রিম করে।
+3. **`applyMigrations`** — `POST /admin/migrations/apply`; SSE/chunked stream করে log line-by-line।
+4. **`restartService`** — `POST /admin/services/restart` with `{ service: "api" | "realtime" | "worker" | "nginx-reload" }`; allow-listed, arbitrary shell নয়।
+5. **`serviceHealth`** — `GET /admin/services/health`; প্রতিটা service-এর uptime, last restart, error count।
+6. **`opsHistory`** — সাম্প্রতিক migration runs (`migration_boot_runs` table থেকে) + restart events।
+
+VPS side: pluto-backend API-তে ইতিমধ্যে migration runner আছে (`db/migrate.ts`)। যা যোগ করতে হবে:
+- `/admin/migrations/*` HTTP endpoints যা migration script কে সাবপ্রসেস হিসেবে চালিয়ে stdout stream করে।
+- `/admin/services/restart` যা systemd unit বা docker compose service কে allow-list থেকে restart করে (sudo rule সেটআপসহ)।
+- Auth: existing service_role JWT + IP allow-list (optional)।
+
+## Frontend (নতুন page)
+
+`src/routes/dashboard/ops.tsx` — চারটে কার্ড:
 
 ```text
-1. bash migrate-frontend-to-pluto.sh --dry     # preview
-2. bash migrate-frontend-to-pluto.sh           # apply
-3. bash extract-supabase-schema.sh <SUPABASE_DB_URL> timesn
-4. Push schema via Dashboard → Auto Deploy → Migrations (or migrator CLI)
-5. Edit /opt/timesn/.env → VITE_PLUTO_URL, VITE_PLUTO_ANON_KEY
-6. cd /opt/timesn && bun install && bun run build
-7. zip + deploy via existing flow
-8. bash verify-pluto-cutover.sh app.timescard.cloud
+┌─ Migration Control ────────────────┐  ┌─ Service Control ────────┐
+│ [Plan] [Dry-run] [Apply]           │  │ api      ● running  [↻]  │
+│ pending: 3   drift: 0              │  │ realtime ● running  [↻]  │
+│ ─ live log stream ─                │  │ worker   ● running  [↻]  │
+│ → 0042_...sql  ✓ 42ms              │  │ nginx    ● reload   [↻]  │
+└────────────────────────────────────┘  └──────────────────────────┘
+
+┌─ Run History (last 20) ────────────────────────────────────────┐
+│ 2026-07-25 04:12  apply   ok    3 files    admin@…             │
+│ 2026-07-25 03:58  restart api   ok         admin@…             │
+└────────────────────────────────────────────────────────────────┘
 ```
 
-## Prerequisites (আপনার লাগবে)
+Reusable pieces:
+- `MigrationRunner.tsx` existing component রিফ্যাক্টর করে এখানে বসাবো।
+- `ServiceControlCard.tsx` — status polling (every 10s) + restart button with confirm dialog।
+- `OpsHistoryTable.tsx` — paginated।
 
-- **Pluto anon key** — Pluto Dashboard → Workspace → API Keys → `pk_anon_...`
-- **Supabase DB URL** — Supabase Dashboard → Project Settings → Database → Connection string (schema extract-এর জন্য এক-বার)
-- **User data migration** — schema-only extract করব; user rows / auth.users আলাদা flow লাগবে (script-এ warning দেব, চাইলে পরে data-migration step যোগ করব)
+## Safety
 
-## ঝুঁকি / সীমাবদ্ধতা
+- সব mutating action-এ confirm dialog + typed confirmation (service name টাইপ করতে হবে restart-এর জন্য)।
+- RBAC: `manage` permission (existing `TraceAccessGate` pattern reuse)।
+- Rate limit: প্রতি service ৩০s cooldown।
+- সব action `error_events` + নতুন `ops_events` table-এ log হবে (trace_id সহ)।
 
-- Supabase Auth users (`auth.users` table) সরাসরি Pluto-তে move হয় না — password hash format আলাদা হতে পারে; ব্যবহারকারীদের password reset লাগতে পারে (verify-cutover script warning দেবে)
-- Storage bucket থাকলে আলাদা migration লাগবে (এই toolkit-এ নেই — চাইলে পরে যোগ করব)
-- Edge Functions (Supabase) → Pluto Edge Functions মানুয়ালি port করতে হবে
-- `auth.uid()` → Pluto equivalent (`current_setting('pluto.user_id')`) auto-translate করব, কিন্তু জটিল RLS policy manual review লাগতে পারে
+## Deliverables
 
-## Approve করলে
+1. Migration `0042_ops_events.sql` — audit log।
+2. VPS API routes (`pluto-backend/packages/api/src/routes/admin-ops.ts`) — migrations + services।
+3. Systemd sudoers snippet (`deploy/systemd/pluto-ops-sudoers`) — restart permission for pluto user।
+4. `src/lib/ops/vps-ops.functions.ts` — 6টা server function।
+5. `src/routes/dashboard/ops.tsx` + 3টা component।
+6. Sidebar-এ "Operations" link।
+7. E2E test: `e2e/ops-page.spec.ts` — plan → dry-run → apply → restart flow (mocked)।
 
-স্ক্রিপ্ট ৩টা `pluto-backend/deploy/`-এ commit করব। তারপর আপনি VPS-এ পুল করে চালাবেন — আমি step-by-step guide করব এবং verify script-এর আউটপুট দেখে যেকোনো mismatch fix করব।
+## Rollout
 
-চাইলে **user data migration** আর **storage migration**-ও আজই এই প্ল্যানে যোগ করতে পারি — জানান।
+Phase 1: Read-only (plan + health + history) — risk শূন্য।
+Phase 2: Dry-run enable।
+Phase 3: Apply + restart with confirmation।
+
+Approve করলে তিনটা phase একসাথে ship করব, কারণ frontend gate দিয়ে phase toggle করা যায়।
