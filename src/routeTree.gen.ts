@@ -39,6 +39,7 @@ import { Route as DashboardSdkReleaseRouteImport } from './routes/dashboard.sdk-
 import { Route as DashboardSdkDemoRouteImport } from './routes/dashboard.sdk-demo'
 import { Route as DashboardScalingRouteImport } from './routes/dashboard.scaling'
 import { Route as DashboardRealtimeRouteImport } from './routes/dashboard.realtime'
+import { Route as DashboardRbacDebugRouteImport } from './routes/dashboard.rbac-debug'
 import { Route as DashboardRbacRouteImport } from './routes/dashboard.rbac'
 import { Route as DashboardProjectsRouteImport } from './routes/dashboard.projects'
 import { Route as DashboardPlutoWebhooksRouteImport } from './routes/dashboard.pluto-webhooks'
@@ -272,6 +273,11 @@ const DashboardScalingRoute = DashboardScalingRouteImport.update({
 const DashboardRealtimeRoute = DashboardRealtimeRouteImport.update({
   id: '/realtime',
   path: '/realtime',
+  getParentRoute: () => DashboardRoute,
+} as any)
+const DashboardRbacDebugRoute = DashboardRbacDebugRouteImport.update({
+  id: '/rbac-debug',
+  path: '/rbac-debug',
   getParentRoute: () => DashboardRoute,
 } as any)
 const DashboardRbacRoute = DashboardRbacRouteImport.update({
@@ -782,6 +788,7 @@ export interface FileRoutesByFullPath {
   '/dashboard/pluto-webhooks': typeof DashboardPlutoWebhooksRoute
   '/dashboard/projects': typeof DashboardProjectsRouteWithChildren
   '/dashboard/rbac': typeof DashboardRbacRoute
+  '/dashboard/rbac-debug': typeof DashboardRbacDebugRoute
   '/dashboard/realtime': typeof DashboardRealtimeRoute
   '/dashboard/scaling': typeof DashboardScalingRoute
   '/dashboard/sdk-demo': typeof DashboardSdkDemoRoute
@@ -897,6 +904,7 @@ export interface FileRoutesByTo {
   '/dashboard/pluto-webhooks': typeof DashboardPlutoWebhooksRoute
   '/dashboard/projects': typeof DashboardProjectsRouteWithChildren
   '/dashboard/rbac': typeof DashboardRbacRoute
+  '/dashboard/rbac-debug': typeof DashboardRbacDebugRoute
   '/dashboard/realtime': typeof DashboardRealtimeRoute
   '/dashboard/scaling': typeof DashboardScalingRoute
   '/dashboard/sdk-demo': typeof DashboardSdkDemoRoute
@@ -1014,6 +1022,7 @@ export interface FileRoutesById {
   '/dashboard/pluto-webhooks': typeof DashboardPlutoWebhooksRoute
   '/dashboard/projects': typeof DashboardProjectsRouteWithChildren
   '/dashboard/rbac': typeof DashboardRbacRoute
+  '/dashboard/rbac-debug': typeof DashboardRbacDebugRoute
   '/dashboard/realtime': typeof DashboardRealtimeRoute
   '/dashboard/scaling': typeof DashboardScalingRoute
   '/dashboard/sdk-demo': typeof DashboardSdkDemoRoute
@@ -1132,6 +1141,7 @@ export interface FileRouteTypes {
     | '/dashboard/pluto-webhooks'
     | '/dashboard/projects'
     | '/dashboard/rbac'
+    | '/dashboard/rbac-debug'
     | '/dashboard/realtime'
     | '/dashboard/scaling'
     | '/dashboard/sdk-demo'
@@ -1247,6 +1257,7 @@ export interface FileRouteTypes {
     | '/dashboard/pluto-webhooks'
     | '/dashboard/projects'
     | '/dashboard/rbac'
+    | '/dashboard/rbac-debug'
     | '/dashboard/realtime'
     | '/dashboard/scaling'
     | '/dashboard/sdk-demo'
@@ -1363,6 +1374,7 @@ export interface FileRouteTypes {
     | '/dashboard/pluto-webhooks'
     | '/dashboard/projects'
     | '/dashboard/rbac'
+    | '/dashboard/rbac-debug'
     | '/dashboard/realtime'
     | '/dashboard/scaling'
     | '/dashboard/sdk-demo'
@@ -1644,6 +1656,13 @@ declare module '@tanstack/react-router' {
       path: '/realtime'
       fullPath: '/dashboard/realtime'
       preLoaderRoute: typeof DashboardRealtimeRouteImport
+      parentRoute: typeof DashboardRoute
+    }
+    '/dashboard/rbac-debug': {
+      id: '/dashboard/rbac-debug'
+      path: '/rbac-debug'
+      fullPath: '/dashboard/rbac-debug'
+      preLoaderRoute: typeof DashboardRbacDebugRouteImport
       parentRoute: typeof DashboardRoute
     }
     '/dashboard/rbac': {
@@ -2383,6 +2402,7 @@ interface DashboardRouteChildren {
   DashboardPlutoWebhooksRoute: typeof DashboardPlutoWebhooksRoute
   DashboardProjectsRoute: typeof DashboardProjectsRouteWithChildren
   DashboardRbacRoute: typeof DashboardRbacRoute
+  DashboardRbacDebugRoute: typeof DashboardRbacDebugRoute
   DashboardRealtimeRoute: typeof DashboardRealtimeRoute
   DashboardScalingRoute: typeof DashboardScalingRoute
   DashboardSdkDemoRoute: typeof DashboardSdkDemoRoute
@@ -2464,6 +2484,7 @@ const DashboardRouteChildren: DashboardRouteChildren = {
   DashboardPlutoWebhooksRoute: DashboardPlutoWebhooksRoute,
   DashboardProjectsRoute: DashboardProjectsRouteWithChildren,
   DashboardRbacRoute: DashboardRbacRoute,
+  DashboardRbacDebugRoute: DashboardRbacDebugRoute,
   DashboardRealtimeRoute: DashboardRealtimeRoute,
   DashboardScalingRoute: DashboardScalingRoute,
   DashboardSdkDemoRoute: DashboardSdkDemoRoute,

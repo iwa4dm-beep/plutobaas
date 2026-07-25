@@ -18,16 +18,52 @@ import { useAuth } from "@/lib/pluto/auth-context";
  */
 export type TracePermission = "view" | "manage";
 
-function getRole(session: unknown): string {
+/** Roles / flags allowed to satisfy each permission tier. */
+export const PERMISSION_REQUIREMENTS: Record<TracePermission, {
+  roles: readonly string[];
+  requireSuperadmin: boolean;
+  description: string;
+}> = {
+  view: {
+    roles: ["admin", "owner", "service_role"],
+    requireSuperadmin: false,
+    description: "workspace admin/owner (or service_role / superadmin) to view traces",
+  },
+  manage: {
+    roles: ["owner", "service_role"],
+    requireSuperadmin: false,
+    description:
+      "workspace owner (or service_role / superadmin) to manage PII rules and alert webhooks",
+  },
+};
+
+/** Structured diagnostic summary — used by the debug page and error card. */
+export type PermissionDiagnostic = {
+  email: string | null;
+  role: string;
+  isSuperadmin: boolean;
+  rawRoleSources: { location: string; value: unknown }[];
+  superadminSources: { location: string; value: unknown }[];
+  permission: TracePermission;
+  allowed: boolean;
+  reason: string;
+  matched: string | null;
+  requirement: (typeof PERMISSION_REQUIREMENTS)[TracePermission];
+};
+
+export function getRole(session: unknown): string {
   if (!session || typeof session !== "object") return "";
   const s = session as { user?: { role?: string }; role?: string };
   return String(s.user?.role ?? s.role ?? "").toLowerCase();
 }
 
-function isSuperadmin(session: unknown): boolean {
+export function isSuperadmin(session: unknown): boolean {
   if (!session || typeof session !== "object") return false;
   const s = session as {
-    user?: { is_superadmin?: boolean; app_metadata?: { is_superadmin?: boolean; superadmin?: boolean } };
+    user?: {
+      is_superadmin?: boolean;
+      app_metadata?: { is_superadmin?: boolean; superadmin?: boolean };
+    };
   };
   return Boolean(
     s.user?.is_superadmin ||
@@ -37,12 +73,79 @@ function isSuperadmin(session: unknown): boolean {
 }
 
 export function hasTracePermission(session: unknown, perm: TracePermission): boolean {
+  return diagnosePermission(session, perm).allowed;
+}
+
+/**
+ * Return a full diagnostic breakdown of *why* a permission was granted or
+ * denied. Powers both the improved error card and the RBAC debug page so
+ * they always agree on the reason.
+ */
+export function diagnosePermission(
+  session: unknown,
+  perm: TracePermission,
+): PermissionDiagnostic {
+  const requirement = PERMISSION_REQUIREMENTS[perm];
+  const s = (session ?? {}) as {
+    user?: {
+      email?: string;
+      role?: string;
+      is_superadmin?: boolean;
+      app_metadata?: { is_superadmin?: boolean; superadmin?: boolean };
+    };
+    role?: string;
+  };
+
+  const rawRoleSources = [
+    { location: "session.user.role", value: s.user?.role },
+    { location: "session.role", value: s.role },
+  ];
+  const superadminSources = [
+    { location: "session.user.is_superadmin", value: s.user?.is_superadmin },
+    {
+      location: "session.user.app_metadata.is_superadmin",
+      value: s.user?.app_metadata?.is_superadmin,
+    },
+    {
+      location: "session.user.app_metadata.superadmin",
+      value: s.user?.app_metadata?.superadmin,
+    },
+  ];
+
   const role = getRole(session);
   const zuper = isSuperadmin(session);
-  if (zuper || role === "service_role") return true;
-  if (perm === "view") return role === "admin" || role === "owner";
-  // manage
-  return role === "owner";
+  const email = s.user?.email ?? null;
+
+  let allowed = false;
+  let matched: string | null = null;
+  let reason = "";
+
+  if (zuper) {
+    allowed = true;
+    matched = "is_superadmin";
+    reason = "Granted via is_superadmin flag";
+  } else if (requirement.roles.includes(role)) {
+    allowed = true;
+    matched = `role=${role}`;
+    reason = `Granted via role "${role}"`;
+  } else {
+    reason = role
+      ? `Role "${role}" is not in the allowed list (${requirement.roles.join(", ")}) and is_superadmin is not set.`
+      : `No role detected on session and is_superadmin is not set.`;
+  }
+
+  return {
+    email,
+    role,
+    isSuperadmin: zuper,
+    rawRoleSources,
+    superadminSources,
+    permission: perm,
+    allowed,
+    reason,
+    matched,
+    requirement,
+  };
 }
 
 export function TraceAccessGate({
@@ -83,26 +186,51 @@ export function TraceAccessGate({
     );
   }
 
-  if (!hasTracePermission(session, permission)) {
-    const role = getRole(session) || "user";
-    const need =
-      permission === "manage"
-        ? "workspace owner (or service_role) to manage PII rules and alert webhooks"
-        : "workspace admin/owner (or service_role) to view traces";
+  const diag = diagnosePermission(session, permission);
+  if (!diag.allowed) {
     return (
       <div className="mx-auto max-w-3xl px-6 py-16">
-        <div className="rounded-2xl border border-rose-500/40 bg-rose-500/5 p-8 text-center">
-          <ShieldAlert className="mx-auto h-8 w-8 text-rose-300" />
-          <h1 className="mt-3 text-2xl font-semibold text-rose-200">
-            {permission === "manage" ? "Owner access required" : "Admin access required"}
-          </h1>
-          <p className="mt-2 text-sm text-muted-foreground">
-            Signed in as{" "}
-            <span className="font-mono">{session.user?.email ?? "unknown"}</span>{" "}
-            with role <span className="font-mono">{role}</span>. You need to be
-            a {need}.
-          </p>
-          <p className="mt-4 text-xs text-muted-foreground">
+        <div className="rounded-2xl border border-rose-500/40 bg-rose-500/5 p-8">
+          <div className="text-center">
+            <ShieldAlert className="mx-auto h-8 w-8 text-rose-300" />
+            <h1 className="mt-3 text-2xl font-semibold text-rose-200">
+              {permission === "manage" ? "Owner access required" : "Admin access required"}
+            </h1>
+            <p className="mt-2 text-sm text-muted-foreground">
+              Signed in as{" "}
+              <span className="font-mono">{diag.email ?? "unknown"}</span>. You
+              need to be a {diag.requirement.description}.
+            </p>
+          </div>
+
+          <div className="mt-6 rounded-lg border border-border/60 bg-background/40 p-4 text-left text-xs">
+            <div className="mb-2 font-semibold text-foreground">Diagnostic</div>
+            <dl className="grid grid-cols-[max-content_1fr] gap-x-3 gap-y-1 font-mono">
+              <dt className="text-muted-foreground">detected role</dt>
+              <dd>{diag.role || <span className="text-muted-foreground">(none)</span>}</dd>
+              <dt className="text-muted-foreground">is_superadmin</dt>
+              <dd>{diag.isSuperadmin ? "true" : "false"}</dd>
+              <dt className="text-muted-foreground">required</dt>
+              <dd>
+                one of [{diag.requirement.roles.join(", ")}]{" "}
+                <span className="text-muted-foreground">or</span> is_superadmin=true
+              </dd>
+              <dt className="text-muted-foreground">reason</dt>
+              <dd>{diag.reason}</dd>
+            </dl>
+            <div className="mt-3 text-muted-foreground">
+              Open{" "}
+              <Link
+                to="/dashboard/rbac-debug"
+                className="underline hover:text-foreground"
+              >
+                RBAC debug
+              </Link>{" "}
+              for the full session dump and gate matrix.
+            </div>
+          </div>
+
+          <p className="mt-4 text-center text-xs text-muted-foreground">
             Ask a workspace owner to grant the required role, then reload the page.
           </p>
           <div className="mt-6 flex justify-center gap-2">
