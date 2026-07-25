@@ -15,6 +15,7 @@ import {
   type AdminTraceEvent,
   type AdminTraceFilters,
 } from "@/lib/pluto/live";
+import { TraceAccessGate } from "@/components/pluto/TraceAccessGate";
 
 // Deep-linkable search schema. Everything is optional so operators can share
 // URLs like /dashboard/traces?traceId=xyz or ?minStatus=500&from=...&to=...
