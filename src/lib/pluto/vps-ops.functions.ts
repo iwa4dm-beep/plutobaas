@@ -396,9 +396,27 @@ export const listOpsAudit = createServerFn({ method: "POST" })
 
 export type OpsEnvConfig = {
   webhookUrl: string;
+  /** Server-side redaction: empty string or the sentinel "__set__" when a secret is configured. Never the raw value. */
+  webhookSecret: string;
   retentionDays: number;
   retentionCount: number;
   approverEmails: string[];
+};
+
+export type OpsWebhookDelivery = {
+  id: string;
+  deliveryId: string;
+  env: OpsEnv;
+  event: string;
+  url: string;
+  attempt: number;
+  maxAttempts: number;
+  status: "delivered" | "retry-scheduled" | "failed";
+  httpStatus: number;
+  error: string | null;
+  responseTail: string | null;
+  signed: boolean;
+  at: string;
 };
 
 export type OpsReportEntry = {
