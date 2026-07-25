@@ -60,6 +60,7 @@ const groups: Group[] = [
       { to: "/dashboard/pluto-auth-advanced", label: "OAuth / MFA / SSO", icon: Shield },
       { to: "/dashboard/pluto-orgs", label: "Orgs & Teams", icon: Building2 },
       { to: "/dashboard/rbac", label: "RBAC", icon: ShieldCheck },
+      { to: "/dashboard/rbac-debug", label: "RBAC debug", icon: ShieldCheck },
       { to: "/dashboard/tokens", label: "API Tokens", icon: KeyRound },
     ],
   },
