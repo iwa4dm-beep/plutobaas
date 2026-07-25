@@ -18,6 +18,7 @@ export type PlutoUser = {
   role: "admin" | "user";
   created_at: string;
   email_verified: boolean;
+  is_superadmin?: boolean;
 };
 
 export type PlutoSession = {
@@ -74,6 +75,7 @@ function adaptAuthUser(u: { id: string; email: string; role?: string; email_veri
     role: u.is_superadmin || u.role === "admin" ? "admin" : "user",
     email_verified: u.email_verified ?? Boolean(u.email_confirmed_at),
     created_at: u.created_at ?? new Date().toISOString(),
+    is_superadmin: Boolean(u.is_superadmin),
   };
 }
 
