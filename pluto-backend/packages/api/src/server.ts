@@ -95,10 +95,15 @@ async function main() {
     (globalThis.crypto?.randomUUID?.() ??
       `req_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`);
   app.addHook('onRequest', async (req, reply) => {
-    const incoming = req.headers['x-request-id'];
-    const traceId = (typeof incoming === 'string' && incoming.length <= 128 && incoming) || genTraceId();
+    // Accept common correlation-ID header names from upstream proxies so a
+    // trace initiated by nginx / cloudflare / a caller SDK flows through.
+    const h = req.headers;
+    const incoming = h['x-request-id'] ?? h['x-correlation-id'] ?? h['x-trace-id'] ?? h['traceparent'];
+    const raw = Array.isArray(incoming) ? incoming[0] : incoming;
+    const traceId = (typeof raw === 'string' && raw.length > 0 && raw.length <= 128 && raw) || genTraceId();
     (req as any).traceId = traceId;
     reply.header('x-request-id', traceId);
+    reply.header('x-correlation-id', traceId);
     (req as any).log = req.log.child({ traceId });
   });
 
