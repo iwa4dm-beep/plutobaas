@@ -536,7 +536,7 @@ const RequestApprovalInput = z.object({
   env: z.literal("prod"),
   action: z.enum(["migrations-apply", "migrations-rollback-apply", "service-restart", "service-rollout", "backup-restore"]),
   reason: z.string().min(8).max(1000),
-  payload: z.record(z.string(), z.unknown()).optional().default({}),
+  payload: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()])).optional().default({}),
 });
 
 export const requestOpsApproval = createServerFn({ method: "POST" })
