@@ -15,12 +15,58 @@ on:
         description: "Optional label for this manual run (shown in the run title)."
         required: false
         default: ""
+      browsers:
+        description: "Comma-separated Playwright browsers (chromium,firefox,webkit)."
+        required: false
+        default: "chromium"
+      node_versions:
+        description: "Comma-separated Node.js major versions (e.g. 20,22)."
+        required: false
+        default: "20"
 
 jobs:
+  prep:
+    name: Compute matrix
+    runs-on: ubuntu-latest
+    outputs:
+      browsers: ${{ steps.compute.outputs.browsers }}
+      nodes: ${{ steps.compute.outputs.nodes }}
+    steps:
+      - id: compute
+        shell: bash
+        run: |
+          set -eu
+          BROWSERS_IN="${{ github.event.inputs.browsers || 'chromium' }}"
+          NODES_IN="${{ github.event.inputs.node_versions || '20' }}"
+          to_json_array () {
+            local csv="$1"; local out="["; local first=1
+            IFS=',' read -ra parts <<< "$csv"
+            for p in "${parts[@]}"; do
+              trimmed="$(echo "$p" | xargs)"
+              [ -z "$trimmed" ] && continue
+              if [ $first -eq 1 ]; then first=0; else out+=","; fi
+              out+="\"$trimmed\""
+            done
+            out+="]"
+            echo "$out"
+          }
+          BROWSERS_JSON=$(to_json_array "$BROWSERS_IN")
+          NODES_JSON=$(to_json_array "$NODES_IN")
+          echo "browsers=$BROWSERS_JSON" >> "$GITHUB_OUTPUT"
+          echo "nodes=$NODES_JSON" >> "$GITHUB_OUTPUT"
+          echo "Browsers: $BROWSERS_JSON"
+          echo "Nodes:    $NODES_JSON"
+
   e2e:
     name: Playwright E2E
+    needs: prep
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: ${{ fromJSON(needs.prep.outputs.browsers) }}
+        node: ${{ fromJSON(needs.prep.outputs.nodes) }}
     defaults:
       run:
         working-directory: examples/nextjs-starter
@@ -33,13 +79,14 @@ jobs:
       E2E_TEST_PASSWORD: ${{ secrets.E2E_TEST_PASSWORD }}
       STARTER_URL: http://localhost:3000
       CI: "1"
+      PLAYWRIGHT_BROWSER: ${{ matrix.browser }}
 
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: ${{ matrix.node }}
           cache: "npm"
           cache-dependency-path: examples/nextjs-starter/package-lock.json
 
@@ -61,7 +108,7 @@ jobs:
         run: npm install --no-audit --no-fund
 
       - name: Install Playwright browsers
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install --with-deps ${{ matrix.browser }}
 
       - name: Build starter
         run: npm run build
@@ -73,7 +120,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-report
+          name: playwright-report-${{ matrix.browser }}-node${{ matrix.node }}
           path: examples/nextjs-starter/playwright-report
           if-no-files-found: ignore
           retention-days: 14
@@ -82,8 +129,92 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-artifacts
+          name: playwright-artifacts-${{ matrix.browser }}-node${{ matrix.node }}
           path: |
             examples/nextjs-starter/test-results/**
           if-no-files-found: ignore
           retention-days: 14
+
+  report:
+    name: Report failure to PR
+    needs: e2e
+    if: failure() && github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      statuses: write
+      actions: read
+      contents: read
+    steps:
+      - name: Compose + post PR comment / commit status
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const runId = context.runId;
+            const owner = context.repo.owner;
+            const repo  = context.repo.repo;
+            const runUrl = `https://github.com/${owner}/${repo}/actions/runs/${runId}`;
+
+            // 1) Gather failing jobs (their html_url and failing step).
+            const jobsResp = await github.rest.actions.listJobsForWorkflowRunAttempt({
+              owner, repo, run_id: runId, attempt_number: context.runAttempt || 1,
+              per_page: 100,
+            }).catch(async () => github.rest.actions.listJobsForWorkflowRun({
+              owner, repo, run_id: runId, per_page: 100, filter: "latest",
+            }));
+            const failed = (jobsResp.data.jobs || []).filter(j => j.conclusion === "failure");
+            const jobLines = failed.map(j => {
+              const failStep = (j.steps || []).find(s => s.conclusion === "failure");
+              const stepLink = failStep?.number
+                ? `${j.html_url}#step:${failStep.number}:1`
+                : j.html_url;
+              const stepName = failStep?.name ? ` — step **${failStep.name}**` : "";
+              return `- ❌ \`${j.name}\`${stepName} · [open failing step ↗](${stepLink})`;
+            });
+
+            // 2) Collect uploaded artifacts (HTML report + traces).
+            const arts = await github.rest.actions.listWorkflowRunArtifacts({
+              owner, repo, run_id: runId, per_page: 100,
+            });
+            const artLines = (arts.data.artifacts || [])
+              .filter(a => !a.expired)
+              .map(a => `- 📦 [\`${a.name}\`](https://github.com/${owner}/${repo}/actions/runs/${runId}/artifacts/${a.id})`);
+
+            const body = [
+              `### ❌ Starter E2E failed`,
+              ``,
+              `Run: [#${context.runNumber}](${runUrl}) · attempt ${context.runAttempt || 1} · commit \`${context.sha.slice(0,7)}\``,
+              ``,
+              `**Failing jobs**`,
+              jobLines.length ? jobLines.join("\n") : "_no failing jobs reported_",
+              ``,
+              `**Artifacts** (Playwright HTML report + traces/screenshots/videos)`,
+              artLines.length ? artLines.join("\n") : "_no artifacts uploaded_",
+              ``,
+              `<sub>Open the HTML report to inspect failing selectors, network calls, and DOM snapshots. Traces replay step-by-step.</sub>`,
+            ].join("\n");
+
+            // 3) Post/update a sticky PR comment.
+            if (context.payload.pull_request) {
+              const prNumber = context.payload.pull_request.number;
+              const marker = "<!-- pluto-starter-e2e-report -->";
+              const existing = await github.rest.issues.listComments({
+                owner, repo, issue_number: prNumber, per_page: 100,
+              });
+              const prior = existing.data.find(c => c.body?.includes(marker));
+              const full = `${marker}\n${body}`;
+              if (prior) {
+                await github.rest.issues.updateComment({ owner, repo, comment_id: prior.id, body: full });
+              } else {
+                await github.rest.issues.createComment({ owner, repo, issue_number: prNumber, body: full });
+              }
+            }
+
+            // 4) Also publish a commit status for at-a-glance signal.
+            await github.rest.repos.createCommitStatus({
+              owner, repo, sha: context.sha,
+              state: "failure",
+              context: "pluto/starter-e2e",
+              description: failed.length ? `Failing: ${failed[0].name}` : "E2E failed",
+              target_url: runUrl,
+            });
