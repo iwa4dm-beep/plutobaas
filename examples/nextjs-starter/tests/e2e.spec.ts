@@ -191,4 +191,40 @@ test.describe("Webhooks", () => {
     });
     expect(res.status()).toBe(401);
   });
+
+  test("idempotency: duplicate event id is short-circuited", async ({ request }) => {
+    test.skip(!WEBHOOK_SECRET, "PLUTO_WEBHOOK_SECRET not set");
+    const eventId = `evt_${crypto.randomUUID()}`;
+    const payload = JSON.stringify({
+      type: "notes.inserted",
+      id: eventId,
+      ts: Date.now(),
+      data: { note: "idempotency-check" },
+    });
+    const sig = crypto.createHmac("sha256", WEBHOOK_SECRET).update(payload).digest("hex");
+    const headers = { "x-pluto-signature": `sha256=${sig}`, "content-type": "application/json" };
+
+    const first = await request.post(`${APP}/api/webhooks/pluto`, { headers, data: payload });
+    expect(first.status()).toBe(200);
+    expect(await first.json()).toMatchObject({ ok: true, duplicate: false });
+
+    // Replay the exact same signed payload — must be recognized as duplicate.
+    const second = await request.post(`${APP}/api/webhooks/pluto`, { headers, data: payload });
+    expect(second.status()).toBe(200);
+    expect(await second.json()).toMatchObject({ ok: true, duplicate: true });
+
+    // A different event id with a valid signature is processed as new.
+    const freshPayload = JSON.stringify({
+      type: "notes.inserted",
+      id: `evt_${crypto.randomUUID()}`,
+      ts: Date.now(),
+    });
+    const freshSig = crypto.createHmac("sha256", WEBHOOK_SECRET).update(freshPayload).digest("hex");
+    const third = await request.post(`${APP}/api/webhooks/pluto`, {
+      headers: { "x-pluto-signature": `sha256=${freshSig}`, "content-type": "application/json" },
+      data: freshPayload,
+    });
+    expect(third.status()).toBe(200);
+    expect(await third.json()).toMatchObject({ ok: true, duplicate: false });
+  });
 });
