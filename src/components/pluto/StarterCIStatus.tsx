@@ -196,10 +196,12 @@ export function StarterCIStatus() {
         <button
           type="button"
           onClick={dispatch}
-          disabled={dispatching || !hasToken || branch === ALL}
+          disabled={dispatching || !hasToken || branch === ALL || !browsers.length || !nodeVersions.length}
           title={
             !hasToken ? "Save a GitHub PAT below to enable" :
-            branch === ALL ? "Pick a branch first" : "Trigger workflow_dispatch"
+            branch === ALL ? "Pick a branch first" :
+            !browsers.length || !nodeVersions.length ? "Pick at least one browser and Node version" :
+            "Trigger workflow_dispatch"
           }
           className="text-xs px-2 py-0.5 rounded border bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-50"
         >
