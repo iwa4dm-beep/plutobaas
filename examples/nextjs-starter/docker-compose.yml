@@ -1,0 +1,62 @@
+# ─────────────────────────────────────────────────────────────
+# One-command E2E stack for the Pluto BaaS Next.js starter.
+#   docker compose up --build
+#
+# Includes the full Pluto backend (postgres + redis + minio + api)
+# defined in ../../pluto-backend/docker/docker-compose.yml and adds
+# the Next.js starter + a schema bootstrapper.
+#
+# Prereqs:
+#   1. Copy ../../pluto-backend/.env.example to ../../pluto-backend/.env
+#      and fill POSTGRES_PASSWORD / S3_* / JWT_SECRET.
+#   2. Copy ./.env.example to ./.env and fill NEXT_PUBLIC_PLUTO_ANON_KEY
+#      and PLUTO_WEBHOOK_SECRET (they must match the API's config).
+# ─────────────────────────────────────────────────────────────
+
+include:
+  - path: ../../pluto-backend/docker/docker-compose.yml
+    env_file: ../../pluto-backend/.env
+
+services:
+  # Applies setup.sql once the Pluto API + Postgres are healthy.
+  starter-schema:
+    image: postgres:16-alpine
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+    entrypoint:
+      - sh
+      - -c
+      - |
+        echo "→ Applying starter setup.sql…"
+        psql -h postgres -U pluto -d pluto -v ON_ERROR_STOP=1 -f /schema/setup.sql
+        echo "✓ schema ready"
+    volumes:
+      - ./setup.sql:/schema/setup.sql:ro
+    restart: "no"
+
+  starter:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_PLUTO_URL: http://api:3000
+        NEXT_PUBLIC_PLUTO_ANON_KEY: ${NEXT_PUBLIC_PLUTO_ANON_KEY:?set NEXT_PUBLIC_PLUTO_ANON_KEY in examples/nextjs-starter/.env}
+    depends_on:
+      api:
+        condition: service_healthy
+      starter-schema:
+        condition: service_completed_successfully
+    environment:
+      NODE_ENV: production
+      # Server-side reads route through the internal API hostname.
+      NEXT_PUBLIC_PLUTO_URL: http://api:3000
+      NEXT_PUBLIC_PLUTO_ANON_KEY: ${NEXT_PUBLIC_PLUTO_ANON_KEY}
+      PLUTO_SERVICE_ROLE_KEY: ${PLUTO_SERVICE_ROLE_KEY:-}
+      PLUTO_WEBHOOK_SECRET: ${PLUTO_WEBHOOK_SECRET:?set PLUTO_WEBHOOK_SECRET in examples/nextjs-starter/.env}
+    ports:
+      # Host port 3001 to avoid clashing with the API on 3000.
+      - "127.0.0.1:3001:3000"
+    restart: unless-stopped
