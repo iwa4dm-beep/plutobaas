@@ -253,6 +253,70 @@ test.describe("Webhooks", () => {
     expect(await replay.json()).toMatchObject({ ok: true, duplicate: true });
   });
 
+  test("idempotency: same event.id with a DIFFERENT payload is still a duplicate", async ({ request }) => {
+    test.skip(!WEBHOOK_SECRET, "PLUTO_WEBHOOK_SECRET not set");
+    const eventId = `evt_repayload_${crypto.randomUUID()}`;
+
+    // First delivery: one payload shape.
+    const payloadA = JSON.stringify({
+      type: "notes.inserted",
+      id: eventId,
+      ts: Date.now(),
+      data: { note: "first-shape", version: 1 },
+    });
+    const sigA = crypto.createHmac("sha256", WEBHOOK_SECRET).update(payloadA).digest("hex");
+    const first = await request.post(`${APP}/api/webhooks/pluto`, {
+      headers: { "x-pluto-signature": `sha256=${sigA}`, "content-type": "application/json" },
+      data: payloadA,
+    });
+    expect(first.status()).toBe(200);
+    expect(await first.json()).toMatchObject({ ok: true, duplicate: false });
+
+    // Second delivery: SAME event.id, but a completely different payload.
+    // Each request is validly signed against its own body, so signature
+    // verification passes — dedupe MUST kick in strictly on event.id and
+    // suppress any additional side effects.
+    const payloadB = JSON.stringify({
+      type: "notes.updated",                 // different type
+      id: eventId,                           // same id
+      ts: Date.now() + 42,
+      data: { note: "second-shape", version: 2, extra: true },
+    });
+    const sigB = crypto.createHmac("sha256", WEBHOOK_SECRET).update(payloadB).digest("hex");
+    const second = await request.post(`${APP}/api/webhooks/pluto`, {
+      headers: { "x-pluto-signature": `sha256=${sigB}`, "content-type": "application/json" },
+      data: payloadB,
+    });
+    expect(second.status()).toBe(200);
+    expect(await second.json()).toMatchObject({ ok: true, duplicate: true });
+  });
+
+  test("idempotency TTL: after PLUTO_WEBHOOK_IDEMPOTENCY_TTL_MS elapses, replays are fresh", async ({ request }) => {
+    test.skip(!WEBHOOK_SECRET, "PLUTO_WEBHOOK_SECRET not set");
+    // CI/dev set a small TTL (e.g. 2000ms). If the deployed server uses the
+    // default 24h TTL we cannot verify expiry in a reasonable time — skip.
+    const ttlHint = Number(process.env.PLUTO_WEBHOOK_IDEMPOTENCY_TTL_MS ?? "0");
+    test.skip(!ttlHint || ttlHint > 10_000, "TTL not configured for fast expiry (set PLUTO_WEBHOOK_IDEMPOTENCY_TTL_MS ≤ 10000)");
+
+    const eventId = `evt_ttl_${crypto.randomUUID()}`;
+    const payload = JSON.stringify({ type: "notes.inserted", id: eventId, ts: Date.now() });
+    const sig = crypto.createHmac("sha256", WEBHOOK_SECRET).update(payload).digest("hex");
+    const headers = { "x-pluto-signature": `sha256=${sig}`, "content-type": "application/json" };
+
+    const first = await request.post(`${APP}/api/webhooks/pluto`, { headers, data: payload });
+    expect(await first.json()).toMatchObject({ duplicate: false });
+    const dup = await request.post(`${APP}/api/webhooks/pluto`, { headers, data: payload });
+    expect(await dup.json()).toMatchObject({ duplicate: true });
+
+    // Wait past TTL (+ small buffer for the file sweep to kick in on the next put).
+    await new Promise((r) => setTimeout(r, ttlHint + 500));
+
+    const afterTtl = await request.post(`${APP}/api/webhooks/pluto`, { headers, data: payload });
+    expect(afterTtl.status()).toBe(200);
+    expect(await afterTtl.json()).toMatchObject({ duplicate: false });
+  });
+
+
   test("invalid HMAC produces no side effects (event id not marked seen)", async ({ request }) => {
     test.skip(!WEBHOOK_SECRET, "PLUTO_WEBHOOK_SECRET not set");
     const eventId = `evt_forgery_${crypto.randomUUID()}`;

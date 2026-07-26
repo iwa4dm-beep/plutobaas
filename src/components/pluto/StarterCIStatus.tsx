@@ -112,6 +112,46 @@ export function StarterCIStatus() {
     setDispatching(false);
   };
 
+  const rerunFailedLegs = async () => {
+    const legs = run?.failingLegs ?? [];
+    if (!legs.length) return;
+    const targetBranch = run?.headBranch ?? activeBranch;
+    if (!targetBranch) {
+      setDispatchMsg("Cannot determine the branch for the failed run.");
+      return;
+    }
+    const uniq = <T extends string>(xs: (T | undefined)[]) =>
+      Array.from(new Set(xs.filter((x): x is T => !!x)));
+    const brs = uniq(legs.map((l) => l.browser as Browser | undefined));
+    const nds = uniq(legs.map((l) => l.node as NodeVer | undefined));
+    if (!brs.length || !nds.length) {
+      setDispatchMsg("Could not parse matrix values from failing jobs — dispatch skipped.");
+      return;
+    }
+    setDispatching(true);
+    setDispatchMsg(null);
+    const res = await dispatchStarterWorkflow(targetBranch, {
+      note: `rerun failed legs from run #${run?.runNumber}`,
+      browsers: brs.join(","),
+      node_versions: nds.join(","),
+    });
+    if (res.ok) {
+      setDispatchMsg(
+        `Re-dispatched ${brs.length * nds.length} leg${brs.length * nds.length === 1 ? "" : "s"} on ${targetBranch} · browsers=${brs.join(",")} · node=${nds.join(",")}.`,
+      );
+      let n = 0;
+      const t = window.setInterval(async () => {
+        n++;
+        await refresh();
+        if (n >= 10) window.clearInterval(t);
+      }, 3000);
+    } else {
+      setDispatchMsg(`Dispatch failed (${res.status}): ${res.message}`);
+    }
+    setDispatching(false);
+  };
+
+
   const toggle = <T extends string>(
     val: T,
     list: T[],
@@ -207,7 +247,19 @@ export function StarterCIStatus() {
         >
           {dispatching ? "Running…" : "Run E2E tests"}
         </button>
+        {run?.conclusion === "failure" && (run.failingLegs?.length ?? 0) > 0 && (
+          <button
+            type="button"
+            onClick={rerunFailedLegs}
+            disabled={dispatching || !hasToken}
+            title={!hasToken ? "Save a GitHub PAT below to enable" : "Re-dispatch only the matrix legs that failed last time"}
+            className="text-xs px-2 py-0.5 rounded border bg-rose-600 text-white hover:opacity-90 disabled:opacity-50"
+          >
+            {dispatching ? "Running…" : `Rerun failed legs (${run.failingLegs!.length})`}
+          </button>
+        )}
       </div>
+
 
       <div className="flex items-center gap-3 flex-wrap text-xs">
         <span className="text-muted-foreground">Matrix:</span>

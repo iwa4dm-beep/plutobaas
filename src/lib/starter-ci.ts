@@ -34,7 +34,19 @@ export type WorkflowRunStatus = {
     url: string;               // exact failing job/step deep link
   } | null;
   artifacts?: WorkflowArtifact[];
+  failingLegs?: FailingLeg[];
 };
+
+/** A single failed matrix leg — enough to re-dispatch just that leg. */
+export type FailingLeg = {
+  browser?: string;
+  node?: string;
+  rawJobName: string;
+  jobUrl: string;
+  jobLogsUrl: string;   // GitHub UI page (renders logs inline)
+  rawLogsUrl: string;   // REST endpoint returning raw log text
+};
+
 
 const REPO =
   (import.meta as any).env?.VITE_STARTER_GITHUB_REPO ??
@@ -116,6 +128,37 @@ async function extractFailingJob(runId: number): Promise<WorkflowRunStatus["fail
   }
 }
 
+/** Extract every failed matrix leg from a run so we can dispatch only those. */
+async function extractFailingLegs(runId: number): Promise<FailingLeg[]> {
+  try {
+    const jobs = await ghJson(`/repos/${REPO}/actions/runs/${runId}/jobs?per_page=100&filter=latest`);
+    const failed = (jobs?.jobs ?? []).filter((x: any) => x.conclusion === "failure");
+    return failed.map((j: any) => {
+      const values = (matrixFromJob(j)?.values as string[] | undefined) ?? [];
+      // Workflow order is (browser, node). Detect via known browser tokens
+      // so we stay robust even if the order changes.
+      const browserSet = new Set(["chromium", "firefox", "webkit"]);
+      let browser: string | undefined;
+      let node: string | undefined;
+      for (const v of values) {
+        if (browserSet.has(v)) browser = v;
+        else if (/^\d+$/.test(v)) node = v;
+      }
+      return {
+        browser,
+        node,
+        rawJobName: j.name,
+        jobUrl: j.html_url,
+        jobLogsUrl: j.html_url,
+        rawLogsUrl: `https://api.github.com/repos/${REPO}/actions/jobs/${j.id}/logs`,
+      } satisfies FailingLeg;
+    });
+  } catch {
+    return [];
+  }
+}
+
+
 async function fetchArtifacts(runId: number): Promise<WorkflowArtifact[]> {
   try {
     const data = await ghJson(`/repos/${REPO}/actions/runs/${runId}/artifacts?per_page=50`);
@@ -134,6 +177,7 @@ function toStatus(
   run: any,
   failingJob: WorkflowRunStatus["failingJob"] = null,
   artifacts: WorkflowArtifact[] = [],
+  failingLegs: FailingLeg[] = [],
 ): WorkflowRunStatus {
   return {
     id: run.id,
@@ -151,6 +195,7 @@ function toStatus(
     displayTitle: run.display_title ?? null,
     failingJob,
     artifacts,
+    failingLegs,
   };
 }
 
@@ -162,11 +207,13 @@ export async function fetchLatestStarterRun(branch?: string): Promise<WorkflowRu
     const runs = await ghJson(`/repos/${REPO}/actions/workflows/${WORKFLOW}/runs?${qs}`);
     const run = runs?.workflow_runs?.[0];
     if (!run) return null;
-    const [failing, artifacts] = await Promise.all([
+    const [failing, artifacts, legs] = await Promise.all([
       run.conclusion === "failure" ? extractFailingJob(run.id) : Promise.resolve(null),
       fetchArtifacts(run.id),
+      run.conclusion === "failure" ? extractFailingLegs(run.id) : Promise.resolve([]),
     ]);
-    return toStatus(run, failing, artifacts);
+    return toStatus(run, failing, artifacts, legs);
+
   } catch {
     return null;
   }
