@@ -40,9 +40,15 @@ function ProjectsPage() {
   const [indexStatus, setIndexStatus] = useState<IndexStatus | null>(null);
   const [verifyingIndex, setVerifyingIndex] = useState(false);
   const [selectedProjects, setSelectedProjects] = useState<Set<string>>(new Set());
-  const [purging, setPurging] = useState(false);
   const [purgeSlugOnDelete, setPurgeSlugOnDelete] = useState(true);
-  const purgeVps = useServerFn(purgeVpsSlug);
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [softHidden, setSoftHidden] = useState<Set<string>>(() => softDeletedIds("project"));
+  const [windowMin, setWindowMin] = useState(() => Math.round(getState().settings.windowMs / 60_000));
+  useEffect(() => subscribe((s) => {
+    setSoftHidden(new Set(s.softDeletes.filter((x) => x.kind === "project").map((x) => x.targetId)));
+    setWindowMin(Math.round(s.settings.windowMs / 60_000));
+  }), []);
+
   const slugStatus = useMemo(() => checkSlug(projectSlug), [projectSlug]);
   const editSlugStatus = useMemo(() => (editing ? checkSlug(editing.slug) : { ok: true as const }), [editing]);
 
