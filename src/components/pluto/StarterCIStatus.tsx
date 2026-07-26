@@ -28,6 +28,10 @@ function badgeStyle(run: WorkflowRunStatus | null) {
 }
 
 const ALL = "__all__";
+const BROWSER_OPTIONS = ["chromium", "firefox", "webkit"] as const;
+const NODE_OPTIONS = ["18", "20", "22"] as const;
+type Browser = (typeof BROWSER_OPTIONS)[number];
+type NodeVer = (typeof NODE_OPTIONS)[number];
 
 export function StarterCIStatus() {
   const [run, setRun] = useState<WorkflowRunStatus | null>(null);
@@ -42,6 +46,8 @@ export function StarterCIStatus() {
   const [hasToken, setHasToken] = useState(false);
   const [dispatching, setDispatching] = useState(false);
   const [dispatchMsg, setDispatchMsg] = useState<string | null>(null);
+  const [browsers, setBrowsers] = useState<Browser[]>(["chromium"]);
+  const [nodeVersions, setNodeVersions] = useState<NodeVer[]>(["20"]);
 
   const activeBranch = branch === ALL ? undefined : branch;
 
@@ -79,12 +85,21 @@ export function StarterCIStatus() {
       setDispatchMsg("Pick a specific branch first (not 'all').");
       return;
     }
+    if (!browsers.length || !nodeVersions.length) {
+      setDispatchMsg("Pick at least one browser and one Node version.");
+      return;
+    }
     setDispatching(true);
     setDispatchMsg(null);
-    const res = await dispatchStarterWorkflow(activeBranch, { note: "triggered from dashboard" });
+    const res = await dispatchStarterWorkflow(activeBranch, {
+      note: "triggered from dashboard",
+      browsers: browsers.join(","),
+      node_versions: nodeVersions.join(","),
+    });
     if (res.ok) {
-      setDispatchMsg(`Dispatched on ${activeBranch}. New run appears in ~5s…`);
-      // Poll faster for ~30s to catch the new run.
+      setDispatchMsg(
+        `Dispatched on ${activeBranch} · browsers=${browsers.join(",")} · node=${nodeVersions.join(",")}. New run in ~5s…`,
+      );
       let n = 0;
       const t = window.setInterval(async () => {
         n++;
@@ -95,6 +110,14 @@ export function StarterCIStatus() {
       setDispatchMsg(`Dispatch failed (${res.status}): ${res.message}`);
     }
     setDispatching(false);
+  };
+
+  const toggle = <T extends string>(
+    val: T,
+    list: T[],
+    setter: (v: T[]) => void,
+  ) => {
+    setter(list.includes(val) ? list.filter((x) => x !== val) : [...list, val]);
   };
 
   const saveToken = () => {
