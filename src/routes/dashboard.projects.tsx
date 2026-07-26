@@ -153,7 +153,9 @@ function ProjectsPage() {
     } catch (e) { setErr(e); }
   }
 
-  const visibleProjects = projects.filter((p) => !wsId || !p.workspace_id || p.workspace_id === wsId);
+  const visibleProjects = projects.filter(
+    (p) => (!wsId || !p.workspace_id || p.workspace_id === wsId) && !softHidden.has(p.id),
+  );
 
   async function saveEdit() {
     if (!editing) return;
@@ -166,53 +168,7 @@ function ProjectsPage() {
     } catch (e) { setErr(e); }
   }
 
-  async function removeProject(id: string, name: string, slug: string) {
-    if (!confirm(`Delete project "${name}"? এই action reversible নয় — সব API keys revoke হবে${purgeSlugOnDelete ? ` এবং VPS-এ /var/lib/pluto/sites/${slug} মুছে যাবে` : ""}।`)) return;
-    setErr(null);
-    try {
-      await live.admin.projects.remove(id);
-      if (purgeSlugOnDelete) {
-        try {
-          const r = await purgeVps({ data: { slug } });
-          if (r.ok) toast.success(`VPS purged: ${slug} (${r.removed.length} path${r.removed.length === 1 ? "" : "s"})`);
-          else toast.error(`VPS purge failed for ${slug}: ${r.hint ?? r.errors.join("; ")}`);
-        } catch (e) {
-          toast.error(`VPS purge error for ${slug}: ${e instanceof Error ? e.message : String(e)}`);
-        }
-      }
-      setSelectedProjects((s) => { const n = new Set(s); n.delete(id); return n; });
-      setProjects(await live.admin.projects.list());
-    } catch (e) { setErr(e); }
-  }
-
-  async function bulkDeleteProjects() {
-    const targets = projects.filter((p) => selectedProjects.has(p.id));
-    if (!targets.length) return;
-    if (!confirm(
-      `Delete ${targets.length} project${targets.length === 1 ? "" : "s"}?\n` +
-      targets.map((t) => `  • ${t.name} (${t.slug})`).join("\n") +
-      `\n\nএই action reversible নয় — সব API keys revoke হবে${purgeSlugOnDelete ? " এবং প্রতিটির VPS site directory মুছে যাবে" : ""}।`
-    )) return;
-    setPurging(true); setErr(null);
-    let dbOk = 0, dbFail = 0, vpsOk = 0, vpsFail = 0;
-    for (const t of targets) {
-      try {
-        await live.admin.projects.remove(t.id);
-        dbOk++;
-      } catch (e) { dbFail++; toast.error(`Delete ${t.slug}: ${e instanceof Error ? e.message : String(e)}`); continue; }
-      if (purgeSlugOnDelete) {
-        try {
-          const r = await purgeVps({ data: { slug: t.slug } });
-          if (r.ok) vpsOk++; else { vpsFail++; toast.error(`VPS purge ${t.slug}: ${r.hint ?? r.errors.join("; ")}`); }
-        } catch (e) { vpsFail++; toast.error(`VPS purge ${t.slug}: ${e instanceof Error ? e.message : String(e)}`); }
-      }
-    }
-    toast.success(`Deleted ${dbOk}/${targets.length} project${dbOk === 1 ? "" : "s"}` + (purgeSlugOnDelete ? ` · VPS purged ${vpsOk}/${dbOk}` : ""));
-    if (dbFail || vpsFail) toast(`${dbFail} DB failure${dbFail === 1 ? "" : "s"}, ${vpsFail} VPS failure${vpsFail === 1 ? "" : "s"}`, { icon: "⚠️" });
-    setSelectedProjects(new Set());
-    setProjects(await live.admin.projects.list());
-    setPurging(false);
-  }
+  const [singleDelete, setSingleDelete] = useState<{ id: string; name: string; slug: string } | null>(null);
 
   function toggleProjectSel(id: string, on: boolean) {
     setSelectedProjects((s) => { const n = new Set(s); on ? n.add(id) : n.delete(id); return n; });
@@ -226,6 +182,14 @@ function ProjectsPage() {
       return n;
     });
   }
+
+  const bulkTargets: BulkTarget[] = (singleDelete
+    ? [{ id: singleDelete.id, label: singleDelete.name, sublabel: singleDelete.slug, slug: singleDelete.slug }]
+    : projects.filter((p) => selectedProjects.has(p.id)).map((p) => ({
+        id: p.id, label: p.name, sublabel: p.slug, slug: p.slug,
+      })));
+
+
 
 
   async function revoke(id: string) {
