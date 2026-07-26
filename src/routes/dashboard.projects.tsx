@@ -39,8 +39,13 @@ function ProjectsPage() {
   const [resolving, setResolving] = useState(false);
   const [indexStatus, setIndexStatus] = useState<IndexStatus | null>(null);
   const [verifyingIndex, setVerifyingIndex] = useState(false);
+  const [selectedProjects, setSelectedProjects] = useState<Set<string>>(new Set());
+  const [purging, setPurging] = useState(false);
+  const [purgeSlugOnDelete, setPurgeSlugOnDelete] = useState(true);
+  const purgeVps = useServerFn(purgeVpsSlug);
   const slugStatus = useMemo(() => checkSlug(projectSlug), [projectSlug]);
   const editSlugStatus = useMemo(() => (editing ? checkSlug(editing.slug) : { ok: true as const }), [editing]);
+
 
 
   const loadTop = useCallback(async () => {
