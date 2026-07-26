@@ -101,6 +101,8 @@ function UsersPage() {
   const filtered = useMemo(() => {
     const term = q.trim().toLowerCase();
     return users.filter((u) => {
+      if (softHidden.has(u.id)) return false;
+
       if (filter === "pending" && u.email_verified) return false;
       if (filter === "verified" && !u.email_verified) return false;
       if (term && !u.email.toLowerCase().includes(term)) return false;
