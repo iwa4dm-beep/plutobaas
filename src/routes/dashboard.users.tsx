@@ -48,7 +48,17 @@ function UsersPage() {
   const [q, setQ] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [singleDelete, setSingleDelete] = useState<{ id: string; email: string } | null>(null);
+  const [softHidden, setSoftHidden] = useState<Set<string>>(() => softDeletedIds("user"));
+  const [windowMin, setWindowMin] = useState(() => Math.round(getState().settings.windowMs / 60_000));
+  useEffect(() => subscribe((s) => {
+    setSoftHidden(new Set(s.softDeletes.filter((x) => x.kind === "user").map((x) => x.targetId)));
+    setWindowMin(Math.round(s.settings.windowMs / 60_000));
+  }), []);
+
   const setRowBusy = (id: string, on: boolean) =>
+
     setBusy((s) => {
       const n = new Set(s);
       if (on) n.add(id);
