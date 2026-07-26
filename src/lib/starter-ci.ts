@@ -34,7 +34,19 @@ export type WorkflowRunStatus = {
     url: string;               // exact failing job/step deep link
   } | null;
   artifacts?: WorkflowArtifact[];
+  failingLegs?: FailingLeg[];
 };
+
+/** A single failed matrix leg — enough to re-dispatch just that leg. */
+export type FailingLeg = {
+  browser?: string;
+  node?: string;
+  rawJobName: string;
+  jobUrl: string;
+  jobLogsUrl: string;   // GitHub UI page (renders logs inline)
+  rawLogsUrl: string;   // REST endpoint returning raw log text
+};
+
 
 const REPO =
   (import.meta as any).env?.VITE_STARTER_GITHUB_REPO ??

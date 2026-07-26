@@ -75,11 +75,15 @@ jobs:
       NEXT_PUBLIC_PLUTO_ANON_KEY: ${{ secrets.PLUTO_ANON_KEY }}
       PLUTO_SERVICE_ROLE_KEY: ${{ secrets.PLUTO_SERVICE_ROLE_KEY }}
       PLUTO_WEBHOOK_SECRET: ${{ secrets.PLUTO_WEBHOOK_SECRET }}
+      # Short TTL so the "TTL: replays become fresh again" test finishes in ~3s
+      # instead of 24h. Production defaults to 24h when the var is unset.
+      PLUTO_WEBHOOK_IDEMPOTENCY_TTL_MS: "2000"
       E2E_TEST_EMAIL: ${{ secrets.E2E_TEST_EMAIL }}
       E2E_TEST_PASSWORD: ${{ secrets.E2E_TEST_PASSWORD }}
       STARTER_URL: http://localhost:3000
       CI: "1"
       PLAYWRIGHT_BROWSER: ${{ matrix.browser }}
+
 
     steps:
       - uses: actions/checkout@v4
@@ -169,8 +173,15 @@ jobs:
                 ? `${j.html_url}#step:${failStep.number}:1`
                 : j.html_url;
               const stepName = failStep?.name ? ` — step **${failStep.name}**` : "";
-              return `- ❌ \`${j.name}\`${stepName} · [open failing step ↗](${stepLink})`;
+              // Deep link to the workflow-leg's raw server logs. GitHub's job
+              // page URL already shows logs inline; the `/logs` API returns the
+              // raw text (requires the same permissions as the run). We list
+              // both so reviewers can pick whichever they prefer.
+              const jobLogsUi = j.html_url; // logs render inline on this page
+              const jobLogsApi = `https://api.github.com/repos/${owner}/${repo}/actions/jobs/${j.id}/logs`;
+              return `- ❌ \`${j.name}\`${stepName}\n  · [open failing step ↗](${stepLink})\n  · [server logs (UI) ↗](${jobLogsUi})\n  · [raw logs (API) ↗](${jobLogsApi})`;
             });
+
 
             // 2) Collect uploaded artifacts (HTML report + traces).
             const arts = await github.rest.actions.listWorkflowRunArtifacts({
