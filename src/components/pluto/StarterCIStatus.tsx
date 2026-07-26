@@ -1,6 +1,8 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   fetchLatestStarterRun,
+  fetchLastSuccessfulStarterRun,
+  fetchRecentBranches,
   isConfigured,
   repoSlug,
   type WorkflowRunStatus,
@@ -22,25 +24,45 @@ function badgeStyle(run: WorkflowRunStatus | null) {
   }
 }
 
+const ALL = "__all__";
+
 export function StarterCIStatus() {
   const [run, setRun] = useState<WorkflowRunStatus | null>(null);
+  const [lastGreen, setLastGreen] = useState<WorkflowRunStatus | null>(null);
+  const [branches, setBranches] = useState<string[]>([]);
+  const [branch, setBranch] = useState<string>(ALL);
   const [loading, setLoading] = useState(false);
   const [refreshedAt, setRefreshedAt] = useState<number | null>(null);
+  const [autoRefresh, setAutoRefresh] = useState(true);
 
-  async function refresh() {
+  const activeBranch = branch === ALL ? undefined : branch;
+
+  const refresh = useCallback(async () => {
     setLoading(true);
-    const r = await fetchLatestStarterRun();
-    setRun(r);
+    const [latest, green] = await Promise.all([
+      fetchLatestStarterRun(activeBranch),
+      fetchLastSuccessfulStarterRun(activeBranch),
+    ]);
+    setRun(latest);
+    setLastGreen(green);
     setRefreshedAt(Date.now());
     setLoading(false);
-  }
+  }, [activeBranch]);
+
+  useEffect(() => {
+    if (!isConfigured()) return;
+    fetchRecentBranches().then(setBranches).catch(() => {});
+  }, []);
 
   useEffect(() => {
     if (!isConfigured()) return;
     refresh();
+    if (!autoRefresh) return;
     const t = window.setInterval(refresh, 60_000);
     return () => window.clearInterval(t);
-  }, []);
+  }, [refresh, autoRefresh]);
+
+  const b = useMemo(() => badgeStyle(run), [run]);
 
   if (!isConfigured()) {
     return (
@@ -52,7 +74,6 @@ export function StarterCIStatus() {
     );
   }
 
-  const b = badgeStyle(run);
   return (
     <div className="rounded-md border p-3 space-y-2 text-sm">
       <div className="flex items-center gap-2 flex-wrap">
@@ -61,20 +82,38 @@ export function StarterCIStatus() {
         </span>
         <span className="font-medium">Starter E2E</span>
         {run && (
-          <a
-            href={run.htmlUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="text-xs underline text-primary"
-          >
-            run #{run.runNumber} ↗
+          <a href={run.htmlUrl} target="_blank" rel="noreferrer" className="text-xs underline text-primary">
+            run #{run.runNumber}
+            {run.runAttempt > 1 ? ` · attempt ${run.runAttempt}` : ""} ↗
           </a>
         )}
+
+        <label className="ml-auto flex items-center gap-1 text-xs">
+          <span className="text-muted-foreground">branch</span>
+          <select
+            value={branch}
+            onChange={(e) => setBranch(e.target.value)}
+            className="px-1.5 py-0.5 rounded border bg-background text-xs max-w-[10rem]"
+          >
+            <option value={ALL}>all</option>
+            {branches.map((br) => (
+              <option key={br} value={br}>{br}</option>
+            ))}
+          </select>
+        </label>
+        <label className="flex items-center gap-1 text-xs text-muted-foreground">
+          <input
+            type="checkbox"
+            checked={autoRefresh}
+            onChange={(e) => setAutoRefresh(e.target.checked)}
+          />
+          auto
+        </label>
         <button
           type="button"
           onClick={refresh}
-          className="ml-auto text-xs px-2 py-0.5 rounded border hover:bg-accent"
           disabled={loading}
+          className="text-xs px-2 py-0.5 rounded border hover:bg-accent disabled:opacity-50"
         >
           Refresh
         </button>
@@ -82,41 +121,57 @@ export function StarterCIStatus() {
 
       {run ? (
         <div className="text-xs text-muted-foreground space-x-2">
-          <span>
-            {repoSlug()} · {run.event}
-          </span>
+          <span>{repoSlug()} · {run.event}</span>
           <span>· {run.headBranch ?? run.headSha.slice(0, 7)}</span>
           <span>· {new Date(run.updatedAt).toLocaleString()}</span>
         </div>
       ) : (
         <div className="text-xs text-muted-foreground">
-          {loading ? "Fetching…" : "No runs yet for this workflow."}
+          {loading ? "Fetching…" : "No runs yet for this filter."}
         </div>
       )}
 
       {run?.conclusion === "failure" && run.failingJob && (
-        <div className="rounded border border-rose-500/40 bg-rose-500/5 p-2 text-xs">
+        <div className="rounded border border-rose-500/40 bg-rose-500/5 p-2 text-xs space-y-0.5">
           <div className="font-medium text-rose-700 dark:text-rose-300">
-            Failing job: {run.failingJob.name}
+            Failing test: {run.failingJob.name}
           </div>
-          {run.failingJob.step && (
+          <div className="text-rose-700/80 dark:text-rose-300/80">
+            Job: <code>{run.failingJob.rawJobName}</code>
+            {run.failingJob.matrix?.values ? (
+              <> · matrix <code>{(run.failingJob.matrix.values as string[]).join(", ")}</code></>
+            ) : null}
+          </div>
+          {run.failingJob.step && run.failingJob.step !== run.failingJob.name && (
             <div className="text-rose-700/80 dark:text-rose-300/80">
               Step: <code>{run.failingJob.step}</code>
             </div>
           )}
-          <a
-            href={run.failingJob.url}
-            target="_blank"
-            rel="noreferrer"
-            className="underline"
-          >
+          <a href={run.failingJob.url} target="_blank" rel="noreferrer" className="underline">
             View job logs ↗
           </a>
         </div>
       )}
+
+      {lastGreen && (!run || run.id !== lastGreen.id) && (
+        <div className="rounded border border-emerald-500/30 bg-emerald-500/5 p-2 text-xs">
+          <span className="text-emerald-700 dark:text-emerald-300 font-medium">
+            Last successful run:
+          </span>{" "}
+          <a href={lastGreen.htmlUrl} target="_blank" rel="noreferrer" className="underline">
+            #{lastGreen.runNumber}
+          </a>{" "}
+          <span className="text-muted-foreground">
+            on {lastGreen.headBranch ?? lastGreen.headSha.slice(0, 7)} ·{" "}
+            {new Date(lastGreen.updatedAt).toLocaleString()}
+          </span>
+        </div>
+      )}
+
       {refreshedAt && (
         <div className="text-[10px] text-muted-foreground">
-          auto-refreshes every 60s
+          {autoRefresh ? "auto-refreshes every 60s · " : ""}
+          last refresh {new Date(refreshedAt).toLocaleTimeString()}
         </div>
       )}
     </div>
