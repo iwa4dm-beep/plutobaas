@@ -102,6 +102,10 @@ const groups: Group[] = [
       { to: "/dashboard/logs-explorer", label: "Logs Explorer", icon: Search },
       { to: "/dashboard/audit", label: "Audit trail", icon: ShieldAlert },
       { to: "/dashboard/audit-log", label: "Audit log (raw)", icon: ShieldAlert },
+      { to: "/dashboard/audit/deletes", label: "Delete audit log", icon: ShieldAlert },
+      { to: "/dashboard/trash", label: "Trash / Recycle bin", icon: ShieldAlert },
+      { to: "/dashboard/jobs", label: "Background jobs", icon: ScrollText },
+
       { to: "/dashboard/scaling", label: "Scaling", icon: Waves },
       { to: "/dashboard/usage", label: "Usage & Quotas", icon: Gauge },
       { to: "/dashboard/pluto-billing", label: "Billing & Alerts", icon: Gauge },
