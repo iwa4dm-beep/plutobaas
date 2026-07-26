@@ -133,7 +133,14 @@ const groups: Group[] = [
       { to: "/dashboard/settings", label: "Settings", icon: Settings },
     ],
   },
+  {
+    label: "Help",
+    items: [
+      { to: "/dashboard/help/fullstack-guide", label: "Fullstack E2E Guide", icon: ScrollText },
+    ],
+  },
 ];
+
 
 /** Sidebar renders as a fixed left rail on desktop, a slide-in drawer on mobile.
  *  `mobileOpen` / `onCloseMobile` are supplied by the dashboard layout header. */
