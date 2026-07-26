@@ -207,6 +207,55 @@ export function StarterCIStatus() {
         </button>
       </div>
 
+      <div className="flex items-center gap-3 flex-wrap text-xs">
+        <span className="text-muted-foreground">Matrix:</span>
+        <div className="flex items-center gap-1">
+          <span className="text-muted-foreground">browsers</span>
+          {BROWSER_OPTIONS.map((br) => (
+            <label
+              key={br}
+              className={`px-1.5 py-0.5 rounded border cursor-pointer select-none ${
+                browsers.includes(br) ? "bg-primary/10 border-primary/40" : "hover:bg-accent"
+              }`}
+            >
+              <input
+                type="checkbox"
+                className="hidden"
+                checked={browsers.includes(br)}
+                onChange={() => toggle(br, browsers, setBrowsers)}
+              />
+              {br}
+            </label>
+          ))}
+        </div>
+        <div className="flex items-center gap-1">
+          <span className="text-muted-foreground">node</span>
+          {NODE_OPTIONS.map((nv) => (
+            <label
+              key={nv}
+              className={`px-1.5 py-0.5 rounded border cursor-pointer select-none ${
+                nodeVersions.includes(nv) ? "bg-primary/10 border-primary/40" : "hover:bg-accent"
+              }`}
+            >
+              <input
+                type="checkbox"
+                className="hidden"
+                checked={nodeVersions.includes(nv)}
+                onChange={() => toggle(nv, nodeVersions, setNodeVersions)}
+              />
+              {nv}
+            </label>
+          ))}
+        </div>
+        <span className="text-muted-foreground">
+          → {browsers.length * nodeVersions.length} leg{browsers.length * nodeVersions.length === 1 ? "" : "s"}
+        </span>
+      </div>
+
+      {dispatchMsg && (
+        <div className="text-xs rounded border border-primary/30 bg-primary/5 p-2">{dispatchMsg}</div>
+      )}
+
       {run ? (
         <div className="text-xs text-muted-foreground space-x-2">
           <span>{repoSlug()} · {run.event}</span>
