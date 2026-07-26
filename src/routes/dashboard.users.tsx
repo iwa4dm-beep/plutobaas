@@ -458,6 +458,21 @@ function UsersPage() {
         <code className="ml-1">user</code> = regular authenticated user.
         Manual "Approve" marks a user's email as verified even if they never clicked the confirmation link.
       </p>
+
+      <BulkDeleteDialog
+        open={bulkOpen}
+        onClose={() => { setBulkOpen(false); setSingleDelete(null); setSelected(new Set()); void refresh(); }}
+        kind="user"
+        targets={
+          singleDelete
+            ? [{ id: singleDelete.id, label: singleDelete.email }]
+            : users
+                .filter((u) => selected.has(u.id) && u.id !== currentUserId && (meIsSuperadmin || !u.is_superadmin))
+                .map((u) => ({ id: u.id, label: u.email }))
+        }
+        windowMinutes={windowMin}
+      />
     </div>
   );
+
 }
