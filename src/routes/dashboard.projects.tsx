@@ -300,10 +300,41 @@ function ProjectsPage() {
             Preview URL: <a href={previewSubdomainUrl(projectSlug)} target="_blank" rel="noreferrer" className="font-mono text-foreground underline underline-offset-2">{previewSubdomainUrl(projectSlug)}</a>
           </p>
         )}
-        <div className="mt-4 overflow-hidden rounded-md border border-border">
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded-md border border-border bg-muted/30 px-3 py-2 text-xs">
+          <label className="inline-flex items-center gap-1.5 text-muted-foreground">
+            <input
+              type="checkbox"
+              checked={purgeSlugOnDelete}
+              onChange={(e) => setPurgeSlugOnDelete(e.target.checked)}
+            />
+            <Server className="h-3 w-3" />
+            Delete VPS site directory too (instant purge)
+          </label>
+          <div className="flex items-center gap-2">
+            <span className="text-muted-foreground">
+              {selectedProjects.size > 0 ? `${selectedProjects.size} selected` : `${visibleProjects.length} project${visibleProjects.length === 1 ? "" : "s"}`}
+            </span>
+            <button
+              onClick={bulkDeleteProjects}
+              disabled={selectedProjects.size === 0 || purging}
+              className="inline-flex items-center gap-1 rounded-md bg-destructive px-2.5 py-1 text-[11px] font-medium text-destructive-foreground hover:opacity-90 disabled:opacity-40"
+            >
+              <Trash2 className="h-3 w-3" /> {purging ? "Deleting…" : `Delete selected${selectedProjects.size ? ` (${selectedProjects.size})` : ""}`}
+            </button>
+          </div>
+        </div>
+        <div className="mt-2 overflow-hidden rounded-md border border-border">
           <table className="w-full text-sm">
             <thead className="bg-muted/40">
               <tr>
+                <th className="w-8 px-3 py-2">
+                  <input
+                    type="checkbox"
+                    aria-label="Select all projects"
+                    checked={visibleProjects.length > 0 && visibleProjects.every((p) => selectedProjects.has(p.id))}
+                    onChange={toggleAllProjectsSel}
+                  />
+                </th>
                 <th className="text-left px-3 py-2 text-xs font-medium text-muted-foreground">Project</th>
                 <th className="text-left px-3 py-2 text-xs font-medium text-muted-foreground">Slug</th>
                 <th className="text-left px-3 py-2 text-xs font-medium text-muted-foreground">Live URL</th>
@@ -311,8 +342,9 @@ function ProjectsPage() {
               </tr>
             </thead>
             <tbody>
-              {visibleProjects.length === 0 && <tr><td colSpan={4} className="px-3 py-4 text-center text-xs text-muted-foreground">No projects in this workspace yet.</td></tr>}
+              {visibleProjects.length === 0 && <tr><td colSpan={5} className="px-3 py-4 text-center text-xs text-muted-foreground">No projects in this workspace yet.</td></tr>}
               {visibleProjects.map((p) => {
+
                 const url = previewSubdomainUrl(p.slug);
                 const isEditing = editing?.id === p.id;
                 return (
