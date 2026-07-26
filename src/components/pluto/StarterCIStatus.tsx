@@ -128,8 +128,17 @@ export function StarterCIStatus() {
     refresh();
   };
 
-  const playwrightArtifact = run?.artifacts?.find((a) => a.name === "playwright-report" && !a.expired);
-  const debugArtifact = run?.artifacts?.find((a) => a.name === "playwright-artifacts" && !a.expired);
+  // Matrix suffix now attaches (`playwright-report-chromium-node20`) — match by prefix.
+  const playwrightArtifact = run?.artifacts?.find(
+    (a) => a.name.startsWith("playwright-report") && !a.expired,
+  );
+  const debugArtifact = run?.artifacts?.find(
+    (a) => a.name.startsWith("playwright-artifacts") && !a.expired,
+  );
+  const allReportArtifacts =
+    run?.artifacts?.filter((a) => a.name.startsWith("playwright-report") && !a.expired) ?? [];
+  const allDebugArtifacts =
+    run?.artifacts?.filter((a) => a.name.startsWith("playwright-artifacts") && !a.expired) ?? [];
 
   if (!isConfigured()) {
     return (
