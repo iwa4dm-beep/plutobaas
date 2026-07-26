@@ -1,5 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
+import { StarterCIStatus } from "@/components/pluto/StarterCIStatus";
 
 export const Route = createFileRoute("/dashboard/help/checklist")({
   component: ChecklistPage,
@@ -192,6 +193,7 @@ function ChecklistPage() {
             Reset
           </button>
         </div>
+        <StarterCIStatus />
       </header>
 
       <ol className="space-y-4">
