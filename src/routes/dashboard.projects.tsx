@@ -411,7 +411,7 @@ function ProjectsPage() {
                               <Pencil className="h-3.5 w-3.5" />
                             </button>
                             <button
-                              onClick={() => removeProject(p.id, p.name)}
+                              onClick={() => removeProject(p.id, p.name, p.slug)}
                               className="rounded-md p-1 text-muted-foreground hover:text-destructive hover:bg-accent"
                               title="Delete"
                             >
