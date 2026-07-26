@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  dispatchStarterWorkflow,
   fetchLatestStarterRun,
   fetchLastSuccessfulStarterRun,
   fetchRecentBranches,
+  getStoredToken,
   isConfigured,
   repoSlug,
+  setStoredToken,
   type WorkflowRunStatus,
 } from "@/lib/starter-ci";
 
@@ -34,8 +37,15 @@ export function StarterCIStatus() {
   const [loading, setLoading] = useState(false);
   const [refreshedAt, setRefreshedAt] = useState<number | null>(null);
   const [autoRefresh, setAutoRefresh] = useState(true);
+  const [showToken, setShowToken] = useState(false);
+  const [tokenInput, setTokenInput] = useState("");
+  const [hasToken, setHasToken] = useState(false);
+  const [dispatching, setDispatching] = useState(false);
+  const [dispatchMsg, setDispatchMsg] = useState<string | null>(null);
 
   const activeBranch = branch === ALL ? undefined : branch;
+
+  useEffect(() => { setHasToken(!!getStoredToken()); }, []);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -63,6 +73,40 @@ export function StarterCIStatus() {
   }, [refresh, autoRefresh]);
 
   const b = useMemo(() => badgeStyle(run), [run]);
+
+  const dispatch = async () => {
+    if (!activeBranch) {
+      setDispatchMsg("Pick a specific branch first (not 'all').");
+      return;
+    }
+    setDispatching(true);
+    setDispatchMsg(null);
+    const res = await dispatchStarterWorkflow(activeBranch, { note: "triggered from dashboard" });
+    if (res.ok) {
+      setDispatchMsg(`Dispatched on ${activeBranch}. New run appears in ~5s…`);
+      // Poll faster for ~30s to catch the new run.
+      let n = 0;
+      const t = window.setInterval(async () => {
+        n++;
+        await refresh();
+        if (n >= 10) window.clearInterval(t);
+      }, 3000);
+    } else {
+      setDispatchMsg(`Dispatch failed (${res.status}): ${res.message}`);
+    }
+    setDispatching(false);
+  };
+
+  const saveToken = () => {
+    setStoredToken(tokenInput.trim());
+    setHasToken(!!tokenInput.trim());
+    setTokenInput("");
+    setShowToken(false);
+    refresh();
+  };
+
+  const playwrightArtifact = run?.artifacts?.find((a) => a.name === "playwright-report" && !a.expired);
+  const debugArtifact = run?.artifacts?.find((a) => a.name === "playwright-artifacts" && !a.expired);
 
   if (!isConfigured()) {
     return (
@@ -117,6 +161,18 @@ export function StarterCIStatus() {
         >
           Refresh
         </button>
+        <button
+          type="button"
+          onClick={dispatch}
+          disabled={dispatching || !hasToken || branch === ALL}
+          title={
+            !hasToken ? "Save a GitHub PAT below to enable" :
+            branch === ALL ? "Pick a branch first" : "Trigger workflow_dispatch"
+          }
+          className="text-xs px-2 py-0.5 rounded border bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-50"
+        >
+          {dispatching ? "Running…" : "Run E2E tests"}
+        </button>
       </div>
 
       {run ? (
@@ -132,7 +188,7 @@ export function StarterCIStatus() {
       )}
 
       {run?.conclusion === "failure" && run.failingJob && (
-        <div className="rounded border border-rose-500/40 bg-rose-500/5 p-2 text-xs space-y-0.5">
+        <div className="rounded border border-rose-500/40 bg-rose-500/5 p-2 text-xs space-y-1">
           <div className="font-medium text-rose-700 dark:text-rose-300">
             Failing test: {run.failingJob.name}
           </div>
@@ -147,9 +203,36 @@ export function StarterCIStatus() {
               Step: <code>{run.failingJob.step}</code>
             </div>
           )}
-          <a href={run.failingJob.url} target="_blank" rel="noreferrer" className="underline">
-            View job logs ↗
-          </a>
+          <div className="flex flex-wrap gap-x-3 gap-y-1 pt-1">
+            <a href={run.failingJob.url} target="_blank" rel="noreferrer" className="underline">
+              Open failing step ↗
+            </a>
+            {playwrightArtifact && (
+              <a href={playwrightArtifact.htmlUrl} target="_blank" rel="noreferrer" className="underline">
+                Playwright HTML report ↗
+              </a>
+            )}
+            {debugArtifact && (
+              <a href={debugArtifact.htmlUrl} target="_blank" rel="noreferrer" className="underline">
+                Traces / screenshots / videos ↗
+              </a>
+            )}
+          </div>
+        </div>
+      )}
+
+      {run?.conclusion !== "failure" && (playwrightArtifact || debugArtifact) && (
+        <div className="text-[11px] text-muted-foreground space-x-3">
+          {playwrightArtifact && (
+            <a href={playwrightArtifact.htmlUrl} target="_blank" rel="noreferrer" className="underline">
+              Playwright report ↗
+            </a>
+          )}
+          {debugArtifact && (
+            <a href={debugArtifact.htmlUrl} target="_blank" rel="noreferrer" className="underline">
+              Debug artifacts ↗
+            </a>
+          )}
         </div>
       )}
 
@@ -168,11 +251,53 @@ export function StarterCIStatus() {
         </div>
       )}
 
-      {refreshedAt && (
-        <div className="text-[10px] text-muted-foreground">
-          {autoRefresh ? "auto-refreshes every 60s · " : ""}
-          last refresh {new Date(refreshedAt).toLocaleTimeString()}
+      <div className="flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
+        <div>
+          {refreshedAt && (
+            <>
+              {autoRefresh ? "auto-refreshes every 60s · " : ""}
+              last refresh {new Date(refreshedAt).toLocaleTimeString()}
+            </>
+          )}
         </div>
+        <button
+          type="button"
+          onClick={() => setShowToken((v) => !v)}
+          className="underline hover:text-foreground"
+        >
+          {hasToken ? "GitHub PAT: saved" : "Add GitHub PAT to enable dispatch"}
+        </button>
+      </div>
+
+      {showToken && (
+        <div className="rounded border p-2 text-xs space-y-2 bg-muted/40">
+          <div className="text-muted-foreground">
+            Paste a fine-grained PAT with <strong>Actions: Read &amp; Write</strong> on{" "}
+            <code>{repoSlug()}</code>. Stored in your browser's localStorage only.
+          </div>
+          <input
+            type="password"
+            value={tokenInput}
+            onChange={(e) => setTokenInput(e.target.value)}
+            placeholder="github_pat_…"
+            className="w-full px-2 py-1 rounded border bg-background"
+          />
+          <div className="flex gap-2">
+            <button onClick={saveToken} className="px-2 py-0.5 rounded border bg-primary text-primary-foreground">
+              Save
+            </button>
+            <button
+              onClick={() => { setStoredToken(""); setHasToken(false); setTokenInput(""); }}
+              className="px-2 py-0.5 rounded border"
+            >
+              Clear
+            </button>
+          </div>
+        </div>
+      )}
+
+      {dispatchMsg && (
+        <div className="text-[11px] text-muted-foreground">{dispatchMsg}</div>
       )}
     </div>
   );
