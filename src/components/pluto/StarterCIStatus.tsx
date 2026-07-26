@@ -290,15 +290,25 @@ export function StarterCIStatus() {
             <a href={run.failingJob.url} target="_blank" rel="noreferrer" className="underline">
               Open failing step ↗
             </a>
-            {playwrightArtifact && (
-              <a href={playwrightArtifact.htmlUrl} target="_blank" rel="noreferrer" className="underline">
-                Playwright HTML report ↗
-              </a>
+            {allReportArtifacts.length > 0 && (
+              <span className="flex flex-wrap gap-x-2">
+                <span className="text-muted-foreground">HTML report:</span>
+                {allReportArtifacts.map((a) => (
+                  <a key={a.id} href={a.htmlUrl} target="_blank" rel="noreferrer" className="underline">
+                    {a.name.replace(/^playwright-report-?/, "") || "default"} ↗
+                  </a>
+                ))}
+              </span>
             )}
-            {debugArtifact && (
-              <a href={debugArtifact.htmlUrl} target="_blank" rel="noreferrer" className="underline">
-                Traces / screenshots / videos ↗
-              </a>
+            {allDebugArtifacts.length > 0 && (
+              <span className="flex flex-wrap gap-x-2">
+                <span className="text-muted-foreground">Traces:</span>
+                {allDebugArtifacts.map((a) => (
+                  <a key={a.id} href={a.htmlUrl} target="_blank" rel="noreferrer" className="underline">
+                    {a.name.replace(/^playwright-artifacts-?/, "") || "default"} ↗
+                  </a>
+                ))}
+              </span>
             )}
           </div>
         </div>
