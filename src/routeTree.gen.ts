@@ -29,6 +29,7 @@ import { Route as DashboardVerifyRouteImport } from './routes/dashboard.verify'
 import { Route as DashboardVectorRouteImport } from './routes/dashboard.vector'
 import { Route as DashboardUsersRouteImport } from './routes/dashboard.users'
 import { Route as DashboardUsageRouteImport } from './routes/dashboard.usage'
+import { Route as DashboardTrashRouteImport } from './routes/dashboard.trash'
 import { Route as DashboardTracesRouteImport } from './routes/dashboard.traces'
 import { Route as DashboardTokensRouteImport } from './routes/dashboard.tokens'
 import { Route as DashboardStorageRouteImport } from './routes/dashboard.storage'
@@ -117,6 +118,7 @@ import { Route as DashboardIntegrationsLovableFrontendRouteImport } from './rout
 import { Route as DashboardHelpFullstackGuideRouteImport } from './routes/dashboard.help.fullstack-guide'
 import { Route as DashboardHelpChecklistRouteImport } from './routes/dashboard.help.checklist'
 import { Route as DashboardCustomDomainsAuditRouteImport } from './routes/dashboard.custom-domains.audit'
+import { Route as DashboardAuditDeletesRouteImport } from './routes/dashboard.audit.deletes'
 import { Route as DashboardAdminInviteRouteImport } from './routes/dashboard.admin.invite'
 import { Route as ApiPublicVpsSubdomainsRouteImport } from './routes/api/public/vps-subdomains'
 import { Route as ApiPublicProvisionSubdomainRouteImport } from './routes/api/public/provision-subdomain'
@@ -230,6 +232,11 @@ const DashboardUsersRoute = DashboardUsersRouteImport.update({
 const DashboardUsageRoute = DashboardUsageRouteImport.update({
   id: '/usage',
   path: '/usage',
+  getParentRoute: () => DashboardRoute,
+} as any)
+const DashboardTrashRoute = DashboardTrashRouteImport.update({
+  id: '/trash',
+  path: '/trash',
   getParentRoute: () => DashboardRoute,
 } as any)
 const DashboardTracesRoute = DashboardTracesRouteImport.update({
@@ -683,6 +690,11 @@ const DashboardCustomDomainsAuditRoute =
     path: '/audit',
     getParentRoute: () => DashboardCustomDomainsRoute,
   } as any)
+const DashboardAuditDeletesRoute = DashboardAuditDeletesRouteImport.update({
+  id: '/deletes',
+  path: '/deletes',
+  getParentRoute: () => DashboardAuditRoute,
+} as any)
 const DashboardAdminInviteRoute = DashboardAdminInviteRouteImport.update({
   id: '/admin/invite',
   path: '/admin/invite',
@@ -775,7 +787,7 @@ export interface FileRoutesByFullPath {
   '/auth/reset-password': typeof AuthResetPasswordRoute
   '/dashboard/ai': typeof DashboardAiRoute
   '/dashboard/api': typeof DashboardApiRoute
-  '/dashboard/audit': typeof DashboardAuditRoute
+  '/dashboard/audit': typeof DashboardAuditRouteWithChildren
   '/dashboard/audit-log': typeof DashboardAuditLogRoute
   '/dashboard/auto-connect': typeof DashboardAutoConnectRoute
   '/dashboard/auto-deploy': typeof DashboardAutoDeployRoute
@@ -842,6 +854,7 @@ export interface FileRoutesByFullPath {
   '/dashboard/storage': typeof DashboardStorageRoute
   '/dashboard/tokens': typeof DashboardTokensRoute
   '/dashboard/traces': typeof DashboardTracesRouteWithChildren
+  '/dashboard/trash': typeof DashboardTrashRoute
   '/dashboard/usage': typeof DashboardUsageRoute
   '/dashboard/users': typeof DashboardUsersRoute
   '/dashboard/vector': typeof DashboardVectorRoute
@@ -864,6 +877,7 @@ export interface FileRoutesByFullPath {
   '/api/public/provision-subdomain': typeof ApiPublicProvisionSubdomainRoute
   '/api/public/vps-subdomains': typeof ApiPublicVpsSubdomainsRoute
   '/dashboard/admin/invite': typeof DashboardAdminInviteRoute
+  '/dashboard/audit/deletes': typeof DashboardAuditDeletesRoute
   '/dashboard/custom-domains/audit': typeof DashboardCustomDomainsAuditRoute
   '/dashboard/help/checklist': typeof DashboardHelpChecklistRoute
   '/dashboard/help/fullstack-guide': typeof DashboardHelpFullstackGuideRoute
@@ -898,7 +912,7 @@ export interface FileRoutesByTo {
   '/auth/reset-password': typeof AuthResetPasswordRoute
   '/dashboard/ai': typeof DashboardAiRoute
   '/dashboard/api': typeof DashboardApiRoute
-  '/dashboard/audit': typeof DashboardAuditRoute
+  '/dashboard/audit': typeof DashboardAuditRouteWithChildren
   '/dashboard/audit-log': typeof DashboardAuditLogRoute
   '/dashboard/auto-connect': typeof DashboardAutoConnectRoute
   '/dashboard/auto-deploy': typeof DashboardAutoDeployRoute
@@ -965,6 +979,7 @@ export interface FileRoutesByTo {
   '/dashboard/storage': typeof DashboardStorageRoute
   '/dashboard/tokens': typeof DashboardTokensRoute
   '/dashboard/traces': typeof DashboardTracesRouteWithChildren
+  '/dashboard/trash': typeof DashboardTrashRoute
   '/dashboard/usage': typeof DashboardUsageRoute
   '/dashboard/users': typeof DashboardUsersRoute
   '/dashboard/vector': typeof DashboardVectorRoute
@@ -987,6 +1002,7 @@ export interface FileRoutesByTo {
   '/api/public/provision-subdomain': typeof ApiPublicProvisionSubdomainRoute
   '/api/public/vps-subdomains': typeof ApiPublicVpsSubdomainsRoute
   '/dashboard/admin/invite': typeof DashboardAdminInviteRoute
+  '/dashboard/audit/deletes': typeof DashboardAuditDeletesRoute
   '/dashboard/custom-domains/audit': typeof DashboardCustomDomainsAuditRoute
   '/dashboard/help/checklist': typeof DashboardHelpChecklistRoute
   '/dashboard/help/fullstack-guide': typeof DashboardHelpFullstackGuideRoute
@@ -1023,7 +1039,7 @@ export interface FileRoutesById {
   '/auth/reset-password': typeof AuthResetPasswordRoute
   '/dashboard/ai': typeof DashboardAiRoute
   '/dashboard/api': typeof DashboardApiRoute
-  '/dashboard/audit': typeof DashboardAuditRoute
+  '/dashboard/audit': typeof DashboardAuditRouteWithChildren
   '/dashboard/audit-log': typeof DashboardAuditLogRoute
   '/dashboard/auto-connect': typeof DashboardAutoConnectRoute
   '/dashboard/auto-deploy': typeof DashboardAutoDeployRoute
@@ -1090,6 +1106,7 @@ export interface FileRoutesById {
   '/dashboard/storage': typeof DashboardStorageRoute
   '/dashboard/tokens': typeof DashboardTokensRoute
   '/dashboard/traces': typeof DashboardTracesRouteWithChildren
+  '/dashboard/trash': typeof DashboardTrashRoute
   '/dashboard/usage': typeof DashboardUsageRoute
   '/dashboard/users': typeof DashboardUsersRoute
   '/dashboard/vector': typeof DashboardVectorRoute
@@ -1112,6 +1129,7 @@ export interface FileRoutesById {
   '/api/public/provision-subdomain': typeof ApiPublicProvisionSubdomainRoute
   '/api/public/vps-subdomains': typeof ApiPublicVpsSubdomainsRoute
   '/dashboard/admin/invite': typeof DashboardAdminInviteRoute
+  '/dashboard/audit/deletes': typeof DashboardAuditDeletesRoute
   '/dashboard/custom-domains/audit': typeof DashboardCustomDomainsAuditRoute
   '/dashboard/help/checklist': typeof DashboardHelpChecklistRoute
   '/dashboard/help/fullstack-guide': typeof DashboardHelpFullstackGuideRoute
@@ -1216,6 +1234,7 @@ export interface FileRouteTypes {
     | '/dashboard/storage'
     | '/dashboard/tokens'
     | '/dashboard/traces'
+    | '/dashboard/trash'
     | '/dashboard/usage'
     | '/dashboard/users'
     | '/dashboard/vector'
@@ -1238,6 +1257,7 @@ export interface FileRouteTypes {
     | '/api/public/provision-subdomain'
     | '/api/public/vps-subdomains'
     | '/dashboard/admin/invite'
+    | '/dashboard/audit/deletes'
     | '/dashboard/custom-domains/audit'
     | '/dashboard/help/checklist'
     | '/dashboard/help/fullstack-guide'
@@ -1339,6 +1359,7 @@ export interface FileRouteTypes {
     | '/dashboard/storage'
     | '/dashboard/tokens'
     | '/dashboard/traces'
+    | '/dashboard/trash'
     | '/dashboard/usage'
     | '/dashboard/users'
     | '/dashboard/vector'
@@ -1361,6 +1382,7 @@ export interface FileRouteTypes {
     | '/api/public/provision-subdomain'
     | '/api/public/vps-subdomains'
     | '/dashboard/admin/invite'
+    | '/dashboard/audit/deletes'
     | '/dashboard/custom-domains/audit'
     | '/dashboard/help/checklist'
     | '/dashboard/help/fullstack-guide'
@@ -1463,6 +1485,7 @@ export interface FileRouteTypes {
     | '/dashboard/storage'
     | '/dashboard/tokens'
     | '/dashboard/traces'
+    | '/dashboard/trash'
     | '/dashboard/usage'
     | '/dashboard/users'
     | '/dashboard/vector'
@@ -1485,6 +1508,7 @@ export interface FileRouteTypes {
     | '/api/public/provision-subdomain'
     | '/api/public/vps-subdomains'
     | '/dashboard/admin/invite'
+    | '/dashboard/audit/deletes'
     | '/dashboard/custom-domains/audit'
     | '/dashboard/help/checklist'
     | '/dashboard/help/fullstack-guide'
@@ -1671,6 +1695,13 @@ declare module '@tanstack/react-router' {
       path: '/usage'
       fullPath: '/dashboard/usage'
       preLoaderRoute: typeof DashboardUsageRouteImport
+      parentRoute: typeof DashboardRoute
+    }
+    '/dashboard/trash': {
+      id: '/dashboard/trash'
+      path: '/trash'
+      fullPath: '/dashboard/trash'
+      preLoaderRoute: typeof DashboardTrashRouteImport
       parentRoute: typeof DashboardRoute
     }
     '/dashboard/traces': {
@@ -2289,6 +2320,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardCustomDomainsAuditRouteImport
       parentRoute: typeof DashboardCustomDomainsRoute
     }
+    '/dashboard/audit/deletes': {
+      id: '/dashboard/audit/deletes'
+      path: '/deletes'
+      fullPath: '/dashboard/audit/deletes'
+      preLoaderRoute: typeof DashboardAuditDeletesRouteImport
+      parentRoute: typeof DashboardAuditRoute
+    }
     '/dashboard/admin/invite': {
       id: '/dashboard/admin/invite'
       path: '/admin/invite'
@@ -2406,6 +2444,18 @@ const AuthRouteChildren: AuthRouteChildren = {
 
 const AuthRouteWithChildren = AuthRoute._addFileChildren(AuthRouteChildren)
 
+interface DashboardAuditRouteChildren {
+  DashboardAuditDeletesRoute: typeof DashboardAuditDeletesRoute
+}
+
+const DashboardAuditRouteChildren: DashboardAuditRouteChildren = {
+  DashboardAuditDeletesRoute: DashboardAuditDeletesRoute,
+}
+
+const DashboardAuditRouteWithChildren = DashboardAuditRoute._addFileChildren(
+  DashboardAuditRouteChildren,
+)
+
 interface DashboardCustomDomainsRouteChildren {
   DashboardCustomDomainsAuditRoute: typeof DashboardCustomDomainsAuditRoute
 }
@@ -2490,7 +2540,7 @@ const DashboardTracesRouteWithChildren = DashboardTracesRoute._addFileChildren(
 interface DashboardRouteChildren {
   DashboardAiRoute: typeof DashboardAiRoute
   DashboardApiRoute: typeof DashboardApiRoute
-  DashboardAuditRoute: typeof DashboardAuditRoute
+  DashboardAuditRoute: typeof DashboardAuditRouteWithChildren
   DashboardAuditLogRoute: typeof DashboardAuditLogRoute
   DashboardAutoConnectRoute: typeof DashboardAutoConnectRoute
   DashboardAutoDeployRoute: typeof DashboardAutoDeployRoute
@@ -2557,6 +2607,7 @@ interface DashboardRouteChildren {
   DashboardStorageRoute: typeof DashboardStorageRoute
   DashboardTokensRoute: typeof DashboardTokensRoute
   DashboardTracesRoute: typeof DashboardTracesRouteWithChildren
+  DashboardTrashRoute: typeof DashboardTrashRoute
   DashboardUsageRoute: typeof DashboardUsageRoute
   DashboardUsersRoute: typeof DashboardUsersRoute
   DashboardVectorRoute: typeof DashboardVectorRoute
@@ -2574,7 +2625,7 @@ interface DashboardRouteChildren {
 const DashboardRouteChildren: DashboardRouteChildren = {
   DashboardAiRoute: DashboardAiRoute,
   DashboardApiRoute: DashboardApiRoute,
-  DashboardAuditRoute: DashboardAuditRoute,
+  DashboardAuditRoute: DashboardAuditRouteWithChildren,
   DashboardAuditLogRoute: DashboardAuditLogRoute,
   DashboardAutoConnectRoute: DashboardAutoConnectRoute,
   DashboardAutoDeployRoute: DashboardAutoDeployRoute,
@@ -2641,6 +2692,7 @@ const DashboardRouteChildren: DashboardRouteChildren = {
   DashboardStorageRoute: DashboardStorageRoute,
   DashboardTokensRoute: DashboardTokensRoute,
   DashboardTracesRoute: DashboardTracesRouteWithChildren,
+  DashboardTrashRoute: DashboardTrashRoute,
   DashboardUsageRoute: DashboardUsageRoute,
   DashboardUsersRoute: DashboardUsersRoute,
   DashboardVectorRoute: DashboardVectorRoute,
@@ -2687,13 +2739,3 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { startInstance } from './start.ts'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-    config: Awaited<ReturnType<typeof startInstance.getOptions>>
-  }
-}

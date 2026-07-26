@@ -1,15 +1,15 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useServerFn } from "@tanstack/react-start";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, Check, Copy, Database, ExternalLink, FolderKanban, KeyRound, Pencil, Plus, Server, ShieldCheck, Trash2, X } from "lucide-react";
-import { toast } from "sonner";
 import { PageHeader } from "@/components/pluto/PageHeader";
 import { HelpPanel } from "@/components/help/HelpPanel";
 import { dashboardProjectsHelp } from "@/content/help/dashboard.projects";
 import { ErrorBanner } from "@/components/pluto/ErrorBanner";
 import { checkSlug, coerceSlug, previewSubdomainUrl, slugReasonMessage } from "@/lib/pluto/reserved-slugs";
 import { isLive, live, type Workspace, type WorkspaceKey } from "@/lib/pluto/live";
-import { purgeVpsSlug } from "@/lib/pluto/vps-purge.functions";
+import { BulkDeleteDialog, type BulkTarget } from "@/components/pluto/BulkDeleteDialog";
+import { getState, softDeletedIds, subscribe } from "@/lib/pluto/delete-store";
+
 
 
 type ConflictInfo = Awaited<ReturnType<typeof live.admin.apiKeys.checkConflict>>;
@@ -40,9 +40,15 @@ function ProjectsPage() {
   const [indexStatus, setIndexStatus] = useState<IndexStatus | null>(null);
   const [verifyingIndex, setVerifyingIndex] = useState(false);
   const [selectedProjects, setSelectedProjects] = useState<Set<string>>(new Set());
-  const [purging, setPurging] = useState(false);
   const [purgeSlugOnDelete, setPurgeSlugOnDelete] = useState(true);
-  const purgeVps = useServerFn(purgeVpsSlug);
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [softHidden, setSoftHidden] = useState<Set<string>>(() => softDeletedIds("project"));
+  const [windowMin, setWindowMin] = useState(() => Math.round(getState().settings.windowMs / 60_000));
+  useEffect(() => subscribe((s) => {
+    setSoftHidden(new Set(s.softDeletes.filter((x) => x.kind === "project").map((x) => x.targetId)));
+    setWindowMin(Math.round(s.settings.windowMs / 60_000));
+  }), []);
+
   const slugStatus = useMemo(() => checkSlug(projectSlug), [projectSlug]);
   const editSlugStatus = useMemo(() => (editing ? checkSlug(editing.slug) : { ok: true as const }), [editing]);
 
@@ -147,7 +153,9 @@ function ProjectsPage() {
     } catch (e) { setErr(e); }
   }
 
-  const visibleProjects = projects.filter((p) => !wsId || !p.workspace_id || p.workspace_id === wsId);
+  const visibleProjects = projects.filter(
+    (p) => (!wsId || !p.workspace_id || p.workspace_id === wsId) && !softHidden.has(p.id),
+  );
 
   async function saveEdit() {
     if (!editing) return;
@@ -160,53 +168,7 @@ function ProjectsPage() {
     } catch (e) { setErr(e); }
   }
 
-  async function removeProject(id: string, name: string, slug: string) {
-    if (!confirm(`Delete project "${name}"? এই action reversible নয় — সব API keys revoke হবে${purgeSlugOnDelete ? ` এবং VPS-এ /var/lib/pluto/sites/${slug} মুছে যাবে` : ""}।`)) return;
-    setErr(null);
-    try {
-      await live.admin.projects.remove(id);
-      if (purgeSlugOnDelete) {
-        try {
-          const r = await purgeVps({ data: { slug } });
-          if (r.ok) toast.success(`VPS purged: ${slug} (${r.removed.length} path${r.removed.length === 1 ? "" : "s"})`);
-          else toast.error(`VPS purge failed for ${slug}: ${r.hint ?? r.errors.join("; ")}`);
-        } catch (e) {
-          toast.error(`VPS purge error for ${slug}: ${e instanceof Error ? e.message : String(e)}`);
-        }
-      }
-      setSelectedProjects((s) => { const n = new Set(s); n.delete(id); return n; });
-      setProjects(await live.admin.projects.list());
-    } catch (e) { setErr(e); }
-  }
-
-  async function bulkDeleteProjects() {
-    const targets = projects.filter((p) => selectedProjects.has(p.id));
-    if (!targets.length) return;
-    if (!confirm(
-      `Delete ${targets.length} project${targets.length === 1 ? "" : "s"}?\n` +
-      targets.map((t) => `  • ${t.name} (${t.slug})`).join("\n") +
-      `\n\nএই action reversible নয় — সব API keys revoke হবে${purgeSlugOnDelete ? " এবং প্রতিটির VPS site directory মুছে যাবে" : ""}।`
-    )) return;
-    setPurging(true); setErr(null);
-    let dbOk = 0, dbFail = 0, vpsOk = 0, vpsFail = 0;
-    for (const t of targets) {
-      try {
-        await live.admin.projects.remove(t.id);
-        dbOk++;
-      } catch (e) { dbFail++; toast.error(`Delete ${t.slug}: ${e instanceof Error ? e.message : String(e)}`); continue; }
-      if (purgeSlugOnDelete) {
-        try {
-          const r = await purgeVps({ data: { slug: t.slug } });
-          if (r.ok) vpsOk++; else { vpsFail++; toast.error(`VPS purge ${t.slug}: ${r.hint ?? r.errors.join("; ")}`); }
-        } catch (e) { vpsFail++; toast.error(`VPS purge ${t.slug}: ${e instanceof Error ? e.message : String(e)}`); }
-      }
-    }
-    toast.success(`Deleted ${dbOk}/${targets.length} project${dbOk === 1 ? "" : "s"}` + (purgeSlugOnDelete ? ` · VPS purged ${vpsOk}/${dbOk}` : ""));
-    if (dbFail || vpsFail) toast(`${dbFail} DB failure${dbFail === 1 ? "" : "s"}, ${vpsFail} VPS failure${vpsFail === 1 ? "" : "s"}`, { icon: "⚠️" });
-    setSelectedProjects(new Set());
-    setProjects(await live.admin.projects.list());
-    setPurging(false);
-  }
+  const [singleDelete, setSingleDelete] = useState<{ id: string; name: string; slug: string } | null>(null);
 
   function toggleProjectSel(id: string, on: boolean) {
     setSelectedProjects((s) => { const n = new Set(s); on ? n.add(id) : n.delete(id); return n; });
@@ -220,6 +182,14 @@ function ProjectsPage() {
       return n;
     });
   }
+
+  const bulkTargets: BulkTarget[] = (singleDelete
+    ? [{ id: singleDelete.id, label: singleDelete.name, sublabel: singleDelete.slug, slug: singleDelete.slug }]
+    : projects.filter((p) => selectedProjects.has(p.id)).map((p) => ({
+        id: p.id, label: p.name, sublabel: p.slug, slug: p.slug,
+      })));
+
+
 
 
   async function revoke(id: string) {
@@ -315,12 +285,13 @@ function ProjectsPage() {
               {selectedProjects.size > 0 ? `${selectedProjects.size} selected` : `${visibleProjects.length} project${visibleProjects.length === 1 ? "" : "s"}`}
             </span>
             <button
-              onClick={bulkDeleteProjects}
-              disabled={selectedProjects.size === 0 || purging}
+              onClick={() => { setSingleDelete(null); setBulkOpen(true); }}
+              disabled={selectedProjects.size === 0}
               className="inline-flex items-center gap-1 rounded-md bg-destructive px-2.5 py-1 text-[11px] font-medium text-destructive-foreground hover:opacity-90 disabled:opacity-40"
             >
-              <Trash2 className="h-3 w-3" /> {purging ? "Deleting…" : `Delete selected${selectedProjects.size ? ` (${selectedProjects.size})` : ""}`}
+              <Trash2 className="h-3 w-3" /> {`Delete selected${selectedProjects.size ? ` (${selectedProjects.size})` : ""}`}
             </button>
+
           </div>
         </div>
         <div className="mt-2 overflow-hidden rounded-md border border-border">
@@ -411,7 +382,7 @@ function ProjectsPage() {
                               <Pencil className="h-3.5 w-3.5" />
                             </button>
                             <button
-                              onClick={() => removeProject(p.id, p.name, p.slug)}
+                              onClick={() => { setSingleDelete({ id: p.id, name: p.name, slug: p.slug }); setBulkOpen(true); }}
                               className="rounded-md p-1 text-muted-foreground hover:text-destructive hover:bg-accent"
                               title="Delete"
                             >
@@ -597,8 +568,17 @@ function ProjectsPage() {
           ⚠️ <span className="font-medium">service_role</span> key কখনো frontend-এ ব্যবহার করবেন না — এটি RLS bypass করে।
         </p>
       </div>
+      <BulkDeleteDialog
+        open={bulkOpen}
+        onClose={() => { setBulkOpen(false); setSingleDelete(null); setSelectedProjects(new Set()); void loadTop(); }}
+        kind="project"
+        targets={bulkTargets}
+        defaultAutoPurgeSlug={purgeSlugOnDelete}
+        windowMinutes={windowMin}
+      />
     </div>
   );
+
 }
 
 function Field({ label, value, onCopy, copied, danger }: { label: string; value: string; onCopy: (v: string) => void; copied: string | null; danger?: boolean }) {

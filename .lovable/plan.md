@@ -1,61 +1,64 @@
-# Pluto BaaS — Fullstack E2E Integration Guide (Plan)
+# Bulk delete hardening: modal, jobs, audit, soft-delete
 
-আমি একটি বিস্তারিত End-to-End গাইড তৈরি করবো যা একজন ডেভেলপার শূন্য থেকে শুরু করে production-এ live দেওয়া পর্যন্ত ধাপে ধাপে follow করতে পারবে। এটি প্রজেক্টে `docs/GUIDE-FULLSTACK-E2E.md` ফাইলে যোগ হবে, এবং dashboard-এর একটি নতুন Help পেজ `/dashboard/help/fullstack-guide`-এ রেন্ডার হবে যেন logged-in user সরাসরি পড়তে পারে।
+Four features touching dashboard bulk delete, VPS worker, DB, and a new recycle bin. All work on top of what already shipped (`purgeVpsSlug`, bulk-delete in `dashboard.projects.tsx` / `dashboard.users.tsx`).
 
-## Deliverables
+## 1. Confirmation modal + per-item error summary
 
-1. **`docs/GUIDE-FULLSTACK-E2E.md`** — সম্পূর্ণ markdown গাইড (bilingual: Bengali বর্ণনা + English commands/code)।
-2. **`src/routes/dashboard.help.fullstack-guide.tsx`** — একই কন্টেন্ট rendered as an in-app page (markdown → React sections, copy-to-clipboard code blocks)।
-3. **`src/components/pluto/Sidebar.tsx`** — "Help" গ্রুপে "Fullstack E2E Guide" লিঙ্ক যোগ।
+Replace the `confirm()` calls in `dashboard.projects.tsx` and `dashboard.users.tsx` with a shared `<BulkDeleteDialog>` component:
 
-কোনো backend/schema change নেই — এটি pure documentation feature।
+- Lists every target (name + slug/email) as a checklist you can still uncheck.
+- Requires typing `DELETE` to enable the button (matches GitHub / Vercel norms).
+- Shows a "Purge VPS site directory too" toggle (projects only), default on.
+- Runs deletions in parallel with `Promise.allSettled`, streams per-item status back into the dialog (pending → ok / db-failed / vps-failed) with the exact error message and — for VPS failures — the `hint` from `purgeVpsSlug`.
+- Dialog stays open after the run so you can copy failures, retry only failed rows, or close.
 
-## Guide Structure (10 phase)
+Files: `src/components/pluto/BulkDeleteDialog.tsx` (new), and rewire the two dashboard routes.
 
-```text
-Phase 0  Prerequisites            VPS/DNS/GitHub/Node/Docker checklist
-Phase 1  Workspace + Project      Dashboard-এ workspace ও project তৈরি
-Phase 2  API Keys                 anon (publishable) + service_role mint
-Phase 3  Database Schema          Migration file, RLS policy, GRANT rules
-Phase 4  Auth                     Email/password + JWT flow, roles table
-Phase 5  Frontend Wiring          @pluto/js SDK install, env.js injection
-Phase 6  Storage + Realtime       Bucket, upload, WS subscribe
-Phase 7  Edge Functions / RPC     Server-side logic, secrets
-Phase 8  Custom Domain + SSL      DNS records, wildcard cert, primary pin
-Phase 9  Deploy + Cutover         build-and-cutover.sh, health verify
-Phase 10 Observability + Ops     Traces, RBAC gate, migrations UI, backups
-```
+## 2. Background job with live status for VPS purges
 
-প্রত্যেক Phase-এ থাকবে: **Goal → Steps → Verify → Common errors → Rollback**।
+Purges become jobs so long / flaky VPS calls don't block the UI.
 
-## Key sections in detail
+- New table `public.vps_purge_jobs` (id, workspace_id, slug, status: queued|running|ok|failed, attempts, last_error, removed jsonb, created_by, created_at, updated_at).
+- New server functions in `src/lib/pluto/vps-purge-jobs.functions.ts`:
+  - `enqueueVpsPurge({ slug, projectId })` — inserts a queued row, kicks off `runVpsPurgeJob` (fire-and-forget), returns job id.
+  - `runVpsPurgeJob({ id })` — marks running, calls existing `purgeVpsSlug` handler, records result + attempts.
+  - `retryVpsPurgeJob({ id })` — resets failed → queued and re-runs.
+  - `listVpsPurgeJobs({ limit, status? })` — for dashboard polling.
+- Bulk delete flow enqueues one job per project instead of awaiting purge inline. Dialog subscribes via `useQuery` with 1.5s poll until every job is terminal.
+- New route `dashboard.jobs.tsx` shows the full queue with retry buttons and last-error detail.
 
-- **RLS pattern** — `user_roles` table + `has_role()` security-definer function (never store role on profiles)।
-- **JWT claims** — `sub`, `role`, `is_superadmin` কীভাবে propagate হয় এবং `TraceAccessGate` কীভাবে চেক করে।
-- **Env variables** — `VITE_PLUTO_URL`, `VITE_PLUTO_ANON_KEY` frontend-এ; `PLUTO_SERVICE_KEY`, `JWT_SECRET`, `DATABASE_URL` backend-এ।
-- **Ops workflow** — Migration dry-run → approval → apply → backup → rollback path।
-- **Debug tools** — `/dashboard/rbac-debug`, `/dashboard/ops/explain`, `/dashboard/ops/rls-debug`, `/dashboard/ops/jwt-inspect`, `/dashboard/ops/docker-check`।
+## 3. Admin audit log for deletes
 
-## Sample commands included
+- New table `public.admin_delete_audit` (id, actor_id, actor_email, action: delete_user|delete_project, target_id, target_label, db_rows_removed int, vps_purge_job_id nullable, vps_removed_paths jsonb, vps_errors jsonb, created_at).
+- Wrap the existing `admin.projects.remove` / `admin.users.remove` calls in a new server function `recordDeleteAudit` that inserts one row per target as soon as the DB delete resolves; VPS job id is patched in when the job finishes.
+- New route `dashboard.audit.deletes.tsx`: filterable list (by actor, action, date range) with links to job detail. Superadmin only via existing `TraceAccessGate`.
 
-```bash
-# Frontend inject + build
-bash pluto-backend/deploy/inject-pluto-env.sh
-bash pluto-backend/deploy/build-and-cutover.sh <slug>
+## 4. Soft-delete + configurable undo window
 
-# Migration lifecycle
-sudo /usr/local/sbin/pluto-ops migrate plan
-sudo /usr/local/sbin/pluto-ops migrate dry-run
-sudo /usr/local/sbin/pluto-ops migrate apply
+Instead of dropping DB rows immediately, mark them deleted and purge later.
 
-# Verify live
-curl -sI https://<domain>/ | grep -i x-pluto-primary
-curl -s https://api.timescard.cloud/v1/health
-```
+- Migration: add `deleted_at timestamptz`, `deleted_by uuid`, `purge_after timestamptz` to `admin.projects` and `admin.users`. All existing list endpoints add `deleted_at is null`.
+- New settings row `admin.system_settings.soft_delete_window_minutes` (default 30). Editable from `dashboard.ops.settings.tsx`.
+- Delete flow becomes:
+  1. Set `deleted_at = now()`, `purge_after = now() + window`, `deleted_by = actor`.
+  2. Enqueue VPS purge job but with `run_after = purge_after` — worker skips until then.
+  3. Audit row records "soft delete".
+- New "Recycle bin" route `dashboard.trash.tsx`:
+  - Lists soft-deleted users + projects with time-remaining.
+  - **Restore** (clears `deleted_at`, cancels queued job).
+  - **Purge now** (sets `purge_after = now()`, wakes job).
+- Sweeper: extend the existing worker tick to hard-delete rows past `purge_after` and run their VPS jobs.
+
+## Technical notes
+
+- Only superadmins see the audit + trash routes; existing `useSuperAdmin` hook gates them.
+- All new tables get the standard `GRANT ... TO service_role` + RLS-enabled + policies scoped to `has_role(..., 'admin')` per `docs/security/core-tables-rls.md`.
+- Purge jobs run inside a single-flight lock keyed by slug so retries can't stomp each other.
+- `purgeVpsSlug` is unchanged — the job wrapper calls it.
+- Rollout order: migration → server fns → dashboard components → new routes → wire bulk-delete to jobs.
 
 ## Out of scope
 
-- New backend endpoints বা schema পরিবর্তন — শুধু documentation।
-- Video/screencast — শুধু text + code।
-
-Approve করলে তিনটে ফাইল লিখে দেবো একই টার্নে।
+- Email/Slack notifications on purge failure (already covered by Ops webhooks — reuse if wanted later).
+- Cross-region replication of the audit log.
+- Bulk restore from trash (single-row restore only in v1).

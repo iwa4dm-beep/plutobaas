@@ -8,6 +8,9 @@ import { dashboardUsersHelp } from "@/content/help/dashboard.users";
 import { pluto, type PlutoUser } from "@/lib/pluto/client";
 import { isLive, live, type AdminUser } from "@/lib/pluto/live";
 import { useAuth } from "@/lib/pluto/auth-context";
+import { BulkDeleteDialog, type BulkTarget } from "@/components/pluto/BulkDeleteDialog";
+import { getState, softDeletedIds, subscribe } from "@/lib/pluto/delete-store";
+
 
 export const Route = createFileRoute("/dashboard/users")({
   component: UsersPage,
@@ -45,7 +48,17 @@ function UsersPage() {
   const [q, setQ] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [singleDelete, setSingleDelete] = useState<{ id: string; email: string } | null>(null);
+  const [softHidden, setSoftHidden] = useState<Set<string>>(() => softDeletedIds("user"));
+  const [windowMin, setWindowMin] = useState(() => Math.round(getState().settings.windowMs / 60_000));
+  useEffect(() => subscribe((s) => {
+    setSoftHidden(new Set(s.softDeletes.filter((x) => x.kind === "user").map((x) => x.targetId)));
+    setWindowMin(Math.round(s.settings.windowMs / 60_000));
+  }), []);
+
   const setRowBusy = (id: string, on: boolean) =>
+
     setBusy((s) => {
       const n = new Set(s);
       if (on) n.add(id);
@@ -88,6 +101,8 @@ function UsersPage() {
   const filtered = useMemo(() => {
     const term = q.trim().toLowerCase();
     return users.filter((u) => {
+      if (softHidden.has(u.id)) return false;
+
       if (filter === "pending" && u.email_verified) return false;
       if (filter === "verified" && !u.email_verified) return false;
       if (term && !u.email.toLowerCase().includes(term)) return false;
@@ -284,7 +299,7 @@ function UsersPage() {
           )}
           {selected.size > 0 && (
             <button
-              onClick={deleteSelected}
+              onClick={() => { setSingleDelete(null); setBulkOpen(true); }}
               className="inline-flex items-center gap-1.5 rounded-md bg-destructive px-3 py-1.5 text-xs font-medium text-destructive-foreground hover:opacity-90"
               title="Delete selected users (skips yourself and superadmins unless you're a superadmin)"
             >
@@ -410,7 +425,7 @@ function UsersPage() {
                         </button>
                       )}
                       <button
-                        onClick={() => remove(u.id, u.email)}
+                        onClick={() => { setSingleDelete({ id: u.id, email: u.email }); setBulkOpen(true); }}
                         disabled={rowBusy || !canDelete}
                         className="text-muted-foreground hover:text-destructive disabled:opacity-30"
                         title={!canDelete ? "Cannot delete this user" : "Delete user"}
@@ -443,6 +458,21 @@ function UsersPage() {
         <code className="ml-1">user</code> = regular authenticated user.
         Manual "Approve" marks a user's email as verified even if they never clicked the confirmation link.
       </p>
+
+      <BulkDeleteDialog
+        open={bulkOpen}
+        onClose={() => { setBulkOpen(false); setSingleDelete(null); setSelected(new Set()); void refresh(); }}
+        kind="user"
+        targets={
+          singleDelete
+            ? [{ id: singleDelete.id, label: singleDelete.email }]
+            : users
+                .filter((u) => selected.has(u.id) && u.id !== currentUserId && (meIsSuperadmin || !u.is_superadmin))
+                .map((u) => ({ id: u.id, label: u.email }))
+        }
+        windowMinutes={windowMin}
+      />
     </div>
   );
+
 }
