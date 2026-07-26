@@ -68,6 +68,14 @@ export function authed(session: PlutoSession | null) {
           fetch(base, { method: "POST", headers, body: JSON.stringify(row) }).then((r) =>
             json<T[]>(r),
           ),
+        update: (filter: string, patch: Partial<T>) =>
+          fetch(`${base}?${filter}`, {
+            method: "PATCH",
+            headers,
+            body: JSON.stringify(patch),
+          }).then((r) => json<T[]>(r)),
+        remove: (filter: string) =>
+          fetch(`${base}?${filter}`, { method: "DELETE", headers }).then((r) => json<T[]>(r)),
       };
     },
   };
