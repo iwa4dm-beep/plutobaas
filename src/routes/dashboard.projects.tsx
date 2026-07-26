@@ -285,12 +285,13 @@ function ProjectsPage() {
               {selectedProjects.size > 0 ? `${selectedProjects.size} selected` : `${visibleProjects.length} project${visibleProjects.length === 1 ? "" : "s"}`}
             </span>
             <button
-              onClick={bulkDeleteProjects}
-              disabled={selectedProjects.size === 0 || purging}
+              onClick={() => { setSingleDelete(null); setBulkOpen(true); }}
+              disabled={selectedProjects.size === 0}
               className="inline-flex items-center gap-1 rounded-md bg-destructive px-2.5 py-1 text-[11px] font-medium text-destructive-foreground hover:opacity-90 disabled:opacity-40"
             >
-              <Trash2 className="h-3 w-3" /> {purging ? "Deleting…" : `Delete selected${selectedProjects.size ? ` (${selectedProjects.size})` : ""}`}
+              <Trash2 className="h-3 w-3" /> {`Delete selected${selectedProjects.size ? ` (${selectedProjects.size})` : ""}`}
             </button>
+
           </div>
         </div>
         <div className="mt-2 overflow-hidden rounded-md border border-border">
