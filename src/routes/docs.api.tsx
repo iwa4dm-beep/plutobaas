@@ -1,7 +1,7 @@
 // Browser-hosted API reference.
 //
-// Renders the auto-generated OpenAPI 3.1 document (served at
-// /admin/v1/schema/openapi.json) inside RapiDoc — a lightweight
+// Renders the auto-generated OpenAPI document (served at /openapi.json)
+// inside RapiDoc — a lightweight
 // single-file custom element that ships as one <script> tag. Users can
 // browse every REST endpoint, try requests inline, and copy curl
 // snippets without leaving the dashboard.
@@ -52,7 +52,7 @@ function ApiDocsPage() {
     // 500 for an unknown top-level path.
     const raw = String(import.meta.env.VITE_PLUTO_URL ?? "").replace(/\/$/, "");
     const base = raw || "/api/pluto";
-    return `${base}/admin/v1/schema/openapi.json`;
+    return `${base}/openapi.json`;
   }, []);
 
   return (

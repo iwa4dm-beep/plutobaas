@@ -63,7 +63,7 @@ function ApiEndpointsPage() {
     return rows.filter((r) => r.endpoint.table.toLowerCase().includes(q));
   }, [tables, endpoints, filter]);
 
-  const openapiUrl = `${base.replace(/\/$/, "")}/admin/v1/schema/openapi.json`;
+  const openapiUrl = `${base.replace(/\/$/, "")}/openapi.json`;
 
   const downloadTypedClient = useCallback(() => {
     if (tables.length === 0 || endpoints.length === 0) return;

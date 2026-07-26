@@ -37,7 +37,10 @@ function offlineJson(payload: Record<string, unknown>) {
 
 async function handle({ request, params }: { request: Request; params: { _splat?: string } }) {
   const upstream = (process.env.PLUTO_UPSTREAM_URL || "https://api.timescard.cloud").replace(/\/+$/, "");
-  const splat = params._splat ?? "";
+  const incomingSplat = params._splat ?? "";
+  const splat = incomingSplat.replace(/^\/+/, "") === "admin/v1/schema/openapi.json"
+    ? "openapi.json"
+    : incomingSplat;
   const url = new URL(request.url);
 
   const target = upstream + "/" + splat + (url.search || "");
