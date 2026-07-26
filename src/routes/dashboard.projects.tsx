@@ -1,12 +1,16 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { useServerFn } from "@tanstack/react-start";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Check, Copy, Database, ExternalLink, FolderKanban, KeyRound, Pencil, Plus, ShieldCheck, Trash2, X } from "lucide-react";
+import { AlertTriangle, Check, Copy, Database, ExternalLink, FolderKanban, KeyRound, Pencil, Plus, Server, ShieldCheck, Trash2, X } from "lucide-react";
+import { toast } from "sonner";
 import { PageHeader } from "@/components/pluto/PageHeader";
 import { HelpPanel } from "@/components/help/HelpPanel";
 import { dashboardProjectsHelp } from "@/content/help/dashboard.projects";
 import { ErrorBanner } from "@/components/pluto/ErrorBanner";
 import { checkSlug, coerceSlug, previewSubdomainUrl, slugReasonMessage } from "@/lib/pluto/reserved-slugs";
 import { isLive, live, type Workspace, type WorkspaceKey } from "@/lib/pluto/live";
+import { purgeVpsSlug } from "@/lib/pluto/vps-purge.functions";
+
 
 type ConflictInfo = Awaited<ReturnType<typeof live.admin.apiKeys.checkConflict>>;
 type IndexStatus = Awaited<ReturnType<typeof live.admin.apiKeys.verifyIndex>>;
@@ -35,8 +39,13 @@ function ProjectsPage() {
   const [resolving, setResolving] = useState(false);
   const [indexStatus, setIndexStatus] = useState<IndexStatus | null>(null);
   const [verifyingIndex, setVerifyingIndex] = useState(false);
+  const [selectedProjects, setSelectedProjects] = useState<Set<string>>(new Set());
+  const [purging, setPurging] = useState(false);
+  const [purgeSlugOnDelete, setPurgeSlugOnDelete] = useState(true);
+  const purgeVps = useServerFn(purgeVpsSlug);
   const slugStatus = useMemo(() => checkSlug(projectSlug), [projectSlug]);
   const editSlugStatus = useMemo(() => (editing ? checkSlug(editing.slug) : { ok: true as const }), [editing]);
+
 
 
   const loadTop = useCallback(async () => {
@@ -151,14 +160,67 @@ function ProjectsPage() {
     } catch (e) { setErr(e); }
   }
 
-  async function removeProject(id: string, name: string) {
-    if (!confirm(`Delete project "${name}"? এই action reversible নয় — সব API keys revoke হয়ে যাবে।`)) return;
+  async function removeProject(id: string, name: string, slug: string) {
+    if (!confirm(`Delete project "${name}"? এই action reversible নয় — সব API keys revoke হবে${purgeSlugOnDelete ? ` এবং VPS-এ /var/lib/pluto/sites/${slug} মুছে যাবে` : ""}।`)) return;
     setErr(null);
     try {
       await live.admin.projects.remove(id);
+      if (purgeSlugOnDelete) {
+        try {
+          const r = await purgeVps({ data: { slug } });
+          if (r.ok) toast.success(`VPS purged: ${slug} (${r.removed.length} path${r.removed.length === 1 ? "" : "s"})`);
+          else toast.error(`VPS purge failed for ${slug}: ${r.hint ?? r.errors.join("; ")}`);
+        } catch (e) {
+          toast.error(`VPS purge error for ${slug}: ${e instanceof Error ? e.message : String(e)}`);
+        }
+      }
+      setSelectedProjects((s) => { const n = new Set(s); n.delete(id); return n; });
       setProjects(await live.admin.projects.list());
     } catch (e) { setErr(e); }
   }
+
+  async function bulkDeleteProjects() {
+    const targets = projects.filter((p) => selectedProjects.has(p.id));
+    if (!targets.length) return;
+    if (!confirm(
+      `Delete ${targets.length} project${targets.length === 1 ? "" : "s"}?\n` +
+      targets.map((t) => `  • ${t.name} (${t.slug})`).join("\n") +
+      `\n\nএই action reversible নয় — সব API keys revoke হবে${purgeSlugOnDelete ? " এবং প্রতিটির VPS site directory মুছে যাবে" : ""}।`
+    )) return;
+    setPurging(true); setErr(null);
+    let dbOk = 0, dbFail = 0, vpsOk = 0, vpsFail = 0;
+    for (const t of targets) {
+      try {
+        await live.admin.projects.remove(t.id);
+        dbOk++;
+      } catch (e) { dbFail++; toast.error(`Delete ${t.slug}: ${e instanceof Error ? e.message : String(e)}`); continue; }
+      if (purgeSlugOnDelete) {
+        try {
+          const r = await purgeVps({ data: { slug: t.slug } });
+          if (r.ok) vpsOk++; else { vpsFail++; toast.error(`VPS purge ${t.slug}: ${r.hint ?? r.errors.join("; ")}`); }
+        } catch (e) { vpsFail++; toast.error(`VPS purge ${t.slug}: ${e instanceof Error ? e.message : String(e)}`); }
+      }
+    }
+    toast.success(`Deleted ${dbOk}/${targets.length} project${dbOk === 1 ? "" : "s"}` + (purgeSlugOnDelete ? ` · VPS purged ${vpsOk}/${dbOk}` : ""));
+    if (dbFail || vpsFail) toast(`${dbFail} DB failure${dbFail === 1 ? "" : "s"}, ${vpsFail} VPS failure${vpsFail === 1 ? "" : "s"}`, { icon: "⚠️" });
+    setSelectedProjects(new Set());
+    setProjects(await live.admin.projects.list());
+    setPurging(false);
+  }
+
+  function toggleProjectSel(id: string, on: boolean) {
+    setSelectedProjects((s) => { const n = new Set(s); on ? n.add(id) : n.delete(id); return n; });
+  }
+  function toggleAllProjectsSel() {
+    setSelectedProjects((s) => {
+      const allChecked = visibleProjects.length > 0 && visibleProjects.every((p) => s.has(p.id));
+      const n = new Set(s);
+      if (allChecked) visibleProjects.forEach((p) => n.delete(p.id));
+      else visibleProjects.forEach((p) => n.add(p.id));
+      return n;
+    });
+  }
+
 
   async function revoke(id: string) {
     if (!wsId) return;
@@ -238,10 +300,41 @@ function ProjectsPage() {
             Preview URL: <a href={previewSubdomainUrl(projectSlug)} target="_blank" rel="noreferrer" className="font-mono text-foreground underline underline-offset-2">{previewSubdomainUrl(projectSlug)}</a>
           </p>
         )}
-        <div className="mt-4 overflow-hidden rounded-md border border-border">
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded-md border border-border bg-muted/30 px-3 py-2 text-xs">
+          <label className="inline-flex items-center gap-1.5 text-muted-foreground">
+            <input
+              type="checkbox"
+              checked={purgeSlugOnDelete}
+              onChange={(e) => setPurgeSlugOnDelete(e.target.checked)}
+            />
+            <Server className="h-3 w-3" />
+            Delete VPS site directory too (instant purge)
+          </label>
+          <div className="flex items-center gap-2">
+            <span className="text-muted-foreground">
+              {selectedProjects.size > 0 ? `${selectedProjects.size} selected` : `${visibleProjects.length} project${visibleProjects.length === 1 ? "" : "s"}`}
+            </span>
+            <button
+              onClick={bulkDeleteProjects}
+              disabled={selectedProjects.size === 0 || purging}
+              className="inline-flex items-center gap-1 rounded-md bg-destructive px-2.5 py-1 text-[11px] font-medium text-destructive-foreground hover:opacity-90 disabled:opacity-40"
+            >
+              <Trash2 className="h-3 w-3" /> {purging ? "Deleting…" : `Delete selected${selectedProjects.size ? ` (${selectedProjects.size})` : ""}`}
+            </button>
+          </div>
+        </div>
+        <div className="mt-2 overflow-hidden rounded-md border border-border">
           <table className="w-full text-sm">
             <thead className="bg-muted/40">
               <tr>
+                <th className="w-8 px-3 py-2">
+                  <input
+                    type="checkbox"
+                    aria-label="Select all projects"
+                    checked={visibleProjects.length > 0 && visibleProjects.every((p) => selectedProjects.has(p.id))}
+                    onChange={toggleAllProjectsSel}
+                  />
+                </th>
                 <th className="text-left px-3 py-2 text-xs font-medium text-muted-foreground">Project</th>
                 <th className="text-left px-3 py-2 text-xs font-medium text-muted-foreground">Slug</th>
                 <th className="text-left px-3 py-2 text-xs font-medium text-muted-foreground">Live URL</th>
@@ -249,13 +342,23 @@ function ProjectsPage() {
               </tr>
             </thead>
             <tbody>
-              {visibleProjects.length === 0 && <tr><td colSpan={4} className="px-3 py-4 text-center text-xs text-muted-foreground">No projects in this workspace yet.</td></tr>}
+              {visibleProjects.length === 0 && <tr><td colSpan={5} className="px-3 py-4 text-center text-xs text-muted-foreground">No projects in this workspace yet.</td></tr>}
               {visibleProjects.map((p) => {
+
                 const url = previewSubdomainUrl(p.slug);
                 const isEditing = editing?.id === p.id;
                 return (
                   <tr key={p.id} className="border-t border-border">
                     <td className="px-3 py-2">
+                      <input
+                        type="checkbox"
+                        aria-label={`Select ${p.slug}`}
+                        checked={selectedProjects.has(p.id)}
+                        onChange={(e) => toggleProjectSel(p.id, e.target.checked)}
+                      />
+                    </td>
+                    <td className="px-3 py-2">
+
                       {isEditing ? (
                         <input
                           value={editing!.name}
@@ -308,7 +411,7 @@ function ProjectsPage() {
                               <Pencil className="h-3.5 w-3.5" />
                             </button>
                             <button
-                              onClick={() => removeProject(p.id, p.name)}
+                              onClick={() => removeProject(p.id, p.name, p.slug)}
                               className="rounded-md p-1 text-muted-foreground hover:text-destructive hover:bg-accent"
                               title="Delete"
                             >

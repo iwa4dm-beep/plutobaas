@@ -1699,6 +1699,46 @@ const server = http.createServer(async (req, res) => {
       const r = await unpublish(await readJson(req));
       return json(res, 200, r);
     }
+    // POST /admin/purge-slug { slug } — permanently delete a site's VPS directory
+    // (all releases, symlinks, current, preview). Instant, irreversible. Requires
+    // sandbox secret. Used when a project is deleted from the dashboard.
+    if (req.method === "POST" && (p === "/admin/purge-slug" || p === "/sandbox/admin/purge-slug" || p === "/purge-slug")) {
+      const body = await readJson(req).catch(() => ({}));
+      const slug = normalizeSlug(body?.slug);
+      if (!slug) return json(res, 400, { error: "invalid_slug" });
+      const removed = [];
+      const errors = [];
+      // 1. Resolve slug → workspace dir (if symlinked)
+      const slugPath = path.join(SITES_ROOT, slug);
+      let wsDir = null;
+      try {
+        const st = await fsp.lstat(slugPath);
+        if (st.isSymbolicLink()) {
+          const target = await fsp.readlink(slugPath);
+          wsDir = path.isAbsolute(target) ? target : path.join(SITES_ROOT, target);
+          await fsp.unlink(slugPath).catch((e) => errors.push(`unlink ${slugPath}: ${e.message}`));
+          removed.push(slugPath);
+        } else if (st.isDirectory()) {
+          wsDir = slugPath;
+        }
+      } catch { /* slug not linked — still try workspace-id path below */ }
+      // 2. Remove workspace dir if within SITES_ROOT
+      if (wsDir && wsDir.startsWith(SITES_ROOT + path.sep) && path.resolve(wsDir) !== path.resolve(SITES_ROOT)) {
+        try {
+          await fsp.rm(wsDir, { recursive: true, force: true });
+          removed.push(wsDir);
+        } catch (e) { errors.push(`rm ${wsDir}: ${e.message}`); }
+      }
+      // 3. Remove per-slug secret file (if any).
+      try {
+        const secretFile = path.join(SLUG_SECRETS_DIR, `${slug}.json`);
+        await fsp.unlink(secretFile);
+        removed.push(secretFile);
+      } catch { /* absent → fine */ }
+      return json(res, errors.length ? 207 : 200, {
+        ok: errors.length === 0, slug, removed, errors, purgedAt: new Date().toISOString(),
+      });
+    }
     // POST /admin/repair — whitelisted repair scripts, sudo-run via /usr/local/sbin/pluto-repair.
     // Body: { action: "worker-and-site"|"wildcard-ssl"|"per-slug-ssl"|"primary-frontend"|"deploy-and-verify"|"set-upstream"|"all",
     //         slug?, wildcard?, acmeEmail?, upstream? }
