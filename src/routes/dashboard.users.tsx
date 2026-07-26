@@ -425,7 +425,7 @@ function UsersPage() {
                         </button>
                       )}
                       <button
-                        onClick={() => remove(u.id, u.email)}
+                        onClick={() => { setSingleDelete({ id: u.id, email: u.email }); setBulkOpen(true); }}
                         disabled={rowBusy || !canDelete}
                         className="text-muted-foreground hover:text-destructive disabled:opacity-30"
                         title={!canDelete ? "Cannot delete this user" : "Delete user"}
