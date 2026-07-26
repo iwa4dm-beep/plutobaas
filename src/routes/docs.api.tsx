@@ -47,9 +47,12 @@ function ApiDocsPage() {
   useRapiDoc();
 
   const specUrl = useMemo(() => {
-    const base = import.meta.env.VITE_PLUTO_URL ?? "";
-    // Prefer the admin OpenAPI (workspace-aware) — falls back to /rest/v1/
-    return `${String(base).replace(/\/$/, "")}/admin/v1/schema/openapi.json`;
+    // Prefer the same-origin `/api/pluto/*` proxy so preview hosts (Lovable,
+    // localhost) hit the real backend instead of returning the app's HTML
+    // 500 for an unknown top-level path.
+    const raw = String(import.meta.env.VITE_PLUTO_URL ?? "").replace(/\/$/, "");
+    const base = raw || "/api/pluto";
+    return `${base}/admin/v1/schema/openapi.json`;
   }, []);
 
   return (

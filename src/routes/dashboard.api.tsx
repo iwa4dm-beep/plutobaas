@@ -31,8 +31,8 @@ function ApiEndpointsPage() {
   const [filter,    setFilter]    = useState("");
 
   const base = (typeof window !== "undefined"
-    ? (import.meta.env.VITE_PLUTO_URL ?? window.location.origin)
-    : "");
+    ? (import.meta.env.VITE_PLUTO_URL ?? `${window.location.origin}/api/pluto`)
+    : "/api/pluto");
 
   const load = useCallback(async () => {
     if (!backendOk) return;
