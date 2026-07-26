@@ -1,15 +1,15 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useServerFn } from "@tanstack/react-start";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, Check, Copy, Database, ExternalLink, FolderKanban, KeyRound, Pencil, Plus, Server, ShieldCheck, Trash2, X } from "lucide-react";
-import { toast } from "sonner";
 import { PageHeader } from "@/components/pluto/PageHeader";
 import { HelpPanel } from "@/components/help/HelpPanel";
 import { dashboardProjectsHelp } from "@/content/help/dashboard.projects";
 import { ErrorBanner } from "@/components/pluto/ErrorBanner";
 import { checkSlug, coerceSlug, previewSubdomainUrl, slugReasonMessage } from "@/lib/pluto/reserved-slugs";
 import { isLive, live, type Workspace, type WorkspaceKey } from "@/lib/pluto/live";
-import { purgeVpsSlug } from "@/lib/pluto/vps-purge.functions";
+import { BulkDeleteDialog, type BulkTarget } from "@/components/pluto/BulkDeleteDialog";
+import { getState, softDeletedIds, subscribe } from "@/lib/pluto/delete-store";
+
 
 
 type ConflictInfo = Awaited<ReturnType<typeof live.admin.apiKeys.checkConflict>>;
