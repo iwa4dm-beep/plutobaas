@@ -568,8 +568,17 @@ function ProjectsPage() {
           ⚠️ <span className="font-medium">service_role</span> key কখনো frontend-এ ব্যবহার করবেন না — এটি RLS bypass করে।
         </p>
       </div>
+      <BulkDeleteDialog
+        open={bulkOpen}
+        onClose={() => { setBulkOpen(false); setSingleDelete(null); setSelectedProjects(new Set()); void loadTop(); }}
+        kind="project"
+        targets={bulkTargets}
+        defaultAutoPurgeSlug={purgeSlugOnDelete}
+        windowMinutes={windowMin}
+      />
     </div>
   );
+
 }
 
 function Field({ label, value, onCopy, copied, danger }: { label: string; value: string; onCopy: (v: string) => void; copied: string | null; danger?: boolean }) {
