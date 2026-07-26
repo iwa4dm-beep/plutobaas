@@ -193,6 +193,7 @@ function ChecklistPage() {
             Reset
           </button>
         </div>
+        <StarterCIStatus />
       </header>
 
       <ol className="space-y-4">
