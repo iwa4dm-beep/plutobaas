@@ -28,6 +28,10 @@ function badgeStyle(run: WorkflowRunStatus | null) {
 }
 
 const ALL = "__all__";
+const BROWSER_OPTIONS = ["chromium", "firefox", "webkit"] as const;
+const NODE_OPTIONS = ["18", "20", "22"] as const;
+type Browser = (typeof BROWSER_OPTIONS)[number];
+type NodeVer = (typeof NODE_OPTIONS)[number];
 
 export function StarterCIStatus() {
   const [run, setRun] = useState<WorkflowRunStatus | null>(null);
@@ -42,6 +46,8 @@ export function StarterCIStatus() {
   const [hasToken, setHasToken] = useState(false);
   const [dispatching, setDispatching] = useState(false);
   const [dispatchMsg, setDispatchMsg] = useState<string | null>(null);
+  const [browsers, setBrowsers] = useState<Browser[]>(["chromium"]);
+  const [nodeVersions, setNodeVersions] = useState<NodeVer[]>(["20"]);
 
   const activeBranch = branch === ALL ? undefined : branch;
 
@@ -79,12 +85,21 @@ export function StarterCIStatus() {
       setDispatchMsg("Pick a specific branch first (not 'all').");
       return;
     }
+    if (!browsers.length || !nodeVersions.length) {
+      setDispatchMsg("Pick at least one browser and one Node version.");
+      return;
+    }
     setDispatching(true);
     setDispatchMsg(null);
-    const res = await dispatchStarterWorkflow(activeBranch, { note: "triggered from dashboard" });
+    const res = await dispatchStarterWorkflow(activeBranch, {
+      note: "triggered from dashboard",
+      browsers: browsers.join(","),
+      node_versions: nodeVersions.join(","),
+    });
     if (res.ok) {
-      setDispatchMsg(`Dispatched on ${activeBranch}. New run appears in ~5s…`);
-      // Poll faster for ~30s to catch the new run.
+      setDispatchMsg(
+        `Dispatched on ${activeBranch} · browsers=${browsers.join(",")} · node=${nodeVersions.join(",")}. New run in ~5s…`,
+      );
       let n = 0;
       const t = window.setInterval(async () => {
         n++;
@@ -97,6 +112,14 @@ export function StarterCIStatus() {
     setDispatching(false);
   };
 
+  const toggle = <T extends string>(
+    val: T,
+    list: T[],
+    setter: (v: T[]) => void,
+  ) => {
+    setter(list.includes(val) ? list.filter((x) => x !== val) : [...list, val]);
+  };
+
   const saveToken = () => {
     setStoredToken(tokenInput.trim());
     setHasToken(!!tokenInput.trim());
@@ -105,8 +128,17 @@ export function StarterCIStatus() {
     refresh();
   };
 
-  const playwrightArtifact = run?.artifacts?.find((a) => a.name === "playwright-report" && !a.expired);
-  const debugArtifact = run?.artifacts?.find((a) => a.name === "playwright-artifacts" && !a.expired);
+  // Matrix suffix now attaches (`playwright-report-chromium-node20`) — match by prefix.
+  const playwrightArtifact = run?.artifacts?.find(
+    (a) => a.name.startsWith("playwright-report") && !a.expired,
+  );
+  const debugArtifact = run?.artifacts?.find(
+    (a) => a.name.startsWith("playwright-artifacts") && !a.expired,
+  );
+  const allReportArtifacts =
+    run?.artifacts?.filter((a) => a.name.startsWith("playwright-report") && !a.expired) ?? [];
+  const allDebugArtifacts =
+    run?.artifacts?.filter((a) => a.name.startsWith("playwright-artifacts") && !a.expired) ?? [];
 
   if (!isConfigured()) {
     return (
@@ -164,16 +196,67 @@ export function StarterCIStatus() {
         <button
           type="button"
           onClick={dispatch}
-          disabled={dispatching || !hasToken || branch === ALL}
+          disabled={dispatching || !hasToken || branch === ALL || !browsers.length || !nodeVersions.length}
           title={
             !hasToken ? "Save a GitHub PAT below to enable" :
-            branch === ALL ? "Pick a branch first" : "Trigger workflow_dispatch"
+            branch === ALL ? "Pick a branch first" :
+            !browsers.length || !nodeVersions.length ? "Pick at least one browser and Node version" :
+            "Trigger workflow_dispatch"
           }
           className="text-xs px-2 py-0.5 rounded border bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-50"
         >
           {dispatching ? "Running…" : "Run E2E tests"}
         </button>
       </div>
+
+      <div className="flex items-center gap-3 flex-wrap text-xs">
+        <span className="text-muted-foreground">Matrix:</span>
+        <div className="flex items-center gap-1">
+          <span className="text-muted-foreground">browsers</span>
+          {BROWSER_OPTIONS.map((br) => (
+            <label
+              key={br}
+              className={`px-1.5 py-0.5 rounded border cursor-pointer select-none ${
+                browsers.includes(br) ? "bg-primary/10 border-primary/40" : "hover:bg-accent"
+              }`}
+            >
+              <input
+                type="checkbox"
+                className="hidden"
+                checked={browsers.includes(br)}
+                onChange={() => toggle(br, browsers, setBrowsers)}
+              />
+              {br}
+            </label>
+          ))}
+        </div>
+        <div className="flex items-center gap-1">
+          <span className="text-muted-foreground">node</span>
+          {NODE_OPTIONS.map((nv) => (
+            <label
+              key={nv}
+              className={`px-1.5 py-0.5 rounded border cursor-pointer select-none ${
+                nodeVersions.includes(nv) ? "bg-primary/10 border-primary/40" : "hover:bg-accent"
+              }`}
+            >
+              <input
+                type="checkbox"
+                className="hidden"
+                checked={nodeVersions.includes(nv)}
+                onChange={() => toggle(nv, nodeVersions, setNodeVersions)}
+              />
+              {nv}
+            </label>
+          ))}
+        </div>
+        <span className="text-muted-foreground">
+          → {browsers.length * nodeVersions.length} leg{browsers.length * nodeVersions.length === 1 ? "" : "s"}
+        </span>
+      </div>
+
+      {dispatchMsg && (
+        <div className="text-xs rounded border border-primary/30 bg-primary/5 p-2">{dispatchMsg}</div>
+      )}
 
       {run ? (
         <div className="text-xs text-muted-foreground space-x-2">
@@ -207,15 +290,25 @@ export function StarterCIStatus() {
             <a href={run.failingJob.url} target="_blank" rel="noreferrer" className="underline">
               Open failing step ↗
             </a>
-            {playwrightArtifact && (
-              <a href={playwrightArtifact.htmlUrl} target="_blank" rel="noreferrer" className="underline">
-                Playwright HTML report ↗
-              </a>
+            {allReportArtifacts.length > 0 && (
+              <span className="flex flex-wrap gap-x-2">
+                <span className="text-muted-foreground">HTML report:</span>
+                {allReportArtifacts.map((a) => (
+                  <a key={a.id} href={a.htmlUrl} target="_blank" rel="noreferrer" className="underline">
+                    {a.name.replace(/^playwright-report-?/, "") || "default"} ↗
+                  </a>
+                ))}
+              </span>
             )}
-            {debugArtifact && (
-              <a href={debugArtifact.htmlUrl} target="_blank" rel="noreferrer" className="underline">
-                Traces / screenshots / videos ↗
-              </a>
+            {allDebugArtifacts.length > 0 && (
+              <span className="flex flex-wrap gap-x-2">
+                <span className="text-muted-foreground">Traces:</span>
+                {allDebugArtifacts.map((a) => (
+                  <a key={a.id} href={a.htmlUrl} target="_blank" rel="noreferrer" className="underline">
+                    {a.name.replace(/^playwright-artifacts-?/, "") || "default"} ↗
+                  </a>
+                ))}
+              </span>
             )}
           </div>
         </div>
