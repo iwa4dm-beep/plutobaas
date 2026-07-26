@@ -15,7 +15,6 @@ const BOB = {
   password: process.env.E2E_BOB_PASSWORD ?? "StrongPass!2026",
 };
 
-/** Low-level helper — sign up (ignoring "already exists") then sign in via Pluto Auth API. */
 async function loginDirect(email: string, password: string) {
   const api = await pwRequest.newContext();
   await api.post(`${PLUTO_URL}/auth/v1/signup`, {
@@ -27,8 +26,16 @@ async function loginDirect(email: string, password: string) {
     data: { email, password },
   });
   expect(res.ok(), `login ${email} → ${res.status()}`).toBeTruthy();
-  const session = await res.json();
-  return { api, session };
+  return { api, session: await res.json() };
+}
+
+function h(session: any) {
+  return {
+    apikey: ANON,
+    authorization: `Bearer ${session.access_token}`,
+    "content-type": "application/json",
+    prefer: "return=representation",
+  };
 }
 
 test.describe("Auth + RLS", () => {
@@ -47,35 +54,96 @@ test.describe("Auth + RLS", () => {
   });
 
   test("RLS: user B cannot read user A's notes", async () => {
-    test.skip(!PLUTO_URL || !ANON, "PLUTO_URL / ANON key not set — RLS scope test skipped");
+    test.skip(!PLUTO_URL || !ANON, "PLUTO_URL / ANON key not set");
 
     const alice = await loginDirect(ALICE.email, ALICE.password);
     const bob = await loginDirect(BOB.email, BOB.password);
 
     const marker = `alice-secret-${crypto.randomUUID()}`;
     const ins = await alice.api.post(`${PLUTO_URL}/rest/v1/notes`, {
-      headers: {
-        apikey: ANON,
-        authorization: `Bearer ${alice.session.access_token}`,
-        "content-type": "application/json",
-        prefer: "return=representation",
-      },
-      data: { body: marker },
+      headers: h(alice.session), data: { body: marker },
     });
     expect(ins.ok(), `alice insert → ${ins.status()}`).toBeTruthy();
 
-    // Alice sees her own row.
-    const aliceList = await alice.api.get(`${PLUTO_URL}/rest/v1/notes?body=eq.${encodeURIComponent(marker)}`, {
-      headers: { apikey: ANON, authorization: `Bearer ${alice.session.access_token}` },
-    });
+    const aliceList = await alice.api.get(
+      `${PLUTO_URL}/rest/v1/notes?body=eq.${encodeURIComponent(marker)}`,
+      { headers: h(alice.session) },
+    );
     expect((await aliceList.json()).length).toBeGreaterThan(0);
 
-    // Bob must NOT see it — RLS filters it out.
-    const bobList = await bob.api.get(`${PLUTO_URL}/rest/v1/notes?body=eq.${encodeURIComponent(marker)}`, {
-      headers: { apikey: ANON, authorization: `Bearer ${bob.session.access_token}` },
-    });
+    const bobList = await bob.api.get(
+      `${PLUTO_URL}/rest/v1/notes?body=eq.${encodeURIComponent(marker)}`,
+      { headers: h(bob.session) },
+    );
     expect(bobList.ok()).toBeTruthy();
     expect(await bobList.json()).toEqual([]);
+  });
+
+  test("RLS: Alice can update/delete her rows; Bob cannot", async () => {
+    test.skip(!PLUTO_URL || !ANON, "PLUTO_URL / ANON key not set");
+
+    const alice = await loginDirect(ALICE.email, ALICE.password);
+    const bob = await loginDirect(BOB.email, BOB.password);
+
+    const marker = `alice-crud-${crypto.randomUUID()}`;
+    const ins = await alice.api.post(`${PLUTO_URL}/rest/v1/notes`, {
+      headers: h(alice.session), data: { body: marker },
+    });
+    expect(ins.ok()).toBeTruthy();
+    const [row] = await ins.json();
+    expect(row?.id).toBeTruthy();
+
+    // Alice UPDATE — succeeds and returns the updated row.
+    const patched = `${marker}-patched`;
+    const aliceUpd = await alice.api.patch(
+      `${PLUTO_URL}/rest/v1/notes?id=eq.${row.id}`,
+      { headers: h(alice.session), data: { body: patched } },
+    );
+    expect(aliceUpd.ok(), `alice patch → ${aliceUpd.status()}`).toBeTruthy();
+    expect((await aliceUpd.json())[0]?.body).toBe(patched);
+
+    // Bob UPDATE — RLS filters the row → 200 with empty array (no rows matched).
+    const bobUpd = await bob.api.patch(
+      `${PLUTO_URL}/rest/v1/notes?id=eq.${row.id}`,
+      { headers: h(bob.session), data: { body: "hijacked-by-bob" } },
+    );
+    expect(bobUpd.ok()).toBeTruthy();
+    expect(await bobUpd.json()).toEqual([]);
+
+    // Confirm the row is still Alice's patched value.
+    const check = await alice.api.get(
+      `${PLUTO_URL}/rest/v1/notes?id=eq.${row.id}`,
+      { headers: h(alice.session) },
+    );
+    expect((await check.json())[0]?.body).toBe(patched);
+
+    // Bob DELETE — no rows affected.
+    const bobDel = await bob.api.delete(
+      `${PLUTO_URL}/rest/v1/notes?id=eq.${row.id}`,
+      { headers: h(bob.session) },
+    );
+    expect(bobDel.ok()).toBeTruthy();
+    expect(await bobDel.json()).toEqual([]);
+
+    // Row still exists for Alice.
+    const stillThere = await alice.api.get(
+      `${PLUTO_URL}/rest/v1/notes?id=eq.${row.id}`,
+      { headers: h(alice.session) },
+    );
+    expect((await stillThere.json()).length).toBe(1);
+
+    // Alice DELETE — succeeds; row disappears.
+    const aliceDel = await alice.api.delete(
+      `${PLUTO_URL}/rest/v1/notes?id=eq.${row.id}`,
+      { headers: h(alice.session) },
+    );
+    expect(aliceDel.ok(), `alice delete → ${aliceDel.status()}`).toBeTruthy();
+
+    const gone = await alice.api.get(
+      `${PLUTO_URL}/rest/v1/notes?id=eq.${row.id}`,
+      { headers: h(alice.session) },
+    );
+    expect(await gone.json()).toEqual([]);
   });
 });
 
@@ -105,10 +173,7 @@ test.describe("Webhooks", () => {
     });
     const sig = crypto.createHmac("sha256", WEBHOOK_SECRET).update(payload).digest("hex");
     const res = await request.post(`${APP}/api/webhooks/pluto`, {
-      headers: {
-        "x-pluto-signature": `sha256=${sig}`,
-        "content-type": "application/json",
-      },
+      headers: { "x-pluto-signature": `sha256=${sig}`, "content-type": "application/json" },
       data: payload,
     });
     expect(res.status()).toBe(200);

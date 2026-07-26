@@ -6,19 +6,36 @@
 # defined in ../../pluto-backend/docker/docker-compose.yml and adds
 # the Next.js starter + a schema bootstrapper.
 #
-# Prereqs:
-#   1. Copy ../../pluto-backend/.env.example to ../../pluto-backend/.env
-#      and fill POSTGRES_PASSWORD / S3_* / JWT_SECRET.
-#   2. Copy ./.env.example to ./.env and fill NEXT_PUBLIC_PLUTO_ANON_KEY
-#      and PLUTO_WEBHOOK_SECRET (they must match the API's config).
+# Persistence:
+#   Named volumes below survive `docker compose down`. Use
+#   `docker compose down -v` to wipe them.
+#
+# Auto-seed:
+#   Export STARTER_SEED=1 (in shell or .env) to also provision the
+#   alice/bob test users and seed sample notes on first boot.
 # ─────────────────────────────────────────────────────────────
 
 include:
   - path: ../../pluto-backend/docker/docker-compose.yml
     env_file: ../../pluto-backend/.env
 
+volumes:
+  pluto_pgdata:
+  pluto_redisdata:
+  pluto_miniodata:
+
 services:
-  # Applies setup.sql once the Pluto API + Postgres are healthy.
+  postgres:
+    volumes:
+      - pluto_pgdata:/var/lib/postgresql/data
+  redis:
+    volumes:
+      - pluto_redisdata:/data
+  minio:
+    volumes:
+      - pluto_miniodata:/data
+
+  # Applies migrations in order + records versions in _starter_migrations.
   starter-schema:
     image: postgres:16-alpine
     depends_on:
@@ -26,15 +43,59 @@ services:
         condition: service_healthy
     environment:
       PGPASSWORD: ${POSTGRES_PASSWORD}
+      STARTER_SEED: ${STARTER_SEED:-0}
     entrypoint:
       - sh
       - -c
       - |
-        echo "→ Applying starter setup.sql…"
-        psql -h postgres -U pluto -d pluto -v ON_ERROR_STOP=1 -f /schema/setup.sql
+        set -eu
+        cd /schema
+        echo "→ Applying migrations…"
+        for f in migrations/*.sql; do
+          case "$f" in
+            *0002_seed_sample_notes.sql)
+              if [ "$${STARTER_SEED:-0}" != "1" ]; then
+                echo "· skip $$f (STARTER_SEED != 1)"; continue
+              fi
+              ;;
+          esac
+          echo "· $$f"
+          psql -h postgres -U pluto -d pluto -v ON_ERROR_STOP=1 -f "$$f"
+        done
+        psql -h postgres -U pluto -d pluto -v ON_ERROR_STOP=1 <<'SQL'
+        create table if not exists public._starter_migrations (
+          version int primary key, name text not null,
+          applied_at timestamptz not null default now()
+        );
+        insert into public._starter_migrations (version, name) values
+          (1, '0001_notes'), (2, '0002_seed_sample_notes')
+          on conflict (version) do nothing;
+        SQL
         echo "✓ schema ready"
     volumes:
       - ./setup.sql:/schema/setup.sql:ro
+      - ./migrations:/schema/migrations:ro
+    restart: "no"
+
+  # Optional: provision alice + bob when STARTER_SEED=1 so the seed
+  # migration has real user IDs to attach notes to.
+  starter-users:
+    image: node:20-alpine
+    profiles: ["seed"]
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      PLUTO_URL: http://api:3000
+      PLUTO_ANON_KEY: ${NEXT_PUBLIC_PLUTO_ANON_KEY}
+      E2E_ALICE_EMAIL: alice+e2e@example.com
+      E2E_ALICE_PASSWORD: StrongPass!2026
+      E2E_BOB_EMAIL: bob+e2e@example.com
+      E2E_BOB_PASSWORD: StrongPass!2026
+    working_dir: /app
+    volumes:
+      - ./scripts:/app/scripts:ro
+    entrypoint: ["node", "scripts/provision-test-users.mjs"]
     restart: "no"
 
   starter:
@@ -51,12 +112,10 @@ services:
         condition: service_completed_successfully
     environment:
       NODE_ENV: production
-      # Server-side reads route through the internal API hostname.
       NEXT_PUBLIC_PLUTO_URL: http://api:3000
       NEXT_PUBLIC_PLUTO_ANON_KEY: ${NEXT_PUBLIC_PLUTO_ANON_KEY}
       PLUTO_SERVICE_ROLE_KEY: ${PLUTO_SERVICE_ROLE_KEY:-}
       PLUTO_WEBHOOK_SECRET: ${PLUTO_WEBHOOK_SECRET:?set PLUTO_WEBHOOK_SECRET in examples/nextjs-starter/.env}
     ports:
-      # Host port 3001 to avoid clashing with the API on 3000.
       - "127.0.0.1:3001:3000"
     restart: unless-stopped
