@@ -10,6 +10,11 @@ on:
       - "examples/nextjs-starter/**"
       - ".github/workflows/starter-e2e.yml"
   workflow_dispatch:
+    inputs:
+      note:
+        description: "Optional label for this manual run (shown in the run title)."
+        required: false
+        default: ""
 
 jobs:
   e2e:
@@ -64,11 +69,21 @@ jobs:
       - name: Run E2E tests
         run: npm run test:e2e
 
-      - name: Upload Playwright report
+      - name: Upload Playwright HTML report
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: playwright-report
           path: examples/nextjs-starter/playwright-report
           if-no-files-found: ignore
-          retention-days: 7
+          retention-days: 14
+
+      - name: Upload Playwright traces / screenshots / videos
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-artifacts
+          path: |
+            examples/nextjs-starter/test-results/**
+          if-no-files-found: ignore
+          retention-days: 14
