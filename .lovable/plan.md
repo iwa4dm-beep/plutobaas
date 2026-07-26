@@ -1,128 +1,61 @@
-# Operations v2 — Multi-env, Staged Rollout, Rollback, Audit, Backup
+# Pluto BaaS — Fullstack E2E Integration Guide (Plan)
 
-This extends the existing `/dashboard/ops` page and the VPS-side `pluto-ops` wrapper. Nothing else on the dashboard changes.
+আমি একটি বিস্তারিত End-to-End গাইড তৈরি করবো যা একজন ডেভেলপার শূন্য থেকে শুরু করে production-এ live দেওয়া পর্যন্ত ধাপে ধাপে follow করতে পারবে। এটি প্রজেক্টে `docs/GUIDE-FULLSTACK-E2E.md` ফাইলে যোগ হবে, এবং dashboard-এর একটি নতুন Help পেজ `/dashboard/help/fullstack-guide`-এ রেন্ডার হবে যেন logged-in user সরাসরি পড়তে পারে।
 
-## 1. Environment targets (dev / staging / prod)
+## Deliverables
 
-Add per-target VPS configuration read from Lovable Cloud secrets — no code changes needed to add a new target.
+1. **`docs/GUIDE-FULLSTACK-E2E.md`** — সম্পূর্ণ markdown গাইড (bilingual: Bengali বর্ণনা + English commands/code)।
+2. **`src/routes/dashboard.help.fullstack-guide.tsx`** — একই কন্টেন্ট rendered as an in-app page (markdown → React sections, copy-to-clipboard code blocks)।
+3. **`src/components/pluto/Sidebar.tsx`** — "Help" গ্রুপে "Fullstack E2E Guide" লিঙ্ক যোগ।
 
-Secrets convention (both `_URL` and `_SECRET` per env):
-```
-PLUTO_SANDBOX_URL_DEV / PLUTO_SANDBOX_SECRET_DEV
-PLUTO_SANDBOX_URL_STAGING / PLUTO_SANDBOX_SECRET_STAGING
-PLUTO_SANDBOX_URL_PROD / PLUTO_SANDBOX_SECRET_PROD   (falls back to existing PLUTO_SANDBOX_URL/SECRET)
-```
+কোনো backend/schema change নেই — এটি pure documentation feature।
 
-- `src/lib/pluto/vps-ops.functions.ts`
-  - Every server fn accepts `env: 'dev'|'staging'|'prod'` in its input validator (default `prod`).
-  - `opsEndpoint(env)` resolves the right URL+secret; returns typed error when a target is not configured.
-  - Server fn `listOpsEnvironments()` returns which targets are configured (no secrets exposed).
-- `src/routes/dashboard.ops.tsx`: environment switcher pill in the page header; state stored in URL search param `?env=...` so it survives reloads and deep-links.
-- VPS-side allow-list (`pluto-ops.sh`): unchanged — allow-list is per host, so each VPS naturally restricts what its own env can do. Prod host can additionally set `PLUTO_OPS_DISALLOW="migrations-apply-force"` etc. (read in dispatcher).
+## Guide Structure (10 phase)
 
-## 2. Staged rollout for restarts
-
-Add a "Staged rollout" mode on the Service Control card. Instead of one-shot restart, dispatcher walks stages:
-
-Default stage plan:
-```
-1. worker         (sandbox worker)  → health probe
-2. realtime       (1 replica)       → health probe
-3. api  (canary)  50% of replicas   → health probe + 30s soak
-4. api  (full)    remaining replicas
-5. nginx-reload
+```text
+Phase 0  Prerequisites            VPS/DNS/GitHub/Node/Docker checklist
+Phase 1  Workspace + Project      Dashboard-এ workspace ও project তৈরি
+Phase 2  API Keys                 anon (publishable) + service_role mint
+Phase 3  Database Schema          Migration file, RLS policy, GRANT rules
+Phase 4  Auth                     Email/password + JWT flow, roles table
+Phase 5  Frontend Wiring          @pluto/js SDK install, env.js injection
+Phase 6  Storage + Realtime       Bucket, upload, WS subscribe
+Phase 7  Edge Functions / RPC     Server-side logic, secrets
+Phase 8  Custom Domain + SSL      DNS records, wildcard cert, primary pin
+Phase 9  Deploy + Cutover         build-and-cutover.sh, health verify
+Phase 10 Observability + Ops     Traces, RBAC gate, migrations UI, backups
 ```
 
-- Ops action `service-rollout` accepts `{ plan: 'auto'|'workers-only'|'canary-api'|'full', soakSeconds?: number }`.
-- Between stages, dispatcher runs `pluto-ops service-health` and aborts if unhealthy; returns partial result with `stagesCompleted[]`.
-- UI shows a vertical stepper with per-stage status/logs; abort button cancels the remaining stages (writes a sentinel file the dispatcher polls).
+প্রত্যেক Phase-এ থাকবে: **Goal → Steps → Verify → Common errors → Rollback**।
 
-For single-instance deploys, canary degrades to "restart with health-gated wait" (no true traffic split) — clearly labeled in the UI.
+## Key sections in detail
 
-## 3. Rollback (down-migration generator + apply)
+- **RLS pattern** — `user_roles` table + `has_role()` security-definer function (never store role on profiles)।
+- **JWT claims** — `sub`, `role`, `is_superadmin` কীভাবে propagate হয় এবং `TraceAccessGate` কীভাবে চেক করে।
+- **Env variables** — `VITE_PLUTO_URL`, `VITE_PLUTO_ANON_KEY` frontend-এ; `PLUTO_SERVICE_KEY`, `JWT_SECRET`, `DATABASE_URL` backend-এ।
+- **Ops workflow** — Migration dry-run → approval → apply → backup → rollback path।
+- **Debug tools** — `/dashboard/rbac-debug`, `/dashboard/ops/explain`, `/dashboard/ops/rls-debug`, `/dashboard/ops/jwt-inspect`, `/dashboard/ops/docker-check`।
 
-- Add `db/rollback.ts` in the backend migration runner: given a target version `N`, it collects each applied migration `>N` in reverse, looks for a paired `NNNN_*.down.sql` file, and streams them into a single transaction. If any migration lacks a `.down.sql`, the plan step reports it as **blocking** — user can still choose "skip missing" to continue (audited).
-- New ops actions: `migrations-rollback-plan`, `migrations-rollback-apply` with input `{ target: string, allowMissingDown: boolean, confirm: "ROLLBACK" }`.
-- UI: new "Rollback" tab on the Migration card
-  - Shows applied migrations table (from `pluto-ops migrations-status`).
-  - Click a row → "Rollback to here"; preview shows the generated down-SQL and any missing down files (warning banner).
-  - Always runs an automatic backup first (see §5); ties audit rows to the backup id.
+## Sample commands included
 
-## 4. Audit log page (`/dashboard/ops/audit`)
+```bash
+# Frontend inject + build
+bash pluto-backend/deploy/inject-pluto-env.sh
+bash pluto-backend/deploy/build-and-cutover.sh <slug>
 
-Every ops action (plan, dry-run, apply, rollback-plan/apply, restart, rollout, backup, restore) writes one row via the sandbox worker into a new admin table.
+# Migration lifecycle
+sudo /usr/local/sbin/pluto-ops migrate plan
+sudo /usr/local/sbin/pluto-ops migrate dry-run
+sudo /usr/local/sbin/pluto-ops migrate apply
 
-Migration `pluto-backend/migrations/0042_ops_audit.sql`:
-```sql
-create table if not exists ops_audit (
-  id            uuid primary key default gen_random_uuid(),
-  created_at    timestamptz not null default now(),
-  actor_user_id uuid,           -- from middleware claims
-  actor_email   text,
-  env           text not null,  -- dev/staging/prod
-  action        text not null,
-  service       text,
-  params        jsonb not null default '{}'::jsonb,
-  ok            boolean not null,
-  exit_code     int,
-  duration_ms   int,
-  hint          text,
-  tail          text,           -- truncated to 8KB
-  backup_id     uuid            -- fk to ops_backups when applicable
-);
-create index on ops_audit (created_at desc);
-create index on ops_audit (env, action, created_at desc);
-grant select on ops_audit to authenticated;
-grant all on ops_audit to service_role;
-alter table ops_audit enable row level security;
-create policy "ops audit visible to admins" on ops_audit for select to authenticated
-  using (public.has_role(auth.uid(), 'admin'));
+# Verify live
+curl -sI https://<domain>/ | grep -i x-pluto-primary
+curl -s https://api.timescard.cloud/v1/health
 ```
 
-- Server fn `listOpsAudit({ env?, action?, actor?, limit, cursor })` streams paginated results.
-- Page `/dashboard/ops/audit`: filters by env / action / actor / date range, click a row → drawer with full params + tail + linked backup + linked migration plan output.
-- Also **write-through**: `callOps()` in `vps-ops.functions.ts` inserts an audit row (server-side) immediately after every response, so the log is captured even if the VPS action was partially successful.
+## Out of scope
 
-## 5. Automatic backup + restore safeguard
+- New backend endpoints বা schema পরিবর্তন — শুধু documentation।
+- Video/screencast — শুধু text + code।
 
-- Migration `0043_ops_backups.sql`: `ops_backups(id, created_at, env, kind, status, size_bytes, storage_path, sha256, expires_at, notes)`.
-- VPS side (`pluto-ops backup-create`): runs `pg_dump -Fc` to `/var/backups/pluto/<env>/<ts>-<sha>.dump`, uploads to configured S3/MinIO if `BACKUP_S3_BUCKET` is set, records row via worker.
-- `pluto-ops backup-restore --id <uuid> --confirm RESTORE`: streams the dump back through `pg_restore --clean --if-exists` (blocks unless target is dev/staging OR user typed `RESTORE-PROD`).
-- **Migration apply guard**: `applyMigrations` server fn takes `{ confirm: 'APPLY', skipBackup?: boolean }`. Default runs `backup-create` first; if backup fails, apply is aborted unless the user re-submits with `skipBackup: true` (audited with a red-flag).
-- Ops page shows a **Backups** card:
-  - "Latest backup" chip with age + size + status.
-  - Table of last 10 backups per env; each row has "Restore" (opens typed-confirmation modal) and "Download" (signed URL from worker).
-- Retention: backups older than 30 days marked `expired`; cleanup job hook noted in dispatcher (optional cron).
-
-## 6. Security & guardrails
-
-- All new server fns keep `.middleware([requirePlutoAdmin])` + `TraceAccessGate permission="manage"`.
-- Prod-only extras: typed confirmations use `APPLY-PROD` / `ROLLBACK-PROD` / `RESTORE-PROD` when `env === 'prod'`.
-- Sandbox worker `/admin/ops` extended allow-list; unknown actions still 400.
-- `pluto-ops.sh` refuses unknown env token (`--env`) and validates service names against per-env `ALLOWED_SERVICES` in `/etc/pluto/ops.conf`.
-
-## 7. Files touched
-
-New:
-- `pluto-backend/migrations/0042_ops_audit.sql`, `0043_ops_backups.sql` (+ `.down.sql` pairs)
-- `pluto-backend/deploy/pluto-ops-rollback.sh`, `pluto-ops-backup.sh`, `pluto-ops-rollout.sh` (invoked by main wrapper)
-- `src/routes/dashboard.ops.audit.tsx`
-- `src/components/pluto/ops/EnvSwitcher.tsx`, `RolloutStepper.tsx`, `BackupsCard.tsx`, `RollbackTab.tsx`
-- `src/lib/pluto/ops-audit.functions.ts`, `ops-backups.functions.ts`
-
-Edited:
-- `src/lib/pluto/vps-ops.functions.ts` (env-aware endpoint, audit write-through, new actions)
-- `src/routes/dashboard.ops.tsx` (env switcher, staged rollout, backups card wire-up)
-- `pluto-backend/sandbox-worker/sandbox-worker.mjs` (extend `/admin/ops` allow-list, params passthrough)
-- `pluto-backend/deploy/pluto-ops.sh` (dispatch to new sub-scripts + `--env` handling)
-- `pluto-backend/deploy/install-pluto-ops.sh` (install new sub-scripts, `/etc/pluto/ops.conf` scaffold)
-- `src/components/pluto/Sidebar.tsx` (add "Audit log" under Operations)
-
-## 8. Rollout order
-
-1. Migrations 0042/0043 + audit/backups server fns (safe on their own).
-2. Env switcher + `env` param plumbing.
-3. Backup guard around existing `migrations-apply`.
-4. Rollback tab + dispatcher.
-5. Staged rollout stepper.
-6. Audit page.
+Approve করলে তিনটে ফাইল লিখে দেবো একই টার্নে।
