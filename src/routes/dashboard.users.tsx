@@ -177,6 +177,7 @@ function UsersPage() {
       if (isLive()) await live.admin.users.remove(id);
       else await pluto.users.remove(id);
       toast.success("User deleted");
+      setSelected((s) => { const n = new Set(s); n.delete(id); return n; });
       await refresh();
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -185,6 +186,33 @@ function UsersPage() {
       setRowBusy(id, false);
     }
   }
+
+  async function deleteSelected() {
+    const targets = users.filter((u) => selected.has(u.id) && u.id !== currentUserId && (meIsSuperadmin || !u.is_superadmin));
+    if (!targets.length) { toast("Nothing to delete"); return; }
+    if (!confirm(
+      `Delete ${targets.length} user${targets.length === 1 ? "" : "s"}? এই action reversible নয়।\n\n` +
+      targets.slice(0, 8).map((u) => `  • ${u.email}`).join("\n") +
+      (targets.length > 8 ? `\n  … (+${targets.length - 8} more)` : "")
+    )) return;
+    let ok = 0, fail = 0;
+    for (const u of targets) {
+      setRowBusy(u.id, true);
+      try {
+        if (isLive()) await live.admin.users.remove(u.id);
+        else await pluto.users.remove(u.id);
+        ok++;
+      } catch (e) {
+        fail++; toast.error(`${u.email}: ${e instanceof Error ? e.message : String(e)}`);
+      } finally {
+        setRowBusy(u.id, false);
+      }
+    }
+    toast.success(`Deleted ${ok}/${targets.length} user${ok === 1 ? "" : "s"}${fail ? ` (${fail} failed)` : ""}`);
+    setSelected(new Set());
+    await refresh();
+  }
+
 
   const allSelectedOnPage = filtered.length > 0 && filtered.every((u) => selected.has(u.id));
   function toggleAll() {
