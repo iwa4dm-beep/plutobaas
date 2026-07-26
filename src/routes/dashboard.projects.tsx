@@ -350,6 +350,15 @@ function ProjectsPage() {
                 return (
                   <tr key={p.id} className="border-t border-border">
                     <td className="px-3 py-2">
+                      <input
+                        type="checkbox"
+                        aria-label={`Select ${p.slug}`}
+                        checked={selectedProjects.has(p.id)}
+                        onChange={(e) => toggleProjectSel(p.id, e.target.checked)}
+                      />
+                    </td>
+                    <td className="px-3 py-2">
+
                       {isEditing ? (
                         <input
                           value={editing!.name}
