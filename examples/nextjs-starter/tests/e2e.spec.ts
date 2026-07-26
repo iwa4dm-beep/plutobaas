@@ -227,4 +227,66 @@ test.describe("Webhooks", () => {
     expect(third.status()).toBe(200);
     expect(await third.json()).toMatchObject({ ok: true, duplicate: false });
   });
+
+  test("durable idempotency: duplicate rejected even after simulated restart", async ({ request }) => {
+    test.skip(!WEBHOOK_SECRET, "PLUTO_WEBHOOK_SECRET not set");
+    const eventId = `evt_durable_${crypto.randomUUID()}`;
+    const payload = JSON.stringify({ type: "notes.inserted", id: eventId, ts: Date.now() });
+    const sig = crypto.createHmac("sha256", WEBHOOK_SECRET).update(payload).digest("hex");
+    const headers = { "x-pluto-signature": `sha256=${sig}`, "content-type": "application/json" };
+
+    // First delivery — fresh.
+    const first = await request.post(`${APP}/api/webhooks/pluto`, { headers, data: payload });
+    expect(first.status()).toBe(200);
+    expect(await first.json()).toMatchObject({ ok: true, duplicate: false });
+
+    // Clear the in-memory hot cache to simulate a process restart. The
+    // durable store (file or Redis) is untouched, so the very next replay
+    // must still be flagged as a duplicate — proving persistence.
+    const reset = await request.post(`${APP}/api/webhooks/pluto/_simulate_restart`);
+    expect(reset.status(), "restart-sim endpoint must be enabled in CI").toBe(200);
+    const resetBody = await reset.json();
+    expect(resetBody.after.hotCacheSize).toBe(0);
+
+    const replay = await request.post(`${APP}/api/webhooks/pluto`, { headers, data: payload });
+    expect(replay.status()).toBe(200);
+    expect(await replay.json()).toMatchObject({ ok: true, duplicate: true });
+  });
+
+  test("invalid HMAC produces no side effects (event id not marked seen)", async ({ request }) => {
+    test.skip(!WEBHOOK_SECRET, "PLUTO_WEBHOOK_SECRET not set");
+    const eventId = `evt_forgery_${crypto.randomUUID()}`;
+    const payload = JSON.stringify({ type: "notes.inserted", id: eventId, ts: Date.now() });
+
+    // Forgery attempts must all be rejected with 401 and MUST NOT touch state.
+    const forgeries: Array<Record<string, string>> = [
+      { "x-pluto-signature": "sha256=deadbeef" },
+      { "x-pluto-signature": `sha256=${"0".repeat(64)}` },
+      {
+        "x-pluto-signature": `sha256=${crypto
+          .createHmac("sha256", `${WEBHOOK_SECRET}-wrong`)
+          .update(payload)
+          .digest("hex")}`,
+      },
+      {}, // no signature at all
+    ];
+    for (const extra of forgeries) {
+      const res = await request.post(`${APP}/api/webhooks/pluto`, {
+        headers: { "content-type": "application/json", ...extra },
+        data: payload,
+      });
+      expect([401, 403]).toContain(res.status());
+    }
+
+    // Now deliver the SAME event id with a valid signature. If the invalid
+    // deliveries above had accidentally marked the id as seen, this would
+    // come back as `duplicate: true`. It must be treated as fresh.
+    const goodSig = crypto.createHmac("sha256", WEBHOOK_SECRET).update(payload).digest("hex");
+    const good = await request.post(`${APP}/api/webhooks/pluto`, {
+      headers: { "x-pluto-signature": `sha256=${goodSig}`, "content-type": "application/json" },
+      data: payload,
+    });
+    expect(good.status()).toBe(200);
+    expect(await good.json()).toMatchObject({ ok: true, duplicate: false });
+  });
 });
