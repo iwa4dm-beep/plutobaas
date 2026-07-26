@@ -115,6 +115,7 @@ import { Route as DashboardOpsDockerCheckRouteImport } from './routes/dashboard.
 import { Route as DashboardOpsAuditRouteImport } from './routes/dashboard.ops.audit'
 import { Route as DashboardIntegrationsLovableFrontendRouteImport } from './routes/dashboard.integrations.lovable-frontend'
 import { Route as DashboardHelpFullstackGuideRouteImport } from './routes/dashboard.help.fullstack-guide'
+import { Route as DashboardHelpChecklistRouteImport } from './routes/dashboard.help.checklist'
 import { Route as DashboardCustomDomainsAuditRouteImport } from './routes/dashboard.custom-domains.audit'
 import { Route as DashboardAdminInviteRouteImport } from './routes/dashboard.admin.invite'
 import { Route as ApiPublicVpsSubdomainsRouteImport } from './routes/api/public/vps-subdomains'
@@ -671,6 +672,11 @@ const DashboardHelpFullstackGuideRoute =
     path: '/help/fullstack-guide',
     getParentRoute: () => DashboardRoute,
   } as any)
+const DashboardHelpChecklistRoute = DashboardHelpChecklistRouteImport.update({
+  id: '/help/checklist',
+  path: '/help/checklist',
+  getParentRoute: () => DashboardRoute,
+} as any)
 const DashboardCustomDomainsAuditRoute =
   DashboardCustomDomainsAuditRouteImport.update({
     id: '/audit',
@@ -859,6 +865,7 @@ export interface FileRoutesByFullPath {
   '/api/public/vps-subdomains': typeof ApiPublicVpsSubdomainsRoute
   '/dashboard/admin/invite': typeof DashboardAdminInviteRoute
   '/dashboard/custom-domains/audit': typeof DashboardCustomDomainsAuditRoute
+  '/dashboard/help/checklist': typeof DashboardHelpChecklistRoute
   '/dashboard/help/fullstack-guide': typeof DashboardHelpFullstackGuideRoute
   '/dashboard/integrations/lovable-frontend': typeof DashboardIntegrationsLovableFrontendRoute
   '/dashboard/ops/audit': typeof DashboardOpsAuditRoute
@@ -981,6 +988,7 @@ export interface FileRoutesByTo {
   '/api/public/vps-subdomains': typeof ApiPublicVpsSubdomainsRoute
   '/dashboard/admin/invite': typeof DashboardAdminInviteRoute
   '/dashboard/custom-domains/audit': typeof DashboardCustomDomainsAuditRoute
+  '/dashboard/help/checklist': typeof DashboardHelpChecklistRoute
   '/dashboard/help/fullstack-guide': typeof DashboardHelpFullstackGuideRoute
   '/dashboard/integrations/lovable-frontend': typeof DashboardIntegrationsLovableFrontendRoute
   '/dashboard/ops/audit': typeof DashboardOpsAuditRoute
@@ -1105,6 +1113,7 @@ export interface FileRoutesById {
   '/api/public/vps-subdomains': typeof ApiPublicVpsSubdomainsRoute
   '/dashboard/admin/invite': typeof DashboardAdminInviteRoute
   '/dashboard/custom-domains/audit': typeof DashboardCustomDomainsAuditRoute
+  '/dashboard/help/checklist': typeof DashboardHelpChecklistRoute
   '/dashboard/help/fullstack-guide': typeof DashboardHelpFullstackGuideRoute
   '/dashboard/integrations/lovable-frontend': typeof DashboardIntegrationsLovableFrontendRoute
   '/dashboard/ops/audit': typeof DashboardOpsAuditRoute
@@ -1230,6 +1239,7 @@ export interface FileRouteTypes {
     | '/api/public/vps-subdomains'
     | '/dashboard/admin/invite'
     | '/dashboard/custom-domains/audit'
+    | '/dashboard/help/checklist'
     | '/dashboard/help/fullstack-guide'
     | '/dashboard/integrations/lovable-frontend'
     | '/dashboard/ops/audit'
@@ -1352,6 +1362,7 @@ export interface FileRouteTypes {
     | '/api/public/vps-subdomains'
     | '/dashboard/admin/invite'
     | '/dashboard/custom-domains/audit'
+    | '/dashboard/help/checklist'
     | '/dashboard/help/fullstack-guide'
     | '/dashboard/integrations/lovable-frontend'
     | '/dashboard/ops/audit'
@@ -1475,6 +1486,7 @@ export interface FileRouteTypes {
     | '/api/public/vps-subdomains'
     | '/dashboard/admin/invite'
     | '/dashboard/custom-domains/audit'
+    | '/dashboard/help/checklist'
     | '/dashboard/help/fullstack-guide'
     | '/dashboard/integrations/lovable-frontend'
     | '/dashboard/ops/audit'
@@ -2263,6 +2275,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardHelpFullstackGuideRouteImport
       parentRoute: typeof DashboardRoute
     }
+    '/dashboard/help/checklist': {
+      id: '/dashboard/help/checklist'
+      path: '/help/checklist'
+      fullPath: '/dashboard/help/checklist'
+      preLoaderRoute: typeof DashboardHelpChecklistRouteImport
+      parentRoute: typeof DashboardRoute
+    }
     '/dashboard/custom-domains/audit': {
       id: '/dashboard/custom-domains/audit'
       path: '/audit'
@@ -2548,6 +2567,7 @@ interface DashboardRouteChildren {
   DashboardWorkspacesRoute: typeof DashboardWorkspacesRoute
   DashboardIndexRoute: typeof DashboardIndexRoute
   DashboardAdminInviteRoute: typeof DashboardAdminInviteRoute
+  DashboardHelpChecklistRoute: typeof DashboardHelpChecklistRoute
   DashboardHelpFullstackGuideRoute: typeof DashboardHelpFullstackGuideRoute
 }
 
@@ -2631,6 +2651,7 @@ const DashboardRouteChildren: DashboardRouteChildren = {
   DashboardWorkspacesRoute: DashboardWorkspacesRoute,
   DashboardIndexRoute: DashboardIndexRoute,
   DashboardAdminInviteRoute: DashboardAdminInviteRoute,
+  DashboardHelpChecklistRoute: DashboardHelpChecklistRoute,
   DashboardHelpFullstackGuideRoute: DashboardHelpFullstackGuideRoute,
 }
 
