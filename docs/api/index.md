@@ -9,7 +9,7 @@ client — curl, Postman, your typed frontend — at the endpoints below.
   live OpenAPI spec with try-it-now for every REST endpoint. Auth via
   `apikey` header or bearer token; scopes are minted at
   `/dashboard/tokens`.
-* **Raw spec:** `GET /admin/v1/schema/openapi.json` — download and load
+* **Raw spec:** `GET /openapi.json` — download and load
   into Postman, Insomnia, or your codegen of choice.
 
 ## REST — auto-generated from your schema
@@ -117,8 +117,8 @@ ids for traceability.
 ## Related
 
 * Schema introspection: `GET /rest/v1/introspect`
-* OpenAPI (workspace-aware, includes RLS policy hints):
-  `GET /admin/v1/schema/openapi.json`
+* OpenAPI:
+  `GET /openapi.json`
 * Realtime + CDC: `docs/api/realtime-cdc.md`
 * Edge functions v3: `docs/api/edge-v3.md`
 * Billing / PITR: `docs/api/billing-pitr.md`

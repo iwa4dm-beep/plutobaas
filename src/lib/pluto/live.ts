@@ -637,7 +637,7 @@ export const live = {
         })),
       } satisfies SchemaSummary;
     },
-    openapi:    () => api<Record<string, unknown>>("/admin/v1/schema/openapi.json"),
+    openapi:    () => api<Record<string, unknown>>("/openapi.json"),
   },
 
   // ---- Edge Functions ----
