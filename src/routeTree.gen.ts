@@ -114,6 +114,7 @@ import { Route as DashboardOpsExecutionsRouteImport } from './routes/dashboard.o
 import { Route as DashboardOpsDockerCheckRouteImport } from './routes/dashboard.ops.docker-check'
 import { Route as DashboardOpsAuditRouteImport } from './routes/dashboard.ops.audit'
 import { Route as DashboardIntegrationsLovableFrontendRouteImport } from './routes/dashboard.integrations.lovable-frontend'
+import { Route as DashboardHelpFullstackGuideRouteImport } from './routes/dashboard.help.fullstack-guide'
 import { Route as DashboardCustomDomainsAuditRouteImport } from './routes/dashboard.custom-domains.audit'
 import { Route as DashboardAdminInviteRouteImport } from './routes/dashboard.admin.invite'
 import { Route as ApiPublicVpsSubdomainsRouteImport } from './routes/api/public/vps-subdomains'
@@ -664,6 +665,12 @@ const DashboardIntegrationsLovableFrontendRoute =
     path: '/lovable-frontend',
     getParentRoute: () => DashboardIntegrationsRoute,
   } as any)
+const DashboardHelpFullstackGuideRoute =
+  DashboardHelpFullstackGuideRouteImport.update({
+    id: '/help/fullstack-guide',
+    path: '/help/fullstack-guide',
+    getParentRoute: () => DashboardRoute,
+  } as any)
 const DashboardCustomDomainsAuditRoute =
   DashboardCustomDomainsAuditRouteImport.update({
     id: '/audit',
@@ -852,6 +859,7 @@ export interface FileRoutesByFullPath {
   '/api/public/vps-subdomains': typeof ApiPublicVpsSubdomainsRoute
   '/dashboard/admin/invite': typeof DashboardAdminInviteRoute
   '/dashboard/custom-domains/audit': typeof DashboardCustomDomainsAuditRoute
+  '/dashboard/help/fullstack-guide': typeof DashboardHelpFullstackGuideRoute
   '/dashboard/integrations/lovable-frontend': typeof DashboardIntegrationsLovableFrontendRoute
   '/dashboard/ops/audit': typeof DashboardOpsAuditRoute
   '/dashboard/ops/docker-check': typeof DashboardOpsDockerCheckRoute
@@ -973,6 +981,7 @@ export interface FileRoutesByTo {
   '/api/public/vps-subdomains': typeof ApiPublicVpsSubdomainsRoute
   '/dashboard/admin/invite': typeof DashboardAdminInviteRoute
   '/dashboard/custom-domains/audit': typeof DashboardCustomDomainsAuditRoute
+  '/dashboard/help/fullstack-guide': typeof DashboardHelpFullstackGuideRoute
   '/dashboard/integrations/lovable-frontend': typeof DashboardIntegrationsLovableFrontendRoute
   '/dashboard/ops/audit': typeof DashboardOpsAuditRoute
   '/dashboard/ops/docker-check': typeof DashboardOpsDockerCheckRoute
@@ -1096,6 +1105,7 @@ export interface FileRoutesById {
   '/api/public/vps-subdomains': typeof ApiPublicVpsSubdomainsRoute
   '/dashboard/admin/invite': typeof DashboardAdminInviteRoute
   '/dashboard/custom-domains/audit': typeof DashboardCustomDomainsAuditRoute
+  '/dashboard/help/fullstack-guide': typeof DashboardHelpFullstackGuideRoute
   '/dashboard/integrations/lovable-frontend': typeof DashboardIntegrationsLovableFrontendRoute
   '/dashboard/ops/audit': typeof DashboardOpsAuditRoute
   '/dashboard/ops/docker-check': typeof DashboardOpsDockerCheckRoute
@@ -1220,6 +1230,7 @@ export interface FileRouteTypes {
     | '/api/public/vps-subdomains'
     | '/dashboard/admin/invite'
     | '/dashboard/custom-domains/audit'
+    | '/dashboard/help/fullstack-guide'
     | '/dashboard/integrations/lovable-frontend'
     | '/dashboard/ops/audit'
     | '/dashboard/ops/docker-check'
@@ -1341,6 +1352,7 @@ export interface FileRouteTypes {
     | '/api/public/vps-subdomains'
     | '/dashboard/admin/invite'
     | '/dashboard/custom-domains/audit'
+    | '/dashboard/help/fullstack-guide'
     | '/dashboard/integrations/lovable-frontend'
     | '/dashboard/ops/audit'
     | '/dashboard/ops/docker-check'
@@ -1463,6 +1475,7 @@ export interface FileRouteTypes {
     | '/api/public/vps-subdomains'
     | '/dashboard/admin/invite'
     | '/dashboard/custom-domains/audit'
+    | '/dashboard/help/fullstack-guide'
     | '/dashboard/integrations/lovable-frontend'
     | '/dashboard/ops/audit'
     | '/dashboard/ops/docker-check'
@@ -2243,6 +2256,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardIntegrationsLovableFrontendRouteImport
       parentRoute: typeof DashboardIntegrationsRoute
     }
+    '/dashboard/help/fullstack-guide': {
+      id: '/dashboard/help/fullstack-guide'
+      path: '/help/fullstack-guide'
+      fullPath: '/dashboard/help/fullstack-guide'
+      preLoaderRoute: typeof DashboardHelpFullstackGuideRouteImport
+      parentRoute: typeof DashboardRoute
+    }
     '/dashboard/custom-domains/audit': {
       id: '/dashboard/custom-domains/audit'
       path: '/audit'
@@ -2528,6 +2548,7 @@ interface DashboardRouteChildren {
   DashboardWorkspacesRoute: typeof DashboardWorkspacesRoute
   DashboardIndexRoute: typeof DashboardIndexRoute
   DashboardAdminInviteRoute: typeof DashboardAdminInviteRoute
+  DashboardHelpFullstackGuideRoute: typeof DashboardHelpFullstackGuideRoute
 }
 
 const DashboardRouteChildren: DashboardRouteChildren = {
@@ -2610,6 +2631,7 @@ const DashboardRouteChildren: DashboardRouteChildren = {
   DashboardWorkspacesRoute: DashboardWorkspacesRoute,
   DashboardIndexRoute: DashboardIndexRoute,
   DashboardAdminInviteRoute: DashboardAdminInviteRoute,
+  DashboardHelpFullstackGuideRoute: DashboardHelpFullstackGuideRoute,
 }
 
 const DashboardRouteWithChildren = DashboardRoute._addFileChildren(
