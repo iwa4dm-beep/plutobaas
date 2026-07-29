@@ -359,7 +359,18 @@ export const applyImportJob = createServerFn({ method: "POST" })
         message: `Applied — ${diff.counts.create} create / ${diff.counts.alter} alter / ${diff.counts.drop} drop`,
         detail: { diff: diff.counts, repo: job.repo, source: job.source, selection: job.selection },
       });
-      return out;
+      // Automatic post-apply verification over the selected schemas/tables.
+      const { runAndRecordSmoke } = await import("./post-apply-checks.server");
+      const verification = await runAndRecordSmoke({
+        jobId: job.id,
+        selection: job.selection,
+        appliedSql: job.migration_sql,
+        actorId: actor.userId,
+        actorEmail: actor.email,
+        trigger: "auto",
+      });
+      return { ...out, verification };
+
     } catch (e) {
       const out = toFailure(e);
       await updateImportJob(job.id, { status: "apply_failed", report: { apply: out } });
