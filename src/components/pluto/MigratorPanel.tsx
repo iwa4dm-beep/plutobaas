@@ -487,7 +487,11 @@ export function MigratorPanel() {
                                     <td className="px-2 py-0.5 text-right whitespace-nowrap space-x-2">
                                       <button className="underline" onClick={() => void viewVersion(j.id, v.version)}>View</button>
                                       <button className="underline" disabled={!!busy} onClick={() => void restoreVersion(j.id, v.version)}>Restore</button>
+                                      {v.kind === "apply" && (
+                                        <button className="underline text-destructive" disabled={!!busy} onClick={() => void loadRollback(j, v.version)}>Undo…</button>
+                                      )}
                                     </td>
+
                                   </tr>
                                 ))}
                               </tbody>
