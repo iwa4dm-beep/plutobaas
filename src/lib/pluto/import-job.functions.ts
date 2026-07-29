@@ -153,16 +153,48 @@ const IdInput = z.object({ id: z.string().uuid() });
 export const importAuditHistoryFn = createServerFn({ method: "POST" })
   .middleware([requirePlutoAdmin])
   .inputValidator((d: unknown) =>
-    z.object({ id: z.string().uuid().nullish(), limit: z.number().int().min(1).max(500).optional() }).parse(d ?? {}),
+    z
+      .object({
+        id: z.string().uuid().nullish(),
+        limit: z.number().int().min(1).max(200).optional(),
+        offset: z.number().int().min(0).optional(),
+        /** Free text across message/actor/job/selection SQL — schema & table search. */
+        q: z.string().max(200).optional(),
+        /** "ok" | "fail" | "all" */
+        status: z.string().max(10).optional(),
+        actor: z.string().max(200).optional(),
+        step: z.string().max(60).optional(),
+      })
+      .parse(d ?? {}),
   )
-  .handler(async ({ data }): Promise<{ ok: boolean; events: ImportEventView[]; error: string | null }> => {
+  .handler(async ({ data }): Promise<{
+    ok: boolean;
+    events: ImportEventView[];
+    total: number;
+    steps: string[];
+    actors: string[];
+    error: string | null;
+  }> => {
     try {
-      const { listImportEvents } = await import("./import-jobs.server");
-      const events = await listImportEvents(data.id ?? null, data.limit ?? 200);
+      const { queryImportEvents } = await import("./import-jobs.server");
+      const limit = data.limit ?? 25;
+      const offset = data.offset ?? 0;
+      const res = await queryImportEvents({
+        jobId: data.id ?? null,
+        limit,
+        offset,
+        q: data.q?.trim() || null,
+        status: data.status === "ok" || data.status === "fail" ? data.status : null,
+        actor: data.actor?.trim() || null,
+        step: data.step && data.step !== "all" ? data.step : null,
+      });
       return {
         ok: true,
         error: null,
-        events: events.map((e) => ({
+        total: res.total,
+        steps: res.steps,
+        actors: res.actors,
+        events: res.rows.map((e) => ({
           id: e.id,
           job_id: e.job_id,
           step: e.step,
@@ -176,9 +208,10 @@ export const importAuditHistoryFn = createServerFn({ method: "POST" })
         })),
       };
     } catch (e) {
-      return { ok: false, events: [], error: (e as Error).message };
+      return { ok: false, events: [], total: 0, steps: [], actors: [], error: (e as Error).message };
     }
   });
+
 
 /** Inventory of the raw dump + diff of the currently generated migration. */
 export const importJobPlanFn = createServerFn({ method: "POST" })
