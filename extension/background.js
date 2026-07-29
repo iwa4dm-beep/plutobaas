@@ -164,6 +164,12 @@ export async function send(payload, { redact = true } = {}) {
   const eventId = finalPayload.event_id || `${Date.now()}-${crypto.randomUUID()}`;
   finalPayload.event_id = eventId;
 
+  const sql = finalPayload.supabase?.schema_sql || "";
+  const lens = sqlLens(sql);
+  const { result: delta, commit: commitDelta } = await computeDelta(finalPayload);
+  const settings = await getSettings();
+  const chunks = planChunks(sql, Math.max(64, settings.chunkKb) * 1024);
+
   await pushHistory({
     event_id: eventId,
     at: new Date().toISOString(),
@@ -171,18 +177,29 @@ export async function send(payload, { redact = true } = {}) {
     sources: finalPayload.sources || [finalPayload.source].filter(Boolean),
     repo: finalPayload.repo,
     supabase_ref: finalPayload.supabase?.ref,
-    sql_chars: finalPayload.supabase?.schema_sql?.length || 0,
+    sql_chars: sql.length,
     redactions: findings.length,
+    chunks: chunks.length,
+    lens: lens.stats,
+    delta,
   });
 
   try {
-    const result = await postSigned(finalPayload);
-    await updateHistory(eventId, { status: "sent", result, job_id: result?.job_id || result?.id });
+    const result = chunks.length
+      ? await sendChunked(finalPayload, chunks, (p) =>
+          setBadge(`${Math.round(((p.index + 1) / p.total) * 100)}`, "#2563eb"))
+      : await postSigned(finalPayload);
+    const jobId = result?.job_id || result?.id || result?.state?.job_id || null;
+    await updateHistory(eventId, { status: "sent", result, job_id: jobId });
+    await commitDelta();
+    if (jobId) await addWatcher(jobId, { event_id: eventId, repo: finalPayload.repo });
+    chrome.alarms.create(WATCH_ALARM, { delayInMinutes: 0.2, periodInMinutes: Math.max(0.5, settings.watchIntervalMin) });
     await setBadge("✓", "#16a34a");
     setTimeout(() => setBadge(""), 4000);
-    notify("Pluto Migrator", `Job accepted${result?.job_id ? ` (${result.job_id})` : ""}.`);
-    return { ok: true, result, findings };
+    notify("Pluto Migrator", `Job accepted${jobId ? ` (${jobId})` : ""}${chunks.length ? ` — ${chunks.length} chunks` : ""}.`);
+    return { ok: true, result, findings, lens, delta, chunks: chunks.length, job_id: jobId };
   } catch (e) {
+
     if (e.retryable || e.message?.includes("Failed to fetch")) {
       const queue = await getQueue();
       queue.push({ payload: finalPayload, attempts: 1, next_at: Date.now() + 60_000 });
