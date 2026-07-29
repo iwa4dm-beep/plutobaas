@@ -223,6 +223,11 @@ export type ImportEventStep =
   | "selection_changed"
   | "dry_run"
   | "apply"
+  | "pause"
+  | "resume"
+  | "retry"
+  | "version_saved"
+  | "version_restored"
   | "rollback";
 
 export type ImportJobEvent = {
