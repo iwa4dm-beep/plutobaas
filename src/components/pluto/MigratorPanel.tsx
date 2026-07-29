@@ -175,6 +175,37 @@ export function MigratorPanel() {
       .catch((e) => setErr(e.message));
   }
 
+  async function loadRollback(job: ImportJobView, version?: number) {
+    setBusy(`rb:${job.id}`);
+    try {
+      const r = await previewRollbackFn({ data: { id: job.id, version } });
+      if (!r.ok || !r.plan) setErr(r.error ?? "Rollback preview failed");
+      else {
+        setErr(null);
+        setRollbacks((s) => ({ ...s, [job.id]: { sourceVersion: r.sourceVersion, plan: r.plan as RollbackPlan } }));
+      }
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally { setBusy(null); }
+  }
+
+  async function runRollback(job: ImportJobView, dryRun: boolean) {
+    const rb = rollbacks[job.id];
+    if (!dryRun) {
+      const warn = rb ? `\n\n${rb.plan.entries.length} object(s) will be dropped. ${rb.plan.unsupported.length} statement(s) cannot be undone (data inserts, drops).` : "";
+      if (!confirm(`Roll back the applied import for ${job.repo ?? job.event_id}?${warn}`)) return;
+    }
+    setBusy(`rbrun:${job.id}`);
+    try {
+      const res = await runRollbackFn({ data: { id: job.id, version: rb?.sourceVersion ?? undefined, dryRun } });
+      setOutcome((o) => ({ ...o, [job.id]: res }));
+      await refresh();
+      await loadDetail(job.id);
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally { setBusy(null); }
+  }
+
   async function togglePause(job: ImportJobView) {
     setBusy(`pause:${job.id}`);
     try {
