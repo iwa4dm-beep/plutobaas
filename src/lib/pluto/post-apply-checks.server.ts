@@ -237,3 +237,64 @@ export async function runSmokeChecks(
     checks,
   };
 }
+
+/**
+ * Run the suite for a job and record the outcome on the audit timeline.
+ * Never throws — verification failures must not mask a successful apply.
+ */
+export async function runAndRecordSmoke(input: {
+  jobId: string;
+  selection: string[] | null;
+  appliedSql: string | null;
+  actorId: string | null;
+  actorEmail: string | null;
+  trigger: "auto" | "manual";
+}): Promise<SmokeReport> {
+  const { appendImportEvent, updateImportJob, getImportJobById } = await import("./import-jobs.server");
+  let report: SmokeReport;
+  try {
+    report = await runSmokeChecks(input.selection, input.appliedSql);
+  } catch (e) {
+    report = {
+      ok: false,
+      ranAt: new Date().toISOString(),
+      durationMs: 0,
+      targets: [],
+      counts: { pass: 0, warn: 0, fail: 1 },
+      checks: [{
+        id: "suite:error",
+        label: "Verification suite",
+        target: "—",
+        status: "fail",
+        detail: e instanceof Error ? e.message : String(e),
+        rowCount: null,
+      }],
+    };
+  }
+
+  try {
+    const job = await getImportJobById(input.jobId);
+    const prev = (job?.report ?? {}) as Record<string, unknown>;
+    await updateImportJob(input.jobId, { report: { ...prev, verification: report } });
+  } catch { /* report persistence is best-effort */ }
+
+  await appendImportEvent({
+    jobId: input.jobId,
+    step: "smoke_test",
+    ok: report.ok,
+    actorId: input.actorId,
+    actorEmail: input.actorEmail,
+    rowCount: report.checks.length,
+    durationMs: report.durationMs,
+    message: `Verification (${input.trigger}) — ${report.counts.pass} pass / ${report.counts.warn} warn / ${report.counts.fail} fail across ${report.targets.length} object(s)`,
+    detail: {
+      trigger: input.trigger,
+      at: report.ranAt,
+      actor: input.actorEmail,
+      targets: report.targets,
+      counts: report.counts,
+      checks: report.checks,
+    },
+  });
+  return report;
+}
