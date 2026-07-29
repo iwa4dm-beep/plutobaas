@@ -91,7 +91,11 @@ export async function ensureImportJobsTable(): Promise<void> {
      create index if not exists import_jobs_created_idx on admin.import_jobs (created_at desc);
      alter table admin.import_jobs add column if not exists applied_at timestamptz;
      alter table admin.import_jobs add column if not exists applied_by text;
-     alter table admin.import_jobs add column if not exists selection jsonb;`,
+     alter table admin.import_jobs add column if not exists selection jsonb;
+     alter table admin.import_jobs add column if not exists paused boolean not null default false;
+     alter table admin.import_jobs add column if not exists paused_by text;
+     alter table admin.import_jobs add column if not exists paused_at timestamptz;
+     alter table admin.import_jobs add column if not exists resume_step text;`,
     [],
     true,
   );
@@ -112,10 +116,15 @@ function rowToJob(r: Record<string, unknown>): ImportJob {
     applied_at: (r.applied_at as string) ?? null,
     applied_by: (r.applied_by as string) ?? null,
     selection: Array.isArray(r.selection) ? (r.selection as string[]) : null,
+    paused: r.paused === true,
+    paused_by: (r.paused_by as string) ?? null,
+    paused_at: (r.paused_at as string) ?? null,
+    resume_step: (r.resume_step as string) ?? null,
     created_at: String(r.created_at),
     updated_at: String(r.updated_at),
   };
 }
+
 
 /** Insert a job. Returns null when the event_id was already ingested (replay). */
 export async function createImportJob(
