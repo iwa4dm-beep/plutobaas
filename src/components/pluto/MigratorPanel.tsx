@@ -286,16 +286,30 @@ export function MigratorPanel() {
                       </div>
                     )}
                   </td>
-                  <td className="text-center"><span className={`text-[11px] rounded px-2 py-0.5 ${statusTone(j.status)}`}>{j.status}</span></td>
+                  <td className="text-center">
+                    <span className={`text-[11px] rounded px-2 py-0.5 ${statusTone(j.status)}`}>{j.status}</span>
+                    {j.paused && (
+                      <div className="text-[11px] text-amber-600 dark:text-amber-400 mt-0.5">
+                        paused{j.resume_step ? ` @ ${j.resume_step}` : ""}
+                      </div>
+                    )}
+                  </td>
                   <td className="text-center text-xs text-muted-foreground">{new Date(j.created_at).toLocaleString()}</td>
                   <td className="text-right space-x-2 pr-2 whitespace-nowrap">
-                    <button className="underline" disabled={!!busy} onClick={() => void run("translate", j)}>Re-translate</button>
-                    <button className="underline" disabled={!!busy || !j.migration_sql} onClick={() => void run("dry", j)}>Dry-run</button>
-                    <button className="underline text-destructive inline-flex items-center gap-1" disabled={!!busy || !j.migration_sql} onClick={() => void run("apply", j)}>
+                    <button className="underline" disabled={!!busy || j.paused} onClick={() => void run("translate", j)}>Re-translate</button>
+                    <button className="underline" disabled={!!busy || !j.migration_sql || j.paused} onClick={() => void run("dry", j)}>Dry-run</button>
+                    <button className="underline text-destructive inline-flex items-center gap-1" disabled={!!busy || !j.migration_sql || j.paused} onClick={() => void run("apply", j)}>
                       <Play className="h-3 w-3" /> Apply
+                    </button>
+                    <button className="underline inline-flex items-center gap-1" disabled={!!busy} onClick={() => void togglePause(j)}>
+                      {j.paused ? <><Play className="h-3 w-3" /> Resume</> : <><Pause className="h-3 w-3" /> Pause</>}
+                    </button>
+                    <button className="underline inline-flex items-center gap-1" disabled={!!busy} onClick={() => void retry(j)}>
+                      <RotateCcw className="h-3 w-3" /> Retry
                     </button>
                     <button className="underline" disabled={!j.migration_sql} onClick={() => setOpenSql(j.migration_sql)}>SQL</button>
                   </td>
+
                 </tr>
 
                 {isOpen && (
