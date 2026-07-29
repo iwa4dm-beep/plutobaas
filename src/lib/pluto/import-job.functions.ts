@@ -12,6 +12,7 @@ import { filterDumpBySelection, inventoryDump, type DumpObject } from "./supabas
 import { diffSql, type SqlDiff } from "./sql-diff";
 import { analyzeFailure, type FailureAnalysis } from "./failure-analysis";
 import { buildRollbackPlan, type RollbackPlan } from "./sql-rollback";
+import type { SmokeReport } from "./smoke-types";
 
 export type ImportJobView = {
   id: string;
