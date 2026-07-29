@@ -374,6 +374,18 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       case "pluto:scanSecrets":return scanSecrets(msg.payload);
       case "pluto:drain":      { await drainQueue(); return { ok: true, queue: (await getQueue()).length }; }
       case "pluto:queue":      return { queue: await getQueue() };
+      case "pluto:status":     return jobStatus(msg);
+      case "pluto:rollback":   return rollbackJob(msg);
+      case "pluto:watchers":   return { watchers: await getWatchers() };
+      case "pluto:watch":      return { watchers: await addWatcher(msg.job_id, { manual: true }) };
+      case "pluto:unwatch":    { await removeWatcher(msg.job_id); return { watchers: await getWatchers() }; }
+      case "pluto:pollNow":    { await pollWatchers(); return { ok: true }; }
+      case "pluto:lens":       return sqlLens(msg.payload?.supabase?.schema_sql || "");
+      case "pluto:bundle":     return downloadBundle(msg.payload);
+      case "pluto:settings":   return { settings: await getSettings() };
+      case "pluto:saveSettings": { const s = await saveSettings(msg.patch || {}); await rescheduleAuto(); return { settings: s }; }
+      case "pluto:resumable":  return chrome.storage.local.get("resumable");
+      case "pluto:resume":     { const r = await sendChunked(msg.payload, planChunks(msg.payload?.supabase?.schema_sql || "", (await getSettings()).chunkKb * 1024)); return { ok: true, result: r }; }
       default:                 return { ok: false, error: `unknown message ${msg?.type}` };
     }
   };
