@@ -926,8 +926,7 @@ export const saveNotifySettingsFn = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }): Promise<{ ok: boolean; error: string | null }> => {
     try {
-      const { NOTIFY_EVENTS, NOTIFY_SETTING_KEY, type NotifyEvent } = await import("./import-notify.server");
-      void NotifyEvent;
+      const { NOTIFY_EVENTS, NOTIFY_SETTING_KEY } = await import("./import-notify.server");
       const { setImportSetting } = await import("./import-jobs.server");
       const events = (data.events?.length ? data.events : NOTIFY_EVENTS).filter((e) =>
         (NOTIFY_EVENTS as string[]).includes(e),
