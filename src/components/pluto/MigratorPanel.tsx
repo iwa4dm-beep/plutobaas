@@ -212,6 +212,7 @@ export function MigratorPanel() {
   }
 
   function togglePick(jobId: string, key: string) {
+    setPicked((s) => {
 
       const cur = s[jobId] ?? [];
       return { ...s, [jobId]: cur.includes(key) ? cur.filter((k) => k !== key) : [...cur, key] };
