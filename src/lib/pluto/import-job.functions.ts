@@ -13,6 +13,8 @@ import { diffSql, type SqlDiff } from "./sql-diff";
 import { analyzeFailure, type FailureAnalysis } from "./failure-analysis";
 import { buildRollbackPlan, type RollbackPlan } from "./sql-rollback";
 import type { SmokeReport } from "./smoke-types";
+import type { ImportReportBundle, VerificationRunView } from "./report-types";
+import { describeDiff, diffVerificationReports, type VerificationDiff } from "./verification-diff";
 
 export type ImportJobView = {
   id: string;
@@ -152,16 +154,52 @@ const IdInput = z.object({ id: z.string().uuid() });
 export const importAuditHistoryFn = createServerFn({ method: "POST" })
   .middleware([requirePlutoAdmin])
   .inputValidator((d: unknown) =>
-    z.object({ id: z.string().uuid().nullish(), limit: z.number().int().min(1).max(500).optional() }).parse(d ?? {}),
+    z
+      .object({
+        id: z.string().uuid().nullish(),
+        limit: z.number().int().min(1).max(200).optional(),
+        offset: z.number().int().min(0).optional(),
+        /** Free text across message/actor/job/selection SQL — schema & table search. */
+        q: z.string().max(200).optional(),
+        /** "ok" | "fail" | "all" */
+        status: z.string().max(10).optional(),
+        actor: z.string().max(200).optional(),
+        step: z.string().max(60).optional(),
+      })
+      .parse(d ?? {}),
   )
-  .handler(async ({ data }): Promise<{ ok: boolean; events: ImportEventView[]; error: string | null }> => {
+  .handler(async ({ data }): Promise<{
+    ok: boolean;
+    events: ImportEventView[];
+    total: number;
+    steps: string[];
+    actors: string[];
+    error: string | null;
+  }> => {
     try {
-      const { listImportEvents } = await import("./import-jobs.server");
-      const events = await listImportEvents(data.id ?? null, data.limit ?? 200);
+      const { queryImportEvents, listAuditActors, listAuditSteps } = await import("./import-jobs.server");
+      const limit = data.limit ?? 25;
+      const offset = data.offset ?? 0;
+      const [res, actors, steps] = await Promise.all([
+        queryImportEvents({
+          jobId: data.id ?? null,
+          limit,
+          offset,
+          search: data.q?.trim() || null,
+          status: data.status === "fail" ? "failed" : data.status === "ok" ? "ok" : null,
+          actor: data.actor?.trim() || null,
+          step: data.step && data.step !== "all" ? data.step : null,
+        }),
+        listAuditActors(),
+        listAuditSteps(),
+      ]);
       return {
         ok: true,
         error: null,
-        events: events.map((e) => ({
+        total: res.total,
+        steps,
+        actors,
+        events: res.rows.map((e) => ({
           id: e.id,
           job_id: e.job_id,
           step: e.step,
@@ -175,9 +213,10 @@ export const importAuditHistoryFn = createServerFn({ method: "POST" })
         })),
       };
     } catch (e) {
-      return { ok: false, events: [], error: (e as Error).message };
+      return { ok: false, events: [], total: 0, steps: [], actors: [], error: (e as Error).message };
     }
   });
+
 
 /** Inventory of the raw dump + diff of the currently generated migration. */
 export const importJobPlanFn = createServerFn({ method: "POST" })
@@ -364,13 +403,28 @@ export const applyImportJob = createServerFn({ method: "POST" })
       });
       // Automatic post-apply verification over the selected schemas/tables.
       const { runAndRecordSmoke } = await import("./post-apply-checks.server");
-      const verification = await runAndRecordSmoke({
+      const { report: verification } = await runAndRecordSmoke({
         jobId: job.id,
         selection: job.selection,
         appliedSql: job.migration_sql,
         actorId: actor.userId,
         actorEmail: actor.email,
         trigger: "auto",
+      });
+      const { notifyImportEvent } = await import("./import-notify.server");
+      await notifyImportEvent({
+        event: "import.applied",
+        jobId: job.id,
+        actorId: actor.userId,
+        actorEmail: actor.email,
+        payload: {
+          repo: job.repo,
+          source: job.source,
+          diff: diff.counts,
+          row_count: out.rowCount,
+          duration_ms: out.durationMs,
+          verification: verification.counts,
+        },
       });
       return { ...out, verification };
 
@@ -386,8 +440,17 @@ export const applyImportJob = createServerFn({ method: "POST" })
         message: out.error,
         detail: { error: out.error, detail: out.detail },
       });
+      const { notifyImportEvent } = await import("./import-notify.server");
+      await notifyImportEvent({
+        event: "import.apply_failed",
+        jobId: job.id,
+        actorId: actor.userId,
+        actorEmail: actor.email,
+        payload: { repo: job.repo, source: job.source, error: out.error, detail: out.detail },
+      });
       return out;
     }
+
   });
 
 /** Repo pointer for handing the job over to Auto-Deploy Studio. */
@@ -770,12 +833,18 @@ export const runRollbackFn = createServerFn({ method: "POST" })
 export const runVerificationFn = createServerFn({ method: "POST" })
   .middleware([requirePlutoAdmin])
   .inputValidator((d: unknown) => IdInput.parse(d))
-  .handler(async ({ data, context }): Promise<{ ok: boolean; error: string | null; report: SmokeReport | null }> => {
+  .handler(async ({ data, context }): Promise<{
+    ok: boolean;
+    error: string | null;
+    report: SmokeReport | null;
+    runNo: number | null;
+    diff: VerificationDiff | null;
+  }> => {
     const { getImportJobById } = await import("./import-jobs.server");
     const job = await getImportJobById(data.id);
-    if (!job) return { ok: false, error: "not_found", report: null };
+    if (!job) return { ok: false, error: "not_found", report: null, runNo: null, diff: null };
     const { runAndRecordSmoke } = await import("./post-apply-checks.server");
-    const report = await runAndRecordSmoke({
+    const { report, runNo, diff } = await runAndRecordSmoke({
       jobId: job.id,
       selection: job.selection,
       appliedSql: job.migration_sql,
@@ -783,113 +852,217 @@ export const runVerificationFn = createServerFn({ method: "POST" })
       actorEmail: context.plutoAdmin.email,
       trigger: "manual",
     });
-    return { ok: report.ok, error: null, report };
+    return { ok: report.ok, error: null, report, runNo, diff };
   });
+
+/** Archived verification runs for a job (newest first). */
+export const listVerificationRunsFn = createServerFn({ method: "POST" })
+  .middleware([requirePlutoAdmin])
+  .inputValidator((d: unknown) => IdInput.parse(d))
+  .handler(async ({ data }): Promise<{ ok: boolean; error: string | null; runs: VerificationRunView[] }> => {
+    try {
+      const { listVerificationRuns } = await import("./import-jobs.server");
+      const runs = await listVerificationRuns(data.id, 25);
+      return {
+        ok: true,
+        error: null,
+        runs: runs.map((r) => ({
+          run_no: r.run_no,
+          ok: r.ok,
+          trigger: r.trigger,
+          actor_email: r.actor_email,
+          created_at: r.created_at,
+          report: r.report as unknown as SmokeReport,
+          diff: (r.diff as unknown as VerificationDiff | null) ?? null,
+        })),
+      };
+    } catch (e) {
+      return { ok: false, error: (e as Error).message, runs: [] };
+    }
+  });
+
+/** Diff any two archived verification runs of the same job. */
+export const compareVerificationRunsFn = createServerFn({ method: "POST" })
+  .middleware([requirePlutoAdmin])
+  .inputValidator((d: unknown) =>
+    IdInput.extend({ from: z.number().int().min(1), to: z.number().int().min(1) }).parse(d),
+  )
+  .handler(async ({ data, context }): Promise<{ ok: boolean; error: string | null; diff: VerificationDiff | null }> => {
+    try {
+      const { getVerificationRun, appendImportEvent } = await import("./import-jobs.server");
+      const [a, b] = await Promise.all([
+        getVerificationRun(data.id, data.from),
+        getVerificationRun(data.id, data.to),
+      ]);
+      if (!a || !b) return { ok: false, error: "run_not_found", diff: null };
+      const diff = diffVerificationReports(
+        a.report as unknown as SmokeReport,
+        b.report as unknown as SmokeReport,
+        a.run_no,
+        b.run_no,
+      );
+      await appendImportEvent({
+        jobId: data.id,
+        step: "verification_diff",
+        ok: true,
+        actorId: context.plutoAdmin.userId,
+        actorEmail: context.plutoAdmin.email,
+        rowCount: diff.deltas.length,
+        message: `Compared verification runs #${a.run_no} → #${b.run_no}: ${describeDiff(diff)}`,
+        detail: { run_from: a.run_no, run_to: b.run_no, counts: diff.counts, targets: diff.targets },
+      });
+      return { ok: true, error: null, diff };
+    } catch (e) {
+      return { ok: false, error: (e as Error).message, diff: null };
+    }
+  });
+
+/* ------------------------------------------------------------------ */
+/* Notification webhook settings                                       */
+/* ------------------------------------------------------------------ */
+
+export type NotifySettingsView = {
+  url: string;
+  events: string[];
+  enabled: boolean;
+  hasSecret: boolean;
+  fromEnv: boolean;
+};
+
+export const getNotifySettingsFn = createServerFn({ method: "POST" })
+  .middleware([requirePlutoAdmin])
+  .handler(async (): Promise<{ ok: boolean; error: string | null; settings: NotifySettingsView | null; allEvents: string[] }> => {
+    try {
+      const { readNotifyConfig, NOTIFY_EVENTS, NOTIFY_SETTING_KEY } = await import("./import-notify.server");
+      const { getImportSetting } = await import("./import-jobs.server");
+      const stored = await getImportSetting<{ url?: string }>(NOTIFY_SETTING_KEY);
+      const cfg = await readNotifyConfig();
+      return {
+        ok: true,
+        error: null,
+        allEvents: NOTIFY_EVENTS,
+        settings: cfg
+          ? { url: cfg.url, events: cfg.events, enabled: cfg.enabled, hasSecret: Boolean(cfg.secret), fromEnv: !stored?.url }
+          : null,
+      };
+    } catch (e) {
+      return { ok: false, error: (e as Error).message, settings: null, allEvents: [] };
+    }
+  });
+
+export const saveNotifySettingsFn = createServerFn({ method: "POST" })
+  .middleware([requirePlutoAdmin])
+  .inputValidator((d: unknown) =>
+    z
+      .object({
+        url: z.string().url().max(1000).or(z.literal("")),
+        secret: z.string().max(400).optional(),
+        events: z.array(z.string().max(60)).max(20).optional(),
+        enabled: z.boolean().default(true),
+      })
+      .parse(d),
+  )
+  .handler(async ({ data, context }): Promise<{ ok: boolean; error: string | null }> => {
+    try {
+      const { NOTIFY_EVENTS, NOTIFY_SETTING_KEY } = await import("./import-notify.server");
+      const { setImportSetting } = await import("./import-jobs.server");
+      const events = (data.events?.length ? data.events : NOTIFY_EVENTS).filter((e) =>
+        (NOTIFY_EVENTS as string[]).includes(e),
+      );
+      await setImportSetting(
+        NOTIFY_SETTING_KEY,
+        data.url ? { url: data.url, secret: data.secret || null, events, enabled: data.enabled } : {},
+        context.plutoAdmin.email,
+      );
+      return { ok: true, error: null };
+    } catch (e) {
+      return { ok: false, error: (e as Error).message };
+    }
+  });
+
+/** Send a test notification so the endpoint can be verified end-to-end. */
+export const testNotifyFn = createServerFn({ method: "POST" })
+  .middleware([requirePlutoAdmin])
+  .inputValidator((d: unknown) => IdInput.parse(d))
+  .handler(async ({ data, context }): Promise<{ ok: boolean; error: string | null; status: number | null; url: string | null }> => {
+    const { notifyImportEvent } = await import("./import-notify.server");
+    const res = await notifyImportEvent({
+      event: "import.applied",
+      jobId: data.id,
+      actorId: context.plutoAdmin.userId,
+      actorEmail: context.plutoAdmin.email,
+      payload: { test: true },
+    });
+    return { ok: res.delivered, error: res.error, status: res.status, url: res.url };
+  });
+
+/* ------------------------------------------------------------------ */
+/* Signed, expiring share links for the report                         */
+/* ------------------------------------------------------------------ */
+
+export const createReportShareLinkFn = createServerFn({ method: "POST" })
+  .middleware([requirePlutoAdmin])
+  .inputValidator((d: unknown) =>
+    IdInput.extend({
+      ttlMinutes: z.number().int().min(5).max(43200).default(1440),
+      includeSql: z.boolean().default(false),
+      origin: z.string().max(300).optional(),
+    }).parse(d),
+  )
+  .handler(async ({ data, context }): Promise<{ ok: boolean; error: string | null; url: string | null; expiresAt: string | null }> => {
+    try {
+      const { getImportJobById, appendImportEvent } = await import("./import-jobs.server");
+      const job = await getImportJobById(data.id);
+      if (!job) return { ok: false, error: "not_found", url: null, expiresAt: null };
+
+      const { shareSecret, mintShareToken } = await import("./report-share.server");
+      const secret = shareSecret();
+      if (!secret) {
+        return {
+          ok: false,
+          error: "Share links need the PLUTO_REPORT_SHARE_SECRET project secret.",
+          url: null,
+          expiresAt: null,
+        };
+      }
+      const now = Math.floor(Date.now() / 1000);
+      const exp = now + data.ttlMinutes * 60;
+      const token = await mintShareToken(
+        { j: job.id, i: now, e: exp, a: context.plutoAdmin.email, s: data.includeSql },
+        secret,
+      );
+      const base = (data.origin ?? "").replace(/\/+$/, "");
+      const url = `${base}/api/public/import-report?t=${encodeURIComponent(token)}&format=html`;
+      const expiresAt = new Date(exp * 1000).toISOString();
+      await appendImportEvent({
+        jobId: job.id,
+        step: "report_shared",
+        ok: true,
+        actorId: context.plutoAdmin.userId,
+        actorEmail: context.plutoAdmin.email,
+        message: `Share link created — expires ${expiresAt}`,
+        detail: { expires_at: expiresAt, ttl_minutes: data.ttlMinutes, include_sql: data.includeSql },
+      });
+      return { ok: true, error: null, url, expiresAt };
+    } catch (e) {
+      return { ok: false, error: (e as Error).message, url: null, expiresAt: null };
+    }
+  });
+
 
 /* ------------------------------------------------------------------ */
 /* Downloadable report bundle (JSON — the client renders the PDF)      */
 /* ------------------------------------------------------------------ */
 
-export type ImportReportBundle = {
-  generatedAt: string;
-  generatedBy: string | null;
-  job: ImportJobView;
-  diff: SqlDiff | null;
-  verification: SmokeReport | null;
-  versions: (SqlVersionView & { sql?: string })[];
-  events: ImportEventView[];
-  failures: { step: string; created_at: string; message: string | null; detail: string | null }[];
-  migrationSql: string | null;
-};
+export type { ImportReportBundle, VerificationRunView } from "./report-types";
 
 /** Everything about one import job in a single JSON payload. */
 export const buildImportReportFn = createServerFn({ method: "POST" })
   .middleware([requirePlutoAdmin])
   .inputValidator((d: unknown) => IdInput.extend({ includeSql: z.boolean().default(false) }).parse(d))
   .handler(async ({ data, context }): Promise<{ ok: boolean; error: string | null; bundle: ImportReportBundle | null }> => {
-    const { getImportJobById, listImportEvents, listSqlVersions, getSqlVersion } = await import("./import-jobs.server");
-    const job = await getImportJobById(data.id);
-    if (!job) return { ok: false, error: "not_found", bundle: null };
-
-    const [events, versionRows] = await Promise.all([
-      listImportEvents(job.id, 500),
-      listSqlVersions(job.id, 50),
-    ]);
-
-    const versions = await Promise.all(
-      versionRows.map(async (v) => {
-        const base: SqlVersionView & { sql?: string } = {
-          id: v.id,
-          version: v.version,
-          kind: v.kind,
-          counts: v.counts,
-          destructive_count: v.destructive_count,
-          actor_email: v.actor_email,
-          note: v.note,
-          selection: v.selection,
-          sql_length: v.sql?.length ?? 0,
-          created_at: v.created_at,
-        };
-        if (data.includeSql) {
-          const full = await getSqlVersion(job.id, v.version);
-          base.sql = full?.sql ?? undefined;
-        }
-        return base;
-      }),
-    );
-
-    const report = (job.report ?? {}) as Record<string, unknown>;
-    const verification = (report.verification as SmokeReport | undefined) ?? null;
-
-    return {
-      ok: true,
-      error: null,
-      bundle: {
-        generatedAt: new Date().toISOString(),
-        generatedBy: context.plutoAdmin.email,
-        job: {
-          id: job.id,
-          event_id: job.event_id,
-          source: job.source,
-          status: job.status,
-          repo: job.repo,
-          slug: job.slug,
-          migration_sql: null,
-          report: JSON.stringify(report),
-          applied_at: job.applied_at,
-          applied_by: job.applied_by,
-          selection: job.selection,
-          paused: job.paused,
-          paused_by: job.paused_by,
-          paused_at: job.paused_at,
-          resume_step: job.resume_step,
-          created_at: job.created_at,
-          updated_at: job.updated_at,
-        },
-        diff: job.migration_sql ? diffSql(job.migration_sql) : null,
-        verification,
-        versions,
-        events: events.map((e) => ({
-          id: e.id,
-          job_id: e.job_id,
-          step: e.step,
-          ok: e.ok,
-          actor_email: e.actor_email,
-          row_count: e.row_count,
-          duration_ms: e.duration_ms,
-          message: e.message,
-          detail: e.detail ? JSON.stringify(e.detail) : null,
-          created_at: e.created_at,
-        })),
-        failures: events
-          .filter((e) => !e.ok)
-          .map((e) => ({
-            step: e.step,
-            created_at: e.created_at,
-            message: e.message,
-            detail: e.detail ? JSON.stringify(e.detail) : null,
-          })),
-        migrationSql: data.includeSql ? job.migration_sql : null,
-      },
-    };
+    const { buildReportBundle } = await import("./report-bundle.server");
+    const bundle = await buildReportBundle(data.id, data.includeSql, context.plutoAdmin.email);
+    if (!bundle) return { ok: false, error: "not_found", bundle: null };
+    return { ok: true, error: null, bundle };
   });

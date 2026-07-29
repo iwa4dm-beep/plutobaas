@@ -235,7 +235,10 @@ export type ImportEventStep =
   | "version_saved"
   | "version_restored"
   | "rollback"
-  | "smoke_test";
+  | "smoke_test"
+  | "verification_diff"
+  | "webhook"
+  | "report_shared";
 
 export type ImportJobEvent = {
   id: string;
@@ -530,4 +533,254 @@ export async function setPaused(
   );
   const rows = (res.rows ?? []) as Record<string, unknown>[];
   return rows.length ? rowToJob(rows[0]) : null;
+}
+
+
+/* ------------------------------------------------------------------ */
+/* Audit history query: search + filters + pagination                  */
+/* ------------------------------------------------------------------ */
+
+export type AuditQuery = {
+  jobId?: string | null;
+  /** Free-text over message/detail/repo/actor. */
+  search?: string | null;
+  /** Matches a schema or table name inside the event detail or job selection. */
+  object?: string | null;
+  step?: string | null;
+  /** "ok" | "failed" | job status value. */
+  status?: string | null;
+  actor?: string | null;
+  limit: number;
+  offset: number;
+};
+
+export type AuditRow = ImportJobEvent & {
+  job_repo: string | null;
+  job_source: string | null;
+  job_status: string | null;
+  job_event_id: string | null;
+};
+
+export async function queryImportEvents(q: AuditQuery): Promise<{ rows: AuditRow[]; total: number }> {
+  await ensureImportEventsTable();
+  const where: string[] = [];
+  const params: unknown[] = [];
+  /** Push one value and return its `$n` placeholder. */
+  const p = (value: unknown): string => {
+    params.push(value);
+    return `$${params.length}`;
+  };
+
+  if (q.jobId) where.push(`e.job_id = ${p(q.jobId)}::uuid`);
+  if (q.step && q.step !== "all") where.push(`e.step = ${p(q.step)}`);
+  if (q.actor) where.push(`coalesce(e.actor_email, 'webhook') ilike ${p(`%${q.actor}%`)}`);
+  if (q.status === "ok") where.push("e.ok = true");
+  else if (q.status === "failed") where.push("e.ok = false");
+  else if (q.status && q.status !== "all") where.push(`j.status = ${p(q.status)}`);
+  if (q.object) {
+    const v = `%${q.object}%`;
+    where.push(
+      `(coalesce(e.detail::text,'') ilike ${p(v)} or coalesce(j.selection::text,'') ilike ${p(v)} or coalesce(j.migration_sql,'') ilike ${p(v)})`,
+    );
+  }
+  if (q.search) {
+    const v = `%${q.search}%`;
+    where.push(
+      `(coalesce(e.message,'') ilike ${p(v)} or coalesce(e.detail::text,'') ilike ${p(v)} or coalesce(j.repo,'') ilike ${p(v)} or coalesce(e.actor_email,'') ilike ${p(v)} or coalesce(j.event_id,'') ilike ${p(v)} or coalesce(j.selection::text,'') ilike ${p(v)} or coalesce(j.migration_sql,'') ilike ${p(v)})`,
+    );
+  }
+
+
+  const clause = where.length ? `where ${where.join(" and ")}` : "";
+  const countRes = await exec(
+    `select count(*)::int as n from admin.import_job_events e join admin.import_jobs j on j.id = e.job_id ${clause}`,
+    params,
+  );
+  const total = Number(((countRes.rows ?? [])[0] as Record<string, unknown> | undefined)?.n ?? 0);
+
+  const limit = Math.min(Math.max(q.limit, 1), 200);
+  const offset = Math.max(q.offset, 0);
+  const res = await exec(
+    `select e.*, j.repo as job_repo, j.source as job_source, j.status as job_status, j.event_id as job_event_id
+       from admin.import_job_events e
+       join admin.import_jobs j on j.id = e.job_id
+       ${clause}
+      order by e.created_at desc
+      limit ${limit} offset ${offset}`,
+    params,
+  );
+  const rows = ((res.rows ?? []) as Record<string, unknown>[]).map((r) => ({
+    ...rowToEvent(r),
+    job_repo: (r.job_repo as string) ?? null,
+    job_source: (r.job_source as string) ?? null,
+    job_status: (r.job_status as string) ?? null,
+    job_event_id: (r.job_event_id as string) ?? null,
+  }));
+  return { rows, total };
+}
+
+/** Distinct actors, for the audit filter dropdown. */
+export async function listAuditActors(): Promise<string[]> {
+  await ensureImportEventsTable();
+  const res = await exec(
+    `select distinct coalesce(actor_email, 'webhook') as a from admin.import_job_events order by 1 limit 200`,
+  );
+  return ((res.rows ?? []) as Record<string, unknown>[]).map((r) => String(r.a));
+}
+
+/** Distinct step names, for the audit filter dropdown. */
+export async function listAuditSteps(): Promise<string[]> {
+  await ensureImportEventsTable();
+  const res = await exec(`select distinct step from admin.import_job_events order by 1 limit 100`);
+  return ((res.rows ?? []) as Record<string, unknown>[]).map((r) => String(r.step));
+}
+
+
+/* ------------------------------------------------------------------ */
+/* Verification runs: every smoke-test execution is archived           */
+/* ------------------------------------------------------------------ */
+
+export type VerificationRun = {
+  id: string;
+  job_id: string;
+  run_no: number;
+  ok: boolean;
+  trigger: string;
+  actor_email: string | null;
+  report: Record<string, unknown>;
+  diff: Record<string, unknown> | null;
+  created_at: string;
+};
+
+let verifyEnsured = false;
+
+export async function ensureVerificationRunsTable(): Promise<void> {
+  if (verifyEnsured) return;
+  await ensureImportJobsTable();
+  await exec(
+    `create table if not exists admin.import_verification_runs (
+       id uuid primary key default gen_random_uuid(),
+       job_id uuid not null references admin.import_jobs(id) on delete cascade,
+       run_no integer not null,
+       ok boolean not null default true,
+       trigger text not null default 'auto',
+       actor_email text,
+       report jsonb not null,
+       diff jsonb,
+       created_at timestamptz not null default now(),
+       unique (job_id, run_no)
+     );
+     create index if not exists import_verification_runs_job_idx
+       on admin.import_verification_runs (job_id, run_no desc);`,
+    [],
+    true,
+  );
+  verifyEnsured = true;
+}
+
+function rowToRun(r: Record<string, unknown>): VerificationRun {
+  return {
+    id: String(r.id),
+    job_id: String(r.job_id),
+    run_no: Number(r.run_no),
+    ok: r.ok !== false,
+    trigger: String(r.trigger ?? "auto"),
+    actor_email: (r.actor_email as string) ?? null,
+    report: (r.report as Record<string, unknown>) ?? {},
+    diff: (r.diff as Record<string, unknown>) ?? null,
+    created_at: String(r.created_at),
+  };
+}
+
+export async function saveVerificationRun(input: {
+  jobId: string;
+  ok: boolean;
+  trigger: string;
+  actorEmail?: string | null;
+  report: unknown;
+  diff?: unknown;
+}): Promise<VerificationRun | null> {
+  await ensureVerificationRunsTable();
+  const latest = await exec(
+    `select run_no from admin.import_verification_runs where job_id = $1 order by run_no desc limit 1`,
+    [input.jobId],
+  );
+  const prev = ((latest.rows ?? []) as Record<string, unknown>[])[0];
+  const next = prev ? Number(prev.run_no) + 1 : 1;
+  const res = await exec(
+    `insert into admin.import_verification_runs (job_id, run_no, ok, trigger, actor_email, report, diff)
+     values ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb)
+     returning *`,
+    [
+      input.jobId,
+      next,
+      input.ok,
+      input.trigger,
+      input.actorEmail ?? null,
+      JSON.stringify(input.report),
+      input.diff === undefined ? null : JSON.stringify(input.diff),
+    ],
+    true,
+  );
+  const rows = (res.rows ?? []) as Record<string, unknown>[];
+  return rows.length ? rowToRun(rows[0]) : null;
+}
+
+export async function listVerificationRuns(jobId: string, limit = 25): Promise<VerificationRun[]> {
+  await ensureVerificationRunsTable();
+  const res = await exec(
+    `select * from admin.import_verification_runs where job_id = $1 order by run_no desc limit $2`,
+    [jobId, Math.min(Math.max(limit, 1), 100)],
+  );
+  return ((res.rows ?? []) as Record<string, unknown>[]).map(rowToRun);
+}
+
+export async function getVerificationRun(jobId: string, runNo: number): Promise<VerificationRun | null> {
+  await ensureVerificationRunsTable();
+  const res = await exec(
+    `select * from admin.import_verification_runs where job_id = $1 and run_no = $2`,
+    [jobId, runNo],
+  );
+  const rows = (res.rows ?? []) as Record<string, unknown>[];
+  return rows.length ? rowToRun(rows[0]) : null;
+}
+
+/* ------------------------------------------------------------------ */
+/* Small key/value settings bag (notification webhook config, …)       */
+/* ------------------------------------------------------------------ */
+
+let settingsEnsured = false;
+
+async function ensureSettingsTable(): Promise<void> {
+  if (settingsEnsured) return;
+  await exec(
+    `create schema if not exists admin;
+     create table if not exists admin.import_settings (
+       key text primary key,
+       value jsonb not null,
+       updated_at timestamptz not null default now(),
+       updated_by text
+     );`,
+    [],
+    true,
+  );
+  settingsEnsured = true;
+}
+
+export async function getImportSetting<T>(key: string): Promise<T | null> {
+  await ensureSettingsTable();
+  const res = await exec(`select value from admin.import_settings where key = $1`, [key]);
+  const row = ((res.rows ?? []) as Record<string, unknown>[])[0];
+  return row ? ((row.value as T) ?? null) : null;
+}
+
+export async function setImportSetting(key: string, value: unknown, actorEmail: string | null): Promise<void> {
+  await ensureSettingsTable();
+  await exec(
+    `insert into admin.import_settings (key, value, updated_by, updated_at)
+     values ($1, $2::jsonb, $3, now())
+     on conflict (key) do update set value = excluded.value, updated_by = excluded.updated_by, updated_at = now()`,
+    [key, JSON.stringify(value), actorEmail],
+    true,
+  );
 }

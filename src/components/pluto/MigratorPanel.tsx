@@ -31,6 +31,9 @@ import { previewRollbackFn, runRollbackFn } from "@/lib/pluto/import-job.functio
 import type { RollbackPlan } from "@/lib/pluto/sql-rollback";
 import type { DumpObject } from "@/lib/pluto/supabase-objects";
 import type { SqlDiff } from "@/lib/pluto/sql-diff";
+import { VerificationRunsCard } from "@/components/pluto/VerificationRunsCard";
+import { ShareReportCard } from "@/components/pluto/ShareReportCard";
+import { NotifyWebhookCard } from "@/components/pluto/NotifyWebhookCard";
 
 
 const EXT_ZIP = "/downloads/pluto-migrator-extension.zip";
@@ -67,6 +70,7 @@ export function MigratorPanel() {
   const [showFailures, setShowFailures] = useState<Record<string, boolean>>({});
   const [rollbacks, setRollbacks] = useState<Record<string, { sourceVersion: number | null; plan: RollbackPlan }>>({});
   const [verify, setVerify] = useState<Record<string, SmokeReport>>({});
+  const [verifyRunKey, setVerifyRunKey] = useState(0);
 
   const refresh = useCallback(async () => {
     setBusy((b) => b ?? "list");
@@ -184,7 +188,11 @@ export function MigratorPanel() {
     try {
       const r = await runVerificationFn({ data: { id: job.id } });
       if (!r.report) setErr(r.error ?? "Verification failed");
-      else { setErr(null); setVerify((s) => ({ ...s, [job.id]: r.report as SmokeReport })); }
+      else {
+        setErr(null);
+        setVerify((s) => ({ ...s, [job.id]: r.report as SmokeReport }));
+        setVerifyRunKey((k) => k + 1);
+      }
       await loadDetail(job.id);
     } catch (e) {
       setErr((e as Error).message);
@@ -328,6 +336,8 @@ export function MigratorPanel() {
           <code>PLUTO_IMPORT_WEBHOOK_SECRET</code> · 5-minute window · duplicate <code>event_id</code> is ignored.
         </span>
       </div>
+
+      <NotifyWebhookCard testJobId={jobs[0]?.id ?? null} />
 
       {err && <div className="text-sm text-destructive">{err}</div>}
 
@@ -579,6 +589,8 @@ export function MigratorPanel() {
                         );
                       })()}
 
+                      <VerificationRunsCard jobId={j.id} refreshKey={verifyRunKey} />
+
                       {/* Downloadable report */}
                       <div className="border rounded p-2 bg-background flex items-center justify-between gap-2">
                         <div className="text-xs">
@@ -593,6 +605,8 @@ export function MigratorPanel() {
                         </div>
                       </div>
 
+
+                      <ShareReportCard jobId={j.id} />
 
                       {/* Rollback / undo of an applied import */}
                       {(j.applied_at || j.status === "applied") && (
