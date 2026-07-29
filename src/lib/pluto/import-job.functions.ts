@@ -323,7 +323,21 @@ export const applyImportJob = createServerFn({ method: "POST" })
     if (!job?.migration_sql) {
       return { ok: false, rowCount: 0, durationMs: 0, error: "no_migration_sql", detail: null };
     }
+    if (job.paused) {
+      return { ok: false, rowCount: 0, durationMs: 0, error: "job_paused", detail: "Resume the job before applying." };
+    }
     const diff = diffSql(job.migration_sql);
+    const { saveSqlVersion } = await import("./import-jobs.server");
+    await saveSqlVersion({
+      jobId: job.id,
+      kind: "apply",
+      sql: job.migration_sql,
+      selection: job.selection,
+      counts: diff.counts,
+      destructiveCount: diff.destructiveCount,
+      actorEmail: actor.email,
+      note: "Snapshot taken at apply time",
+    });
     try {
       const res = await runImportSql(job.migration_sql, false);
       const out = toOutcome(res);
