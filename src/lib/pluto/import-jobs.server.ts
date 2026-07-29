@@ -43,6 +43,10 @@ export type ImportJob = {
   applied_at: string | null;
   applied_by: string | null;
   selection: string[] | null;
+  paused: boolean;
+  paused_by: string | null;
+  paused_at: string | null;
+  resume_step: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -87,7 +91,11 @@ export async function ensureImportJobsTable(): Promise<void> {
      create index if not exists import_jobs_created_idx on admin.import_jobs (created_at desc);
      alter table admin.import_jobs add column if not exists applied_at timestamptz;
      alter table admin.import_jobs add column if not exists applied_by text;
-     alter table admin.import_jobs add column if not exists selection jsonb;`,
+     alter table admin.import_jobs add column if not exists selection jsonb;
+     alter table admin.import_jobs add column if not exists paused boolean not null default false;
+     alter table admin.import_jobs add column if not exists paused_by text;
+     alter table admin.import_jobs add column if not exists paused_at timestamptz;
+     alter table admin.import_jobs add column if not exists resume_step text;`,
     [],
     true,
   );
@@ -108,10 +116,15 @@ function rowToJob(r: Record<string, unknown>): ImportJob {
     applied_at: (r.applied_at as string) ?? null,
     applied_by: (r.applied_by as string) ?? null,
     selection: Array.isArray(r.selection) ? (r.selection as string[]) : null,
+    paused: r.paused === true,
+    paused_by: (r.paused_by as string) ?? null,
+    paused_at: (r.paused_at as string) ?? null,
+    resume_step: (r.resume_step as string) ?? null,
     created_at: String(r.created_at),
     updated_at: String(r.updated_at),
   };
 }
+
 
 /** Insert a job. Returns null when the event_id was already ingested (replay). */
 export async function createImportJob(
@@ -210,6 +223,11 @@ export type ImportEventStep =
   | "selection_changed"
   | "dry_run"
   | "apply"
+  | "pause"
+  | "resume"
+  | "retry"
+  | "version_saved"
+  | "version_restored"
   | "rollback";
 
 export type ImportJobEvent = {
@@ -352,4 +370,157 @@ export async function saveSelection(jobId: string, keys: string[]): Promise<void
     [jobId, JSON.stringify(keys)],
     true,
   );
+}
+
+/* ------------------------------------------------------------------ */
+/* SQL version archive: every generated migration is kept immutably.   */
+/* ------------------------------------------------------------------ */
+
+export type ImportSqlVersion = {
+  id: string;
+  job_id: string;
+  version: number;
+  kind: string;
+  sql: string;
+  selection: string[] | null;
+  counts: Record<string, number> | null;
+  destructive_count: number | null;
+  actor_email: string | null;
+  note: string | null;
+  created_at: string;
+};
+
+let versionsEnsured = false;
+
+export async function ensureImportVersionsTable(): Promise<void> {
+  if (versionsEnsured) return;
+  await ensureImportJobsTable();
+  await exec(
+    `create table if not exists admin.import_job_versions (
+       id uuid primary key default gen_random_uuid(),
+       job_id uuid not null references admin.import_jobs(id) on delete cascade,
+       version integer not null,
+       kind text not null default 'translate',
+       sql text not null,
+       selection jsonb,
+       counts jsonb,
+       destructive_count integer,
+       actor_email text,
+       note text,
+       created_at timestamptz not null default now(),
+       unique (job_id, version)
+     );
+     create index if not exists import_job_versions_job_idx
+       on admin.import_job_versions (job_id, version desc);`,
+    [],
+    true,
+  );
+  versionsEnsured = true;
+}
+
+function rowToVersion(r: Record<string, unknown>): ImportSqlVersion {
+  return {
+    id: String(r.id),
+    job_id: String(r.job_id),
+    version: Number(r.version),
+    kind: String(r.kind ?? "translate"),
+    sql: String(r.sql ?? ""),
+    selection: Array.isArray(r.selection) ? (r.selection as string[]) : null,
+    counts: (r.counts as Record<string, number>) ?? null,
+    destructive_count:
+      r.destructive_count === null || r.destructive_count === undefined ? null : Number(r.destructive_count),
+    actor_email: (r.actor_email as string) ?? null,
+    note: (r.note as string) ?? null,
+    created_at: String(r.created_at),
+  };
+}
+
+/**
+ * Archive a generated migration as the next version for this job.
+ * Identical consecutive SQL is de-duplicated so polling never inflates history.
+ */
+export async function saveSqlVersion(input: {
+  jobId: string;
+  kind: string;
+  sql: string;
+  selection?: string[] | null;
+  counts?: Record<string, number> | null;
+  destructiveCount?: number | null;
+  actorEmail?: string | null;
+  note?: string | null;
+}): Promise<ImportSqlVersion | null> {
+  await ensureImportVersionsTable();
+  const latest = await exec(
+    `select sql, version from admin.import_job_versions where job_id = $1 order by version desc limit 1`,
+    [input.jobId],
+  );
+  const prev = ((latest.rows ?? []) as Record<string, unknown>[])[0];
+  if (prev && String(prev.sql) === input.sql && input.kind === "translate") return null;
+  const next = prev ? Number(prev.version) + 1 : 1;
+  const res = await exec(
+    `insert into admin.import_job_versions
+       (job_id, version, kind, sql, selection, counts, destructive_count, actor_email, note)
+     values ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7, $8, $9)
+     returning *`,
+    [
+      input.jobId,
+      next,
+      input.kind,
+      input.sql,
+      JSON.stringify(input.selection ?? null),
+      JSON.stringify(input.counts ?? null),
+      input.destructiveCount ?? null,
+      input.actorEmail ?? null,
+      input.note ?? null,
+    ],
+    true,
+  );
+  const rows = (res.rows ?? []) as Record<string, unknown>[];
+  return rows.length ? rowToVersion(rows[0]) : null;
+}
+
+export async function listSqlVersions(jobId: string, limit = 50): Promise<ImportSqlVersion[]> {
+  await ensureImportVersionsTable();
+  const res = await exec(
+    `select * from admin.import_job_versions where job_id = $1 order by version desc limit $2`,
+    [jobId, Math.min(Math.max(limit, 1), 200)],
+  );
+  return ((res.rows ?? []) as Record<string, unknown>[]).map(rowToVersion);
+}
+
+export async function getSqlVersion(jobId: string, version: number): Promise<ImportSqlVersion | null> {
+  await ensureImportVersionsTable();
+  const res = await exec(
+    `select * from admin.import_job_versions where job_id = $1 and version = $2`,
+    [jobId, version],
+  );
+  const rows = (res.rows ?? []) as Record<string, unknown>[];
+  return rows.length ? rowToVersion(rows[0]) : null;
+}
+
+/* ------------------------------------------------------------------ */
+/* Pause / resume                                                      */
+/* ------------------------------------------------------------------ */
+
+export async function setPaused(
+  jobId: string,
+  paused: boolean,
+  actorEmail: string | null,
+  resumeStep: string | null = null,
+): Promise<ImportJob | null> {
+  await ensureImportJobsTable();
+  const res = await exec(
+    `update admin.import_jobs set
+       paused = $2,
+       paused_by = case when $2 then $3 else null end,
+       paused_at = case when $2 then now() else null end,
+       resume_step = $4,
+       updated_at = now()
+     where id = $1
+     returning *`,
+    [jobId, paused, actorEmail ?? null, resumeStep],
+    true,
+  );
+  const rows = (res.rows ?? []) as Record<string, unknown>[];
+  return rows.length ? rowToJob(rows[0]) : null;
 }

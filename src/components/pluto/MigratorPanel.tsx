@@ -3,20 +3,29 @@
 // and apply each migration. Every step is recorded in the import audit trail.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "@tanstack/react-router";
-import { CheckCircle2, ChevronDown, ChevronRight, Download, History, Play, RefreshCw, ShieldCheck, Wand2, XCircle } from "lucide-react";
+import { AlertTriangle, Archive, CheckCircle2, ChevronDown, ChevronRight, Download, History, Pause, Play, RefreshCw, RotateCcw, ShieldCheck, Wand2, XCircle } from "lucide-react";
 import {
   applyImportJob,
   dryRunImportJob,
+  getSqlVersionFn,
   importAuditHistoryFn,
+  importFailureDetailFn,
   importJobPlanFn,
   listImportJobsFn,
+  listSqlVersionsFn,
+  restoreSqlVersionFn,
   retranslateImportJob,
+  retryImportJob,
+  setImportJobPaused,
+  type FailureStepView,
   type ImportEventView,
   type ImportJobView,
   type SqlOutcome,
+  type SqlVersionView,
 } from "@/lib/pluto/import-job.functions";
 import type { DumpObject } from "@/lib/pluto/supabase-objects";
 import type { SqlDiff } from "@/lib/pluto/sql-diff";
+
 
 const EXT_ZIP = "/downloads/pluto-migrator-extension.zip";
 
@@ -47,6 +56,9 @@ export function MigratorPanel() {
   const [plans, setPlans] = useState<Record<string, Plan>>({});
   const [events, setEvents] = useState<Record<string, ImportEventView[]>>({});
   const [picked, setPicked] = useState<Record<string, string[]>>({});
+  const [versions, setVersions] = useState<Record<string, SqlVersionView[]>>({});
+  const [failures, setFailures] = useState<Record<string, FailureStepView[]>>({});
+  const [showFailures, setShowFailures] = useState<Record<string, boolean>>({});
   const poll = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const refresh = useCallback(async () => {
@@ -64,19 +76,24 @@ export function MigratorPanel() {
 
   const loadDetail = useCallback(async (id: string) => {
     try {
-      const [p, h] = await Promise.all([
+      const [p, h, v, f] = await Promise.all([
         importJobPlanFn({ data: { id } }),
         importAuditHistoryFn({ data: { id } }),
+        listSqlVersionsFn({ data: { id } }),
+        importFailureDetailFn({ data: { id } }),
       ]);
       if (p.ok) {
         setPlans((s) => ({ ...s, [id]: { objects: p.objects, selection: p.selection, diff: p.diff, hasDump: p.hasDump } }));
         setPicked((s) => (s[id] ? s : { ...s, [id]: p.selection ?? p.objects.map((o) => o.key) }));
       }
       if (h.ok) setEvents((s) => ({ ...s, [id]: h.events }));
+      if (v.ok) setVersions((s) => ({ ...s, [id]: v.versions }));
+      if (f.ok) setFailures((s) => ({ ...s, [id]: f.failures }));
     } catch (e) {
       setErr((e as Error).message);
     }
   }, []);
+
 
   useEffect(() => { void refresh(); }, [refresh]);
 
@@ -138,8 +155,65 @@ export function MigratorPanel() {
       .catch((e) => setErr(e.message));
   }
 
+  async function togglePause(job: ImportJobView) {
+    setBusy(`pause:${job.id}`);
+    try {
+      const reason = job.paused ? undefined : (prompt("Reason for pausing (optional)") ?? undefined);
+      const r = await setImportJobPaused({ data: { id: job.id, paused: !job.paused, reason } });
+      if (!r.ok) setErr(r.error);
+      await refresh();
+      await loadDetail(job.id);
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally { setBusy(null); }
+  }
+
+  async function retry(job: ImportJobView) {
+    setBusy(`retry:${job.id}`);
+    try {
+      const r = await retryImportJob({ data: { id: job.id } });
+      if (!r.ok) setErr(r.error);
+      else {
+        setErr(null);
+        if (r.dryRun) setOutcome((o) => ({ ...o, [job.id]: r.dryRun as SqlOutcome }));
+        setPlans((s) => ({ ...s, [job.id]: { ...(s[job.id] ?? { objects: [], selection: null, hasDump: true }), diff: r.diff } as Plan }));
+      }
+      await refresh();
+      await loadDetail(job.id);
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally { setBusy(null); }
+  }
+
+  async function viewVersion(jobId: string, version: number) {
+    try {
+      const r = await getSqlVersionFn({ data: { id: jobId, version } });
+      if (!r.ok) setErr(r.error);
+      else { setErr(null); setOpenSql(r.sql); }
+    } catch (e) { setErr((e as Error).message); }
+  }
+
+  async function restoreVersion(jobId: string, version: number) {
+    if (!confirm(`Restore archived version v${version} as this job's current migration?`)) return;
+    setBusy(`restore:${jobId}`);
+    try {
+      const r = await restoreSqlVersionFn({ data: { id: jobId, version } });
+      if (!r.ok) setErr(r.error);
+      else {
+        setErr(null);
+        setOpenSql(r.sql);
+        setPlans((s) => ({ ...s, [jobId]: { ...(s[jobId] ?? { objects: [], selection: null, hasDump: true }), diff: r.diff } as Plan }));
+      }
+      await refresh();
+      await loadDetail(jobId);
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally { setBusy(null); }
+  }
+
   function togglePick(jobId: string, key: string) {
     setPicked((s) => {
+
       const cur = s[jobId] ?? [];
       return { ...s, [jobId]: cur.includes(key) ? cur.filter((k) => k !== key) : [...cur, key] };
     });
@@ -212,16 +286,30 @@ export function MigratorPanel() {
                       </div>
                     )}
                   </td>
-                  <td className="text-center"><span className={`text-[11px] rounded px-2 py-0.5 ${statusTone(j.status)}`}>{j.status}</span></td>
+                  <td className="text-center">
+                    <span className={`text-[11px] rounded px-2 py-0.5 ${statusTone(j.status)}`}>{j.status}</span>
+                    {j.paused && (
+                      <div className="text-[11px] text-amber-600 dark:text-amber-400 mt-0.5">
+                        paused{j.resume_step ? ` @ ${j.resume_step}` : ""}
+                      </div>
+                    )}
+                  </td>
                   <td className="text-center text-xs text-muted-foreground">{new Date(j.created_at).toLocaleString()}</td>
                   <td className="text-right space-x-2 pr-2 whitespace-nowrap">
-                    <button className="underline" disabled={!!busy} onClick={() => void run("translate", j)}>Re-translate</button>
-                    <button className="underline" disabled={!!busy || !j.migration_sql} onClick={() => void run("dry", j)}>Dry-run</button>
-                    <button className="underline text-destructive inline-flex items-center gap-1" disabled={!!busy || !j.migration_sql} onClick={() => void run("apply", j)}>
+                    <button className="underline" disabled={!!busy || j.paused} onClick={() => void run("translate", j)}>Re-translate</button>
+                    <button className="underline" disabled={!!busy || !j.migration_sql || j.paused} onClick={() => void run("dry", j)}>Dry-run</button>
+                    <button className="underline text-destructive inline-flex items-center gap-1" disabled={!!busy || !j.migration_sql || j.paused} onClick={() => void run("apply", j)}>
                       <Play className="h-3 w-3" /> Apply
+                    </button>
+                    <button className="underline inline-flex items-center gap-1" disabled={!!busy} onClick={() => void togglePause(j)}>
+                      {j.paused ? <><Play className="h-3 w-3" /> Resume</> : <><Pause className="h-3 w-3" /> Pause</>}
+                    </button>
+                    <button className="underline inline-flex items-center gap-1" disabled={!!busy} onClick={() => void retry(j)}>
+                      <RotateCcw className="h-3 w-3" /> Retry
                     </button>
                     <button className="underline" disabled={!j.migration_sql} onClick={() => setOpenSql(j.migration_sql)}>SQL</button>
                   </td>
+
                 </tr>
 
                 {isOpen && (
@@ -267,6 +355,100 @@ export function MigratorPanel() {
                           </div>
                         )}
                       </div>
+
+                      {/* Failure analysis */}
+                      {!!(failures[j.id] ?? []).length && (
+                        <div className="border rounded bg-background p-2">
+                          <button
+                            className="text-xs font-medium inline-flex items-center gap-1 text-destructive"
+                            onClick={() => setShowFailures((s) => ({ ...s, [j.id]: !s[j.id] }))}
+                          >
+                            <AlertTriangle className="h-3.5 w-3.5" />
+                            Failure analysis ({(failures[j.id] ?? []).length})
+                            {showFailures[j.id] ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                          </button>
+                          {showFailures[j.id] && (
+                            <div className="mt-2 space-y-3">
+                              {(failures[j.id] ?? []).map((f) => (
+                                <div key={f.eventId} className="border rounded p-2 space-y-1">
+                                  <div className="text-[11px] flex flex-wrap gap-x-2">
+                                    <span className="text-destructive font-medium">{f.step}</span>
+                                    <span className="text-muted-foreground">{new Date(f.createdAt).toLocaleString()}</span>
+                                    <span className="text-muted-foreground">{f.actorEmail ?? "webhook"}</span>
+                                  </div>
+                                  <div className="text-[11px]">{f.analysis.summary}</div>
+                                  <div className="flex flex-wrap gap-1">
+                                    {f.analysis.tags.map((t) => (
+                                      <span
+                                        key={t.code}
+                                        title={t.hint}
+                                        className={`text-[10px] rounded px-1.5 py-0.5 ${t.severity === "error" ? "bg-destructive/10 text-destructive" : "bg-amber-500/10 text-amber-600 dark:text-amber-400"}`}
+                                      >
+                                        {t.label}
+                                      </span>
+                                    ))}
+                                    {!f.analysis.tags.length && <span className="text-[10px] text-muted-foreground">No known root-cause pattern matched.</span>}
+                                  </div>
+                                  {f.analysis.tags.map((t) => (
+                                    <div key={`${t.code}-hint`} className="text-[11px] text-muted-foreground">→ {t.hint}</div>
+                                  ))}
+                                  {f.analysis.snippet && (
+                                    <pre className="text-[11px] font-mono bg-muted/50 rounded p-2 max-h-40 overflow-auto whitespace-pre-wrap">
+                                      {f.analysis.snippetIndex !== null ? `-- statement #${f.analysis.snippetIndex + 1}\n` : ""}{f.analysis.snippet}
+                                    </pre>
+                                  )}
+                                  <details>
+                                    <summary className="text-[11px] cursor-pointer text-muted-foreground">Raw error</summary>
+                                    <pre className="text-[11px] font-mono max-h-32 overflow-auto whitespace-pre-wrap">{f.analysis.raw}</pre>
+                                  </details>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Archived SQL versions */}
+                      {!!(versions[j.id] ?? []).length && (
+                        <div>
+                          <div className="text-xs font-medium mb-1 inline-flex items-center gap-1">
+                            <Archive className="h-3.5 w-3.5" /> SQL version archive ({(versions[j.id] ?? []).length})
+                          </div>
+                          <div className="max-h-48 overflow-auto border rounded bg-background">
+                            <table className="w-full text-[11px]">
+                              <tbody>
+                                {(versions[j.id] ?? []).map((v) => (
+                                  <tr key={v.id} className="border-t">
+                                    <td className="px-2 py-0.5 w-12 font-mono">v{v.version}</td>
+                                    <td className="px-2 py-0.5 w-20 text-muted-foreground">{v.kind}</td>
+                                    <td className="px-2 py-0.5 text-muted-foreground whitespace-nowrap">{new Date(v.created_at).toLocaleString()}</td>
+                                    <td className="px-2 py-0.5">
+                                      {v.counts
+                                        ? <>
+                                            <span className={opTone("create")}>{v.counts.create ?? 0}c</span>{" "}
+                                            <span className={opTone("alter")}>{v.counts.alter ?? 0}a</span>{" "}
+                                            <span className={opTone("drop")}>{v.counts.drop ?? 0}d</span>
+                                          </>
+                                        : "—"}
+                                      {!!v.destructive_count && <span className="text-destructive"> · {v.destructive_count} destructive</span>}
+                                    </td>
+                                    <td className="px-2 py-0.5 text-muted-foreground truncate max-w-[12rem]">{v.actor_email ?? "system"}{v.note ? ` · ${v.note}` : ""}</td>
+                                    <td className="px-2 py-0.5 text-right whitespace-nowrap space-x-2">
+                                      <button className="underline" onClick={() => void viewVersion(j.id, v.version)}>View</button>
+                                      <button className="underline" disabled={!!busy} onClick={() => void restoreVersion(j.id, v.version)}>Restore</button>
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                          <p className="text-[11px] text-muted-foreground mt-1">
+                            Every translate / retry / apply archives the exact SQL, so you can re-review the same diff or restore and re-apply it later.
+                          </p>
+                        </div>
+                      )}
+
+
 
                       {/* Object selection */}
                       {plan?.hasDump && (
