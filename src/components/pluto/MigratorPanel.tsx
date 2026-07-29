@@ -497,11 +497,60 @@ export function MigratorPanel() {
                               </tbody>
                             </table>
                           </div>
-                          <p className="text-[11px] text-muted-foreground mt-1">
-                            Every translate / retry / apply archives the exact SQL, so you can re-review the same diff or restore and re-apply it later.
-                          </p>
                         </div>
                       )}
+
+                      {/* Rollback / undo of an applied import */}
+                      {(j.applied_at || j.status === "applied") && (
+                        <div className="border rounded p-2 bg-background">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="text-xs font-medium inline-flex items-center gap-1">
+                              <RotateCcw className="h-3.5 w-3.5" /> Rollback / undo
+                              {rollbacks[j.id]?.sourceVersion != null && (
+                                <span className="text-muted-foreground font-normal"> · from v{rollbacks[j.id].sourceVersion}</span>
+                              )}
+                            </div>
+                            <div className="space-x-2 text-xs">
+                              <button className="underline" disabled={!!busy} onClick={() => void loadRollback(j)}>
+                                {busy === `rb:${j.id}` ? "Generating…" : "Generate undo SQL"}
+                              </button>
+                              {rollbacks[j.id] && (
+                                <>
+                                  <button className="underline" onClick={() => setOpenSql(rollbacks[j.id].plan.sql)}>View SQL</button>
+                                  <button className="underline" disabled={!!busy} onClick={() => void runRollback(j, true)}>Dry-run</button>
+                                  <button className="underline text-destructive" disabled={!!busy} onClick={() => void runRollback(j, false)}>
+                                    {busy === `rbrun:${j.id}` ? "Working…" : "Run rollback"}
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                          {rollbacks[j.id] ? (
+                            <div className="mt-2 space-y-1 text-[11px]">
+                              <div className="text-muted-foreground">
+                                {rollbacks[j.id].plan.entries.length} invertible statement(s) — executed in reverse order.
+                              </div>
+                              <div className="max-h-40 overflow-auto border rounded">
+                                {rollbacks[j.id].plan.entries.map((e, i) => (
+                                  <div key={i} className="px-2 py-0.5 border-t first:border-t-0 font-mono truncate">
+                                    <span className={opTone("drop")}>{e.kind}</span> <span className="text-muted-foreground">{e.target}</span>
+                                  </div>
+                                ))}
+                              </div>
+                              {!!rollbacks[j.id].plan.unsupported.length && (
+                                <div className="text-destructive">
+                                  ⚠ {rollbacks[j.id].plan.unsupported.length} statement(s) cannot be undone automatically (data writes / drops). Review manually.
+                                </div>
+                              )}
+                            </div>
+                          ) : (
+                            <p className="text-[11px] text-muted-foreground mt-1">
+                              Builds an inverse script from the archived apply snapshot (created tables/columns/policies are dropped in reverse order).
+                            </p>
+                          )}
+                        </div>
+                      )}
+
 
 
 
