@@ -488,7 +488,17 @@ export const setImportJobPaused = createServerFn({ method: "POST" })
       message: data.paused
         ? `Paused at "${current.status}"${data.reason ? ` — ${data.reason}` : ""}`
         : `Resumed from "${current.resume_step ?? current.status}"`,
-      detail: { resume_step: current.resume_step ?? current.status, reason: data.reason ?? null },
+      detail: {
+        action: data.paused ? "pause" : "resume",
+        actor: actor.email,
+        actor_id: actor.userId,
+        at: new Date().toISOString(),
+        from_status: current.status,
+        resume_step: current.resume_step ?? current.status,
+        reason: data.reason ?? null,
+        selection: current.selection ?? null,
+        selection_count: current.selection?.length ?? 0,
+      },
     });
     return { ok: true, error: null, job: job ? toJobView(job as unknown as JobRow) : null };
   });
