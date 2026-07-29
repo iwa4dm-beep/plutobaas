@@ -183,3 +183,157 @@ export async function runImportSql(sql: string, dryRun: boolean): Promise<ExecRe
     body: { sql: body, read_only: false, allow_dangerous: true, confirm_destructive: true },
   });
 }
+
+/* ------------------------------------------------------------------ */
+/* Import audit history: one row per step of a job's lifecycle.        */
+/* ------------------------------------------------------------------ */
+
+export type ImportEventStep =
+  | "received"
+  | "translated"
+  | "selection_changed"
+  | "dry_run"
+  | "apply"
+  | "rollback";
+
+export type ImportJobEvent = {
+  id: string;
+  job_id: string;
+  step: ImportEventStep;
+  ok: boolean;
+  actor_id: string | null;
+  actor_email: string | null;
+  row_count: number | null;
+  duration_ms: number | null;
+  message: string | null;
+  detail: Record<string, unknown> | null;
+  created_at: string;
+};
+
+let eventsEnsured = false;
+
+export async function ensureImportEventsTable(): Promise<void> {
+  if (eventsEnsured) return;
+  await ensureImportJobsTable();
+  await exec(
+    `create table if not exists admin.import_job_events (
+       id uuid primary key default gen_random_uuid(),
+       job_id uuid not null references admin.import_jobs(id) on delete cascade,
+       step text not null,
+       ok boolean not null default true,
+       actor_id text,
+       actor_email text,
+       row_count integer,
+       duration_ms integer,
+       message text,
+       detail jsonb,
+       created_at timestamptz not null default now()
+     );
+     create index if not exists import_job_events_job_idx
+       on admin.import_job_events (job_id, created_at desc);
+     create index if not exists import_job_events_created_idx
+       on admin.import_job_events (created_at desc);
+     alter table admin.import_jobs add column if not exists applied_at timestamptz;
+     alter table admin.import_jobs add column if not exists applied_by text;
+     alter table admin.import_jobs add column if not exists selection jsonb;`,
+    [],
+    true,
+  );
+  eventsEnsured = true;
+}
+
+function rowToEvent(r: Record<string, unknown>): ImportJobEvent {
+  return {
+    id: String(r.id),
+    job_id: String(r.job_id),
+    step: r.step as ImportEventStep,
+    ok: r.ok !== false,
+    actor_id: (r.actor_id as string) ?? null,
+    actor_email: (r.actor_email as string) ?? null,
+    row_count: r.row_count === null || r.row_count === undefined ? null : Number(r.row_count),
+    duration_ms: r.duration_ms === null || r.duration_ms === undefined ? null : Number(r.duration_ms),
+    message: (r.message as string) ?? null,
+    detail: (r.detail as Record<string, unknown>) ?? null,
+    created_at: String(r.created_at),
+  };
+}
+
+export async function appendImportEvent(e: {
+  jobId: string;
+  step: ImportEventStep;
+  ok?: boolean;
+  actorId?: string | null;
+  actorEmail?: string | null;
+  rowCount?: number | null;
+  durationMs?: number | null;
+  message?: string | null;
+  detail?: unknown;
+}): Promise<void> {
+  try {
+    await ensureImportEventsTable();
+    await exec(
+      `insert into admin.import_job_events
+         (job_id, step, ok, actor_id, actor_email, row_count, duration_ms, message, detail)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb)`,
+      [
+        e.jobId,
+        e.step,
+        e.ok !== false,
+        e.actorId ?? null,
+        e.actorEmail ?? null,
+        e.rowCount ?? null,
+        e.durationMs ?? null,
+        e.message ? String(e.message).slice(0, 2000) : null,
+        e.detail === undefined ? null : JSON.stringify(e.detail).slice(0, 20000),
+      ],
+      true,
+    );
+  } catch {
+    // Audit trail must never break the operation it is describing.
+  }
+}
+
+export async function listImportEvents(jobId: string | null, limit = 200): Promise<ImportJobEvent[]> {
+  await ensureImportEventsTable();
+  const res = jobId
+    ? await exec(
+        `select * from admin.import_job_events where job_id = $1 order by created_at asc limit $2`,
+        [jobId, Math.min(Math.max(limit, 1), 500)],
+      )
+    : await exec(
+        `select e.*, j.repo as job_repo, j.source as job_source, j.event_id as job_event_id
+           from admin.import_job_events e
+           join admin.import_jobs j on j.id = e.job_id
+          order by e.created_at desc limit $1`,
+        [Math.min(Math.max(limit, 1), 500)],
+      );
+  return ((res.rows ?? []) as Record<string, unknown>[]).map((r) => ({
+    ...rowToEvent(r),
+    detail: {
+      ...(rowToEvent(r).detail ?? {}),
+      ...(r.job_repo !== undefined
+        ? { job_repo: r.job_repo, job_source: r.job_source, job_event_id: r.job_event_id }
+        : {}),
+    },
+  }));
+}
+
+/** Record who applied a job and when (audit columns on the job row). */
+export async function markApplied(jobId: string, actorEmail: string | null): Promise<void> {
+  await ensureImportEventsTable();
+  await exec(
+    `update admin.import_jobs set applied_at = now(), applied_by = $2, updated_at = now() where id = $1`,
+    [jobId, actorEmail ?? null],
+    true,
+  );
+}
+
+/** Persist the schema/table/view selection an admin picked for this job. */
+export async function saveSelection(jobId: string, keys: string[]): Promise<void> {
+  await ensureImportEventsTable();
+  await exec(
+    `update admin.import_jobs set selection = $2::jsonb, updated_at = now() where id = $1`,
+    [jobId, JSON.stringify(keys)],
+    true,
+  );
+}
