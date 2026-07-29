@@ -382,7 +382,17 @@ export const applyImportJob = createServerFn({ method: "POST" })
       actorEmail: actor.email,
       note: "Snapshot taken at apply time",
     });
+    // Pre-apply snapshot: inventory existing objects + archive the generated
+    // rollback plan so one-click undo works even if apply crashes midway.
+    const { capturePreApplySnapshot } = await import("./import-snapshot.server");
+    await capturePreApplySnapshot({
+      jobId: job.id,
+      sql: job.migration_sql,
+      actorId: actor.userId,
+      actorEmail: actor.email,
+    });
     try {
+
       const res = await runImportSql(job.migration_sql, false);
       const out = toOutcome(res);
       await updateImportJob(job.id, {
