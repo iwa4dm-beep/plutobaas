@@ -532,6 +532,67 @@ export function MigratorPanel() {
                         </div>
                       )}
 
+                      {/* Post-apply verification: smoke tests / integrity checks */}
+                      {(() => {
+                        const rep = verify[j.id] ?? (() => {
+                          try { return (JSON.parse(j.report ?? "{}") as { verification?: SmokeReport }).verification ?? null; }
+                          catch { return null; }
+                        })();
+                        if (!rep && !j.applied_at) return null;
+                        return (
+                          <div className="border rounded p-2 bg-background">
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="text-xs font-medium inline-flex items-center gap-1">
+                                <ShieldCheck className="h-3.5 w-3.5" /> Verification
+                                {rep && (
+                                  <span className="font-normal">
+                                    {" "}· <span className="text-primary">{rep.counts.pass} pass</span>
+                                    {" "}· <span className={rep.counts.warn ? "text-amber-600" : "text-muted-foreground"}>{rep.counts.warn} warn</span>
+                                    {" "}· <span className={rep.counts.fail ? "text-destructive" : "text-muted-foreground"}>{rep.counts.fail} fail</span>
+                                  </span>
+                                )}
+                              </div>
+                              <button className="text-xs underline" disabled={!!busy} onClick={() => void runVerification(j)}>
+                                {busy === `verify:${j.id}` ? "Running…" : "Re-run checks"}
+                              </button>
+                            </div>
+                            {rep ? (
+                              <div className="mt-2 max-h-48 overflow-auto border rounded text-[11px]">
+                                {rep.checks.map((c) => (
+                                  <div key={c.id} className="flex gap-2 px-2 py-0.5 border-t first:border-t-0">
+                                    <span className={c.status === "fail" ? "text-destructive" : c.status === "warn" ? "text-amber-600" : "text-primary"}>{c.status}</span>
+                                    <span className="font-mono truncate max-w-[12rem]">{c.target}</span>
+                                    <span className="text-muted-foreground">{c.label}</span>
+                                    <span className="text-muted-foreground truncate">— {c.detail}</span>
+                                  </div>
+                                ))}
+                                <div className="px-2 py-1 text-muted-foreground border-t">
+                                  {rep.targets.length} object(s) · {rep.durationMs} ms · {new Date(rep.ranAt).toLocaleString()}
+                                </div>
+                              </div>
+                            ) : (
+                              <p className="text-[11px] text-muted-foreground mt-1">
+                                Smoke tests run automatically right after a successful apply (existence, readability, row counts, RLS policies, primary keys, index/constraint validity) and are recorded on the timeline.
+                              </p>
+                            )}
+                          </div>
+                        );
+                      })()}
+
+                      {/* Downloadable report */}
+                      <div className="border rounded p-2 bg-background flex items-center justify-between gap-2">
+                        <div className="text-xs">
+                          <span className="font-medium inline-flex items-center gap-1"><Download className="h-3.5 w-3.5" /> Export report</span>
+                          <span className="text-muted-foreground"> — SQL version archive, apply diff, verification, step-wise errors and full timeline.</span>
+                        </div>
+                        <div className="space-x-2 text-xs whitespace-nowrap">
+                          <button className="underline" disabled={!!busy} onClick={() => void exportReport(j, "json")}>
+                            {busy === `export:${j.id}` ? "Building…" : "JSON"}
+                          </button>
+                          <button className="underline" disabled={!!busy} onClick={() => void exportReport(j, "pdf")}>PDF</button>
+                        </div>
+                      </div>
+
 
                       {/* Rollback / undo of an applied import */}
                       {(j.applied_at || j.status === "applied") && (
