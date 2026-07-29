@@ -150,7 +150,7 @@ async function handle(request: Request): Promise<Response> {
       verification: runs.map((r) => ({
         run_no: r.run_no,
         ok: r.ok,
-        counts: r.counts,
+        counts: (r.report as { counts?: unknown })?.counts ?? null,
         created_at: r.created_at,
       })),
       server_time: new Date().toISOString(),
