@@ -77,6 +77,7 @@ import { Route as DashboardLogsExplorerRouteImport } from './routes/dashboard.lo
 import { Route as DashboardLogsRouteImport } from './routes/dashboard.logs'
 import { Route as DashboardJobsRouteImport } from './routes/dashboard.jobs'
 import { Route as DashboardIntegrationsRouteImport } from './routes/dashboard.integrations'
+import { Route as DashboardImportAuditRouteImport } from './routes/dashboard.import-audit'
 import { Route as DashboardGraphqlRouteImport } from './routes/dashboard.graphql'
 import { Route as DashboardFunctionsRouteImport } from './routes/dashboard.functions'
 import { Route as DashboardEnterpriseRouteImport } from './routes/dashboard.enterprise'
@@ -481,6 +482,11 @@ const DashboardIntegrationsRoute = DashboardIntegrationsRouteImport.update({
   path: '/integrations',
   getParentRoute: () => DashboardRoute,
 } as any)
+const DashboardImportAuditRoute = DashboardImportAuditRouteImport.update({
+  id: '/import-audit',
+  path: '/import-audit',
+  getParentRoute: () => DashboardRoute,
+} as any)
 const DashboardGraphqlRoute = DashboardGraphqlRouteImport.update({
   id: '/graphql',
   path: '/graphql',
@@ -813,6 +819,7 @@ export interface FileRoutesByFullPath {
   '/dashboard/enterprise': typeof DashboardEnterpriseRoute
   '/dashboard/functions': typeof DashboardFunctionsRoute
   '/dashboard/graphql': typeof DashboardGraphqlRoute
+  '/dashboard/import-audit': typeof DashboardImportAuditRoute
   '/dashboard/integrations': typeof DashboardIntegrationsRouteWithChildren
   '/dashboard/jobs': typeof DashboardJobsRoute
   '/dashboard/logs': typeof DashboardLogsRoute
@@ -939,6 +946,7 @@ export interface FileRoutesByTo {
   '/dashboard/enterprise': typeof DashboardEnterpriseRoute
   '/dashboard/functions': typeof DashboardFunctionsRoute
   '/dashboard/graphql': typeof DashboardGraphqlRoute
+  '/dashboard/import-audit': typeof DashboardImportAuditRoute
   '/dashboard/integrations': typeof DashboardIntegrationsRouteWithChildren
   '/dashboard/jobs': typeof DashboardJobsRoute
   '/dashboard/logs': typeof DashboardLogsRoute
@@ -1067,6 +1075,7 @@ export interface FileRoutesById {
   '/dashboard/enterprise': typeof DashboardEnterpriseRoute
   '/dashboard/functions': typeof DashboardFunctionsRoute
   '/dashboard/graphql': typeof DashboardGraphqlRoute
+  '/dashboard/import-audit': typeof DashboardImportAuditRoute
   '/dashboard/integrations': typeof DashboardIntegrationsRouteWithChildren
   '/dashboard/jobs': typeof DashboardJobsRoute
   '/dashboard/logs': typeof DashboardLogsRoute
@@ -1196,6 +1205,7 @@ export interface FileRouteTypes {
     | '/dashboard/enterprise'
     | '/dashboard/functions'
     | '/dashboard/graphql'
+    | '/dashboard/import-audit'
     | '/dashboard/integrations'
     | '/dashboard/jobs'
     | '/dashboard/logs'
@@ -1322,6 +1332,7 @@ export interface FileRouteTypes {
     | '/dashboard/enterprise'
     | '/dashboard/functions'
     | '/dashboard/graphql'
+    | '/dashboard/import-audit'
     | '/dashboard/integrations'
     | '/dashboard/jobs'
     | '/dashboard/logs'
@@ -1449,6 +1460,7 @@ export interface FileRouteTypes {
     | '/dashboard/enterprise'
     | '/dashboard/functions'
     | '/dashboard/graphql'
+    | '/dashboard/import-audit'
     | '/dashboard/integrations'
     | '/dashboard/jobs'
     | '/dashboard/logs'
@@ -2046,6 +2058,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardIntegrationsRouteImport
       parentRoute: typeof DashboardRoute
     }
+    '/dashboard/import-audit': {
+      id: '/dashboard/import-audit'
+      path: '/import-audit'
+      fullPath: '/dashboard/import-audit'
+      preLoaderRoute: typeof DashboardImportAuditRouteImport
+      parentRoute: typeof DashboardRoute
+    }
     '/dashboard/graphql': {
       id: '/dashboard/graphql'
       path: '/graphql'
@@ -2580,6 +2599,7 @@ interface DashboardRouteChildren {
   DashboardEnterpriseRoute: typeof DashboardEnterpriseRoute
   DashboardFunctionsRoute: typeof DashboardFunctionsRoute
   DashboardGraphqlRoute: typeof DashboardGraphqlRoute
+  DashboardImportAuditRoute: typeof DashboardImportAuditRoute
   DashboardIntegrationsRoute: typeof DashboardIntegrationsRouteWithChildren
   DashboardJobsRoute: typeof DashboardJobsRoute
   DashboardLogsRoute: typeof DashboardLogsRoute
@@ -2665,6 +2685,7 @@ const DashboardRouteChildren: DashboardRouteChildren = {
   DashboardEnterpriseRoute: DashboardEnterpriseRoute,
   DashboardFunctionsRoute: DashboardFunctionsRoute,
   DashboardGraphqlRoute: DashboardGraphqlRoute,
+  DashboardImportAuditRoute: DashboardImportAuditRoute,
   DashboardIntegrationsRoute: DashboardIntegrationsRouteWithChildren,
   DashboardJobsRoute: DashboardJobsRoute,
   DashboardLogsRoute: DashboardLogsRoute,
