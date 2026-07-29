@@ -49,10 +49,12 @@ export function MigratorPanel() {
         if (!r.ok) setErr(r.error);
         else setOpenSql(r.sql);
       } else if (kind === "dry") {
-        setOutcome((o) => ({ ...o, [job.id]: await dryRunImportJob({ data: { id: job.id } }) }));
+        const res = await dryRunImportJob({ data: { id: job.id } });
+        setOutcome((o) => ({ ...o, [job.id]: res }));
       } else {
         if (!confirm(`Apply migration for ${job.repo ?? job.event_id} to the live Pluto database?`)) return;
-        setOutcome((o) => ({ ...o, [job.id]: await applyImportJob({ data: { id: job.id, confirm: true } }) }));
+        const res = await applyImportJob({ data: { id: job.id, confirm: true } });
+        setOutcome((o) => ({ ...o, [job.id]: res }));
       }
       await refresh();
     } catch (e) {
@@ -119,7 +121,7 @@ export function MigratorPanel() {
                   <div className={`text-[11px] ${outcome[j.id].ok ? "text-primary" : "text-destructive"}`}>
                     {outcome[j.id].ok
                       ? `ok · ${outcome[j.id].rowCount} rows · ${outcome[j.id].durationMs}ms`
-                      : `${outcome[j.id].error}${outcome[j.id].detail ? ` — ${outcome[j.id].detail.slice(0, 160)}` : ""}`}
+                      : `${outcome[j.id].error ?? "failed"}${outcome[j.id].detail ? ` — ${(outcome[j.id].detail ?? "").slice(0, 160)}` : ""}`}
                   </div>
                 )}
               </td>
