@@ -36,5 +36,26 @@ export default tseslint.config(
       "@typescript-eslint/no-unused-vars": "off",
     },
   },
+  {
+    // Server-only runtime modules must not be statically imported from files
+    // that can be reached from a client route. Only `*.server.ts(x)` modules,
+    // the SSR entry, and API routes may do so.
+    files: ["src/**/*.{ts,tsx}"],
+    ignores: ["src/**/*.server.{ts,tsx}", "src/server.ts", "src/routes/api/**"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: ["@tanstack/react-start/server", "node:async_hooks", "**/*.server"],
+              message:
+                "Server-only import in a client-reachable file. Move the logic into a `*.server.ts` module and expose it via createServerOnlyFn (see src/lib/pluto/request-context.ts).",
+            },
+          ],
+        },
+      ],
+    },
+  },
   eslintPluginPrettier,
 );
