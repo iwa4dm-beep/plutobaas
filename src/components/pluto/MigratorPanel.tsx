@@ -337,6 +337,8 @@ export function MigratorPanel() {
         </span>
       </div>
 
+      <NotifyWebhookCard testJobId={jobs[0]?.id ?? null} />
+
       {err && <div className="text-sm text-destructive">{err}</div>}
 
       <table className="w-full text-sm border rounded overflow-hidden">
