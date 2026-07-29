@@ -36,7 +36,7 @@ export type SmokeReport = {
 type Row = Record<string, unknown>;
 
 function rows(res: { rows?: unknown[] } | null | undefined): Row[] {
-  return ((res?.rows ?? []) as Row[]) ?? [];
+  return (res?.rows ?? []) as Row[];
 }
 
 function num(v: unknown): number | null {
