@@ -552,7 +552,17 @@ export const retryImportJob = createServerFn({ method: "POST" })
       actorId: actor.userId,
       actorEmail: actor.email,
       message: `Retry with ${selection.length || "all"} selected object(s)${version ? ` — archived as v${version.version}` : ""}`,
-      detail: { selection: selection.slice(0, 200), counts: diff.counts },
+      detail: {
+        action: "retry",
+        actor: actor.email,
+        actor_id: actor.userId,
+        at: new Date().toISOString(),
+        from_status: job.status,
+        selection: selection.slice(0, 200),
+        selection_count: selection.length,
+        counts: diff.counts,
+        archived_version: version?.version ?? null,
+      },
     });
 
     try {
