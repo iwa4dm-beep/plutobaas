@@ -66,6 +66,8 @@ export type SqlOutcome = {
   durationMs: number;
   error: string | null;
   detail: string | null;
+  /** Present after an apply: automatic post-apply integrity checks. */
+  verification?: SmokeReport | null;
 };
 
 function toOutcome(res: { ok?: boolean; row_count?: number; duration_ms?: number }): SqlOutcome {
