@@ -74,6 +74,12 @@ export async function readQuery(sql: string, params: unknown[] = []): Promise<Ex
   return exec(sql, params, false);
 }
 
+/** Run a write query (used by the chunked-upload and snapshot stores). */
+export async function writeQuery(sql: string, params: unknown[] = []): Promise<ExecResult> {
+  return exec(sql, params, true);
+}
+
+
 let ensured = false;
 
 /** Create the jobs table if it does not exist yet (idempotent, cached per isolate). */
