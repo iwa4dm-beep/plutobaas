@@ -10,6 +10,7 @@
 import { readQuery } from "./import-jobs.server";
 import { splitSqlStatements } from "./supabase-translate";
 import type { SmokeCheck, SmokeReport } from "./smoke-types";
+import { describeDiff, diffVerificationReports, type VerificationDiff } from "./verification-diff";
 
 export type { CheckStatus, SmokeCheck, SmokeReport } from "./smoke-types";
 
@@ -229,8 +230,9 @@ export async function runAndRecordSmoke(input: {
   actorId: string | null;
   actorEmail: string | null;
   trigger: "auto" | "manual";
-}): Promise<SmokeReport> {
-  const { appendImportEvent, updateImportJob, getImportJobById } = await import("./import-jobs.server");
+}): Promise<{ report: SmokeReport; runNo: number | null; diff: VerificationDiff | null }> {
+  const { appendImportEvent, updateImportJob, getImportJobById, listVerificationRuns, saveVerificationRun } =
+    await import("./import-jobs.server");
   let report: SmokeReport;
   try {
     report = await runSmokeChecks(input.selection, input.appliedSql);
@@ -258,6 +260,26 @@ export async function runAndRecordSmoke(input: {
     await updateImportJob(input.jobId, { report: { ...prev, verification: report } });
   } catch { /* report persistence is best-effort */ }
 
+  // Archive this run and diff it against the previous one so admins can see
+  // exactly which table/check changed between verification runs.
+  let runNo: number | null = null;
+  let diff: VerificationDiff | null = null;
+  try {
+    const previous = await listVerificationRuns(input.jobId, 1);
+    const prevReport = (previous[0]?.report as unknown as SmokeReport) ?? null;
+    const nextRunNo = (previous[0]?.run_no ?? 0) + 1;
+    diff = prevReport ? diffVerificationReports(prevReport, report, previous[0].run_no, nextRunNo) : null;
+    const saved = await saveVerificationRun({
+      jobId: input.jobId,
+      ok: report.ok,
+      trigger: input.trigger,
+      actorEmail: input.actorEmail,
+      report,
+      diff,
+    });
+    runNo = saved?.run_no ?? nextRunNo;
+  } catch { /* archiving is best-effort */ }
+
   await appendImportEvent({
     jobId: input.jobId,
     step: "smoke_test",
@@ -266,9 +288,10 @@ export async function runAndRecordSmoke(input: {
     actorEmail: input.actorEmail,
     rowCount: report.checks.length,
     durationMs: report.durationMs,
-    message: `Verification (${input.trigger}) — ${report.counts.pass} pass / ${report.counts.warn} warn / ${report.counts.fail} fail across ${report.targets.length} object(s)`,
+    message: `Verification run #${runNo ?? "?"} (${input.trigger}) — ${report.counts.pass} pass / ${report.counts.warn} warn / ${report.counts.fail} fail across ${report.targets.length} object(s)`,
     detail: {
       trigger: input.trigger,
+      run_no: runNo,
       at: report.ranAt,
       actor: input.actorEmail,
       targets: report.targets,
@@ -276,5 +299,36 @@ export async function runAndRecordSmoke(input: {
       checks: report.checks,
     },
   });
-  return report;
+
+  if (diff?.changed) {
+    await appendImportEvent({
+      jobId: input.jobId,
+      step: "verification_diff",
+      ok: diff.counts.status_changed === 0 && diff.counts.removed === 0,
+      actorId: input.actorId,
+      actorEmail: input.actorEmail,
+      rowCount: diff.deltas.length,
+      message: `Run #${diff.toRun} vs #${diff.fromRun}: ${describeDiff(diff)}`,
+      detail: { run_from: diff.fromRun, run_to: diff.toRun, counts: diff.counts, targets: diff.targets, deltas: diff.deltas },
+    });
+  }
+
+  if (!report.ok) {
+    const { notifyImportEvent } = await import("./import-notify.server");
+    await notifyImportEvent({
+      event: "import.verification_failed",
+      jobId: input.jobId,
+      actorId: input.actorId,
+      actorEmail: input.actorEmail,
+      payload: {
+        trigger: input.trigger,
+        run_no: runNo,
+        counts: report.counts,
+        targets: report.targets,
+        failing: report.checks.filter((c) => c.status === "fail").map((c) => ({ id: c.id, target: c.target, detail: c.detail })),
+      },
+    });
+  }
+
+  return { report, runNo, diff };
 }
