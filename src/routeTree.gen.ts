@@ -132,6 +132,7 @@ import { Route as ApiPlutoMonitorRouteImport } from './routes/api/pluto.monitor'
 import { Route as ApiPlutoDeployRouteImport } from './routes/api/pluto/deploy'
 import { Route as ApiPlutoAuditRouteImport } from './routes/api/pluto.audit'
 import { Route as ApiPlutoSplatRouteImport } from './routes/api/pluto.$'
+import { Route as ApiImportEventsJobIdRouteImport } from './routes/api/import-events.$jobId'
 import { Route as DashboardProjectsSlugStatusRouteImport } from './routes/dashboard.projects.$slug.status'
 import { Route as DashboardProjectsSlugEnvRouteImport } from './routes/dashboard.projects.$slug.env'
 import { Route as ApiPublicSiteMappingSlugRouteImport } from './routes/api/public/site-mapping.$slug'
@@ -764,6 +765,11 @@ const ApiPlutoSplatRoute = ApiPlutoSplatRouteImport.update({
   path: '/api/pluto/$',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiImportEventsJobIdRoute = ApiImportEventsJobIdRouteImport.update({
+  id: '/api/import-events/$jobId',
+  path: '/api/import-events/$jobId',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const DashboardProjectsSlugStatusRoute =
   DashboardProjectsSlugStatusRouteImport.update({
     id: '/$slug/status',
@@ -879,6 +885,7 @@ export interface FileRoutesByFullPath {
   '/docs/api': typeof DocsApiRoute
   '/docs/sdk': typeof DocsSdkRoute
   '/dashboard/': typeof DashboardIndexRoute
+  '/api/import-events/$jobId': typeof ApiImportEventsJobIdRoute
   '/api/pluto/$': typeof ApiPlutoSplatRoute
   '/api/pluto/audit': typeof ApiPlutoAuditRoute
   '/api/pluto/deploy': typeof ApiPlutoDeployRoute
@@ -1006,6 +1013,7 @@ export interface FileRoutesByTo {
   '/docs/api': typeof DocsApiRoute
   '/docs/sdk': typeof DocsSdkRoute
   '/dashboard': typeof DashboardIndexRoute
+  '/api/import-events/$jobId': typeof ApiImportEventsJobIdRoute
   '/api/pluto/$': typeof ApiPlutoSplatRoute
   '/api/pluto/audit': typeof ApiPlutoAuditRoute
   '/api/pluto/deploy': typeof ApiPlutoDeployRoute
@@ -1135,6 +1143,7 @@ export interface FileRoutesById {
   '/docs/api': typeof DocsApiRoute
   '/docs/sdk': typeof DocsSdkRoute
   '/dashboard/': typeof DashboardIndexRoute
+  '/api/import-events/$jobId': typeof ApiImportEventsJobIdRoute
   '/api/pluto/$': typeof ApiPlutoSplatRoute
   '/api/pluto/audit': typeof ApiPlutoAuditRoute
   '/api/pluto/deploy': typeof ApiPlutoDeployRoute
@@ -1265,6 +1274,7 @@ export interface FileRouteTypes {
     | '/docs/api'
     | '/docs/sdk'
     | '/dashboard/'
+    | '/api/import-events/$jobId'
     | '/api/pluto/$'
     | '/api/pluto/audit'
     | '/api/pluto/deploy'
@@ -1392,6 +1402,7 @@ export interface FileRouteTypes {
     | '/docs/api'
     | '/docs/sdk'
     | '/dashboard'
+    | '/api/import-events/$jobId'
     | '/api/pluto/$'
     | '/api/pluto/audit'
     | '/api/pluto/deploy'
@@ -1520,6 +1531,7 @@ export interface FileRouteTypes {
     | '/docs/api'
     | '/docs/sdk'
     | '/dashboard/'
+    | '/api/import-events/$jobId'
     | '/api/pluto/$'
     | '/api/pluto/audit'
     | '/api/pluto/deploy'
@@ -1565,6 +1577,7 @@ export interface RootRouteChildren {
   StatusRoute: typeof StatusRoute
   DocsApiRoute: typeof DocsApiRoute
   DocsSdkRoute: typeof DocsSdkRoute
+  ApiImportEventsJobIdRoute: typeof ApiImportEventsJobIdRoute
   ApiPlutoSplatRoute: typeof ApiPlutoSplatRoute
   ApiPlutoAuditRoute: typeof ApiPlutoAuditRoute
   ApiPlutoDeployRoute: typeof ApiPlutoDeployRoute
@@ -2443,6 +2456,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPlutoSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/import-events/$jobId': {
+      id: '/api/import-events/$jobId'
+      path: '/api/import-events/$jobId'
+      fullPath: '/api/import-events/$jobId'
+      preLoaderRoute: typeof ApiImportEventsJobIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/dashboard/projects/$slug/status': {
       id: '/dashboard/projects/$slug/status'
       path: '/$slug/status'
@@ -2764,6 +2784,7 @@ const rootRouteChildren: RootRouteChildren = {
   StatusRoute: StatusRoute,
   DocsApiRoute: DocsApiRoute,
   DocsSdkRoute: DocsSdkRoute,
+  ApiImportEventsJobIdRoute: ApiImportEventsJobIdRoute,
   ApiPlutoSplatRoute: ApiPlutoSplatRoute,
   ApiPlutoAuditRoute: ApiPlutoAuditRoute,
   ApiPlutoDeployRoute: ApiPlutoDeployRoute,
