@@ -238,6 +238,79 @@ async function drainQueue() {
   await setQueue(remaining);
 }
 
+/* --------------- live job timeline + watchers ----------------------- */
+
+/** Fetch job + timeline events (optionally only those newer than `since`). */
+async function jobStatus({ job_id, event_id, since }) {
+  return postControl({ action: "status", job_id, event_id, since });
+}
+
+/** One-click rollback tied to the same import job (pre-apply snapshot). */
+async function rollbackJob({ job_id, dry_run = false }) {
+  const r = await postControl({ action: "rollback", job_id, dry_run });
+  notify(
+    dry_run ? "Rollback dry-run" : "Rollback",
+    r?.ok ? `OK — ${r.result?.statements ?? 0} statement(s).` : `Failed: ${r?.result?.error || r?.error}`,
+  );
+  return r;
+}
+
+/** Background poll: notify when a watched job changes status. */
+async function pollWatchers() {
+  const watchers = await getWatchers();
+  if (!watchers.length) { chrome.alarms.clear(WATCH_ALARM); return; }
+  const next = [];
+  for (const w of watchers) {
+    try {
+      const r = await jobStatus({ job_id: w.job_id, since: w.since });
+      const status = r?.job?.status;
+      if (status && status !== w.last_status) {
+        notify("Pluto Migrator", `Job ${w.job_id.slice(0, 8)} → ${status}`);
+        if (["applied", "failed", "rolled_back", "verify_failed"].includes(status)) {
+          await setBadge(status === "applied" ? "✓" : "!", status === "applied" ? "#16a34a" : "#dc2626");
+        }
+      }
+      const lastEvent = r?.events?.[0]?.created_at || w.since;
+      await chrome.storage.local.set({ [`timeline:${w.job_id}`]: r });
+      const settled = ["applied", "failed", "rolled_back"].includes(status);
+      if (!settled) next.push({ ...w, last_status: status ?? w.last_status, since: lastEvent });
+      else next.push({ ...w, last_status: status, since: lastEvent, settled_at: Date.now() });
+    } catch {
+      next.push(w);
+    }
+  }
+  await setWatchers(next);
+}
+
+/* ------------------------ scheduled auto-capture -------------------- */
+
+async function rescheduleAuto() {
+  const { autoCaptureMinutes } = await getSettings();
+  chrome.alarms.clear(AUTO_ALARM);
+  if (autoCaptureMinutes > 0) {
+    chrome.alarms.create(AUTO_ALARM, { delayInMinutes: autoCaptureMinutes, periodInMinutes: autoCaptureMinutes });
+  }
+}
+
+/* ------------------------ local bundle export ----------------------- */
+
+/** Save the merged payload + raw SQL to disk before anything is uploaded. */
+async function downloadBundle(payload) {
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const sql = payload?.supabase?.schema_sql || "";
+  const files = [
+    { name: `pluto-import-${stamp}.json`, type: "application/json", body: JSON.stringify(payload, null, 2) },
+  ];
+  if (sql) files.push({ name: `pluto-schema-${stamp}.sql`, type: "text/plain", body: sql });
+  for (const f of files) {
+    const url = `data:${f.type};base64,${btoa(unescape(encodeURIComponent(f.body)))}`;
+    await chrome.downloads.download({ url, filename: f.name, saveAs: false });
+  }
+  return { ok: true, files: files.map((f) => f.name) };
+}
+
+
+
 chrome.alarms.onAlarm.addListener((a) => { if (a.name === QUEUE_ALARM) drainQueue(); });
 
 /* ---------------------------- tab scanning -------------------------- */
