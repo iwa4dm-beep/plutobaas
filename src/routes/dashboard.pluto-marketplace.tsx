@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { plutoApi, pushUiHistory } from "@/lib/pluto/upstream";
 import { HelpPanel } from "@/components/help/HelpPanel";
 import { dashboardPlutoMarketplaceHelp } from "@/content/help/dashboard.pluto-marketplace";
+import { MigratorPanel } from "@/components/pluto/MigratorPanel";
 
 export const Route = createFileRoute("/dashboard/pluto-marketplace")({
   component: MarketplacePage,
