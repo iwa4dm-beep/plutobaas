@@ -365,13 +365,28 @@ export const applyImportJob = createServerFn({ method: "POST" })
       });
       // Automatic post-apply verification over the selected schemas/tables.
       const { runAndRecordSmoke } = await import("./post-apply-checks.server");
-      const verification = await runAndRecordSmoke({
+      const { report: verification } = await runAndRecordSmoke({
         jobId: job.id,
         selection: job.selection,
         appliedSql: job.migration_sql,
         actorId: actor.userId,
         actorEmail: actor.email,
         trigger: "auto",
+      });
+      const { notifyImportEvent } = await import("./import-notify.server");
+      await notifyImportEvent({
+        event: "import.applied",
+        jobId: job.id,
+        actorId: actor.userId,
+        actorEmail: actor.email,
+        payload: {
+          repo: job.repo,
+          source: job.source,
+          diff: diff.counts,
+          row_count: out.rowCount,
+          duration_ms: out.durationMs,
+          verification: verification.counts,
+        },
       });
       return { ...out, verification };
 
@@ -387,8 +402,17 @@ export const applyImportJob = createServerFn({ method: "POST" })
         message: out.error,
         detail: { error: out.error, detail: out.detail },
       });
+      const { notifyImportEvent } = await import("./import-notify.server");
+      await notifyImportEvent({
+        event: "import.apply_failed",
+        jobId: job.id,
+        actorId: actor.userId,
+        actorEmail: actor.email,
+        payload: { repo: job.repo, source: job.source, error: out.error, detail: out.detail },
+      });
       return out;
     }
+
   });
 
 /** Repo pointer for handing the job over to Auto-Deploy Studio. */
