@@ -96,7 +96,9 @@ export function VerificationRunsCard({ jobId, refreshKey }: { jobId: string; ref
                   <span className="font-mono truncate max-w-[12rem]">{d.target}</span>
                   <span className="text-muted-foreground truncate">{d.label}</span>
                   <span className="ml-auto text-muted-foreground whitespace-nowrap">
-                    {d.from ?? "—"} → {d.to ?? "—"}
+                    {d.from.status ?? "—"}{d.from.rowCount !== null ? ` (${d.from.rowCount})` : ""}
+                    {" → "}
+                    {d.to.status ?? "—"}{d.to.rowCount !== null ? ` (${d.to.rowCount})` : ""}
                   </span>
                 </div>
               ))}
