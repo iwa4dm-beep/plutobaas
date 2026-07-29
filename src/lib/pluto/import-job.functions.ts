@@ -795,12 +795,18 @@ export const runRollbackFn = createServerFn({ method: "POST" })
 export const runVerificationFn = createServerFn({ method: "POST" })
   .middleware([requirePlutoAdmin])
   .inputValidator((d: unknown) => IdInput.parse(d))
-  .handler(async ({ data, context }): Promise<{ ok: boolean; error: string | null; report: SmokeReport | null }> => {
+  .handler(async ({ data, context }): Promise<{
+    ok: boolean;
+    error: string | null;
+    report: SmokeReport | null;
+    runNo: number | null;
+    diff: VerificationDiff | null;
+  }> => {
     const { getImportJobById } = await import("./import-jobs.server");
     const job = await getImportJobById(data.id);
-    if (!job) return { ok: false, error: "not_found", report: null };
+    if (!job) return { ok: false, error: "not_found", report: null, runNo: null, diff: null };
     const { runAndRecordSmoke } = await import("./post-apply-checks.server");
-    const report = await runAndRecordSmoke({
+    const { report, runNo, diff } = await runAndRecordSmoke({
       jobId: job.id,
       selection: job.selection,
       appliedSql: job.migration_sql,
@@ -808,8 +814,204 @@ export const runVerificationFn = createServerFn({ method: "POST" })
       actorEmail: context.plutoAdmin.email,
       trigger: "manual",
     });
-    return { ok: report.ok, error: null, report };
+    return { ok: report.ok, error: null, report, runNo, diff };
   });
+
+/** Archived verification runs for a job (newest first). */
+export const listVerificationRunsFn = createServerFn({ method: "POST" })
+  .middleware([requirePlutoAdmin])
+  .inputValidator((d: unknown) => IdInput.parse(d))
+  .handler(async ({ data }): Promise<{ ok: boolean; error: string | null; runs: VerificationRunView[] }> => {
+    try {
+      const { listVerificationRuns } = await import("./import-jobs.server");
+      const runs = await listVerificationRuns(data.id, 25);
+      return {
+        ok: true,
+        error: null,
+        runs: runs.map((r) => ({
+          run_no: r.run_no,
+          ok: r.ok,
+          trigger: r.trigger,
+          actor_email: r.actor_email,
+          created_at: r.created_at,
+          report: r.report as unknown as SmokeReport,
+          diff: (r.diff as unknown as VerificationDiff | null) ?? null,
+        })),
+      };
+    } catch (e) {
+      return { ok: false, error: (e as Error).message, runs: [] };
+    }
+  });
+
+/** Diff any two archived verification runs of the same job. */
+export const compareVerificationRunsFn = createServerFn({ method: "POST" })
+  .middleware([requirePlutoAdmin])
+  .inputValidator((d: unknown) =>
+    IdInput.extend({ from: z.number().int().min(1), to: z.number().int().min(1) }).parse(d),
+  )
+  .handler(async ({ data, context }): Promise<{ ok: boolean; error: string | null; diff: VerificationDiff | null }> => {
+    try {
+      const { getVerificationRun, appendImportEvent } = await import("./import-jobs.server");
+      const [a, b] = await Promise.all([
+        getVerificationRun(data.id, data.from),
+        getVerificationRun(data.id, data.to),
+      ]);
+      if (!a || !b) return { ok: false, error: "run_not_found", diff: null };
+      const diff = diffVerificationReports(
+        a.report as unknown as SmokeReport,
+        b.report as unknown as SmokeReport,
+        a.run_no,
+        b.run_no,
+      );
+      await appendImportEvent({
+        jobId: data.id,
+        step: "verification_diff",
+        ok: true,
+        actorId: context.plutoAdmin.userId,
+        actorEmail: context.plutoAdmin.email,
+        rowCount: diff.deltas.length,
+        message: `Compared verification runs #${a.run_no} → #${b.run_no}: ${describeDiff(diff)}`,
+        detail: { run_from: a.run_no, run_to: b.run_no, counts: diff.counts, targets: diff.targets },
+      });
+      return { ok: true, error: null, diff };
+    } catch (e) {
+      return { ok: false, error: (e as Error).message, diff: null };
+    }
+  });
+
+/* ------------------------------------------------------------------ */
+/* Notification webhook settings                                       */
+/* ------------------------------------------------------------------ */
+
+export type NotifySettingsView = {
+  url: string;
+  events: string[];
+  enabled: boolean;
+  hasSecret: boolean;
+  fromEnv: boolean;
+};
+
+export const getNotifySettingsFn = createServerFn({ method: "POST" })
+  .middleware([requirePlutoAdmin])
+  .handler(async (): Promise<{ ok: boolean; error: string | null; settings: NotifySettingsView | null; allEvents: string[] }> => {
+    try {
+      const { readNotifyConfig, NOTIFY_EVENTS, NOTIFY_SETTING_KEY } = await import("./import-notify.server");
+      const { getImportSetting } = await import("./import-jobs.server");
+      const stored = await getImportSetting<{ url?: string }>(NOTIFY_SETTING_KEY);
+      const cfg = await readNotifyConfig();
+      return {
+        ok: true,
+        error: null,
+        allEvents: NOTIFY_EVENTS,
+        settings: cfg
+          ? { url: cfg.url, events: cfg.events, enabled: cfg.enabled, hasSecret: Boolean(cfg.secret), fromEnv: !stored?.url }
+          : null,
+      };
+    } catch (e) {
+      return { ok: false, error: (e as Error).message, settings: null, allEvents: [] };
+    }
+  });
+
+export const saveNotifySettingsFn = createServerFn({ method: "POST" })
+  .middleware([requirePlutoAdmin])
+  .inputValidator((d: unknown) =>
+    z
+      .object({
+        url: z.string().url().max(1000).or(z.literal("")),
+        secret: z.string().max(400).optional(),
+        events: z.array(z.string().max(60)).max(20).optional(),
+        enabled: z.boolean().default(true),
+      })
+      .parse(d),
+  )
+  .handler(async ({ data, context }): Promise<{ ok: boolean; error: string | null }> => {
+    try {
+      const { NOTIFY_EVENTS, NOTIFY_SETTING_KEY, type NotifyEvent } = await import("./import-notify.server");
+      void NotifyEvent;
+      const { setImportSetting } = await import("./import-jobs.server");
+      const events = (data.events?.length ? data.events : NOTIFY_EVENTS).filter((e) =>
+        (NOTIFY_EVENTS as string[]).includes(e),
+      );
+      await setImportSetting(
+        NOTIFY_SETTING_KEY,
+        data.url ? { url: data.url, secret: data.secret || null, events, enabled: data.enabled } : {},
+        context.plutoAdmin.email,
+      );
+      return { ok: true, error: null };
+    } catch (e) {
+      return { ok: false, error: (e as Error).message };
+    }
+  });
+
+/** Send a test notification so the endpoint can be verified end-to-end. */
+export const testNotifyFn = createServerFn({ method: "POST" })
+  .middleware([requirePlutoAdmin])
+  .inputValidator((d: unknown) => IdInput.parse(d))
+  .handler(async ({ data, context }): Promise<{ ok: boolean; error: string | null; status: number | null; url: string | null }> => {
+    const { notifyImportEvent } = await import("./import-notify.server");
+    const res = await notifyImportEvent({
+      event: "import.applied",
+      jobId: data.id,
+      actorId: context.plutoAdmin.userId,
+      actorEmail: context.plutoAdmin.email,
+      payload: { test: true },
+    });
+    return { ok: res.delivered, error: res.error, status: res.status, url: res.url };
+  });
+
+/* ------------------------------------------------------------------ */
+/* Signed, expiring share links for the report                         */
+/* ------------------------------------------------------------------ */
+
+export const createReportShareLinkFn = createServerFn({ method: "POST" })
+  .middleware([requirePlutoAdmin])
+  .inputValidator((d: unknown) =>
+    IdInput.extend({
+      ttlMinutes: z.number().int().min(5).max(43200).default(1440),
+      includeSql: z.boolean().default(false),
+      origin: z.string().max(300).optional(),
+    }).parse(d),
+  )
+  .handler(async ({ data, context }): Promise<{ ok: boolean; error: string | null; url: string | null; expiresAt: string | null }> => {
+    try {
+      const { getImportJobById, appendImportEvent } = await import("./import-jobs.server");
+      const job = await getImportJobById(data.id);
+      if (!job) return { ok: false, error: "not_found", url: null, expiresAt: null };
+
+      const { shareSecret, mintShareToken } = await import("./report-share.server");
+      const secret = shareSecret();
+      if (!secret) {
+        return {
+          ok: false,
+          error: "Share links need the PLUTO_REPORT_SHARE_SECRET project secret.",
+          url: null,
+          expiresAt: null,
+        };
+      }
+      const now = Math.floor(Date.now() / 1000);
+      const exp = now + data.ttlMinutes * 60;
+      const token = await mintShareToken(
+        { j: job.id, i: now, e: exp, a: context.plutoAdmin.email, s: data.includeSql },
+        secret,
+      );
+      const base = (data.origin ?? "").replace(/\/+$/, "");
+      const url = `${base}/api/public/import-report?t=${encodeURIComponent(token)}&format=html`;
+      const expiresAt = new Date(exp * 1000).toISOString();
+      await appendImportEvent({
+        jobId: job.id,
+        step: "report_shared",
+        ok: true,
+        actorId: context.plutoAdmin.userId,
+        actorEmail: context.plutoAdmin.email,
+        message: `Share link created — expires ${expiresAt}`,
+        detail: { expires_at: expiresAt, ttl_minutes: data.ttlMinutes, include_sql: data.includeSql },
+      });
+      return { ok: true, error: null, url, expiresAt };
+    } catch (e) {
+      return { ok: false, error: (e as Error).message, url: null, expiresAt: null };
+    }
+  });
+
 
 /* ------------------------------------------------------------------ */
 /* Downloadable report bundle (JSON — the client renders the PDF)      */
