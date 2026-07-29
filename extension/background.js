@@ -55,6 +55,78 @@ async function postSigned(payload) {
   return parsed;
 }
 
+/** Signed POST to the control channel (status / rollback / upload state). */
+async function postControl(body) {
+  const { active } = await getProfiles();
+  if (!active?.endpoint || !active?.secret) throw new Error("Configure endpoint + secret first.");
+  const raw = JSON.stringify(body);
+  const ts = Math.floor(Date.now() / 1000).toString();
+  const signature = await hmacHex(active.secret, `${ts}.${raw}`);
+  const res = await fetch(statusEndpoint(active.endpoint), {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-pluto-timestamp": ts,
+      "x-pluto-signature": `sha256=${signature}`,
+    },
+    body: raw,
+  });
+  const text = await res.text();
+  let parsed; try { parsed = JSON.parse(text); } catch { parsed = { raw: text }; }
+  if (!res.ok) {
+    const err = new Error(`HTTP ${res.status}: ${parsed.error || text.slice(0, 160)}`);
+    err.status = res.status;
+    err.retryable = res.status >= 500 || res.status === 429;
+    throw err;
+  }
+  return parsed;
+}
+
+/* ------------------- resumable chunked upload ----------------------- */
+
+async function uploadState(uploadId) {
+  try {
+    const r = await postControl({ action: "upload_status", upload_id: uploadId });
+    return r?.state ?? null;
+  } catch { return null; }
+}
+
+/**
+ * Ship a big dump as ordered chunks. Already-received indices are skipped, so
+ * an interrupted upload resumes exactly where it stopped.
+ */
+async function sendChunked(payload, chunks, onProgress) {
+  const eventId = payload.event_id;
+  const uploadId = payload.upload_id || `up_${eventId}`;
+  payload.upload_id = uploadId;
+
+  const envelope = { ...payload };
+  delete envelope.supabase;
+  envelope.supabase = { ...(payload.supabase || {}) };
+  delete envelope.supabase.schema_sql;
+
+  const remote = await uploadState(uploadId);
+  const done = new Set(remote?.received ?? []);
+  let last = null;
+
+  for (let i = 0; i < chunks.length; i++) {
+    if (done.has(i)) { onProgress?.({ index: i, total: chunks.length, skipped: true }); continue; }
+    last = await postSigned({
+      event_id: eventId,
+      chunk: { upload_id: uploadId, index: i, total: chunks.length, data: chunks[i] },
+      envelope: i === 0 ? envelope : undefined,
+    });
+    await chrome.storage.local.set({
+      resumable: { upload_id: uploadId, event_id: eventId, index: i, total: chunks.length, at: Date.now() },
+    });
+    onProgress?.({ index: i, total: chunks.length });
+  }
+  await chrome.storage.local.remove("resumable");
+  return last ?? (await uploadState(uploadId));
+}
+
+
+
 function notify(title, message) {
   try {
     chrome.notifications.create({
