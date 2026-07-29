@@ -40,6 +40,9 @@ export type ImportJob = {
   payload: ImportJobPayload;
   migration_sql: string | null;
   report: Record<string, unknown> | null;
+  applied_at: string | null;
+  applied_by: string | null;
+  selection: string[] | null;
   created_at: string;
   updated_at: string;
 };
@@ -99,6 +102,9 @@ function rowToJob(r: Record<string, unknown>): ImportJob {
     payload: (r.payload as ImportJobPayload) ?? ({} as ImportJobPayload),
     migration_sql: (r.migration_sql as string) ?? null,
     report: (r.report as Record<string, unknown>) ?? null,
+    applied_at: (r.applied_at as string) ?? null,
+    applied_by: (r.applied_by as string) ?? null,
+    selection: Array.isArray(r.selection) ? (r.selection as string[]) : null,
     created_at: String(r.created_at),
     updated_at: String(r.updated_at),
   };
@@ -127,7 +133,14 @@ export async function createImportJob(
   );
   const rows = (res.rows ?? []) as Record<string, unknown>[];
   if (!rows.length) return { job: null, duplicate: true };
-  return { job: rowToJob(rows[0]), duplicate: false };
+  const job = rowToJob(rows[0]);
+  await appendImportEvent({
+    jobId: job.id,
+    step: "received",
+    message: `Ingested ${payload.source} import${payload.repo ? ` from ${payload.repo}` : ""}`,
+    detail: { event_id: payload.event_id, has_schema_sql: Boolean(payload.supabase?.schema_sql) },
+  });
+  return { job, duplicate: false };
 }
 
 export async function listImportJobs(limit = 50): Promise<ImportJob[]> {
