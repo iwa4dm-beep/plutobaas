@@ -3,20 +3,29 @@
 // and apply each migration. Every step is recorded in the import audit trail.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "@tanstack/react-router";
-import { CheckCircle2, ChevronDown, ChevronRight, Download, History, Play, RefreshCw, ShieldCheck, Wand2, XCircle } from "lucide-react";
+import { AlertTriangle, Archive, CheckCircle2, ChevronDown, ChevronRight, Download, History, Pause, Play, RefreshCw, RotateCcw, ShieldCheck, Wand2, XCircle } from "lucide-react";
 import {
   applyImportJob,
   dryRunImportJob,
+  getSqlVersionFn,
   importAuditHistoryFn,
+  importFailureDetailFn,
   importJobPlanFn,
   listImportJobsFn,
+  listSqlVersionsFn,
+  restoreSqlVersionFn,
   retranslateImportJob,
+  retryImportJob,
+  setImportJobPaused,
+  type FailureStepView,
   type ImportEventView,
   type ImportJobView,
   type SqlOutcome,
+  type SqlVersionView,
 } from "@/lib/pluto/import-job.functions";
 import type { DumpObject } from "@/lib/pluto/supabase-objects";
 import type { SqlDiff } from "@/lib/pluto/sql-diff";
+
 
 const EXT_ZIP = "/downloads/pluto-migrator-extension.zip";
 
