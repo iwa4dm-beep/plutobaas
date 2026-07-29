@@ -97,19 +97,36 @@ export function MigratorPanel() {
 
   useEffect(() => { void refresh(); }, [refresh]);
 
-  // Live progress: while a row is open, re-poll its timeline.
-  useEffect(() => {
-    if (poll.current) clearInterval(poll.current);
-    if (!expanded) return;
-    poll.current = setInterval(() => { void loadDetail(expanded); }, 4000);
-    return () => { if (poll.current) clearInterval(poll.current); };
-  }, [expanded, loadDetail]);
+  // Live progress over SSE — no polling. New audit rows and job-level changes
+  // (status, pause, apply) are pushed by /api/import-events/:jobId.
+  const stream = useImportEventStream(
+    expanded,
+    useCallback((incoming: ImportEventView[]) => {
+      if (!incoming.length) return;
+      const jobId = incoming[0].job_id;
+      setEvents((s) => {
+        const cur = s[jobId] ?? [];
+        const known = new Set(cur.map((e) => e.id));
+        const merged = [...cur, ...incoming.filter((e) => !known.has(e.id))];
+        merged.sort((a, b) => a.created_at.localeCompare(b.created_at));
+        return { ...s, [jobId]: merged };
+      });
+      // A terminal step changes derived data (versions, failures, diff).
+      if (incoming.some((e) => ["apply", "dry_run", "rollback", "retry", "translated", "version_restored"].includes(e.step))) {
+        void loadDetail(jobId);
+      }
+    }, [loadDetail]),
+    useCallback((patch: LiveJobPatch) => {
+      setJobs((js) => js.map((j) => (j.id === patch.id ? { ...j, ...patch } : j)));
+    }, []),
+  );
 
   function toggleRow(id: string) {
     const next = expanded === id ? null : id;
     setExpanded(next);
     if (next) void loadDetail(next);
   }
+
 
   async function run(kind: "translate" | "dry" | "apply", job: ImportJobView) {
     setBusy(`${kind}:${job.id}`);
