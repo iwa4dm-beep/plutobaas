@@ -13,7 +13,8 @@ import { diffSql, type SqlDiff } from "./sql-diff";
 import { analyzeFailure, type FailureAnalysis } from "./failure-analysis";
 import { buildRollbackPlan, type RollbackPlan } from "./sql-rollback";
 import type { SmokeReport } from "./smoke-types";
-import type { ImportReportBundle } from "./report-types";
+import type { ImportReportBundle, VerificationRunView } from "./report-types";
+import { describeDiff, diffVerificationReports, type VerificationDiff } from "./verification-diff";
 
 export type ImportJobView = {
   id: string;
@@ -176,24 +177,29 @@ export const importAuditHistoryFn = createServerFn({ method: "POST" })
     error: string | null;
   }> => {
     try {
-      const { queryImportEvents } = await import("./import-jobs.server");
+      const { queryImportEvents, listAuditActors, listAuditSteps } = await import("./import-jobs.server");
       const limit = data.limit ?? 25;
       const offset = data.offset ?? 0;
-      const res = await queryImportEvents({
-        jobId: data.id ?? null,
-        limit,
-        offset,
-        q: data.q?.trim() || null,
-        status: data.status === "ok" || data.status === "fail" ? data.status : null,
-        actor: data.actor?.trim() || null,
-        step: data.step && data.step !== "all" ? data.step : null,
-      });
+      const [res, actors, steps] = await Promise.all([
+        queryImportEvents({
+          jobId: data.id ?? null,
+          limit,
+          offset,
+          search: data.q?.trim() || null,
+          object: data.q?.trim() || null,
+          status: data.status === "fail" ? "failed" : data.status === "ok" ? "ok" : null,
+          actor: data.actor?.trim() || null,
+          step: data.step && data.step !== "all" ? data.step : null,
+        }),
+        listAuditActors(),
+        listAuditSteps(),
+      ]);
       return {
         ok: true,
         error: null,
         total: res.total,
-        steps: res.steps,
-        actors: res.actors,
+        steps,
+        actors,
         events: res.rows.map((e) => ({
           id: e.id,
           job_id: e.job_id,
