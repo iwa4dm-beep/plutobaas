@@ -311,7 +311,11 @@ async function downloadBundle(payload) {
 
 
 
-chrome.alarms.onAlarm.addListener((a) => { if (a.name === QUEUE_ALARM) drainQueue(); });
+chrome.alarms.onAlarm.addListener((a) => {
+  if (a.name === QUEUE_ALARM) drainQueue();
+  else if (a.name === WATCH_ALARM) pollWatchers();
+  else if (a.name === AUTO_ALARM) quickCapture();
+});
 
 /* ---------------------------- tab scanning -------------------------- */
 
