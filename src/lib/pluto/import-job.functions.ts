@@ -276,6 +276,9 @@ export const dryRunImportJob = createServerFn({ method: "POST" })
     if (!job?.migration_sql) {
       return { ok: false, rowCount: 0, durationMs: 0, error: "no_migration_sql", detail: null };
     }
+    if (job.paused) {
+      return { ok: false, rowCount: 0, durationMs: 0, error: "job_paused", detail: "Resume the job before running a dry-run." };
+    }
     const diff = diffSql(job.migration_sql);
     try {
       const res = await runImportSql(job.migration_sql, true);
