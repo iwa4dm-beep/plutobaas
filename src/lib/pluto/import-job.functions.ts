@@ -10,6 +10,7 @@ import { requirePlutoAdmin } from "./admin-middleware";
 import { translateSupabaseSchema, type TranslateWarning } from "./supabase-translate";
 import { filterDumpBySelection, inventoryDump, type DumpObject } from "./supabase-objects";
 import { diffSql, type SqlDiff } from "./sql-diff";
+import { analyzeFailure, type FailureAnalysis } from "./failure-analysis";
 
 export type ImportJobView = {
   id: string;
