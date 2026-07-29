@@ -23,6 +23,9 @@ import {
   type SqlOutcome,
   type SqlVersionView,
 } from "@/lib/pluto/import-job.functions";
+import { useImportEventStream, type LiveJobPatch } from "@/lib/pluto/use-import-stream";
+import { previewRollbackFn, runRollbackFn } from "@/lib/pluto/import-job.functions";
+import type { RollbackPlan } from "@/lib/pluto/sql-rollback";
 import type { DumpObject } from "@/lib/pluto/supabase-objects";
 import type { SqlDiff } from "@/lib/pluto/sql-diff";
 
@@ -59,7 +62,6 @@ export function MigratorPanel() {
   const [versions, setVersions] = useState<Record<string, SqlVersionView[]>>({});
   const [failures, setFailures] = useState<Record<string, FailureStepView[]>>({});
   const [showFailures, setShowFailures] = useState<Record<string, boolean>>({});
-  const poll = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const refresh = useCallback(async () => {
     setBusy((b) => b ?? "list");
