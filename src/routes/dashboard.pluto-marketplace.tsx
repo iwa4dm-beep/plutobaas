@@ -91,6 +91,10 @@ function MarketplacePage() {
       </div>
       {err && <div className="text-sm text-destructive">{err}</div>}
 
+      <MigratorPanel />
+
+
+
       <section>
         <h2 className="font-medium mb-2">Registry ({registry.length})</h2>
         <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
