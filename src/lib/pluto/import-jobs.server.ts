@@ -565,37 +565,31 @@ export async function queryImportEvents(q: AuditQuery): Promise<{ rows: AuditRow
   await ensureImportEventsTable();
   const where: string[] = [];
   const params: unknown[] = [];
-  const add = (clause: string, value: unknown) => {
+  /** Push one value and return its `$n` placeholder. */
+  const p = (value: unknown): string => {
     params.push(value);
-    where.push(clause.replace("$?", `$${params.length}`));
+    return `$${params.length}`;
   };
 
-  if (q.jobId) add("e.job_id = $?::uuid", q.jobId);
-  if (q.step && q.step !== "all") add("e.step = $?", q.step);
-  if (q.actor) add("coalesce(e.actor_email, 'webhook') ilike $?", `%${q.actor}%`);
+  if (q.jobId) where.push(`e.job_id = ${p(q.jobId)}::uuid`);
+  if (q.step && q.step !== "all") where.push(`e.step = ${p(q.step)}`);
+  if (q.actor) where.push(`coalesce(e.actor_email, 'webhook') ilike ${p(`%${q.actor}%`)}`);
   if (q.status === "ok") where.push("e.ok = true");
   else if (q.status === "failed") where.push("e.ok = false");
-  else if (q.status && q.status !== "all") add("j.status = $?", q.status);
+  else if (q.status && q.status !== "all") where.push(`j.status = ${p(q.status)}`);
   if (q.object) {
-    add(
-      "(e.detail::text ilike $? or coalesce(j.selection::text, '') ilike $? or coalesce(j.migration_sql, '') ilike $?)",
-      `%${q.object}%`,
+    const v = `%${q.object}%`;
+    where.push(
+      `(coalesce(e.detail::text,'') ilike ${p(v)} or coalesce(j.selection::text,'') ilike ${p(v)} or coalesce(j.migration_sql,'') ilike ${p(v)})`,
     );
-    // same value reused for the 2nd and 3rd placeholder
-    params.push(`%${q.object}%`, `%${q.object}%`);
-    const last = where.pop()!;
-    where.push(last.replace("$?", `$${params.length - 1}`).replace("$?", `$${params.length}`));
   }
   if (q.search) {
-    add(
-      "(coalesce(e.message,'') ilike $? or coalesce(e.detail::text,'') ilike $? or coalesce(j.repo,'') ilike $? or coalesce(e.actor_email,'') ilike $?)",
-      `%${q.search}%`,
+    const v = `%${q.search}%`;
+    where.push(
+      `(coalesce(e.message,'') ilike ${p(v)} or coalesce(e.detail::text,'') ilike ${p(v)} or coalesce(j.repo,'') ilike ${p(v)} or coalesce(e.actor_email,'') ilike ${p(v)} or coalesce(j.event_id,'') ilike ${p(v)})`,
     );
-    params.push(`%${q.search}%`, `%${q.search}%`, `%${q.search}%`);
-    const last = where.pop()!;
-    let idx = params.length - 3;
-    where.push(last.replace(/\$\?/g, () => `$${++idx}`));
   }
+
 
   const clause = where.length ? `where ${where.join(" and ")}` : "";
   const countRes = await exec(
