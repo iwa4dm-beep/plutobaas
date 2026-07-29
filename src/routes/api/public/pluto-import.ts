@@ -85,12 +85,50 @@ async function handle(request: Request): Promise<Response> {
     return json({ ok: false, error: "invalid_signature" }, 401);
   }
 
+  // ---- resumable chunked upload envelope -----------------------------
+  // { event_id, chunk: { upload_id, index, total, data }, envelope? }
+  let anyBody: Record<string, unknown>;
+  try {
+    anyBody = JSON.parse(raw) as Record<string, unknown>;
+  } catch (e) {
+    return json({ ok: false, error: "invalid_json", detail: (e as Error).message }, 400);
+  }
+  if (anyBody && typeof anyBody === "object" && anyBody.chunk) {
+    const Chunk = z.object({
+      event_id: z.string().min(8).max(200),
+      chunk: z.object({
+        upload_id: z.string().min(8).max(200),
+        index: z.number().int().min(0).max(100_000),
+        total: z.number().int().min(1).max(100_000),
+        data: z.string().max(1_500_000),
+      }),
+      envelope: z.record(z.unknown()).optional(),
+    });
+    const c = Chunk.safeParse(anyBody);
+    if (!c.success) return json({ ok: false, error: "invalid_chunk", detail: c.error.message }, 400);
+    const { receiveChunk } = await import("@/lib/pluto/import-chunks.server");
+    try {
+      const r = await receiveChunk({
+        upload_id: c.data.chunk.upload_id,
+        event_id: c.data.event_id,
+        index: c.data.chunk.index,
+        total: c.data.chunk.total,
+        data: c.data.chunk.data,
+        envelope: c.data.envelope ?? null,
+      });
+      return json(r, r.job_id ? 202 : 200);
+    } catch (e) {
+      return json({ ok: false, error: "chunk_store_failed", detail: (e as Error).message }, 502);
+    }
+  }
+
   let parsed: z.infer<typeof Payload>;
   try {
-    parsed = Payload.parse(JSON.parse(raw));
+    parsed = Payload.parse(anyBody);
   } catch (e) {
     return json({ ok: false, error: "invalid_payload", detail: (e as Error).message }, 400);
   }
+
 
   const schemaSql = parsed.supabase?.schema_sql ?? "";
   const translated = schemaSql ? translateSupabaseSchema(schemaSql) : null;

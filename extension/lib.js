@@ -160,3 +160,116 @@ export async function updateHistory(eventId, patch) {
   await chrome.storage.local.set({ history: next });
   return next;
 }
+
+/* ------------------------------------------------------------------ */
+/* v3 — status channel, chunking, SQL lens, watchers, auto-capture      */
+/* ------------------------------------------------------------------ */
+
+/** The signed control endpoint lives next to the ingest endpoint. */
+export function statusEndpoint(ingest) {
+  return String(ingest || DEFAULT_ENDPOINT).replace(/pluto-import(?:$|\?)/, "pluto-import-status");
+}
+
+export const CHUNK_TARGET = 512 * 1024; // 512 KB per request
+
+/** Size-aware split: small payloads stay single-shot, big dumps get chunked. */
+export function planChunks(sql, target = CHUNK_TARGET) {
+  const text = String(sql || "");
+  if (text.length <= target) return [];
+  const chunks = [];
+  for (let i = 0; i < text.length; i += target) chunks.push(text.slice(i, i + target));
+  return chunks;
+}
+
+export async function sha256Hex(text) {
+  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(String(text)));
+  return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+/* ---- SQL Lens: quick statistics + lint before anything is shipped ---- */
+
+export function sqlLens(sql) {
+  const text = String(sql || "");
+  const count = (re) => (text.match(re) || []).length;
+  const stats = {
+    chars: text.length,
+    statements: count(/;\s*(?:\n|$)/g),
+    create_table: count(/\bcreate\s+table\b/gi),
+    create_view: count(/\bcreate\s+(?:or\s+replace\s+)?view\b/gi),
+    create_function: count(/\bcreate\s+(?:or\s+replace\s+)?function\b/gi),
+    policies: count(/\bcreate\s+policy\b/gi),
+    triggers: count(/\bcreate\s+trigger\b/gi),
+    inserts: count(/\binsert\s+into\b/gi),
+    drops: count(/\bdrop\s+/gi),
+    truncates: count(/\btruncate\b/gi),
+  };
+  const lint = [];
+  if (!stats.chars) lint.push({ level: "error", text: "No SQL captured." });
+  if (stats.drops) lint.push({ level: "warn", text: `${stats.drops} DROP statement(s) — destructive on apply.` });
+  if (stats.truncates) lint.push({ level: "error", text: `${stats.truncates} TRUNCATE statement(s) — data loss risk.` });
+  if (stats.create_table && !stats.policies) lint.push({ level: "warn", text: "Tables without any RLS policy — add policies after import." });
+  if (/\bauth\.uid\(\)/i.test(text) && !/create schema if not exists auth/i.test(text)) {
+    lint.push({ level: "info", text: "Uses auth.uid() — Pluto provides a compatible shim." });
+  }
+  if (/\bextension\s+"?(?:pg_net|pgsodium|supabase_vault)"?/i.test(text)) {
+    lint.push({ level: "warn", text: "Supabase-only extensions referenced; they will be skipped." });
+  }
+  if (stats.chars > CHUNK_TARGET) lint.push({ level: "info", text: "Large dump — resumable chunked upload will be used." });
+  return { stats, lint };
+}
+
+/* ---- delta detection against the previously sent dump ---------------- */
+
+export async function computeDelta(payload) {
+  const sql = payload?.supabase?.schema_sql || "";
+  const key = payload?.repo || payload?.supabase?.ref || "default";
+  const hash = sql ? await sha256Hex(sql) : null;
+  const { deltas } = await chrome.storage.local.get("deltas");
+  const map = deltas || {};
+  const prev = map[key];
+  const result = prev
+    ? {
+        key,
+        changed: prev.hash !== hash,
+        prev_chars: prev.chars,
+        chars: sql.length,
+        delta: sql.length - prev.chars,
+        prev_at: prev.at,
+      }
+    : { key, changed: true, prev_chars: null, chars: sql.length, delta: null, prev_at: null };
+  return { result, commit: async () => {
+    map[key] = { hash, chars: sql.length, at: new Date().toISOString() };
+    await chrome.storage.local.set({ deltas: map });
+  } };
+}
+
+/* ---- watchers: jobs whose status we keep polling in the background --- */
+
+export async function getWatchers() {
+  const { watchers } = await chrome.storage.local.get("watchers");
+  return Array.isArray(watchers) ? watchers : [];
+}
+export async function addWatcher(jobId, meta = {}) {
+  const list = await getWatchers();
+  const next = [{ job_id: jobId, since: null, last_status: null, ...meta }, ...list.filter((w) => w.job_id !== jobId)].slice(0, 20);
+  await chrome.storage.local.set({ watchers: next });
+  return next;
+}
+export async function setWatchers(list) {
+  await chrome.storage.local.set({ watchers: list.slice(0, 20) });
+}
+export async function removeWatcher(jobId) {
+  await setWatchers((await getWatchers()).filter((w) => w.job_id !== jobId));
+}
+
+/* ---- generic settings ------------------------------------------------ */
+
+export async function getSettings() {
+  const { settings } = await chrome.storage.local.get("settings");
+  return { autoCaptureMinutes: 0, chunkKb: 512, watchIntervalMin: 1, ...(settings || {}) };
+}
+export async function saveSettings(patch) {
+  const next = { ...(await getSettings()), ...patch };
+  await chrome.storage.local.set({ settings: next });
+  return next;
+}

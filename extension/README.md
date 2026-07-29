@@ -42,3 +42,29 @@ only the signature is transmitted.
 2. Popup → **Scan all tabs** → review the preflight list and secret scan.
 3. **Send to Pluto** — track the job in the dashboard at
    `/dashboard/pluto-marketplace` and `/dashboard/import-audit`.
+
+## v3.0.0 — live timeline, rollback, resumable uploads
+
+New in this release:
+
+1. **Live job timeline** — the popup's *Live job* panel polls the signed
+   `/api/public/pluto-import-status` channel and shows every apply/verify step
+   as it happens. Jobs are also watched in the background (`chrome.alarms`)
+   with desktop notifications on status change.
+2. **One-click rollback** — before every apply the server captures a pre-apply
+   snapshot and archives a `rollback_plan`; the popup can run it as a dry-run
+   or for real, fully audited against the same `import_job`.
+3. **Resumable chunked uploads** — dumps larger than the chunk size (default
+   512 KB, configurable) are split and uploaded chunk by chunk. Interrupted
+   uploads resume from the first missing index via `upload_status`.
+4. **SQL Lens** — pre-flight statistics and lint (DROP/TRUNCATE warnings,
+   tables without RLS, Supabase-only extensions) before anything is sent.
+5. **Delta detection** — hashes each dump per repo so re-scans show whether
+   the schema actually changed and by how many characters.
+6. **Local bundle export** — save the merged payload JSON plus the raw `.sql`
+   to disk before uploading (needs the `downloads` permission).
+7. **Scheduled auto-capture** — optional periodic scan+send interval.
+
+Endpoints used: `POST /api/public/pluto-import` (ingest and chunks) and
+`POST /api/public/pluto-import-status` (status, upload_status, rollback,
+prune_uploads) — both HMAC-SHA256 signed with the same shared secret.
