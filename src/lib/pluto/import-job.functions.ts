@@ -392,3 +392,218 @@ export const importJobRepoInfo = createServerFn({ method: "POST" })
         : "This job carried no repository — it is a database-only import.",
     };
   });
+
+/* ------------------------------------------------------------------ */
+/* SQL version archive                                                 */
+/* ------------------------------------------------------------------ */
+
+export const listSqlVersionsFn = createServerFn({ method: "POST" })
+  .middleware([requirePlutoAdmin])
+  .inputValidator((d: unknown) => IdInput.parse(d))
+  .handler(async ({ data }): Promise<{ ok: boolean; error: string | null; versions: SqlVersionView[] }> => {
+    try {
+      const { listSqlVersions } = await import("./import-jobs.server");
+      const rows = await listSqlVersions(data.id, 50);
+      return {
+        ok: true,
+        error: null,
+        versions: rows.map((v) => ({
+          id: v.id,
+          version: v.version,
+          kind: v.kind,
+          counts: v.counts,
+          destructive_count: v.destructive_count,
+          actor_email: v.actor_email,
+          note: v.note,
+          selection: v.selection,
+          sql_length: v.sql.length,
+          created_at: v.created_at,
+        })),
+      };
+    } catch (e) {
+      return { ok: false, error: (e as Error).message, versions: [] };
+    }
+  });
+
+const VersionInput = IdInput.extend({ version: z.number().int().min(1) });
+
+/** Read one archived version back: full SQL + its diff, for re-review. */
+export const getSqlVersionFn = createServerFn({ method: "POST" })
+  .middleware([requirePlutoAdmin])
+  .inputValidator((d: unknown) => VersionInput.parse(d))
+  .handler(async ({ data }): Promise<{ ok: boolean; error: string | null; sql: string | null; diff: SqlDiff | null; selection: string[] | null }> => {
+    const { getSqlVersion } = await import("./import-jobs.server");
+    const v = await getSqlVersion(data.id, data.version);
+    if (!v) return { ok: false, error: "version_not_found", sql: null, diff: null, selection: null };
+    return { ok: true, error: null, sql: v.sql, diff: diffSql(v.sql), selection: v.selection };
+  });
+
+/** Make an archived version the job's current migration so it can be re-applied. */
+export const restoreSqlVersionFn = createServerFn({ method: "POST" })
+  .middleware([requirePlutoAdmin])
+  .inputValidator((d: unknown) => VersionInput.parse(d))
+  .handler(async ({ data, context }): Promise<{ ok: boolean; error: string | null; sql: string | null; diff: SqlDiff | null }> => {
+    const { getSqlVersion, updateImportJob, appendImportEvent, saveSelection } = await import("./import-jobs.server");
+    const actor = context.plutoAdmin;
+    const v = await getSqlVersion(data.id, data.version);
+    if (!v) return { ok: false, error: "version_not_found", sql: null, diff: null };
+    await updateImportJob(data.id, { status: "translated", migration_sql: v.sql });
+    if (v.selection) await saveSelection(data.id, v.selection);
+    const diff = diffSql(v.sql);
+    await appendImportEvent({
+      jobId: data.id,
+      step: "version_restored",
+      actorId: actor.userId,
+      actorEmail: actor.email,
+      message: `Restored archived version v${v.version} (${v.kind})`,
+      detail: { version: v.version, counts: diff.counts, destructive: diff.destructiveCount },
+    });
+    return { ok: true, error: null, sql: v.sql, diff };
+  });
+
+/* ------------------------------------------------------------------ */
+/* Pause / resume / retry                                              */
+/* ------------------------------------------------------------------ */
+
+export const setImportJobPaused = createServerFn({ method: "POST" })
+  .middleware([requirePlutoAdmin])
+  .inputValidator((d: unknown) =>
+    IdInput.extend({ paused: z.boolean(), reason: z.string().max(500).optional() }).parse(d),
+  )
+  .handler(async ({ data, context }): Promise<{ ok: boolean; error: string | null; job: ImportJobView | null }> => {
+    const { getImportJobById, setPaused, appendImportEvent } = await import("./import-jobs.server");
+    const actor = context.plutoAdmin;
+    const current = await getImportJobById(data.id);
+    if (!current) return { ok: false, error: "not_found", job: null };
+    // Remember where the operator stopped so the timeline can show the resume point.
+    const resumeStep = data.paused ? current.status : null;
+    const job = await setPaused(data.id, data.paused, actor.email, resumeStep);
+    await appendImportEvent({
+      jobId: data.id,
+      step: data.paused ? "pause" : "resume",
+      actorId: actor.userId,
+      actorEmail: actor.email,
+      message: data.paused
+        ? `Paused at "${current.status}"${data.reason ? ` — ${data.reason}` : ""}`
+        : `Resumed from "${current.resume_step ?? current.status}"`,
+      detail: { resume_step: current.resume_step ?? current.status, reason: data.reason ?? null },
+    });
+    return { ok: true, error: null, job: job ? toJobView(job as unknown as JobRow) : null };
+  });
+
+/**
+ * Retry a failed job: re-translate with the SAME saved selection, archive the
+ * regenerated SQL as a new version, then re-run the dry-run automatically.
+ */
+export const retryImportJob = createServerFn({ method: "POST" })
+  .middleware([requirePlutoAdmin])
+  .inputValidator((d: unknown) => IdInput.parse(d))
+  .handler(async ({ data, context }): Promise<{
+    ok: boolean;
+    error: string | null;
+    sql: string | null;
+    diff: SqlDiff | null;
+    dryRun: SqlOutcome | null;
+  }> => {
+    const {
+      getImportJobById, updateImportJob, appendImportEvent, runImportSql, saveSqlVersion, setPaused,
+    } = await import("./import-jobs.server");
+    const actor = context.plutoAdmin;
+    const job = await getImportJobById(data.id);
+    if (!job) return { ok: false, error: "not_found", sql: null, diff: null, dryRun: null };
+    if (job.paused) await setPaused(job.id, false, actor.email, null);
+
+    const selection = job.selection ?? [];
+    let sql = job.migration_sql;
+    const raw = job.payload?.supabase?.schema_sql ?? "";
+    if (raw) {
+      const scoped = selection.length ? filterDumpBySelection(raw, selection) : raw;
+      sql = translateSupabaseSchema(scoped).sql;
+    }
+    if (!sql) return { ok: false, error: "no_migration_sql", sql: null, diff: null, dryRun: null };
+
+    const diff = diffSql(sql);
+    await updateImportJob(job.id, { status: "translated", migration_sql: sql });
+    const version = await saveSqlVersion({
+      jobId: job.id,
+      kind: "retry",
+      sql,
+      selection: job.selection,
+      counts: diff.counts,
+      destructiveCount: diff.destructiveCount,
+      actorEmail: actor.email,
+      note: "Regenerated by Retry with the same selection",
+    });
+    await appendImportEvent({
+      jobId: job.id,
+      step: "retry",
+      actorId: actor.userId,
+      actorEmail: actor.email,
+      message: `Retry with ${selection.length || "all"} selected object(s)${version ? ` — archived as v${version.version}` : ""}`,
+      detail: { selection: selection.slice(0, 200), counts: diff.counts },
+    });
+
+    try {
+      const res = await runImportSql(sql, true);
+      const out = toOutcome(res);
+      await updateImportJob(job.id, { status: "dry_run_ok", report: { dry_run: out, diff: diff.counts } });
+      await appendImportEvent({
+        jobId: job.id, step: "dry_run", ok: true,
+        actorId: actor.userId, actorEmail: actor.email,
+        rowCount: out.rowCount, durationMs: out.durationMs,
+        message: `Retry dry-run OK — ${diff.counts.create} create / ${diff.counts.alter} alter / ${diff.counts.drop} drop`,
+        detail: { diff: diff.counts, retry: true },
+      });
+      return { ok: true, error: null, sql, diff, dryRun: out };
+    } catch (e) {
+      const out = toFailure(e);
+      await updateImportJob(job.id, { status: "dry_run_failed", report: { dry_run: out } });
+      await appendImportEvent({
+        jobId: job.id, step: "dry_run", ok: false,
+        actorId: actor.userId, actorEmail: actor.email,
+        message: out.error, detail: { error: out.error, detail: out.detail, retry: true },
+      });
+      return { ok: true, error: null, sql, diff, dryRun: out };
+    }
+  });
+
+/* ------------------------------------------------------------------ */
+/* Failure diagnostics                                                 */
+/* ------------------------------------------------------------------ */
+
+export type FailureStepView = {
+  eventId: string;
+  step: string;
+  createdAt: string;
+  actorEmail: string | null;
+  analysis: FailureAnalysis;
+};
+
+/** Step-wise errors + offending SQL snippet + root-cause tags for one job. */
+export const importFailureDetailFn = createServerFn({ method: "POST" })
+  .middleware([requirePlutoAdmin])
+  .inputValidator((d: unknown) => IdInput.parse(d))
+  .handler(async ({ data }): Promise<{ ok: boolean; error: string | null; failures: FailureStepView[] }> => {
+    try {
+      const { getImportJobById, listImportEvents } = await import("./import-jobs.server");
+      const [job, events] = await Promise.all([getImportJobById(data.id), listImportEvents(data.id, 300)]);
+      const sql = job?.migration_sql ?? null;
+      const failures = events
+        .filter((e) => !e.ok)
+        .map((e) => {
+          const d = (e.detail ?? {}) as { error?: string; detail?: string };
+          const raw = [e.message, d.error, d.detail].filter(Boolean).join("\n");
+          return {
+            eventId: e.id,
+            step: e.step,
+            createdAt: e.created_at,
+            actorEmail: e.actor_email,
+            analysis: analyzeFailure(raw, sql),
+          };
+        })
+        .reverse();
+      return { ok: true, error: null, failures };
+    } catch (e) {
+      return { ok: false, error: (e as Error).message, failures: [] };
+    }
+  });
