@@ -101,7 +101,7 @@ function authError(status: number, payload: {
   return err;
 }
 
-async function verifyAdminToken(authHeader: string): Promise<VerifiedAdmin> {
+export async function verifyAdminToken(authHeader: string): Promise<VerifiedAdmin> {
   const url = `${serverPlutoUrl()}/auth/v1/user`;
   let res: Response;
   try {

@@ -104,7 +104,7 @@ function OpsPageInner() {
         </Link>
         <Link
           to="/dashboard/ops/audit"
-          search={{ env }}
+          search={{ env, action: "", actor: "" }}
           className="inline-flex items-center gap-1 rounded-md border border-border px-3 py-1.5 text-xs hover:bg-accent"
         >
           <History className="h-3.5 w-3.5" /> Audit log

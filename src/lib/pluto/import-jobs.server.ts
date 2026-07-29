@@ -17,7 +17,8 @@ export type ImportJobStatus =
   | "dry_run_failed"
   | "applied"
   | "apply_failed"
-  | "rolled_back";
+  | "rolled_back"
+  | "rollback_failed";
 
 export type ImportJobPayload = {
   event_id: string;

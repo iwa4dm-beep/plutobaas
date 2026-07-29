@@ -1,7 +1,7 @@
 // Pluto Migrator panel — lists signed import jobs sent by the Chrome
 // extension and lets an admin select objects, review the SQL diff, dry-run
 // and apply each migration. Every step is recorded in the import audit trail.
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect,  useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { AlertTriangle, Archive, CheckCircle2, ChevronDown, ChevronRight, Download, History, Pause, Play, RefreshCw, RotateCcw, ShieldCheck, Wand2, XCircle } from "lucide-react";
 import {
@@ -23,6 +23,9 @@ import {
   type SqlOutcome,
   type SqlVersionView,
 } from "@/lib/pluto/import-job.functions";
+import { useImportEventStream, type LiveJobPatch } from "@/lib/pluto/use-import-stream";
+import { previewRollbackFn, runRollbackFn } from "@/lib/pluto/import-job.functions";
+import type { RollbackPlan } from "@/lib/pluto/sql-rollback";
 import type { DumpObject } from "@/lib/pluto/supabase-objects";
 import type { SqlDiff } from "@/lib/pluto/sql-diff";
 
@@ -59,7 +62,7 @@ export function MigratorPanel() {
   const [versions, setVersions] = useState<Record<string, SqlVersionView[]>>({});
   const [failures, setFailures] = useState<Record<string, FailureStepView[]>>({});
   const [showFailures, setShowFailures] = useState<Record<string, boolean>>({});
-  const poll = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [rollbacks, setRollbacks] = useState<Record<string, { sourceVersion: number | null; plan: RollbackPlan }>>({});
 
   const refresh = useCallback(async () => {
     setBusy((b) => b ?? "list");
@@ -97,19 +100,36 @@ export function MigratorPanel() {
 
   useEffect(() => { void refresh(); }, [refresh]);
 
-  // Live progress: while a row is open, re-poll its timeline.
-  useEffect(() => {
-    if (poll.current) clearInterval(poll.current);
-    if (!expanded) return;
-    poll.current = setInterval(() => { void loadDetail(expanded); }, 4000);
-    return () => { if (poll.current) clearInterval(poll.current); };
-  }, [expanded, loadDetail]);
+  // Live progress over SSE — no polling. New audit rows and job-level changes
+  // (status, pause, apply) are pushed by /api/import-events/:jobId.
+  const stream = useImportEventStream(
+    expanded,
+    useCallback((incoming: ImportEventView[]) => {
+      if (!incoming.length) return;
+      const jobId = incoming[0].job_id;
+      setEvents((s) => {
+        const cur = s[jobId] ?? [];
+        const known = new Set(cur.map((e) => e.id));
+        const merged = [...cur, ...incoming.filter((e) => !known.has(e.id))];
+        merged.sort((a, b) => a.created_at.localeCompare(b.created_at));
+        return { ...s, [jobId]: merged };
+      });
+      // A terminal step changes derived data (versions, failures, diff).
+      if (incoming.some((e) => ["apply", "dry_run", "rollback", "retry", "translated", "version_restored"].includes(e.step))) {
+        void loadDetail(jobId);
+      }
+    }, [loadDetail]),
+    useCallback((patch: LiveJobPatch) => {
+      setJobs((js) => js.map((j) => (j.id === patch.id ? { ...j, ...patch } : j)));
+    }, []),
+  );
 
   function toggleRow(id: string) {
     const next = expanded === id ? null : id;
     setExpanded(next);
     if (next) void loadDetail(next);
   }
+
 
   async function run(kind: "translate" | "dry" | "apply", job: ImportJobView) {
     setBusy(`${kind}:${job.id}`);
@@ -153,6 +173,37 @@ export function MigratorPanel() {
         URL.revokeObjectURL(a.href);
       })
       .catch((e) => setErr(e.message));
+  }
+
+  async function loadRollback(job: ImportJobView, version?: number) {
+    setBusy(`rb:${job.id}`);
+    try {
+      const r = await previewRollbackFn({ data: { id: job.id, version } });
+      if (!r.ok || !r.plan) setErr(r.error ?? "Rollback preview failed");
+      else {
+        setErr(null);
+        setRollbacks((s) => ({ ...s, [job.id]: { sourceVersion: r.sourceVersion, plan: r.plan as RollbackPlan } }));
+      }
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally { setBusy(null); }
+  }
+
+  async function runRollback(job: ImportJobView, dryRun: boolean) {
+    const rb = rollbacks[job.id];
+    if (!dryRun) {
+      const warn = rb ? `\n\n${rb.plan.entries.length} object(s) will be dropped. ${rb.plan.unsupported.length} statement(s) cannot be undone (data inserts, drops).` : "";
+      if (!confirm(`Roll back the applied import for ${job.repo ?? job.event_id}?${warn}`)) return;
+    }
+    setBusy(`rbrun:${job.id}`);
+    try {
+      const res = await runRollbackFn({ data: { id: job.id, version: rb?.sourceVersion ?? undefined, dryRun } });
+      setOutcome((o) => ({ ...o, [job.id]: res }));
+      await refresh();
+      await loadDetail(job.id);
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally { setBusy(null); }
   }
 
   async function togglePause(job: ImportJobView) {
@@ -229,7 +280,7 @@ export function MigratorPanel() {
           </p>
         </div>
         <div className="flex gap-2">
-          <Link to="/dashboard/import-audit" className="px-3 py-2 text-sm rounded border inline-flex items-center gap-1">
+          <Link to="/dashboard/import-audit" search={{ job: undefined }} className="px-3 py-2 text-sm rounded border inline-flex items-center gap-1">
             <History className="h-4 w-4" /> Import audit
           </Link>
           <button className="px-3 py-2 text-sm rounded border inline-flex items-center gap-1" onClick={downloadExtension}>
@@ -436,17 +487,74 @@ export function MigratorPanel() {
                                     <td className="px-2 py-0.5 text-right whitespace-nowrap space-x-2">
                                       <button className="underline" onClick={() => void viewVersion(j.id, v.version)}>View</button>
                                       <button className="underline" disabled={!!busy} onClick={() => void restoreVersion(j.id, v.version)}>Restore</button>
+                                      {v.kind === "apply" && (
+                                        <button className="underline text-destructive" disabled={!!busy} onClick={() => void loadRollback(j, v.version)}>Undo…</button>
+                                      )}
                                     </td>
+
                                   </tr>
                                 ))}
                               </tbody>
                             </table>
                           </div>
                           <p className="text-[11px] text-muted-foreground mt-1">
-                            Every translate / retry / apply archives the exact SQL, so you can re-review the same diff or restore and re-apply it later.
+                            Every translate / retry / apply archives the exact SQL, so you can re-review the same diff, restore it, or undo an applied version.
                           </p>
                         </div>
                       )}
+
+
+                      {/* Rollback / undo of an applied import */}
+                      {(j.applied_at || j.status === "applied") && (
+                        <div className="border rounded p-2 bg-background">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="text-xs font-medium inline-flex items-center gap-1">
+                              <RotateCcw className="h-3.5 w-3.5" /> Rollback / undo
+                              {rollbacks[j.id]?.sourceVersion != null && (
+                                <span className="text-muted-foreground font-normal"> · from v{rollbacks[j.id].sourceVersion}</span>
+                              )}
+                            </div>
+                            <div className="space-x-2 text-xs">
+                              <button className="underline" disabled={!!busy} onClick={() => void loadRollback(j)}>
+                                {busy === `rb:${j.id}` ? "Generating…" : "Generate undo SQL"}
+                              </button>
+                              {rollbacks[j.id] && (
+                                <>
+                                  <button className="underline" onClick={() => setOpenSql(rollbacks[j.id].plan.sql)}>View SQL</button>
+                                  <button className="underline" disabled={!!busy} onClick={() => void runRollback(j, true)}>Dry-run</button>
+                                  <button className="underline text-destructive" disabled={!!busy} onClick={() => void runRollback(j, false)}>
+                                    {busy === `rbrun:${j.id}` ? "Working…" : "Run rollback"}
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                          {rollbacks[j.id] ? (
+                            <div className="mt-2 space-y-1 text-[11px]">
+                              <div className="text-muted-foreground">
+                                {rollbacks[j.id].plan.entries.length} invertible statement(s) — executed in reverse order.
+                              </div>
+                              <div className="max-h-40 overflow-auto border rounded">
+                                {rollbacks[j.id].plan.entries.map((e, i) => (
+                                  <div key={i} className="px-2 py-0.5 border-t first:border-t-0 font-mono truncate">
+                                    <span className={opTone("drop")}>{e.objectType}</span> <span className="text-muted-foreground">{e.name}</span>
+                                  </div>
+                                ))}
+                              </div>
+                              {!!rollbacks[j.id].plan.unsupported.length && (
+                                <div className="text-destructive">
+                                  ⚠ {rollbacks[j.id].plan.unsupported.length} statement(s) cannot be undone automatically (data writes / drops). Review manually.
+                                </div>
+                              )}
+                            </div>
+                          ) : (
+                            <p className="text-[11px] text-muted-foreground mt-1">
+                              Builds an inverse script from the archived apply snapshot (created tables/columns/policies are dropped in reverse order).
+                            </p>
+                          )}
+                        </div>
+                      )}
+
 
 
 

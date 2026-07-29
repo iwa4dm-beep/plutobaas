@@ -11,6 +11,7 @@ import { translateSupabaseSchema, type TranslateWarning } from "./supabase-trans
 import { filterDumpBySelection, inventoryDump, type DumpObject } from "./supabase-objects";
 import { diffSql, type SqlDiff } from "./sql-diff";
 import { analyzeFailure, type FailureAnalysis } from "./failure-analysis";
+import { buildRollbackPlan, type RollbackPlan } from "./sql-rollback";
 
 export type ImportJobView = {
   id: string;
@@ -487,7 +488,17 @@ export const setImportJobPaused = createServerFn({ method: "POST" })
       message: data.paused
         ? `Paused at "${current.status}"${data.reason ? ` — ${data.reason}` : ""}`
         : `Resumed from "${current.resume_step ?? current.status}"`,
-      detail: { resume_step: current.resume_step ?? current.status, reason: data.reason ?? null },
+      detail: {
+        action: data.paused ? "pause" : "resume",
+        actor: actor.email,
+        actor_id: actor.userId,
+        at: new Date().toISOString(),
+        from_status: current.status,
+        resume_step: current.resume_step ?? current.status,
+        reason: data.reason ?? null,
+        selection: current.selection ?? null,
+        selection_count: current.selection?.length ?? 0,
+      },
     });
     return { ok: true, error: null, job: job ? toJobView(job as unknown as JobRow) : null };
   });
@@ -541,7 +552,17 @@ export const retryImportJob = createServerFn({ method: "POST" })
       actorId: actor.userId,
       actorEmail: actor.email,
       message: `Retry with ${selection.length || "all"} selected object(s)${version ? ` — archived as v${version.version}` : ""}`,
-      detail: { selection: selection.slice(0, 200), counts: diff.counts },
+      detail: {
+        action: "retry",
+        actor: actor.email,
+        actor_id: actor.userId,
+        at: new Date().toISOString(),
+        from_status: job.status,
+        selection: selection.slice(0, 200),
+        selection_count: selection.length,
+        counts: diff.counts,
+        archived_version: version?.version ?? null,
+      },
     });
 
     try {
@@ -606,5 +627,123 @@ export const importFailureDetailFn = createServerFn({ method: "POST" })
       return { ok: true, error: null, failures };
     } catch (e) {
       return { ok: false, error: (e as Error).message, failures: [] };
+    }
+  });
+
+/* ------------------------------------------------------------------ */
+/* Rollback / undo of an applied import                                */
+/* ------------------------------------------------------------------ */
+
+export type RollbackPreview = {
+  ok: boolean;
+  error: string | null;
+  sourceVersion: number | null;
+  sql: string | null;
+  plan: RollbackPlan | null;
+};
+
+/** Derive the undo script for the SQL that was actually applied. */
+export const previewRollbackFn = createServerFn({ method: "POST" })
+  .middleware([requirePlutoAdmin])
+  .inputValidator((d: unknown) => IdInput.extend({ version: z.number().int().min(1).optional() }).parse(d))
+  .handler(async ({ data }): Promise<RollbackPreview> => {
+    const { getImportJobById, listSqlVersions, getSqlVersion } = await import("./import-jobs.server");
+    const job = await getImportJobById(data.id);
+    if (!job) return { ok: false, error: "not_found", sourceVersion: null, sql: null, plan: null };
+
+    // Default source = the archived snapshot taken at apply time.
+    const version = data.version
+      ? await getSqlVersion(data.id, data.version)
+      : (await listSqlVersions(data.id, 50)).find((v) => v.kind === "apply") ?? null;
+    const appliedSql = version?.sql ?? (job.applied_at ? job.migration_sql : null);
+    if (!appliedSql) {
+      return { ok: false, error: "no_applied_sql", sourceVersion: null, sql: null, plan: null };
+    }
+    const plan = buildRollbackPlan(appliedSql);
+    return { ok: true, error: null, sourceVersion: version?.version ?? null, sql: plan.sql, plan };
+  });
+
+/** Execute the undo script (dry-run first, then for real when confirmed). */
+export const runRollbackFn = createServerFn({ method: "POST" })
+  .middleware([requirePlutoAdmin])
+  .inputValidator((d: unknown) =>
+    IdInput.extend({ version: z.number().int().min(1).optional(), dryRun: z.boolean().default(true) }).parse(d),
+  )
+  .handler(async ({ data, context }): Promise<SqlOutcome & { sourceVersion: number | null }> => {
+    const {
+      getImportJobById, listSqlVersions, getSqlVersion, runImportSql,
+      appendImportEvent, updateImportJob, saveSqlVersion,
+    } = await import("./import-jobs.server");
+    const actor = context.plutoAdmin;
+    const job = await getImportJobById(data.id);
+    if (!job) return { ok: false, rowCount: 0, durationMs: 0, error: "not_found", detail: null, sourceVersion: null };
+
+    const version = data.version
+      ? await getSqlVersion(data.id, data.version)
+      : (await listSqlVersions(data.id, 50)).find((v) => v.kind === "apply") ?? null;
+    const appliedSql = version?.sql ?? (job.applied_at ? job.migration_sql : null);
+    if (!appliedSql) {
+      return { ok: false, rowCount: 0, durationMs: 0, error: "no_applied_sql", detail: "This job has no applied snapshot to undo.", sourceVersion: null };
+    }
+    const plan = buildRollbackPlan(appliedSql);
+    if (!plan.sql) {
+      return { ok: false, rowCount: 0, durationMs: 0, error: "nothing_to_roll_back", detail: "No invertible statements found.", sourceVersion: version?.version ?? null };
+    }
+
+    if (!data.dryRun) {
+      await saveSqlVersion({
+        jobId: job.id,
+        kind: "rollback",
+        sql: plan.sql,
+        selection: job.selection,
+        counts: { drop: plan.entries.length },
+        destructiveCount: plan.entries.length,
+        actorEmail: actor.email,
+        note: `Undo of applied v${version?.version ?? "?"}`,
+      });
+    }
+
+    try {
+      const res = await runImportSql(plan.sql, data.dryRun);
+      const out = toOutcome(res);
+      if (!data.dryRun) {
+        await updateImportJob(job.id, {
+          status: "rolled_back",
+          report: { rollback: out, rolled_back_at: new Date().toISOString(), statements: plan.entries.length },
+        });
+      }
+      await appendImportEvent({
+        jobId: job.id,
+        step: "rollback",
+        ok: true,
+        actorId: actor.userId,
+        actorEmail: actor.email,
+        rowCount: out.rowCount,
+        durationMs: out.durationMs,
+        message: `${data.dryRun ? "Rollback dry-run" : "Rollback applied"} — ${plan.entries.length} object(s) dropped, ${plan.unsupported.length} statement(s) not invertible`,
+        detail: {
+          dry_run: data.dryRun,
+          source_version: version?.version ?? null,
+          selection: job.selection,
+          statements: plan.entries.length,
+          unsupported: plan.unsupported.slice(0, 50),
+          at: new Date().toISOString(),
+          actor: actor.email,
+        },
+      });
+      return { ...out, sourceVersion: version?.version ?? null };
+    } catch (e) {
+      const out = toFailure(e);
+      if (!data.dryRun) await updateImportJob(job.id, { status: "rollback_failed", report: { rollback: out } });
+      await appendImportEvent({
+        jobId: job.id,
+        step: "rollback",
+        ok: false,
+        actorId: actor.userId,
+        actorEmail: actor.email,
+        message: out.error,
+        detail: { dry_run: data.dryRun, error: out.error, detail: out.detail, source_version: version?.version ?? null },
+      });
+      return { ...out, sourceVersion: version?.version ?? null };
     }
   });
