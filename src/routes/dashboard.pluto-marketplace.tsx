@@ -4,6 +4,7 @@ import { plutoApi, pushUiHistory } from "@/lib/pluto/upstream";
 import { HelpPanel } from "@/components/help/HelpPanel";
 import { dashboardPlutoMarketplaceHelp } from "@/content/help/dashboard.pluto-marketplace";
 import { MigratorPanel } from "@/components/pluto/MigratorPanel";
+import { MigratorGuide } from "@/components/pluto/MigratorGuide";
 
 export const Route = createFileRoute("/dashboard/pluto-marketplace")({
   component: MarketplacePage,
@@ -90,6 +91,8 @@ function MarketplacePage() {
         <button className="px-3 py-2 text-sm rounded bg-primary text-primary-foreground" onClick={loadRegistry}>Search</button>
       </div>
       {err && <div className="text-sm text-destructive">{err}</div>}
+
+      <MigratorGuide />
 
       <MigratorPanel />
 
