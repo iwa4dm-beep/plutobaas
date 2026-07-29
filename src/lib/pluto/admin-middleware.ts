@@ -118,16 +118,10 @@ export async function verifyAdminToken(authHeader: string): Promise<VerifiedAdmi
     });
   }
   if (res.status === 401) {
-    let route: string | undefined;
-    try {
-      const mod = await import("@tanstack/react-start/server");
-      route = new URL(mod.getRequest().url).pathname;
-    } catch { /* not in request context */ }
     const tokenPrefix = authHeader.replace(/^Bearer\s+/i, "").slice(0, 8);
     // eslint-disable-next-line no-console
     console.warn("[pluto-auth] verify.401 (session expired)", {
       at: new Date().toISOString(),
-      route,
       tokenPrefix: `${tokenPrefix}…`,
     });
     throw authError(401, {
@@ -302,15 +296,10 @@ export const requirePlutoAdmin = createMiddleware({ type: "function" })
       finalHeader: header || "(empty)",
     });
     if (!header || !/^Bearer\s+\S+/i.test(header)) {
-      let route: string | undefined;
-      try {
-        const mod = await import("@tanstack/react-start/server");
-        route = new URL(mod.getRequest().url).pathname;
-      } catch { /* not in request context */ }
       // eslint-disable-next-line no-console
       console.warn("[pluto-auth] server.401", {
         at: new Date().toISOString(),
-        source, recovered, route,
+        source, recovered,
       });
       throw authError(401, {
         error: "unauthorized",
