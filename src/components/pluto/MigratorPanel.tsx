@@ -62,6 +62,7 @@ export function MigratorPanel() {
   const [versions, setVersions] = useState<Record<string, SqlVersionView[]>>({});
   const [failures, setFailures] = useState<Record<string, FailureStepView[]>>({});
   const [showFailures, setShowFailures] = useState<Record<string, boolean>>({});
+  const [rollbacks, setRollbacks] = useState<Record<string, { sourceVersion: number | null; plan: RollbackPlan }>>({});
 
   const refresh = useCallback(async () => {
     setBusy((b) => b ?? "list");
