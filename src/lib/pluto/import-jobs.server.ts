@@ -244,6 +244,8 @@ export type ImportEventStep =
   | "smoke_test"
   | "verification_diff"
   | "webhook"
+  | "snapshot"
+  | "chunk_upload"
   | "report_shared";
 
 export type ImportJobEvent = {
