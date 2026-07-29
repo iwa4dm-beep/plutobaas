@@ -586,7 +586,7 @@ export async function queryImportEvents(q: AuditQuery): Promise<{ rows: AuditRow
   if (q.search) {
     const v = `%${q.search}%`;
     where.push(
-      `(coalesce(e.message,'') ilike ${p(v)} or coalesce(e.detail::text,'') ilike ${p(v)} or coalesce(j.repo,'') ilike ${p(v)} or coalesce(e.actor_email,'') ilike ${p(v)} or coalesce(j.event_id,'') ilike ${p(v)})`,
+      `(coalesce(e.message,'') ilike ${p(v)} or coalesce(e.detail::text,'') ilike ${p(v)} or coalesce(j.repo,'') ilike ${p(v)} or coalesce(e.actor_email,'') ilike ${p(v)} or coalesce(j.event_id,'') ilike ${p(v)} or coalesce(j.selection::text,'') ilike ${p(v)} or coalesce(j.migration_sql,'') ilike ${p(v)})`,
     );
   }
 

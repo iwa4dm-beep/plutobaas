@@ -186,7 +186,6 @@ export const importAuditHistoryFn = createServerFn({ method: "POST" })
           limit,
           offset,
           search: data.q?.trim() || null,
-          object: data.q?.trim() || null,
           status: data.status === "fail" ? "failed" : data.status === "ok" ? "ok" : null,
           actor: data.actor?.trim() || null,
           step: data.step && data.step !== "all" ? data.step : null,
