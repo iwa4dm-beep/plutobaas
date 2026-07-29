@@ -533,7 +533,7 @@ export function MigratorPanel() {
                               <div className="max-h-40 overflow-auto border rounded">
                                 {rollbacks[j.id].plan.entries.map((e, i) => (
                                   <div key={i} className="px-2 py-0.5 border-t first:border-t-0 font-mono truncate">
-                                    <span className={opTone("drop")}>{e.kind}</span> <span className="text-muted-foreground">{e.target}</span>
+                                    <span className={opTone("drop")}>{e.objectType}</span> <span className="text-muted-foreground">{e.name}</span>
                                   </div>
                                 ))}
                               </div>
