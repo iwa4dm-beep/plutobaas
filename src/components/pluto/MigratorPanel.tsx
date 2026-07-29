@@ -280,7 +280,7 @@ export function MigratorPanel() {
           </p>
         </div>
         <div className="flex gap-2">
-          <Link to="/dashboard/import-audit" className="px-3 py-2 text-sm rounded border inline-flex items-center gap-1">
+          <Link to="/dashboard/import-audit" search={{ job: undefined }} className="px-3 py-2 text-sm rounded border inline-flex items-center gap-1">
             <History className="h-4 w-4" /> Import audit
           </Link>
           <button className="px-3 py-2 text-sm rounded border inline-flex items-center gap-1" onClick={downloadExtension}>
