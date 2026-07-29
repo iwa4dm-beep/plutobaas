@@ -155,8 +155,64 @@ export function MigratorPanel() {
       .catch((e) => setErr(e.message));
   }
 
+  async function togglePause(job: ImportJobView) {
+    setBusy(`pause:${job.id}`);
+    try {
+      const reason = job.paused ? undefined : (prompt("Reason for pausing (optional)") ?? undefined);
+      const r = await setImportJobPaused({ data: { id: job.id, paused: !job.paused, reason } });
+      if (!r.ok) setErr(r.error);
+      await refresh();
+      await loadDetail(job.id);
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally { setBusy(null); }
+  }
+
+  async function retry(job: ImportJobView) {
+    setBusy(`retry:${job.id}`);
+    try {
+      const r = await retryImportJob({ data: { id: job.id } });
+      if (!r.ok) setErr(r.error);
+      else {
+        setErr(null);
+        if (r.dryRun) setOutcome((o) => ({ ...o, [job.id]: r.dryRun as SqlOutcome }));
+        setPlans((s) => ({ ...s, [job.id]: { ...(s[job.id] ?? { objects: [], selection: null, hasDump: true }), diff: r.diff } as Plan }));
+      }
+      await refresh();
+      await loadDetail(job.id);
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally { setBusy(null); }
+  }
+
+  async function viewVersion(jobId: string, version: number) {
+    try {
+      const r = await getSqlVersionFn({ data: { id: jobId, version } });
+      if (!r.ok) setErr(r.error);
+      else { setErr(null); setOpenSql(r.sql); }
+    } catch (e) { setErr((e as Error).message); }
+  }
+
+  async function restoreVersion(jobId: string, version: number) {
+    if (!confirm(`Restore archived version v${version} as this job's current migration?`)) return;
+    setBusy(`restore:${jobId}`);
+    try {
+      const r = await restoreSqlVersionFn({ data: { id: jobId, version } });
+      if (!r.ok) setErr(r.error);
+      else {
+        setErr(null);
+        setOpenSql(r.sql);
+        setPlans((s) => ({ ...s, [jobId]: { ...(s[jobId] ?? { objects: [], selection: null, hasDump: true }), diff: r.diff } as Plan }));
+      }
+      await refresh();
+      await loadDetail(jobId);
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally { setBusy(null); }
+  }
+
   function togglePick(jobId: string, key: string) {
-    setPicked((s) => {
+
       const cur = s[jobId] ?? [];
       return { ...s, [jobId]: cur.includes(key) ? cur.filter((k) => k !== key) : [...cur, key] };
     });
