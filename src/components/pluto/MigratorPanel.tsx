@@ -24,6 +24,9 @@ import {
   type SqlVersionView,
 } from "@/lib/pluto/import-job.functions";
 import { useImportEventStream, type LiveJobPatch } from "@/lib/pluto/use-import-stream";
+import { buildImportReportFn, runVerificationFn, type ImportReportBundle } from "@/lib/pluto/import-job.functions";
+import { downloadReportJson, openReportPdf } from "@/lib/pluto/import-report";
+import type { SmokeReport } from "@/lib/pluto/smoke-types";
 import { previewRollbackFn, runRollbackFn } from "@/lib/pluto/import-job.functions";
 import type { RollbackPlan } from "@/lib/pluto/sql-rollback";
 import type { DumpObject } from "@/lib/pluto/supabase-objects";
@@ -63,6 +66,7 @@ export function MigratorPanel() {
   const [failures, setFailures] = useState<Record<string, FailureStepView[]>>({});
   const [showFailures, setShowFailures] = useState<Record<string, boolean>>({});
   const [rollbacks, setRollbacks] = useState<Record<string, { sourceVersion: number | null; plan: RollbackPlan }>>({});
+  const [verify, setVerify] = useState<Record<string, SmokeReport>>({});
 
   const refresh = useCallback(async () => {
     setBusy((b) => b ?? "list");
@@ -173,6 +177,31 @@ export function MigratorPanel() {
         URL.revokeObjectURL(a.href);
       })
       .catch((e) => setErr(e.message));
+  }
+
+  async function runVerification(job: ImportJobView) {
+    setBusy(`verify:${job.id}`);
+    try {
+      const r = await runVerificationFn({ data: { id: job.id } });
+      if (!r.report) setErr(r.error ?? "Verification failed");
+      else { setErr(null); setVerify((s) => ({ ...s, [job.id]: r.report as SmokeReport })); }
+      await loadDetail(job.id);
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally { setBusy(null); }
+  }
+
+  async function exportReport(job: ImportJobView, format: "json" | "pdf") {
+    setBusy(`export:${job.id}`);
+    try {
+      const r = await buildImportReportFn({ data: { id: job.id, includeSql: format === "json" } });
+      if (!r.bundle) { setErr(r.error ?? "Report failed"); return; }
+      const bundle = r.bundle as ImportReportBundle;
+      if (format === "json") downloadReportJson(bundle);
+      else if (!openReportPdf(bundle)) setErr("Popup blocked — allow popups to save the PDF.");
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally { setBusy(null); }
   }
 
   async function loadRollback(job: ImportJobView, version?: number) {
