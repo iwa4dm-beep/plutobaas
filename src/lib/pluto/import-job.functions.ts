@@ -23,9 +23,27 @@ export type ImportJobView = {
   applied_at: string | null;
   applied_by: string | null;
   selection: string[] | null;
+  paused: boolean;
+  paused_by: string | null;
+  paused_at: string | null;
+  resume_step: string | null;
   created_at: string;
   updated_at: string;
 };
+
+export type SqlVersionView = {
+  id: string;
+  version: number;
+  kind: string;
+  counts: Record<string, number> | null;
+  destructive_count: number | null;
+  actor_email: string | null;
+  note: string | null;
+  selection: string[] | null;
+  sql_length: number;
+  created_at: string;
+};
+
 
 export type ImportEventView = {
   id: string;
