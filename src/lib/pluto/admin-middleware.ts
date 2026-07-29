@@ -19,6 +19,10 @@
  */
 
 import { createMiddleware } from "@tanstack/react-start";
+// Client-safe façade: the actual `@tanstack/react-start/server` usage lives in
+// admin-request-header.server.ts behind createServerOnlyFn, so this module
+// stays importable from client-reachable route code.
+import { readIncomingAuthHeader, runWithAuthHeader } from "./request-context";
 
 const DEFAULT_PLUTO_URL = "https://api.timescard.cloud";
 const SESSION_KEY = "pluto.session.v1";
@@ -283,8 +287,7 @@ export const requirePlutoAdmin = createMiddleware({ type: "function" })
     // the outer verified caller.
     let recovered: "als" | "request-header" | null = null;
     if (!header || !/^Bearer\s+\S+/i.test(header)) {
-      const { readIncomingAuthHeader } = await import("./admin-request-header.server");
-      const incoming = readIncomingAuthHeader();
+      const incoming = await readIncomingAuthHeader().catch(() => null);
       if (incoming) {
         header = incoming;
         recovered = "als";
@@ -313,7 +316,6 @@ export const requirePlutoAdmin = createMiddleware({ type: "function" })
     // Stash the verified header in AsyncLocalStorage so nested server-fn
     // calls (whose `.client()` runs server-side without localStorage) can
     // recover it even when the outer HTTP request has no Authorization header.
-    const { runWithAuthHeader } = await import("./admin-request-header.server");
     return runWithAuthHeader(header, () => next({ context: { plutoAdmin: admin } }));
   });
 
