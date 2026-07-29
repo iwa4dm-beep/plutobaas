@@ -415,6 +415,8 @@ chrome.runtime.onInstalled.addListener(() => {
   });
 });
 
+rescheduleAuto();
+
 chrome.contextMenus.onClicked.addListener((info) => {
   if (info.menuItemId === "pluto-quick-capture") quickCapture();
 });

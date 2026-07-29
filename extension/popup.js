@@ -135,3 +135,81 @@ $("refreshHistory").onclick = renderHistory;
 $("drain").onclick = async () => { await msg({ type: "pluto:drain" }); renderHistory(); };
 
 renderProfiles();
+
+/* ------------------------------------------------------------------ */
+/* v3 — Live timeline, rollback, resume, SQL lens, bundle export        */
+/* ------------------------------------------------------------------ */
+(() => {
+  const ask = (msg) => new Promise((r) => chrome.runtime.sendMessage(msg, r));
+  const panel = document.createElement("section");
+  panel.className = "card";
+  panel.innerHTML = `
+    <h3 style="margin:8px 0">Live job</h3>
+    <div style="display:flex;gap:6px;margin-bottom:6px">
+      <input id="pv3-job" placeholder="job id" style="flex:1" />
+      <button id="pv3-watch">Watch</button>
+      <button id="pv3-refresh">Refresh</button>
+    </div>
+    <div id="pv3-status" style="font:12px/1.5 monospace;opacity:.8"></div>
+    <ol id="pv3-timeline" style="max-height:180px;overflow:auto;font:12px/1.5 monospace;padding-left:16px"></ol>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">
+      <button id="pv3-rb-dry">Rollback (dry-run)</button>
+      <button id="pv3-rb">Rollback now</button>
+      <button id="pv3-bundle">Download bundle</button>
+      <button id="pv3-resume">Resume upload</button>
+    </div>
+    <div id="pv3-lens" style="font:12px/1.5 monospace;margin-top:6px;opacity:.85"></div>`;
+  document.body.appendChild(panel);
+
+  const $ = (id) => panel.querySelector(id);
+  const jobId = () => $("#pv3-job").value.trim();
+
+  async function refresh() {
+    if (!jobId()) return;
+    const r = await ask({ type: "pluto:status", job_id: jobId() });
+    if (!r?.ok) { $("#pv3-status").textContent = r?.error || "not found"; return; }
+    $("#pv3-status").textContent = `${r.job.status}${r.job.paused ? " (paused)" : ""} · ${r.job.sql_chars} chars · ${r.verification.length} verification run(s)`;
+    $("#pv3-timeline").innerHTML = r.events
+      .slice(0, 60)
+      .map((e) => `<li>${e.ok ? "✓" : "✗"} <b>${e.step}</b> — ${(e.message || "").slice(0, 120)}</li>`)
+      .join("");
+  }
+
+  $("#pv3-refresh").onclick = refresh;
+  $("#pv3-watch").onclick = async () => { await ask({ type: "pluto:watch", job_id: jobId() }); refresh(); };
+  $("#pv3-rb-dry").onclick = async () => {
+    const r = await ask({ type: "pluto:rollback", job_id: jobId(), dry_run: true });
+    $("#pv3-status").textContent = r?.ok ? `dry-run ok — ${r.result.statements} stmt(s)` : `dry-run failed: ${r?.result?.error || r?.error}`;
+  };
+  $("#pv3-rb").onclick = async () => {
+    if (!confirm("Roll back this import job on the server?")) return;
+    const r = await ask({ type: "pluto:rollback", job_id: jobId() });
+    $("#pv3-status").textContent = r?.ok ? "rolled back" : `failed: ${r?.result?.error || r?.error}`;
+    refresh();
+  };
+  $("#pv3-bundle").onclick = async () => {
+    const scan = await ask({ type: "pluto:scan" });
+    const r = await ask({ type: "pluto:bundle", payload: scan?.merged || {} });
+    $("#pv3-status").textContent = r?.ok ? `saved ${r.files.join(", ")}` : "download failed";
+  };
+  $("#pv3-resume").onclick = async () => {
+    const { resumable } = await ask({ type: "pluto:resumable" });
+    if (!resumable) { $("#pv3-status").textContent = "no interrupted upload"; return; }
+    const scan = await ask({ type: "pluto:scan" });
+    const payload = { ...(scan?.merged || {}), event_id: resumable.event_id, upload_id: resumable.upload_id };
+    const r = await ask({ type: "pluto:resume", payload });
+    $("#pv3-status").textContent = r?.ok ? "upload resumed" : "resume failed";
+  };
+
+  (async () => {
+    const scan = await ask({ type: "pluto:scan" });
+    const lens = await ask({ type: "pluto:lens", payload: scan?.merged || {} });
+    if (lens?.stats) {
+      $("#pv3-lens").innerHTML =
+        `SQL lens: ${lens.stats.chars} chars · ${lens.stats.create_table} tables · ${lens.stats.policies} policies · ${lens.stats.drops} drops` +
+        lens.lint.map((l) => `<div>${l.level === "error" ? "✗" : l.level === "warn" ? "!" : "·"} ${l.text}</div>`).join("");
+    }
+    const { watchers } = await ask({ type: "pluto:watchers" });
+    if (watchers?.[0]) { $("#pv3-job").value = watchers[0].job_id; refresh(); }
+  })();
+})();
