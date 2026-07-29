@@ -99,6 +99,10 @@ type JobRow = {
   applied_at: string | null;
   applied_by: string | null;
   selection: string[] | null;
+  paused: boolean;
+  paused_by: string | null;
+  paused_at: string | null;
+  resume_step: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -116,6 +120,10 @@ function toJobView(j: JobRow): ImportJobView {
     applied_at: j.applied_at,
     applied_by: j.applied_by,
     selection: j.selection,
+    paused: j.paused === true,
+    paused_by: j.paused_by,
+    paused_at: j.paused_at,
+    resume_step: j.resume_step,
     created_at: j.created_at,
     updated_at: j.updated_at,
   };
