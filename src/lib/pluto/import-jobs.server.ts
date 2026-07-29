@@ -84,7 +84,10 @@ export async function ensureImportJobsTable(): Promise<void> {
        created_at timestamptz not null default now(),
        updated_at timestamptz not null default now()
      );
-     create index if not exists import_jobs_created_idx on admin.import_jobs (created_at desc);`,
+     create index if not exists import_jobs_created_idx on admin.import_jobs (created_at desc);
+     alter table admin.import_jobs add column if not exists applied_at timestamptz;
+     alter table admin.import_jobs add column if not exists applied_by text;
+     alter table admin.import_jobs add column if not exists selection jsonb;`,
     [],
     true,
   );
