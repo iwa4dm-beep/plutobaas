@@ -171,27 +171,15 @@ export async function updateImportJob(
   return rows.length ? rowToJob(rows[0]) : null;
 }
 
-/** Run the job's migration SQL against Pluto. `dryRun` uses a read-only tx. */
+/** Run the job's migration SQL against Pluto. `dryRun` wraps it in a rolled-back tx. */
 export async function runImportSql(sql: string, dryRun: boolean): Promise<ExecResult> {
-  if (dryRun) {
-    // Read-only mode rejects DDL, so we validate by asking Postgres to parse
-    // the statements inside an aborted transaction instead.
-    return vpsFetch<ExecResult>("/admin/v1/sql/exec", {
-      method: "POST",
-      mode: "service",
-      timeoutMs: 120_000,
-      body: {
-        sql: `do $pluto_dry$ begin\n${"-- dry-run parse check"}\nend $pluto_dry$;\n` + sql.replace(/;\s*$/, ";") + "\nrollback;",
-        read_only: false,
-        allow_dangerous: true,
-        confirm_destructive: true,
-      },
-    });
-  }
+  const body = dryRun
+    ? `begin;\n${sql}\nrollback;`
+    : sql;
   return vpsFetch<ExecResult>("/admin/v1/sql/exec", {
     method: "POST",
     mode: "service",
     timeoutMs: 180_000,
-    body: { sql, read_only: false, allow_dangerous: true, confirm_destructive: true },
+    body: { sql: body, read_only: false, allow_dangerous: true, confirm_destructive: true },
   });
 }
