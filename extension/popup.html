@@ -1,0 +1,37 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      body { font: 13px system-ui, sans-serif; width: 360px; margin: 0; padding: 14px; }
+      h1 { font-size: 15px; margin: 0 0 8px; }
+      label { display: block; margin-top: 8px; font-weight: 600; font-size: 12px; }
+      input, textarea { width: 100%; box-sizing: border-box; padding: 6px; font-size: 12px; }
+      textarea { height: 90px; font-family: ui-monospace, monospace; }
+      button { margin-top: 10px; padding: 7px 10px; font-size: 13px; cursor: pointer; }
+      .row { display: flex; gap: 8px; }
+      .row button { flex: 1; }
+      pre { background: #f4f4f5; padding: 8px; max-height: 140px; overflow: auto; font-size: 11px; }
+      .muted { color: #666; font-size: 11px; }
+    </style>
+  </head>
+  <body>
+    <h1>Pluto Migrator</h1>
+    <p class="muted">Open a Lovable project, a Supabase SQL editor, or a GitHub repo, then click Collect.</p>
+
+    <label>Ingest endpoint</label>
+    <input id="endpoint" placeholder="https://plutobaas.lovable.app/api/public/pluto-import" />
+    <label>Shared secret (PLUTO_IMPORT_WEBHOOK_SECRET)</label>
+    <input id="secret" type="password" placeholder="paste secret" />
+    <div class="row">
+      <button id="save">Save settings</button>
+      <button id="collect">Collect this tab</button>
+    </div>
+
+    <label>Payload preview</label>
+    <textarea id="payload"></textarea>
+    <button id="send">Send to Pluto</button>
+    <pre id="out"></pre>
+    <script src="popup.js"></script>
+  </body>
+</html>

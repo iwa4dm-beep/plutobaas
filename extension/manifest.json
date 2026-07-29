@@ -1,0 +1,33 @@
+{
+  "manifest_version": 3,
+  "name": "Pluto Migrator",
+  "version": "1.0.0",
+  "description": "Collect your Lovable project, GitHub repo and Supabase schema, then send them to Pluto BaaS as a signed migration job.",
+  "permissions": ["storage", "activeTab", "scripting", "tabs"],
+  "host_permissions": [
+    "https://lovable.dev/*",
+    "https://*.lovable.app/*",
+    "https://supabase.com/*",
+    "https://*.supabase.co/*",
+    "https://github.com/*",
+    "https://api.github.com/*",
+    "https://dashboard.timescard.cloud/*",
+    "https://plutobaas.lovable.app/*"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Pluto Migrator"
+  },
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://lovable.dev/*", "https://supabase.com/*", "https://github.com/*"],
+      "js": ["collector.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "icons": { "48": "icon.png", "128": "icon.png" }
+}

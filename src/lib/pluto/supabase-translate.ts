@@ -1,0 +1,130 @@
+// Translate a Supabase schema dump into a Pluto-compatible migration.
+//
+// Pure, dependency-free and client-safe so the dashboard can preview the
+// result and unit tests can assert on it.
+//
+// What it changes:
+//  - `auth.uid()` / `auth.role()` / `auth.jwt()` → Pluto's shim equivalents
+//  - `auth.users` FK targets → `auth.users` exists in Pluto too, kept as-is
+//  - Supabase-only extensions / roles / grants that Pluto provisions itself
+//  - `storage.*` and `realtime.*` statements are dropped (Pluto owns those)
+//  - RLS policies keep their logic but are made idempotent
+
+export type TranslateWarning = { line: number; statement: string; reason: string };
+
+export type TranslateResult = {
+  sql: string;
+  warnings: TranslateWarning[];
+  stats: { statements: number; kept: number; dropped: number; rewritten: number };
+};
+
+const DROP_PREFIXES = [
+  /^create\s+extension\s+if\s+not\s+exists\s+"?(pgsodium|supabase_vault|pg_graphql|pgjwt)"?/i,
+  /^create\s+schema\s+if\s+not\s+exists\s+(storage|realtime|graphql|vault|extensions|supabase_functions)\b/i,
+  /^(create|alter|drop)\s+(table|policy|function|trigger|publication)\s+[^;]*\b(storage|realtime|supabase_functions|vault)\./i,
+  /^grant\s+[^;]*\bto\s+(supabase_admin|supabase_auth_admin|supabase_storage_admin|dashboard_user)\b/i,
+  /^alter\s+(default\s+privileges|publication)\s+/i,
+  /^comment\s+on\s+extension\b/i,
+  /^set\s+/i,
+  /^select\s+pg_catalog\.set_config/i,
+];
+
+/** Split on semicolons that are not inside quotes or dollar-quoted blocks. */
+export function splitSqlStatements(sql: string): string[] {
+  const out: string[] = [];
+  let buf = "";
+  let i = 0;
+  let quote: string | null = null;
+  let dollarTag: string | null = null;
+  while (i < sql.length) {
+    const ch = sql[i];
+    if (dollarTag) {
+      if (sql.startsWith(dollarTag, i)) { buf += dollarTag; i += dollarTag.length; dollarTag = null; continue; }
+      buf += ch; i++; continue;
+    }
+    if (quote) {
+      buf += ch;
+      if (ch === quote) quote = null;
+      i++; continue;
+    }
+    if (ch === "'" || ch === '"') { quote = ch; buf += ch; i++; continue; }
+    if (ch === "-" && sql[i + 1] === "-") {
+      const nl = sql.indexOf("\n", i);
+      const end = nl === -1 ? sql.length : nl;
+      buf += sql.slice(i, end);
+      i = end; continue;
+    }
+    const dq = /^\$[A-Za-z_]*\$/.exec(sql.slice(i));
+    if (dq) { dollarTag = dq[0]; buf += dollarTag; i += dollarTag.length; continue; }
+    if (ch === ";") { out.push(buf.trim()); buf = ""; i++; continue; }
+    buf += ch; i++;
+  }
+  if (buf.trim()) out.push(buf.trim());
+  return out.filter(Boolean);
+}
+
+function rewrite(stmt: string): { sql: string; changed: boolean } {
+  let s = stmt;
+  const before = s;
+  // Supabase auth helpers → Pluto shims (Pluto ships auth.uid()/auth.role()
+  // via migration 0015_1_auth_uid_shim.sql, so these are compatible names).
+  s = s.replace(/\bauth\.jwt\(\)\s*->>\s*'sub'/gi, "auth.uid()::text");
+  s = s.replace(/\brequesting_user_id\(\)/gi, "auth.uid()");
+  // Owner columns typed as uuid referencing Supabase users.
+  s = s.replace(/references\s+auth\.users\s*\(\s*id\s*\)/gi, "references auth.users(id) on delete cascade");
+  // Idempotency.
+  s = s.replace(/^create\s+table\s+(?!if\s+not\s+exists)/i, "create table if not exists ");
+  s = s.replace(/^create\s+index\s+(?!if\s+not\s+exists)/i, "create index if not exists ");
+  s = s.replace(/^create\s+unique\s+index\s+(?!if\s+not\s+exists)/i, "create unique index if not exists ");
+  s = s.replace(/^create\s+type\s+/i, "create type ");
+  s = s.replace(/^create\s+(or\s+replace\s+)?function\s+/i, "create or replace function ");
+  // Supabase role names that do not exist on Pluto.
+  s = s.replace(/\bto\s+(anon|authenticated|service_role)\b/gi, "to $1");
+  return { sql: s, changed: s !== before };
+}
+
+/** Wrap `create policy` in a drop-if-exists so re-runs are safe. */
+function makePolicyIdempotent(stmt: string): string {
+  const m = /^create\s+policy\s+("?[^"\s]+"?|'[^']+')\s+on\s+([a-z0-9_."]+)/i.exec(stmt);
+  if (!m) return stmt;
+  return `drop policy if exists ${m[1]} on ${m[2]};\n${stmt}`;
+}
+
+export function translateSupabaseSchema(rawSql: string): TranslateResult {
+  const statements = splitSqlStatements(rawSql);
+  const warnings: TranslateWarning[] = [];
+  const kept: string[] = [];
+  let dropped = 0;
+  let rewritten = 0;
+
+  statements.forEach((stmt, idx) => {
+    const compact = stmt.replace(/\s+/g, " ").trim();
+    if (!compact || compact.startsWith("--")) return;
+    const drop = DROP_PREFIXES.find((re) => re.test(compact));
+    if (drop) {
+      dropped++;
+      warnings.push({
+        line: idx + 1,
+        statement: compact.slice(0, 160),
+        reason: "Supabase-managed object — Pluto provisions this itself, statement skipped.",
+      });
+      return;
+    }
+    const r = rewrite(stmt);
+    if (r.changed) rewritten++;
+    kept.push(makePolicyIdempotent(r.sql));
+  });
+
+  const header = [
+    "-- Generated by Pluto Migrator (Supabase → Pluto).",
+    "-- Review before applying. Dry-run runs this inside a rolled-back transaction.",
+    `-- statements: ${statements.length}, kept: ${kept.length}, dropped: ${dropped}, rewritten: ${rewritten}`,
+    "",
+  ].join("\n");
+
+  return {
+    sql: header + kept.map((s) => `${s};`).join("\n\n") + "\n",
+    warnings,
+    stats: { statements: statements.length, kept: kept.length, dropped, rewritten },
+  };
+}

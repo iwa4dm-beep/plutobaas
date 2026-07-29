@@ -1,64 +1,58 @@
-# Bulk delete hardening: modal, jobs, audit, soft-delete
+## লক্ষ্য
 
-Four features touching dashboard bulk delete, VPS worker, DB, and a new recycle bin. All work on top of what already shipped (`purgeVpsSlug`, bulk-delete in `dashboard.projects.tsx` / `dashboard.users.tsx`).
+Chrome এক্সটেনশন + Pluto webhook দিয়ে **GitHub / Supabase / Lovable-এ আপনার লগইন করা সেশন ব্যবহার করে** পুরো প্রজেক্ট কোড ও ডাটাবেজ স্কিমা Pluto BaaS-এ এক ক্লিকে মাইগ্রেট করা — Marketplace পেজ থেকেই ইনস্টল/কনফিগার করা যাবে।
 
-## 1. Confirmation modal + per-item error summary
+কেন এক্সটেনশন লাগে: Lovable ও Supabase ড্যাশবোর্ডের ভিতরের ডেটা (প্রজেক্ট লিস্ট, DB পাসওয়ার্ড-বিহীন স্কিমা, connection string) সার্ভার থেকে পড়া যায় না — ব্রাউজারে আপনার লগইন করা ট্যাব থেকেই পড়তে হয়। এক্সটেনশন সেটাই করবে, তারপর Pluto-র webhook-এ পাঠাবে।
 
-Replace the `confirm()` calls in `dashboard.projects.tsx` and `dashboard.users.tsx` with a shared `<BulkDeleteDialog>` component:
+```text
+[Chrome Extension]                  [Pluto BaaS]
+ lovable.dev tab  ─┐
+ supabase.com tab ─┼─ collect ──► POST /api/public/pluto-import
+ github.com tab   ─┘   (HMAC)         │
+                                      ├─► repo zip fetch + unpack (sandbox worker)
+                                      ├─► schema SQL → migration bundle → dry-run → apply
+                                      └─► job status ◄── Marketplace UI polling
+```
 
-- Lists every target (name + slug/email) as a checklist you can still uncheck.
-- Requires typing `DELETE` to enable the button (matches GitHub / Vercel norms).
-- Shows a "Purge VPS site directory too" toggle (projects only), default on.
-- Runs deletions in parallel with `Promise.allSettled`, streams per-item status back into the dialog (pending → ok / db-failed / vps-failed) with the exact error message and — for VPS failures — the `hint` from `purgeVpsSlug`.
-- Dialog stays open after the run so you can copy failures, retry only failed rows, or close.
+## যা তৈরি হবে
 
-Files: `src/components/pluto/BulkDeleteDialog.tsx` (new), and rewire the two dashboard routes.
+### ১. Chrome Extension (MV3) — `extension/`
+- `manifest.json`: MV3, permissions `storage`, `tabs`, `scripting`, `cookies`; host_permissions — `*.lovable.dev`, `*.supabase.com`, `api.github.com`, `github.com`, আপনার Pluto API ডোমেইন।
+- `popup.html` + `popup.js`: Pluto API URL + Import Token বসানোর ফর্ম, "Scan" বাটন (কোন কোন সোর্স ধরা পড়ল দেখাবে), "Send to Pluto" বাটন, লাইভ জব স্ট্যাটাস।
+- `content-lovable.js`: খোলা Lovable ড্যাশবোর্ড থেকে project id/name/GitHub repo লিংক তুলবে।
+- `content-supabase.js`: Supabase ড্যাশবোর্ড থেকে project ref, region, table/schema তথ্য (SQL editor API) তুলবে।
+- `background.js`: GitHub session দিয়ে `api.github.com` থেকে repo list + default branch + zipball URL আনবে; সব একত্র করে HMAC-signed payload Pluto-তে POST করবে।
+- প্যাকেজ: `public/downloads/pluto-migrator-extension.zip` (zip via nix), Marketplace পেজে fetch+blob ডাউনলোড বাটন।
 
-## 2. Background job with live status for VPS purges
+### ২. Webhook / ইনজেস্ট এন্ডপয়েন্ট
+- `src/routes/api/public/pluto-import.ts` — POST, HMAC `X-Pluto-Signature` (secret: `PLUTO_IMPORT_SECRET`) যাচাই, Zod ভ্যালিডেশন, রিপ্লে-প্রোটেকশন (`event.id` + TTL, বিদ্যমান idempotency প্যাটার্ন অনুসরণ)।
+- payload স্কিমা: `{ event_id, source: 'lovable'|'supabase'|'github', repo?, zipball_url?, github_token_hint?, supabase: { ref, schema_sql?, tables[] }, target: { project_id, slug } }`।
+- এন্ডপয়েন্ট একটি **import job** তৈরি করবে এবং সাথে সাথে `202 { job_id }` ফেরত দেবে।
 
-Purges become jobs so long / flaky VPS calls don't block the UI.
+### ৩. Import পাইপলাইন (server functions)
+`src/lib/pluto/import-job.functions.ts`:
+- `startImportJob` — repo zip ডাউনলোড → বিদ্যমান sandbox-worker `/unpack` ফ্লো-তে পাঠানো (যেটা ইতিমধ্যে কাজ করছে)।
+- `translateSupabaseSchema` — Supabase স্কিমা SQL → Pluto-সঙ্গত মাইগ্রেশন: `auth.users` → Pluto users, RLS policy রূপান্তর, `IF NOT EXISTS` idempotency যোগ, storage buckets ম্যাপিং।
+- `runImportMigrations` — আগে **dry-run** (বিদ্যমান db-diagnostics dry-run টুল), তারপর approve হলে apply।
+- `getImportJob` — স্ট্যাটাস/লগ পোলিং।
 
-- New table `public.vps_purge_jobs` (id, workspace_id, slug, status: queued|running|ok|failed, attempts, last_error, removed jsonb, created_by, created_at, updated_at).
-- New server functions in `src/lib/pluto/vps-purge-jobs.functions.ts`:
-  - `enqueueVpsPurge({ slug, projectId })` — inserts a queued row, kicks off `runVpsPurgeJob` (fire-and-forget), returns job id.
-  - `runVpsPurgeJob({ id })` — marks running, calls existing `purgeVpsSlug` handler, records result + attempts.
-  - `retryVpsPurgeJob({ id })` — resets failed → queued and re-runs.
-  - `listVpsPurgeJobs({ limit, status? })` — for dashboard polling.
-- Bulk delete flow enqueues one job per project instead of awaiting purge inline. Dialog subscribes via `useQuery` with 1.5s poll until every job is terminal.
-- New route `dashboard.jobs.tsx` shows the full queue with retry buttons and last-error detail.
+### ৪. Marketplace পেজ ইন্টিগ্রেশন
+`src/routes/dashboard.pluto-marketplace.tsx`-এ নতুন সেকশন **"Migrate from Lovable / Supabase / GitHub"**:
+- এক্সটেনশন ডাউনলোড + ইনস্টল স্টেপ (chrome://extensions → Developer mode → Load unpacked)।
+- Import Token জেনারেট বাটন (HMAC secret-এর সাথে বাঁধা), কপি-টু-ক্লিপবোর্ড।
+- ইনকামিং import job লিস্ট: সোর্স, repo, স্ট্যাটাস, dry-run রিপোর্ট, **Apply** / **Rollback** বাটন।
+- এক্সটেনশনটি রেজিস্ট্রিতে official `webhook` category extension হিসেবেও পাবলিশ হবে, যাতে বিদ্যমান install/dispatch লাইফসাইকেল কাজ করে।
 
-## 3. Admin audit log for deletes
+## নিরাপত্তা
+- কোনো GitHub/Supabase টোকেন Pluto-তে সংরক্ষণ হবে না — এক্সটেনশন ব্রাউজার সেশন ব্যবহার করে ডেটা টানে, শুধু ফলাফল পাঠায়।
+- ইনজেস্ট এন্ডপয়েন্ট `/api/public/*`-এ থাকলেও প্রতিটি রিকোয়েস্টে HMAC + timing-safe compare + replay guard বাধ্যতামূলক।
+- DB apply সবসময় dry-run → manual approve; prod env-এ বিদ্যমান Ops approval ওয়ার্কফ্লো ব্যবহার করবে।
+- Secret `PLUTO_IMPORT_SECRET` shared secret হিসেবে আপনি নিজে তৈরি করে দুই জায়গায় (Pluto secret + এক্সটেনশন popup) বসাবেন।
 
-- New table `public.admin_delete_audit` (id, actor_id, actor_email, action: delete_user|delete_project, target_id, target_label, db_rows_removed int, vps_purge_job_id nullable, vps_removed_paths jsonb, vps_errors jsonb, created_at).
-- Wrap the existing `admin.projects.remove` / `admin.users.remove` calls in a new server function `recordDeleteAudit` that inserts one row per target as soon as the DB delete resolves; VPS job id is patched in when the job finishes.
-- New route `dashboard.audit.deletes.tsx`: filterable list (by actor, action, date range) with links to job detail. Superadmin only via existing `TraceAccessGate`.
+## সীমাবদ্ধতা (আগে জানিয়ে রাখছি)
+- Supabase-এর **ডেটা রো** (actual rows) ব্রাউজার সেশন থেকে বড় আকারে টানা অনির্ভরযোগ্য — প্রথম ধাপে schema + RLS + storage bucket structure মাইগ্রেট হবে; রো-ডেটার জন্য `pg_dump` connection string দিয়ে আলাদা ধাপ (ঐচ্ছিক, দ্বিতীয় ফেজ)।
+- Lovable ড্যাশবোর্ডের DOM বদলালে content script সিলেক্টর আপডেট লাগবে — তাই একাধিক fallback সিলেক্টর ও "manual paste" ফলব্যাক থাকবে।
 
-## 4. Soft-delete + configurable undo window
-
-Instead of dropping DB rows immediately, mark them deleted and purge later.
-
-- Migration: add `deleted_at timestamptz`, `deleted_by uuid`, `purge_after timestamptz` to `admin.projects` and `admin.users`. All existing list endpoints add `deleted_at is null`.
-- New settings row `admin.system_settings.soft_delete_window_minutes` (default 30). Editable from `dashboard.ops.settings.tsx`.
-- Delete flow becomes:
-  1. Set `deleted_at = now()`, `purge_after = now() + window`, `deleted_by = actor`.
-  2. Enqueue VPS purge job but with `run_after = purge_after` — worker skips until then.
-  3. Audit row records "soft delete".
-- New "Recycle bin" route `dashboard.trash.tsx`:
-  - Lists soft-deleted users + projects with time-remaining.
-  - **Restore** (clears `deleted_at`, cancels queued job).
-  - **Purge now** (sets `purge_after = now()`, wakes job).
-- Sweeper: extend the existing worker tick to hard-delete rows past `purge_after` and run their VPS jobs.
-
-## Technical notes
-
-- Only superadmins see the audit + trash routes; existing `useSuperAdmin` hook gates them.
-- All new tables get the standard `GRANT ... TO service_role` + RLS-enabled + policies scoped to `has_role(..., 'admin')` per `docs/security/core-tables-rls.md`.
-- Purge jobs run inside a single-flight lock keyed by slug so retries can't stomp each other.
-- `purgeVpsSlug` is unchanged — the job wrapper calls it.
-- Rollout order: migration → server fns → dashboard components → new routes → wire bulk-delete to jobs.
-
-## Out of scope
-
-- Email/Slack notifications on purge failure (already covered by Ops webhooks — reuse if wanted later).
-- Cross-region replication of the audit log.
-- Bulk restore from trash (single-row restore only in v1).
+## ফাইল সারাংশ
+- নতুন: `extension/*` (৬ ফাইল), `src/routes/api/public/pluto-import.ts`, `src/lib/pluto/import-job.functions.ts`, `src/lib/pluto/supabase-schema-translate.ts`, `src/components/pluto/MigrateImportPanel.tsx`
+- সম্পাদনা: `src/routes/dashboard.pluto-marketplace.tsx`, `public/downloads/manifest.json`

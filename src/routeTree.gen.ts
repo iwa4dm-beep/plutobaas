@@ -123,6 +123,7 @@ import { Route as DashboardAdminInviteRouteImport } from './routes/dashboard.adm
 import { Route as ApiPublicVpsSubdomainsRouteImport } from './routes/api/public/vps-subdomains'
 import { Route as ApiPublicProvisionSubdomainRouteImport } from './routes/api/public/provision-subdomain'
 import { Route as ApiPublicPlutoMigrateRouteImport } from './routes/api/public/pluto-migrate'
+import { Route as ApiPublicPlutoImportRouteImport } from './routes/api/public/pluto-import'
 import { Route as ApiPublicAutoDeployWebhookRouteImport } from './routes/api/public/auto-deploy-webhook'
 import { Route as ApiPlutoVerifyBootstrapRouteImport } from './routes/api/pluto/verify-bootstrap'
 import { Route as ApiPlutoStatusRouteImport } from './routes/api/pluto.status'
@@ -716,6 +717,11 @@ const ApiPublicPlutoMigrateRoute = ApiPublicPlutoMigrateRouteImport.update({
   path: '/api/public/pluto-migrate',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicPlutoImportRoute = ApiPublicPlutoImportRouteImport.update({
+  id: '/api/public/pluto-import',
+  path: '/api/public/pluto-import',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiPublicAutoDeployWebhookRoute =
   ApiPublicAutoDeployWebhookRouteImport.update({
     id: '/api/public/auto-deploy-webhook',
@@ -873,6 +879,7 @@ export interface FileRoutesByFullPath {
   '/api/pluto/status': typeof ApiPlutoStatusRoute
   '/api/pluto/verify-bootstrap': typeof ApiPlutoVerifyBootstrapRoute
   '/api/public/auto-deploy-webhook': typeof ApiPublicAutoDeployWebhookRoute
+  '/api/public/pluto-import': typeof ApiPublicPlutoImportRoute
   '/api/public/pluto-migrate': typeof ApiPublicPlutoMigrateRoute
   '/api/public/provision-subdomain': typeof ApiPublicProvisionSubdomainRoute
   '/api/public/vps-subdomains': typeof ApiPublicVpsSubdomainsRoute
@@ -998,6 +1005,7 @@ export interface FileRoutesByTo {
   '/api/pluto/status': typeof ApiPlutoStatusRoute
   '/api/pluto/verify-bootstrap': typeof ApiPlutoVerifyBootstrapRoute
   '/api/public/auto-deploy-webhook': typeof ApiPublicAutoDeployWebhookRoute
+  '/api/public/pluto-import': typeof ApiPublicPlutoImportRoute
   '/api/public/pluto-migrate': typeof ApiPublicPlutoMigrateRoute
   '/api/public/provision-subdomain': typeof ApiPublicProvisionSubdomainRoute
   '/api/public/vps-subdomains': typeof ApiPublicVpsSubdomainsRoute
@@ -1125,6 +1133,7 @@ export interface FileRoutesById {
   '/api/pluto/status': typeof ApiPlutoStatusRoute
   '/api/pluto/verify-bootstrap': typeof ApiPlutoVerifyBootstrapRoute
   '/api/public/auto-deploy-webhook': typeof ApiPublicAutoDeployWebhookRoute
+  '/api/public/pluto-import': typeof ApiPublicPlutoImportRoute
   '/api/public/pluto-migrate': typeof ApiPublicPlutoMigrateRoute
   '/api/public/provision-subdomain': typeof ApiPublicProvisionSubdomainRoute
   '/api/public/vps-subdomains': typeof ApiPublicVpsSubdomainsRoute
@@ -1253,6 +1262,7 @@ export interface FileRouteTypes {
     | '/api/pluto/status'
     | '/api/pluto/verify-bootstrap'
     | '/api/public/auto-deploy-webhook'
+    | '/api/public/pluto-import'
     | '/api/public/pluto-migrate'
     | '/api/public/provision-subdomain'
     | '/api/public/vps-subdomains'
@@ -1378,6 +1388,7 @@ export interface FileRouteTypes {
     | '/api/pluto/status'
     | '/api/pluto/verify-bootstrap'
     | '/api/public/auto-deploy-webhook'
+    | '/api/public/pluto-import'
     | '/api/public/pluto-migrate'
     | '/api/public/provision-subdomain'
     | '/api/public/vps-subdomains'
@@ -1504,6 +1515,7 @@ export interface FileRouteTypes {
     | '/api/pluto/status'
     | '/api/pluto/verify-bootstrap'
     | '/api/public/auto-deploy-webhook'
+    | '/api/public/pluto-import'
     | '/api/public/pluto-migrate'
     | '/api/public/provision-subdomain'
     | '/api/public/vps-subdomains'
@@ -1548,6 +1560,7 @@ export interface RootRouteChildren {
   ApiPlutoStatusRoute: typeof ApiPlutoStatusRoute
   ApiPlutoVerifyBootstrapRoute: typeof ApiPlutoVerifyBootstrapRoute
   ApiPublicAutoDeployWebhookRoute: typeof ApiPublicAutoDeployWebhookRoute
+  ApiPublicPlutoImportRoute: typeof ApiPublicPlutoImportRoute
   ApiPublicPlutoMigrateRoute: typeof ApiPublicPlutoMigrateRoute
   ApiPublicProvisionSubdomainRoute: typeof ApiPublicProvisionSubdomainRoute
   ApiPublicVpsSubdomainsRoute: typeof ApiPublicVpsSubdomainsRoute
@@ -2355,6 +2368,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicPlutoMigrateRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/pluto-import': {
+      id: '/api/public/pluto-import'
+      path: '/api/public/pluto-import'
+      fullPath: '/api/public/pluto-import'
+      preLoaderRoute: typeof ApiPublicPlutoImportRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/auto-deploy-webhook': {
       id: '/api/public/auto-deploy-webhook'
       path: '/api/public/auto-deploy-webhook'
@@ -2730,6 +2750,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPlutoStatusRoute: ApiPlutoStatusRoute,
   ApiPlutoVerifyBootstrapRoute: ApiPlutoVerifyBootstrapRoute,
   ApiPublicAutoDeployWebhookRoute: ApiPublicAutoDeployWebhookRoute,
+  ApiPublicPlutoImportRoute: ApiPublicPlutoImportRoute,
   ApiPublicPlutoMigrateRoute: ApiPublicPlutoMigrateRoute,
   ApiPublicProvisionSubdomainRoute: ApiPublicProvisionSubdomainRoute,
   ApiPublicVpsSubdomainsRoute: ApiPublicVpsSubdomainsRoute,
@@ -2739,13 +2760,3 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { startInstance } from './start.ts'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-    config: Awaited<ReturnType<typeof startInstance.getOptions>>
-  }
-}
