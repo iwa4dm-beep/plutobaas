@@ -243,13 +243,24 @@ export const retranslateImportJob = createServerFn({ method: "POST" })
       migration_sql: t.sql,
       report: { translation: t.stats, warnings: t.warnings },
     });
+    const { saveSqlVersion } = await import("./import-jobs.server");
+    const version = await saveSqlVersion({
+      jobId: job.id,
+      kind: "translate",
+      sql: t.sql,
+      selection: data.selection ?? job.selection ?? null,
+      counts: diff.counts,
+      destructiveCount: diff.destructiveCount,
+      actorEmail: actor.email,
+      note: `${t.stats.kept} kept / ${t.stats.dropped} dropped`,
+    });
     await appendImportEvent({
       jobId: job.id,
       step: "translated",
       actorId: actor.userId,
       actorEmail: actor.email,
-      message: `${t.stats.kept} statements kept, ${t.stats.dropped} dropped, ${t.stats.rewritten} rewritten`,
-      detail: { stats: t.stats, counts: diff.counts, destructive: diff.destructiveCount },
+      message: `${t.stats.kept} statements kept, ${t.stats.dropped} dropped, ${t.stats.rewritten} rewritten${version ? ` — archived as v${version.version}` : ""}`,
+      detail: { stats: t.stats, counts: diff.counts, destructive: diff.destructiveCount, version: version?.version ?? null },
     });
 
     return { ok: true, error: null, sql: t.sql, warnings: t.warnings, stats: t.stats, diff };
