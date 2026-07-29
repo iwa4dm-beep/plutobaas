@@ -56,6 +56,9 @@ export function MigratorPanel() {
   const [plans, setPlans] = useState<Record<string, Plan>>({});
   const [events, setEvents] = useState<Record<string, ImportEventView[]>>({});
   const [picked, setPicked] = useState<Record<string, string[]>>({});
+  const [versions, setVersions] = useState<Record<string, SqlVersionView[]>>({});
+  const [failures, setFailures] = useState<Record<string, FailureStepView[]>>({});
+  const [showFailures, setShowFailures] = useState<Record<string, boolean>>({});
   const poll = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const refresh = useCallback(async () => {
@@ -73,19 +76,24 @@ export function MigratorPanel() {
 
   const loadDetail = useCallback(async (id: string) => {
     try {
-      const [p, h] = await Promise.all([
+      const [p, h, v, f] = await Promise.all([
         importJobPlanFn({ data: { id } }),
         importAuditHistoryFn({ data: { id } }),
+        listSqlVersionsFn({ data: { id } }),
+        importFailureDetailFn({ data: { id } }),
       ]);
       if (p.ok) {
         setPlans((s) => ({ ...s, [id]: { objects: p.objects, selection: p.selection, diff: p.diff, hasDump: p.hasDump } }));
         setPicked((s) => (s[id] ? s : { ...s, [id]: p.selection ?? p.objects.map((o) => o.key) }));
       }
       if (h.ok) setEvents((s) => ({ ...s, [id]: h.events }));
+      if (v.ok) setVersions((s) => ({ ...s, [id]: v.versions }));
+      if (f.ok) setFailures((s) => ({ ...s, [id]: f.failures }));
     } catch (e) {
       setErr((e as Error).message);
     }
   }, []);
+
 
   useEffect(() => { void refresh(); }, [refresh]);
 
