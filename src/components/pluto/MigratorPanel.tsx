@@ -356,6 +356,100 @@ export function MigratorPanel() {
                         )}
                       </div>
 
+                      {/* Failure analysis */}
+                      {!!(failures[j.id] ?? []).length && (
+                        <div className="border rounded bg-background p-2">
+                          <button
+                            className="text-xs font-medium inline-flex items-center gap-1 text-destructive"
+                            onClick={() => setShowFailures((s) => ({ ...s, [j.id]: !s[j.id] }))}
+                          >
+                            <AlertTriangle className="h-3.5 w-3.5" />
+                            Failure analysis ({(failures[j.id] ?? []).length})
+                            {showFailures[j.id] ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                          </button>
+                          {showFailures[j.id] && (
+                            <div className="mt-2 space-y-3">
+                              {(failures[j.id] ?? []).map((f) => (
+                                <div key={f.eventId} className="border rounded p-2 space-y-1">
+                                  <div className="text-[11px] flex flex-wrap gap-x-2">
+                                    <span className="text-destructive font-medium">{f.step}</span>
+                                    <span className="text-muted-foreground">{new Date(f.createdAt).toLocaleString()}</span>
+                                    <span className="text-muted-foreground">{f.actorEmail ?? "webhook"}</span>
+                                  </div>
+                                  <div className="text-[11px]">{f.analysis.summary}</div>
+                                  <div className="flex flex-wrap gap-1">
+                                    {f.analysis.tags.map((t) => (
+                                      <span
+                                        key={t.code}
+                                        title={t.hint}
+                                        className={`text-[10px] rounded px-1.5 py-0.5 ${t.severity === "error" ? "bg-destructive/10 text-destructive" : "bg-amber-500/10 text-amber-600 dark:text-amber-400"}`}
+                                      >
+                                        {t.label}
+                                      </span>
+                                    ))}
+                                    {!f.analysis.tags.length && <span className="text-[10px] text-muted-foreground">No known root-cause pattern matched.</span>}
+                                  </div>
+                                  {f.analysis.tags.map((t) => (
+                                    <div key={`${t.code}-hint`} className="text-[11px] text-muted-foreground">→ {t.hint}</div>
+                                  ))}
+                                  {f.analysis.snippet && (
+                                    <pre className="text-[11px] font-mono bg-muted/50 rounded p-2 max-h-40 overflow-auto whitespace-pre-wrap">
+                                      {f.analysis.snippetIndex !== null ? `-- statement #${f.analysis.snippetIndex + 1}\n` : ""}{f.analysis.snippet}
+                                    </pre>
+                                  )}
+                                  <details>
+                                    <summary className="text-[11px] cursor-pointer text-muted-foreground">Raw error</summary>
+                                    <pre className="text-[11px] font-mono max-h-32 overflow-auto whitespace-pre-wrap">{f.analysis.raw}</pre>
+                                  </details>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Archived SQL versions */}
+                      {!!(versions[j.id] ?? []).length && (
+                        <div>
+                          <div className="text-xs font-medium mb-1 inline-flex items-center gap-1">
+                            <Archive className="h-3.5 w-3.5" /> SQL version archive ({(versions[j.id] ?? []).length})
+                          </div>
+                          <div className="max-h-48 overflow-auto border rounded bg-background">
+                            <table className="w-full text-[11px]">
+                              <tbody>
+                                {(versions[j.id] ?? []).map((v) => (
+                                  <tr key={v.id} className="border-t">
+                                    <td className="px-2 py-0.5 w-12 font-mono">v{v.version}</td>
+                                    <td className="px-2 py-0.5 w-20 text-muted-foreground">{v.kind}</td>
+                                    <td className="px-2 py-0.5 text-muted-foreground whitespace-nowrap">{new Date(v.created_at).toLocaleString()}</td>
+                                    <td className="px-2 py-0.5">
+                                      {v.counts
+                                        ? <>
+                                            <span className={opTone("create")}>{v.counts.create ?? 0}c</span>{" "}
+                                            <span className={opTone("alter")}>{v.counts.alter ?? 0}a</span>{" "}
+                                            <span className={opTone("drop")}>{v.counts.drop ?? 0}d</span>
+                                          </>
+                                        : "—"}
+                                      {!!v.destructive_count && <span className="text-destructive"> · {v.destructive_count} destructive</span>}
+                                    </td>
+                                    <td className="px-2 py-0.5 text-muted-foreground truncate max-w-[12rem]">{v.actor_email ?? "system"}{v.note ? ` · ${v.note}` : ""}</td>
+                                    <td className="px-2 py-0.5 text-right whitespace-nowrap space-x-2">
+                                      <button className="underline" onClick={() => void viewVersion(j.id, v.version)}>View</button>
+                                      <button className="underline" disabled={!!busy} onClick={() => void restoreVersion(j.id, v.version)}>Restore</button>
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                          <p className="text-[11px] text-muted-foreground mt-1">
+                            Every translate / retry / apply archives the exact SQL, so you can re-review the same diff or restore and re-apply it later.
+                          </p>
+                        </div>
+                      )}
+
+
+
                       {/* Object selection */}
                       {plan?.hasDump && (
                         <div>
