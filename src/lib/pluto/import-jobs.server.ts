@@ -628,6 +628,14 @@ export async function listAuditActors(): Promise<string[]> {
   return ((res.rows ?? []) as Record<string, unknown>[]).map((r) => String(r.a));
 }
 
+/** Distinct step names, for the audit filter dropdown. */
+export async function listAuditSteps(): Promise<string[]> {
+  await ensureImportEventsTable();
+  const res = await exec(`select distinct step from admin.import_job_events order by 1 limit 100`);
+  return ((res.rows ?? []) as Record<string, unknown>[]).map((r) => String(r.step));
+}
+
+
 /* ------------------------------------------------------------------ */
 /* Verification runs: every smoke-test execution is archived           */
 /* ------------------------------------------------------------------ */
