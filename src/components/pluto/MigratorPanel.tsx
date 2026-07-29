@@ -497,8 +497,12 @@ export function MigratorPanel() {
                               </tbody>
                             </table>
                           </div>
+                          <p className="text-[11px] text-muted-foreground mt-1">
+                            Every translate / retry / apply archives the exact SQL, so you can re-review the same diff, restore it, or undo an applied version.
+                          </p>
                         </div>
                       )}
+
 
                       {/* Rollback / undo of an applied import */}
                       {(j.applied_at || j.status === "applied") && (
