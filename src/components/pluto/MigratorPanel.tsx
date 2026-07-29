@@ -1,7 +1,7 @@
 // Pluto Migrator panel — lists signed import jobs sent by the Chrome
 // extension and lets an admin select objects, review the SQL diff, dry-run
 // and apply each migration. Every step is recorded in the import audit trail.
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect,  useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { AlertTriangle, Archive, CheckCircle2, ChevronDown, ChevronRight, Download, History, Pause, Play, RefreshCw, RotateCcw, ShieldCheck, Wand2, XCircle } from "lucide-react";
 import {
