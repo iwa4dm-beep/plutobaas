@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
   "name": "Pluto Migrator",
-  "version": "1.0.0",
-  "description": "Collect your Lovable project, GitHub repo and Supabase schema, then send them to Pluto BaaS as a signed migration job.",
-  "permissions": ["storage", "activeTab", "scripting", "tabs"],
+  "version": "2.0.0",
+  "description": "Scan Lovable, GitHub and Supabase tabs, redact secrets, and ship a signed migration job to Pluto BaaS with retry, history and one-shot capture.",
+  "permissions": ["storage", "activeTab", "scripting", "tabs", "alarms", "notifications", "contextMenus"],
   "host_permissions": [
     "https://lovable.dev/*",
     "https://*.lovable.app/*",
@@ -21,6 +21,12 @@
   "background": {
     "service_worker": "background.js",
     "type": "module"
+  },
+  "commands": {
+    "pluto-quick-capture": {
+      "suggested_key": { "default": "Alt+Shift+P" },
+      "description": "Scan all open tabs and send a migration job to Pluto"
+    }
   },
   "content_scripts": [
     {

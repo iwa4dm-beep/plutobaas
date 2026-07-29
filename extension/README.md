@@ -1,40 +1,44 @@
-# Pluto Migrator (Chrome extension)
+# Pluto Migrator — Chrome Extension (v2)
 
-One-click migration of a project from **Lovable**, **GitHub** and **Supabase**
-into **Pluto BaaS**, using the sessions you are already signed into. Nothing
-but the collected descriptor leaves your browser — no passwords, no tokens.
+Collects your Lovable project, GitHub repo and Supabase schema from the tabs you
+are already logged into, then ships a single **HMAC-signed** migration job to
+Pluto BaaS (`/api/public/pluto-import`). No credentials ever leave the browser —
+only the signature is transmitted.
 
-## Install (unpacked)
+## What's new in v2
 
-1. Download and unzip `pluto-migrator-extension.zip`.
-2. Open `chrome://extensions`.
-3. Enable **Developer mode** (top-right).
-4. Click **Load unpacked** and select the unzipped folder.
+1. **Multi-tab scan & merge** — one click reads every open Lovable / GitHub /
+   Supabase tab and merges them into a single job (largest SQL dump wins).
+2. **Preflight checklist** — shows exactly what is present or missing (repo,
+   zipball URL, schema SQL, Supabase ref, table inventory) before you send.
+3. **Secret scanner + auto-redaction** — service_role JWTs, `sb_secret_`,
+   GitHub/OpenAI/AWS keys, Postgres URLs with passwords and PEM keys are
+   detected and replaced with `[REDACTED:…]` (toggleable).
+4. **Retry queue** — network errors, 429s and 5xx are queued and retried with
+   exponential backoff via `chrome.alarms`, with a badge counter.
+5. **Job history** — last 50 jobs with status, sources, SQL size, redaction
+   count, job id and error, plus a manual "retry queue now".
+6. **Connection self-test** — signs a probe payload and reports latency and
+   whether the shared secret was accepted.
+7. **Multiple profiles** — keep prod / staging / local endpoint+secret pairs and
+   switch between them.
+8. **Quick capture** — `Alt+Shift+P` or the right-click menu scans all tabs and
+   sends in one shot, with a desktop notification on completion.
+9. **Deeper collection** — Monaco *and* CodeMirror SQL editors, Supabase table
+   inventory, repo branch/private flag, Lovable published URL.
 
-## Configure
+## Install
 
-Open the extension popup and fill in:
+1. Download `pluto-migrator-extension.zip` from the Pluto Marketplace page and unzip it.
+2. Open `chrome://extensions`, enable **Developer mode**.
+3. **Load unpacked** → select the unzipped folder.
+4. Open the popup → **Settings** → set the ingest endpoint and the
+   `PLUTO_IMPORT_WEBHOOK_SECRET` value → **Save profile** → **Test connection**.
 
-- **Ingest endpoint** — `https://<your-pluto-dashboard>/api/public/pluto-import`
-- **Shared secret** — the value of `PLUTO_IMPORT_WEBHOOK_SECRET` from your
-  Pluto project secrets.
+## Usage
 
-## Use
-
-| Tab you are on | What is collected |
-| --- | --- |
-| Lovable project | project id, name, linked GitHub repo |
-| GitHub repo | repo URL, branch, zipball URL |
-| Supabase SQL editor | the SQL currently in the editor (paste your schema dump there) |
-
-Click **Collect this tab** → review the JSON → **Send to Pluto**.
-
-The payload is signed `HMAC-SHA256(secret, "<unix-ts>.<body>")` and sent as
-`x-pluto-signature: sha256=<hex>` with `x-pluto-timestamp`. The server rejects
-signatures older than 5 minutes, and `event_id` is unique so replays are no-ops.
-
-## Then, in the Pluto dashboard
-
-Go to **Marketplace & Extensions → Pluto Migrator**. Each import shows up as a
-job where you can **Re-translate**, **Dry-run** (rolled-back transaction) and
-**Apply** the converted migration, or hand the repo to Auto-Deploy Studio.
+1. Open the tabs: Lovable project, GitHub repo, Supabase SQL editor (with your
+   schema dump visible).
+2. Popup → **Scan all tabs** → review the preflight list and secret scan.
+3. **Send to Pluto** — track the job in the dashboard at
+   `/dashboard/pluto-marketplace` and `/dashboard/import-audit`.

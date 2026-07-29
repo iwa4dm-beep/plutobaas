@@ -3,35 +3,85 @@
   <head>
     <meta charset="utf-8" />
     <style>
-      body { font: 13px system-ui, sans-serif; width: 360px; margin: 0; padding: 14px; }
-      h1 { font-size: 15px; margin: 0 0 8px; }
-      label { display: block; margin-top: 8px; font-weight: 600; font-size: 12px; }
-      input, textarea { width: 100%; box-sizing: border-box; padding: 6px; font-size: 12px; }
-      textarea { height: 90px; font-family: ui-monospace, monospace; }
-      button { margin-top: 10px; padding: 7px 10px; font-size: 13px; cursor: pointer; }
-      .row { display: flex; gap: 8px; }
-      .row button { flex: 1; }
-      pre { background: #f4f4f5; padding: 8px; max-height: 140px; overflow: auto; font-size: 11px; }
-      .muted { color: #666; font-size: 11px; }
+      :root { --bd:#e4e4e7; --mut:#71717a; }
+      body { font: 13px system-ui, sans-serif; width: 400px; margin: 0; padding: 12px; }
+      h1 { font-size: 15px; margin: 0 0 6px; display:flex; justify-content:space-between; align-items:center; }
+      h1 small { font-weight: 400; color: var(--mut); font-size: 11px; }
+      label { display: block; margin-top: 8px; font-weight: 600; font-size: 11px; }
+      input, textarea, select { width: 100%; box-sizing: border-box; padding: 6px; font-size: 12px; border:1px solid var(--bd); border-radius:4px; }
+      textarea { height: 110px; font-family: ui-monospace, monospace; }
+      button { padding: 6px 9px; font-size: 12px; cursor: pointer; border:1px solid var(--bd); background:#fafafa; border-radius:4px; }
+      button.primary { background:#111; color:#fff; border-color:#111; }
+      .row { display: flex; gap: 6px; margin-top: 8px; }
+      .row > * { flex: 1; }
+      pre { background: #f4f4f5; padding: 8px; max-height: 130px; overflow: auto; font-size: 11px; white-space: pre-wrap; }
+      .muted { color: var(--mut); font-size: 11px; }
+      .tabs { display:flex; gap:4px; border-bottom:1px solid var(--bd); margin:8px 0; }
+      .tabs button { border:none; background:none; border-bottom:2px solid transparent; border-radius:0; }
+      .tabs button.active { border-bottom-color:#111; font-weight:600; }
+      .panel { display:none; } .panel.active { display:block; }
+      ul { list-style:none; margin:6px 0; padding:0; }
+      li { padding:4px 0; border-bottom:1px dashed var(--bd); font-size:11.5px; }
+      .ok { color:#16a34a; } .warn { color:#b45309; } .err { color:#dc2626; } .info { color:#2563eb; }
+      .chip { display:inline-block; padding:1px 6px; border-radius:9px; background:#f4f4f5; font-size:10px; margin-right:4px; }
     </style>
   </head>
   <body>
-    <h1>Pluto Migrator</h1>
-    <p class="muted">Open a Lovable project, a Supabase SQL editor, or a GitHub repo, then click Collect.</p>
+    <h1>Pluto Migrator <small id="profileTag"></small></h1>
 
-    <label>Ingest endpoint</label>
-    <input id="endpoint" placeholder="https://plutobaas.lovable.app/api/public/pluto-import" />
-    <label>Shared secret (PLUTO_IMPORT_WEBHOOK_SECRET)</label>
-    <input id="secret" type="password" placeholder="paste secret" />
-    <div class="row">
-      <button id="save">Save settings</button>
-      <button id="collect">Collect this tab</button>
+    <div class="tabs">
+      <button data-tab="capture" class="active">Capture</button>
+      <button data-tab="history">History</button>
+      <button data-tab="settings">Settings</button>
     </div>
 
-    <label>Payload preview</label>
-    <textarea id="payload"></textarea>
-    <button id="send">Send to Pluto</button>
-    <pre id="out"></pre>
-    <script src="popup.js"></script>
+    <section id="tab-capture" class="panel active">
+      <p class="muted">Open your Lovable project, GitHub repo and Supabase SQL editor in tabs, then scan — they get merged into one signed job.</p>
+      <div class="row">
+        <button id="scan" class="primary">Scan all tabs</button>
+        <button id="collect">This tab only</button>
+      </div>
+      <label>Preflight</label>
+      <ul id="checks"><li class="muted">Not scanned yet.</li></ul>
+      <label>Secret scan</label>
+      <div id="secrets" class="muted">—</div>
+      <label>Payload preview (editable)</label>
+      <textarea id="payload"></textarea>
+      <div class="row">
+        <button id="send" class="primary">Send to Pluto</button>
+        <button id="copy">Copy JSON</button>
+      </div>
+      <pre id="out"></pre>
+    </section>
+
+    <section id="tab-history" class="panel">
+      <div class="row">
+        <button id="refreshHistory">Refresh</button>
+        <button id="drain">Retry queue now</button>
+      </div>
+      <div id="queueInfo" class="muted"></div>
+      <ul id="history"></ul>
+    </section>
+
+    <section id="tab-settings" class="panel">
+      <label>Profile</label>
+      <select id="profileSelect"></select>
+      <label>Profile name</label>
+      <input id="profileName" placeholder="production" />
+      <label>Ingest endpoint</label>
+      <input id="endpoint" placeholder="https://plutobaas.lovable.app/api/public/pluto-import" />
+      <label>Shared secret (PLUTO_IMPORT_WEBHOOK_SECRET)</label>
+      <input id="secret" type="password" placeholder="paste secret" />
+      <label><input type="checkbox" id="redact" checked style="width:auto" /> Redact detected secrets before sending</label>
+      <div class="row">
+        <button id="save" class="primary">Save profile</button>
+        <button id="test">Test connection</button>
+        <button id="del">Delete</button>
+      </div>
+      <p class="muted">Hotkey: <b>Alt+Shift+P</b> scans every open tab and sends in one shot. Right-click any page for the same action.</p>
+      <pre id="settingsOut"></pre>
+    </section>
+
+    <script type="module" src="popup.js"></script>
   </body>
 </html>
