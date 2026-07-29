@@ -9,11 +9,16 @@
 
 import {
   hmacHex, getProfiles, scanSecrets, mergeDescriptors, preflight,
-  pushHistory, updateHistory,
+  pushHistory, updateHistory, statusEndpoint, planChunks, sqlLens,
+  computeDelta, getWatchers, addWatcher, setWatchers, removeWatcher,
+  getSettings, saveSettings,
 } from "./lib.js";
 
 const QUEUE_ALARM = "pluto-retry";
+const WATCH_ALARM = "pluto-watch";
+const AUTO_ALARM = "pluto-autocapture";
 const MAX_ATTEMPTS = 6;
+
 
 /* ---------------------------- transport ---------------------------- */
 
