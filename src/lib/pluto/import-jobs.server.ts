@@ -69,6 +69,11 @@ async function exec(sql: string, params: unknown[] = [], write = false): Promise
   });
 }
 
+/** Run an arbitrary read-only query (used by post-apply integrity checks). */
+export async function readQuery(sql: string, params: unknown[] = []): Promise<ExecResult> {
+  return exec(sql, params, false);
+}
+
 let ensured = false;
 
 /** Create the jobs table if it does not exist yet (idempotent, cached per isolate). */
@@ -229,7 +234,8 @@ export type ImportEventStep =
   | "retry"
   | "version_saved"
   | "version_restored"
-  | "rollback";
+  | "rollback"
+  | "smoke_test";
 
 export type ImportJobEvent = {
   id: string;
