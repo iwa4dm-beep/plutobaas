@@ -1,16 +1,26 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  ArrowRight, CheckCircle2, CircleAlert, CircleDashed, Loader2, Play, XCircle,
+  ArrowRight, CheckCircle2, CircleAlert, CircleDashed, Download, Loader2, Play, Rocket, Square, XCircle,
 } from "lucide-react";
 import { PageHeader } from "@/components/pluto/PageHeader";
 import { resolveApiUrl } from "@/lib/pluto/base-url";
 import {
+  downloadText,
   runCheck,
   type CheckId,
   type CheckResult,
   type WizardConfig,
 } from "@/lib/pluto/connect-wizard";
+import {
+  goLiveReportToMarkdown,
+  runGoLive,
+  type GoLiveReport,
+  type RunEvent,
+  type StageOutcome,
+  type StageSpec,
+} from "@/lib/pluto/go-live-runner";
+
 
 export const Route = createFileRoute("/dashboard/help/connect-roadmap")({
   component: ConnectRoadmapPage,
