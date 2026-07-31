@@ -3,6 +3,8 @@ import { useState } from "react";
 import { Webhook, Send, ShieldCheck } from "lucide-react";
 import { PageHeader } from "@/components/pluto/PageHeader";
 import { testWebhookFn, verifySignatureFn, type WebhookTestResult } from "@/lib/pluto/webhook-tester.functions";
+import { WebhookReplayPanel } from "@/components/pluto/webhook/WebhookReplayPanel";
+import { recordDelivery } from "@/lib/pluto/webhook-deliveries";
 
 export const Route = createFileRoute("/dashboard/webhook-tester")({
   head: () => ({
@@ -52,6 +54,28 @@ function WebhookTesterPage() {
       setResult(r);
       if (r.error) setErr(r.error);
       if (!r.error) {
+        const body = r.signedPayload.slice(r.timestamp.length + 1);
+        recordDelivery({
+          url: r.url,
+          event: r.event,
+          secret,
+          body,
+          timestamp: r.timestamp,
+          signature: r.signature,
+          signatureHeader: "x-pluto-signature",
+          allowPrivateHost,
+          status: r.ok ? "succeeded" : "failed",
+          attempts: r.attempts.map((a) => ({
+            attempt: a.attempt,
+            status: a.status,
+            ok: a.ok,
+            durationMs: a.durationMs,
+            delayedMs: a.delayedMs,
+            error: a.error,
+            responseBody: a.responseBody,
+            at: new Date().toISOString(),
+          })),
+        });
         setVSecret(secret);
         setVTimestamp(r.timestamp);
         setVBody(r.signedPayload.slice(r.timestamp.length + 1));
@@ -191,6 +215,8 @@ function WebhookTesterPage() {
           </div>
         </section>
       </div>
+
+      <WebhookReplayPanel />
     </div>
   );
 }
