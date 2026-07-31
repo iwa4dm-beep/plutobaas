@@ -96,7 +96,7 @@ async function handle(request: Request): Promise<Response> {
       if (!body.upload_id) return json({ ok: false, error: "upload_id_required" }, 400);
       const { verifyUpload } = await import("@/lib/pluto/import-chunks.server");
       const r = await verifyUpload({ upload_id: body.upload_id, manifest: body.manifest ?? null });
-      return json({ ok: true, ...r });
+      return json({ ...r, ok: r.ok });
     }
 
 
