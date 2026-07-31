@@ -82,10 +82,27 @@ export function OnboardingTour() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
+    // Opt-in only: nothing pops up unless the flag, the ?tour=1 query, or a
+    // programmatic trigger explicitly asks for it.
+    const openNow = () => { setStep(0); setOpen(true); };
     try {
-      if (window.localStorage.getItem(KEY) !== "1") setOpen(true);
+      const enabled =
+        window.localStorage.getItem(ENABLE_KEY) === "1" ||
+        new URLSearchParams(window.location.search).get("tour") === "1";
+      if (enabled && window.localStorage.getItem(KEY) !== "1") openNow();
     } catch { /* ignore */ }
+
+    (window as unknown as { plutoStartTour?: () => void }).plutoStartTour = () => {
+      try { window.localStorage.removeItem(KEY); } catch { /* ignore */ }
+      openNow();
+    };
+    window.addEventListener(OPEN_EVENT, openNow);
+    return () => {
+      window.removeEventListener(OPEN_EVENT, openNow);
+      delete (window as unknown as { plutoStartTour?: () => void }).plutoStartTour;
+    };
   }, []);
+
 
   function finish() {
     try { window.localStorage.setItem(KEY, "1"); } catch { /* ignore */ }
