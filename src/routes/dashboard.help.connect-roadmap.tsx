@@ -1,0 +1,355 @@
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { useCallback, useEffect, useState } from "react";
+import {
+  ArrowRight, CheckCircle2, CircleAlert, CircleDashed, Loader2, Play, XCircle,
+} from "lucide-react";
+import { PageHeader } from "@/components/pluto/PageHeader";
+import { resolveApiUrl } from "@/lib/pluto/base-url";
+import {
+  runCheck,
+  type CheckId,
+  type CheckResult,
+  type WizardConfig,
+} from "@/lib/pluto/connect-wizard";
+
+export const Route = createFileRoute("/dashboard/help/connect-roadmap")({
+  component: ConnectRoadmapPage,
+  head: () => ({
+    meta: [
+      { title: "Connect & Go-Live Roadmap — Pluto BaaS" },
+      {
+        name: "description",
+        content:
+          "Ten-step roadmap that maps every Pluto BaaS dashboard page you need to connect a project backend and take it live, with one-click live checks.",
+      },
+      { property: "og:title", content: "Connect & Go-Live Roadmap — Pluto BaaS" },
+      {
+        property: "og:description",
+        content:
+          "Which dashboard page to use at each step, from workspace creation to a verified live deployment.",
+      },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary" },
+    ],
+  }),
+});
+
+const CFG_KEY = "pluto.connectWizard.config";
+const DONE_KEY = "pluto.connectRoadmap.done";
+
+type Stop = { to: string; label: string };
+
+type Step = {
+  id: string;
+  n: number;
+  title_en: string;
+  title_bn: string;
+  outcome_en: string;
+  outcome_bn: string;
+  stops: Stop[];
+  check?: CheckId;
+};
+
+const STEPS: Step[] = [
+  {
+    id: "workspace",
+    n: 1,
+    title_en: "Create workspace + project",
+    title_bn: "Workspace ও প্রজেক্ট তৈরি",
+    outcome_en: "A project slug that owns your database, keys and quotas.",
+    outcome_bn: "একটি project slug — যার অধীনে ডেটাবেজ, key ও quota থাকবে।",
+    stops: [
+      { to: "/dashboard/workspaces", label: "Workspaces" },
+      { to: "/dashboard/projects", label: "Projects" },
+    ],
+  },
+  {
+    id: "connect",
+    n: 2,
+    title_en: "Run the guided connection wizard",
+    title_bn: "গাইডেড কানেকশন উইজার্ড চালান",
+    outcome_en: "URL + keys entered, CORS set, import triggered, 8 probes green.",
+    outcome_bn: "URL + key, CORS, ইমপোর্ট ও ৮টি probe — সব এক জায়গায়।",
+    stops: [{ to: "/dashboard/connect-project", label: "Connect your project" }],
+    check: "health",
+  },
+  {
+    id: "keys",
+    n: 3,
+    title_en: "Mint API keys (and plan rotation)",
+    title_bn: "API key তৈরি ও রোটেশন পরিকল্পনা",
+    outcome_en: "A public anon key for the browser and a server-only service key.",
+    outcome_bn: "ব্রাউজারের জন্য anon key, সার্ভারের জন্য service key।",
+    stops: [
+      { to: "/dashboard/api", label: "API & keys" },
+      { to: "/dashboard/key-rotation", label: "Key rotation" },
+    ],
+    check: "keys",
+  },
+  {
+    id: "cors",
+    n: 4,
+    title_en: "Allow your frontend origin",
+    title_bn: "ফ্রন্টএন্ড origin অনুমোদন",
+    outcome_en: "Your exact origin (scheme + host + port) on the allow-list.",
+    outcome_bn: "হুবহু origin (scheme + host + port) allow-list-এ যুক্ত।",
+    stops: [{ to: "/dashboard/cors", label: "CORS origins" }],
+    check: "cors",
+  },
+  {
+    id: "data",
+    n: 5,
+    title_en: "Import schema and data",
+    title_bn: "স্কিমা ও ডেটা ইমপোর্ট",
+    outcome_en: "Tables, views and rows applied — with a verifiable audit trail.",
+    outcome_bn: "টেবিল/ভিউ/রো apply হয়েছে — অডিট ট্রেইলসহ।",
+    stops: [
+      { to: "/dashboard/database-import", label: "Database import" },
+      { to: "/dashboard/sql", label: "SQL editor" },
+      { to: "/dashboard/import-audit", label: "Import audit" },
+    ],
+    check: "import",
+  },
+  {
+    id: "rls",
+    n: 6,
+    title_en: "Lock down auth, RBAC and RLS",
+    title_bn: "Auth, RBAC ও RLS নিরাপদ করুন",
+    outcome_en: "Private tables reject the anon key; roles behave as designed.",
+    outcome_bn: "প্রাইভেট টেবিলে anon key প্রত্যাখ্যাত; role ঠিকভাবে কাজ করছে।",
+    stops: [
+      { to: "/dashboard/rbac-templates", label: "RBAC templates" },
+      { to: "/dashboard/rbac-debug", label: "RBAC debug" },
+      { to: "/dashboard/ops/rls-debug", label: "RLS debug" },
+    ],
+    check: "rls",
+  },
+  {
+    id: "modules",
+    n: 7,
+    title_en: "Turn on storage, realtime, functions",
+    title_bn: "Storage, Realtime, Functions চালু",
+    outcome_en: "Buckets created, websocket channel reachable, edge functions deployed.",
+    outcome_bn: "বাকেট তৈরি, websocket চ্যানেল সচল, edge function ডিপ্লয়েড।",
+    stops: [
+      { to: "/dashboard/storage", label: "Storage" },
+      { to: "/dashboard/realtime", label: "Realtime" },
+      { to: "/dashboard/functions", label: "Functions" },
+    ],
+    check: "storage",
+  },
+  {
+    id: "local",
+    n: 8,
+    title_en: "Optional: mirror the stack locally",
+    title_bn: "ঐচ্ছিক: লোকালে একই স্ট্যাক",
+    outcome_en: "A docker-compose bundle that boots the same backend on your machine.",
+    outcome_bn: "docker-compose বান্ডল — নিজের মেশিনে একই ব্যাকএন্ড।",
+    stops: [{ to: "/dashboard/local-stack", label: "Local stack" }],
+  },
+  {
+    id: "deploy",
+    n: 9,
+    title_en: "Deploy the frontend and bind the domain",
+    title_bn: "ফ্রন্টএন্ড ডিপ্লয় ও ডোমেইন যুক্ত",
+    outcome_en: "Live site on your domain with TLS and the primary-frontend header.",
+    outcome_bn: "TLS ও primary-frontend হেডারসহ আপনার ডোমেইনে লাইভ সাইট।",
+    stops: [
+      { to: "/dashboard/auto-deploy", label: "Auto-deploy" },
+      { to: "/dashboard/custom-domains", label: "Custom domains" },
+    ],
+  },
+  {
+    id: "verify",
+    n: 10,
+    title_en: "Verify and keep watching",
+    title_bn: "ভেরিফাই ও মনিটরিং",
+    outcome_en: "Green backend status, live logs, and traces after go-live.",
+    outcome_bn: "সবুজ backend status, লাইভ লগ ও trace।",
+    stops: [
+      { to: "/dashboard/backend-status", label: "Backend status" },
+      { to: "/dashboard/observability", label: "Observability" },
+      { to: "/dashboard/logs-explorer", label: "Logs explorer" },
+    ],
+    check: "realtime",
+  },
+];
+
+function StatusIcon({ r }: { r?: CheckResult }) {
+  if (!r) return <CircleDashed className="h-4 w-4 text-muted-foreground" />;
+  if (r.status === "running") return <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />;
+  if (r.status === "pass") return <CheckCircle2 className="h-4 w-4 text-emerald-500" />;
+  if (r.status === "warn") return <CircleAlert className="h-4 w-4 text-amber-500" />;
+  if (r.status === "fail") return <XCircle className="h-4 w-4 text-destructive" />;
+  return <CircleDashed className="h-4 w-4 text-muted-foreground" />;
+}
+
+function ConnectRoadmapPage() {
+  const [cfg, setCfg] = useState<WizardConfig | null>(null);
+  const [results, setResults] = useState<Record<string, CheckResult>>({});
+  const [done, setDone] = useState<Record<string, boolean>>({});
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    const apiBase = resolveApiUrl();
+    let stored: Partial<WizardConfig> = {};
+    try {
+      const raw = localStorage.getItem(CFG_KEY);
+      if (raw) stored = JSON.parse(raw) as Partial<WizardConfig>;
+    } catch { /* ignore */ }
+    setCfg({
+      apiBase,
+      anonKey: "",
+      serviceKey: "",
+      appOrigin: window.location.origin,
+      projectRef: "",
+      table: "todos",
+      bucket: "avatars",
+      ...stored,
+    });
+    try {
+      const raw = localStorage.getItem(DONE_KEY);
+      if (raw) setDone(JSON.parse(raw) as Record<string, boolean>);
+    } catch { /* ignore */ }
+  }, []);
+
+  const toggleDone = useCallback((id: string) => {
+    setDone((prev) => {
+      const next = { ...prev, [id]: !prev[id] };
+      try { localStorage.setItem(DONE_KEY, JSON.stringify(next)); } catch { /* ignore */ }
+      return next;
+    });
+  }, []);
+
+  const runOne = useCallback(
+    async (step: Step) => {
+      if (!step.check || !cfg) return;
+      const id = step.check;
+      setResults((r) => ({
+        ...r,
+        [step.id]: { ...(r[step.id] ?? { id, label: id, label_bn: id, detail: "" }), id, status: "running", detail: "Running…" } as CheckResult,
+      }));
+      const res = await runCheck(id, cfg);
+      setResults((r) => ({ ...r, [step.id]: res }));
+    },
+    [cfg],
+  );
+
+  const runAll = useCallback(async () => {
+    if (!cfg) return;
+    setBusy(true);
+    for (const s of STEPS) if (s.check) await runOne(s);
+    setBusy(false);
+  }, [cfg, runOne]);
+
+  const checkable = STEPS.filter((s) => s.check).length;
+  const passed = STEPS.filter((s) => results[s.id]?.status === "pass").length;
+  const completed = STEPS.filter((s) => done[s.id]).length;
+
+  return (
+    <div className="space-y-6">
+      <PageHeader
+        title="Connect & Go-Live Roadmap"
+        description="প্রজেক্টের ব্যাকএন্ড Pluto BaaS-এ যুক্ত করে লাইভ করার ১০ ধাপ — প্রতিটি ধাপের জন্য কোন পেইজ, কী ফলাফল, আর লাইভ চেক।"
+      />
+
+      <div className="flex flex-wrap items-center gap-3 rounded-lg border border-border bg-card p-4">
+        <div className="text-sm">
+          <span className="font-medium text-foreground">{completed}/{STEPS.length}</span>
+          <span className="text-muted-foreground"> steps marked done</span>
+          <span className="mx-2 text-border">·</span>
+          <span className="font-medium text-foreground">{passed}/{checkable}</span>
+          <span className="text-muted-foreground"> live checks passing</span>
+        </div>
+        <div className="ml-auto flex items-center gap-2">
+          <Link
+            to="/dashboard/connect-project"
+            className="inline-flex items-center gap-1 rounded-md border border-border px-3 py-1.5 text-xs font-medium transition hover:bg-accent"
+          >
+            Open wizard <ArrowRight className="h-3 w-3" />
+          </Link>
+          <button
+            onClick={runAll}
+            disabled={busy || !cfg}
+            className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition hover:opacity-90 disabled:opacity-50"
+          >
+            {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
+            Run all checks
+          </button>
+        </div>
+      </div>
+
+      {cfg && !cfg.anonKey && (
+        <p className="rounded-md border border-amber-500/40 bg-amber-500/10 px-4 py-2 text-xs text-amber-700 dark:text-amber-400">
+          No anon key saved yet — key-dependent checks will warn. Enter your keys once in the{" "}
+          <Link to="/dashboard/connect-project" className="underline">guided wizard</Link> and they are reused here.
+        </p>
+      )}
+
+      <ol className="space-y-3">
+        {STEPS.map((s) => {
+          const r = results[s.id];
+          return (
+            <li key={s.id} className="rounded-lg border border-border bg-card p-4">
+              <div className="flex flex-wrap items-start gap-3">
+                <input
+                  type="checkbox"
+                  checked={!!done[s.id]}
+                  onChange={() => toggleDone(s.id)}
+                  aria-label={`Mark step ${s.n} done`}
+                  className="mt-1 h-4 w-4 accent-primary"
+                />
+                <div className="min-w-0 flex-1">
+                  <h2 className="text-sm font-semibold text-foreground">
+                    {s.n}. {s.title_en}
+                  </h2>
+                  <p className="text-xs text-muted-foreground">{s.title_bn}</p>
+                  <p className="mt-2 text-xs text-foreground/80">{s.outcome_en}</p>
+                  <p className="text-xs text-muted-foreground">{s.outcome_bn}</p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {s.stops.map((st) => (
+                      <Link
+                        key={st.to}
+                        to={st.to}
+                        className="inline-flex items-center gap-1 rounded-md border border-border px-2.5 py-1 text-xs text-muted-foreground transition hover:bg-accent hover:text-foreground"
+                      >
+                        {st.label} <ArrowRight className="h-3 w-3" />
+                      </Link>
+                    ))}
+                  </div>
+                </div>
+                {s.check && (
+                  <div className="flex items-center gap-2">
+                    <StatusIcon r={r} />
+                    <button
+                      onClick={() => runOne(s)}
+                      disabled={!cfg || r?.status === "running"}
+                      className="rounded-md border border-border px-2.5 py-1 text-xs font-medium transition hover:bg-accent disabled:opacity-50"
+                    >
+                      Run check
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {r && r.status !== "running" && (
+                <div className="mt-3 rounded-md bg-muted/50 p-3">
+                  <p className="font-mono text-[11px] leading-relaxed text-foreground/80">{r.detail}</p>
+                  {r.hints?.map((h, i) => (
+                    <div key={i} className="mt-2 border-l-2 border-border pl-2 text-[11px]">
+                      <p className="text-muted-foreground">{h.cause_bn}</p>
+                      <p className="text-foreground/80">{h.fix_bn}</p>
+                      {h.link && (
+                        <Link to={h.link} className="text-primary underline">Open fix page</Link>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </li>
+          );
+        })}
+      </ol>
+    </div>
+  );
+}
