@@ -49,6 +49,8 @@ async function postSigned(payload) {
   if (!res.ok && res.status !== 202) {
     const err = new Error(`HTTP ${res.status}: ${parsed.error || text.slice(0, 200)}`);
     err.status = res.status;
+    err.body = parsed;
+    // 422 = per-chunk checksum failure; the caller repairs it, not the retry queue.
     err.retryable = res.status >= 500 || res.status === 429;
     throw err;
   }
@@ -95,6 +97,16 @@ async function uploadState(uploadId) {
  * Ship a big dump as ordered chunks. Already-received indices are skipped, so
  * an interrupted upload resumes exactly where it stopped.
  */
+async function sha256Hex(text) {
+  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+  return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+/**
+ * Ship a big dump as ordered chunks. Already-received indices are skipped and
+ * every chunk carries a SHA-256 digest, so a corrupted chunk is rejected with
+ * 422 and re-sent individually instead of restarting the whole upload.
+ */
 async function sendChunked(payload, chunks, onProgress) {
   const eventId = payload.event_id;
   const uploadId = payload.upload_id || `up_${eventId}`;
@@ -105,27 +117,74 @@ async function sendChunked(payload, chunks, onProgress) {
   envelope.supabase = { ...(payload.supabase || {}) };
   delete envelope.supabase.schema_sql;
 
-  const remote = await uploadState(uploadId);
+  // Local manifest: idx -> sha256 of the exact bytes we intend to deliver.
+  const manifest = {};
+  for (let i = 0; i < chunks.length; i++) manifest[i] = await sha256Hex(chunks[i]);
+  const fullSha = await sha256Hex(chunks.join(""));
+
+  let remote = await uploadState(uploadId);
+
+  // Anything already staged but not matching our manifest is dropped server-side.
+  if (remote?.received?.length) {
+    try {
+      const v = await postControl({ action: "verify_upload", upload_id: uploadId, manifest });
+      if (v?.state) remote = v.state;
+      if (v?.corrupt?.length) onProgress?.({ repaired: v.corrupt, total: chunks.length });
+    } catch { /* verification is best-effort; upload still self-heals per chunk */ }
+  }
+
   const done = new Set(remote?.received ?? []);
   let last = null;
 
-  for (let i = 0; i < chunks.length; i++) {
-    if (done.has(i)) { onProgress?.({ index: i, total: chunks.length, skipped: true }); continue; }
+  const sendOne = async (i, isFirst) => {
     last = await postSigned({
       event_id: eventId,
-      chunk: { upload_id: uploadId, index: i, total: chunks.length, data: chunks[i] },
-      envelope: i === 0 ? envelope : undefined,
+      chunk: {
+        upload_id: uploadId,
+        index: i,
+        total: chunks.length,
+        data: chunks[i],
+        sha256: manifest[i],
+        full_sha256: fullSha,
+      },
+      envelope: isFirst ? envelope : undefined,
     });
     await chrome.storage.local.set({
       resumable: { upload_id: uploadId, event_id: eventId, index: i, total: chunks.length, at: Date.now() },
     });
+    return last;
+  };
+
+  for (let i = 0; i < chunks.length; i++) {
+    if (done.has(i)) { onProgress?.({ index: i, total: chunks.length, skipped: true }); continue; }
+    let attempt = 0;
+    for (;;) {
+      try {
+        await sendOne(i, i === 0);
+        break;
+      } catch (e) {
+        // Transport corruption: retry the same chunk a few times, then bail.
+        const body = e?.body || {};
+        const bad = e?.status === 422 && Array.isArray(body.corrupt);
+        if (!bad || ++attempt > 3) throw e;
+        onProgress?.({ index: i, total: chunks.length, corrupt: true, attempt });
+        await new Promise((r) => setTimeout(r, 400 * attempt));
+      }
+    }
     onProgress?.({ index: i, total: chunks.length });
   }
+
+  // Final gate: if the assembled digest failed, the server dropped the whole
+  // staging set — re-send exactly the indices it is now missing.
+  if (last && last.ok === false && Array.isArray(last.corrupt)) {
+    const state = await uploadState(uploadId);
+    const have = new Set(state?.received ?? []);
+    for (let i = 0; i < chunks.length; i++) if (!have.has(i)) { onProgress?.({ index: i, total: chunks.length, repair: true }); await sendOne(i, i === 0); }
+  }
+
   await chrome.storage.local.remove("resumable");
   return last ?? (await uploadState(uploadId));
 }
-
-
 
 function notify(title, message) {
   try {
