@@ -167,7 +167,90 @@ export const testWebhookFn = createServerFn({ method: "POST" })
     return { ...base, ok, signature, signedPayload, headers, attempts };
   });
 
+/**
+ * Perform a SINGLE delivery attempt for a replay. The client drives the retry
+ * loop so each attempt's status can be rendered as it happens.
+ */
+export const replayAttemptFn = createServerFn({ method: "POST" })
+  .middleware([requirePlutoAdmin])
+  .inputValidator((d: unknown) =>
+    z.object({
+      url: z.string().url(),
+      event: z.string().min(1).max(120),
+      body: z.string().max(200_000),
+      secret: z.string().max(512).default(""),
+      /** Re-sign with a fresh timestamp (recommended) or replay the original signature. */
+      resign: z.boolean().default(true),
+      timestamp: z.string().min(1).max(32),
+      signature: z.string().max(256).default(""),
+      signatureHeader: z.string().min(1).max(64).default("x-pluto-signature"),
+      deliveryId: z.string().min(1).max(64),
+      attempt: z.number().int().min(1).max(10).default(1),
+      timeoutMs: z.number().int().min(500).max(30_000).default(10_000),
+      allowPrivateHost: z.boolean().default(false),
+    }).parse(d),
+  )
+  .handler(async ({ data }) => {
+    const url = new URL(data.url);
+    if (!/^https?:$/.test(url.protocol)) {
+      return { status: null, ok: false, durationMs: 0, error: "Only http(s) URLs are allowed.", timestamp: data.timestamp, signature: data.signature };
+    }
+    if (!data.allowPrivateHost && PRIVATE_HOST.test(url.hostname)) {
+      return { status: null, ok: false, durationMs: 0, error: `Refusing to call private host "${url.hostname}".`, timestamp: data.timestamp, signature: data.signature };
+    }
+
+    const timestamp = data.resign ? String(Math.floor(Date.now() / 1000)) : data.timestamp;
+    const signature = data.secret
+      ? `sha256=${await hmacSha256(data.secret, `${timestamp}.${data.body}`)}`
+      : data.signature;
+
+    const headers: Record<string, string> = {
+      "content-type": "application/json",
+      "x-pluto-event": data.event,
+      "x-pluto-timestamp": timestamp,
+      "x-pluto-delivery-id": data.deliveryId,
+      "x-pluto-attempt": String(data.attempt),
+      "x-pluto-replay": "true",
+      "user-agent": "Pluto-Webhook-Replay/1.0",
+    };
+    if (signature) headers[data.signatureHeader] = signature;
+
+    const started = Date.now();
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), data.timeoutMs);
+    try {
+      const res = await fetch(data.url, {
+        method: "POST",
+        headers,
+        body: data.body,
+        signal: controller.signal,
+        redirect: "manual",
+      });
+      const text = (await res.text().catch(() => "")).slice(0, 2000);
+      return {
+        status: res.status,
+        ok: res.ok,
+        durationMs: Date.now() - started,
+        responseBody: text,
+        timestamp,
+        signature,
+      };
+    } catch (e) {
+      return {
+        status: null,
+        ok: false,
+        durationMs: Date.now() - started,
+        error: (e as Error).name === "AbortError" ? `Timed out after ${data.timeoutMs}ms` : (e as Error).message,
+        timestamp,
+        signature,
+      };
+    } finally {
+      clearTimeout(timer);
+    }
+  });
+
 /** Verify a signature the way a receiver should — for the "verify" tab. */
+
 export const verifySignatureFn = createServerFn({ method: "POST" })
   .middleware([requirePlutoAdmin])
   .inputValidator((d: unknown) =>
