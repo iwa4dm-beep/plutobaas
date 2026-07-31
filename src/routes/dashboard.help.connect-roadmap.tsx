@@ -199,6 +199,12 @@ function ConnectRoadmapPage() {
   const [results, setResults] = useState<Record<string, CheckResult>>({});
   const [done, setDone] = useState<Record<string, boolean>>({});
   const [busy, setBusy] = useState(false);
+  const [auto, setAuto] = useState(false);
+  const [events, setEvents] = useState<RunEvent[]>([]);
+  const [stageMap, setStageMap] = useState<Record<string, StageOutcome>>({});
+  const [report, setReport] = useState<GoLiveReport | null>(null);
+  const stopRef = useRef(false);
+
 
   useEffect(() => {
     const apiBase = resolveApiUrl();
