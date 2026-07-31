@@ -284,3 +284,78 @@ export async function pruneUploads(hours = 48): Promise<number> {
   );
   return Number(res.row_count ?? 0);
 }
+
+/* ------------------------ integrity helpers ------------------------- */
+
+/** Recompute every stored chunk digest; returns the indices that don't match. */
+export async function findCorruptChunks(uploadId: string): Promise<number[]> {
+  await ensureTables();
+  const { readQuery } = await import("./import-jobs.server");
+  const parts = await readQuery(
+    `select idx, data, sha256 from admin.import_upload_chunks where upload_id = $1 order by idx`,
+    [uploadId],
+  );
+  const bad: number[] = [];
+  for (const p of (parts.rows ?? []) as Record<string, unknown>[]) {
+    const stored = p.sha256 ? String(p.sha256).toLowerCase() : null;
+    if (!stored) continue; // legacy chunk, nothing to compare against
+    if ((await sha256Hex(String(p.data))) !== stored) bad.push(Number(p.idx));
+  }
+  return bad;
+}
+
+/** Delete specific chunk indices so the client re-uploads only those. */
+export async function dropChunks(uploadId: string, indices: number[]): Promise<number> {
+  if (!indices.length) return 0;
+  await ensureTables();
+  const { writeQuery } = await import("./import-jobs.server");
+  const res = await writeQuery(
+    `delete from admin.import_upload_chunks where upload_id = $1 and idx = any($2::int[])`,
+    [uploadId, `{${indices.map((n) => Number(n)).join(",")}}`],
+  );
+  return Number(res.row_count ?? 0);
+}
+
+export type VerifyUploadResult = {
+  ok: boolean;
+  upload_id: string;
+  /** Indices the client must re-send (corrupt server-side or manifest mismatch). */
+  corrupt: number[];
+  missing: number[];
+  dropped: number;
+  state: UploadState | null;
+};
+
+/**
+ * Verify a staged upload against the client's per-chunk manifest.
+ * Mismatching chunks are deleted, so a resume re-requests only those indices.
+ */
+export async function verifyUpload(input: {
+  upload_id: string;
+  /** idx → expected sha256 (hex). Optional: server-side self-check runs regardless. */
+  manifest?: Record<string, string> | null;
+}): Promise<VerifyUploadResult> {
+  const state = await loadState(input.upload_id);
+  if (!state) {
+    return { ok: false, upload_id: input.upload_id, corrupt: [], missing: [], dropped: 0, state: null };
+  }
+
+  const bad = new Set(await findCorruptChunks(input.upload_id));
+  const manifest = input.manifest ?? null;
+  if (manifest) {
+    for (const [k, want] of Object.entries(manifest)) {
+      const idx = Number(k);
+      const have = state.checksums[idx];
+      if (have && have.toLowerCase() !== String(want).toLowerCase()) bad.add(idx);
+    }
+  }
+
+  const corrupt = [...bad].sort((a, b) => a - b);
+  const dropped = await dropChunks(input.upload_id, corrupt);
+  const after = await loadState(input.upload_id);
+  const have = new Set(after?.received ?? []);
+  const missing: number[] = [];
+  for (let i = 0; i < (after?.total_chunks ?? 0); i++) if (!have.has(i)) missing.push(i);
+
+  return { ok: corrupt.length === 0, upload_id: input.upload_id, corrupt, missing, dropped, state: after };
+}
