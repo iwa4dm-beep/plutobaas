@@ -22,6 +22,7 @@ import { Route as DashboardIndexRouteImport } from './routes/dashboard.index'
 import { Route as DocsSdkRouteImport } from './routes/docs.sdk'
 import { Route as DocsApiRouteImport } from './routes/docs.api'
 import { Route as DashboardWorkspacesRouteImport } from './routes/dashboard.workspaces'
+import { Route as DashboardWebhookTesterRouteImport } from './routes/dashboard.webhook-tester'
 import { Route as DashboardVpsSubdomainsRouteImport } from './routes/dashboard.vps-subdomains'
 import { Route as DashboardVpsStatusRouteImport } from './routes/dashboard.vps-status'
 import { Route as DashboardVpsRecoveryRouteImport } from './routes/dashboard.vps-recovery'
@@ -40,6 +41,7 @@ import { Route as DashboardSdkReleaseRouteImport } from './routes/dashboard.sdk-
 import { Route as DashboardSdkDemoRouteImport } from './routes/dashboard.sdk-demo'
 import { Route as DashboardScalingRouteImport } from './routes/dashboard.scaling'
 import { Route as DashboardRealtimeRouteImport } from './routes/dashboard.realtime'
+import { Route as DashboardRbacTemplatesRouteImport } from './routes/dashboard.rbac-templates'
 import { Route as DashboardRbacDebugRouteImport } from './routes/dashboard.rbac-debug'
 import { Route as DashboardRbacRouteImport } from './routes/dashboard.rbac'
 import { Route as DashboardProjectsRouteImport } from './routes/dashboard.projects'
@@ -75,6 +77,8 @@ import { Route as DashboardMigrationsRouteImport } from './routes/dashboard.migr
 import { Route as DashboardMfaRouteImport } from './routes/dashboard.mfa'
 import { Route as DashboardLogsExplorerRouteImport } from './routes/dashboard.logs-explorer'
 import { Route as DashboardLogsRouteImport } from './routes/dashboard.logs'
+import { Route as DashboardLocalStackRouteImport } from './routes/dashboard.local-stack'
+import { Route as DashboardKeyRotationRouteImport } from './routes/dashboard.key-rotation'
 import { Route as DashboardJobsRouteImport } from './routes/dashboard.jobs'
 import { Route as DashboardIntegrationsRouteImport } from './routes/dashboard.integrations'
 import { Route as DashboardImportAuditRouteImport } from './routes/dashboard.import-audit'
@@ -204,6 +208,11 @@ const DashboardWorkspacesRoute = DashboardWorkspacesRouteImport.update({
   path: '/workspaces',
   getParentRoute: () => DashboardRoute,
 } as any)
+const DashboardWebhookTesterRoute = DashboardWebhookTesterRouteImport.update({
+  id: '/webhook-tester',
+  path: '/webhook-tester',
+  getParentRoute: () => DashboardRoute,
+} as any)
 const DashboardVpsSubdomainsRoute = DashboardVpsSubdomainsRouteImport.update({
   id: '/vps-subdomains',
   path: '/vps-subdomains',
@@ -292,6 +301,11 @@ const DashboardScalingRoute = DashboardScalingRouteImport.update({
 const DashboardRealtimeRoute = DashboardRealtimeRouteImport.update({
   id: '/realtime',
   path: '/realtime',
+  getParentRoute: () => DashboardRoute,
+} as any)
+const DashboardRbacTemplatesRoute = DashboardRbacTemplatesRouteImport.update({
+  id: '/rbac-templates',
+  path: '/rbac-templates',
   getParentRoute: () => DashboardRoute,
 } as any)
 const DashboardRbacDebugRoute = DashboardRbacDebugRouteImport.update({
@@ -473,6 +487,16 @@ const DashboardLogsExplorerRoute = DashboardLogsExplorerRouteImport.update({
 const DashboardLogsRoute = DashboardLogsRouteImport.update({
   id: '/logs',
   path: '/logs',
+  getParentRoute: () => DashboardRoute,
+} as any)
+const DashboardLocalStackRoute = DashboardLocalStackRouteImport.update({
+  id: '/local-stack',
+  path: '/local-stack',
+  getParentRoute: () => DashboardRoute,
+} as any)
+const DashboardKeyRotationRoute = DashboardKeyRotationRouteImport.update({
+  id: '/key-rotation',
+  path: '/key-rotation',
   getParentRoute: () => DashboardRoute,
 } as any)
 const DashboardJobsRoute = DashboardJobsRouteImport.update({
@@ -841,6 +865,8 @@ export interface FileRoutesByFullPath {
   '/dashboard/import-audit': typeof DashboardImportAuditRoute
   '/dashboard/integrations': typeof DashboardIntegrationsRouteWithChildren
   '/dashboard/jobs': typeof DashboardJobsRoute
+  '/dashboard/key-rotation': typeof DashboardKeyRotationRoute
+  '/dashboard/local-stack': typeof DashboardLocalStackRoute
   '/dashboard/logs': typeof DashboardLogsRoute
   '/dashboard/logs-explorer': typeof DashboardLogsExplorerRoute
   '/dashboard/mfa': typeof DashboardMfaRoute
@@ -876,6 +902,7 @@ export interface FileRoutesByFullPath {
   '/dashboard/projects': typeof DashboardProjectsRouteWithChildren
   '/dashboard/rbac': typeof DashboardRbacRoute
   '/dashboard/rbac-debug': typeof DashboardRbacDebugRoute
+  '/dashboard/rbac-templates': typeof DashboardRbacTemplatesRoute
   '/dashboard/realtime': typeof DashboardRealtimeRoute
   '/dashboard/scaling': typeof DashboardScalingRoute
   '/dashboard/sdk-demo': typeof DashboardSdkDemoRoute
@@ -894,6 +921,7 @@ export interface FileRoutesByFullPath {
   '/dashboard/vps-recovery': typeof DashboardVpsRecoveryRoute
   '/dashboard/vps-status': typeof DashboardVpsStatusRoute
   '/dashboard/vps-subdomains': typeof DashboardVpsSubdomainsRoute
+  '/dashboard/webhook-tester': typeof DashboardWebhookTesterRoute
   '/dashboard/workspaces': typeof DashboardWorkspacesRoute
   '/docs/api': typeof DocsApiRoute
   '/docs/sdk': typeof DocsSdkRoute
@@ -971,6 +999,8 @@ export interface FileRoutesByTo {
   '/dashboard/import-audit': typeof DashboardImportAuditRoute
   '/dashboard/integrations': typeof DashboardIntegrationsRouteWithChildren
   '/dashboard/jobs': typeof DashboardJobsRoute
+  '/dashboard/key-rotation': typeof DashboardKeyRotationRoute
+  '/dashboard/local-stack': typeof DashboardLocalStackRoute
   '/dashboard/logs': typeof DashboardLogsRoute
   '/dashboard/logs-explorer': typeof DashboardLogsExplorerRoute
   '/dashboard/mfa': typeof DashboardMfaRoute
@@ -1006,6 +1036,7 @@ export interface FileRoutesByTo {
   '/dashboard/projects': typeof DashboardProjectsRouteWithChildren
   '/dashboard/rbac': typeof DashboardRbacRoute
   '/dashboard/rbac-debug': typeof DashboardRbacDebugRoute
+  '/dashboard/rbac-templates': typeof DashboardRbacTemplatesRoute
   '/dashboard/realtime': typeof DashboardRealtimeRoute
   '/dashboard/scaling': typeof DashboardScalingRoute
   '/dashboard/sdk-demo': typeof DashboardSdkDemoRoute
@@ -1024,6 +1055,7 @@ export interface FileRoutesByTo {
   '/dashboard/vps-recovery': typeof DashboardVpsRecoveryRoute
   '/dashboard/vps-status': typeof DashboardVpsStatusRoute
   '/dashboard/vps-subdomains': typeof DashboardVpsSubdomainsRoute
+  '/dashboard/webhook-tester': typeof DashboardWebhookTesterRoute
   '/dashboard/workspaces': typeof DashboardWorkspacesRoute
   '/docs/api': typeof DocsApiRoute
   '/docs/sdk': typeof DocsSdkRoute
@@ -1103,6 +1135,8 @@ export interface FileRoutesById {
   '/dashboard/import-audit': typeof DashboardImportAuditRoute
   '/dashboard/integrations': typeof DashboardIntegrationsRouteWithChildren
   '/dashboard/jobs': typeof DashboardJobsRoute
+  '/dashboard/key-rotation': typeof DashboardKeyRotationRoute
+  '/dashboard/local-stack': typeof DashboardLocalStackRoute
   '/dashboard/logs': typeof DashboardLogsRoute
   '/dashboard/logs-explorer': typeof DashboardLogsExplorerRoute
   '/dashboard/mfa': typeof DashboardMfaRoute
@@ -1138,6 +1172,7 @@ export interface FileRoutesById {
   '/dashboard/projects': typeof DashboardProjectsRouteWithChildren
   '/dashboard/rbac': typeof DashboardRbacRoute
   '/dashboard/rbac-debug': typeof DashboardRbacDebugRoute
+  '/dashboard/rbac-templates': typeof DashboardRbacTemplatesRoute
   '/dashboard/realtime': typeof DashboardRealtimeRoute
   '/dashboard/scaling': typeof DashboardScalingRoute
   '/dashboard/sdk-demo': typeof DashboardSdkDemoRoute
@@ -1156,6 +1191,7 @@ export interface FileRoutesById {
   '/dashboard/vps-recovery': typeof DashboardVpsRecoveryRoute
   '/dashboard/vps-status': typeof DashboardVpsStatusRoute
   '/dashboard/vps-subdomains': typeof DashboardVpsSubdomainsRoute
+  '/dashboard/webhook-tester': typeof DashboardWebhookTesterRoute
   '/dashboard/workspaces': typeof DashboardWorkspacesRoute
   '/docs/api': typeof DocsApiRoute
   '/docs/sdk': typeof DocsSdkRoute
@@ -1236,6 +1272,8 @@ export interface FileRouteTypes {
     | '/dashboard/import-audit'
     | '/dashboard/integrations'
     | '/dashboard/jobs'
+    | '/dashboard/key-rotation'
+    | '/dashboard/local-stack'
     | '/dashboard/logs'
     | '/dashboard/logs-explorer'
     | '/dashboard/mfa'
@@ -1271,6 +1309,7 @@ export interface FileRouteTypes {
     | '/dashboard/projects'
     | '/dashboard/rbac'
     | '/dashboard/rbac-debug'
+    | '/dashboard/rbac-templates'
     | '/dashboard/realtime'
     | '/dashboard/scaling'
     | '/dashboard/sdk-demo'
@@ -1289,6 +1328,7 @@ export interface FileRouteTypes {
     | '/dashboard/vps-recovery'
     | '/dashboard/vps-status'
     | '/dashboard/vps-subdomains'
+    | '/dashboard/webhook-tester'
     | '/dashboard/workspaces'
     | '/docs/api'
     | '/docs/sdk'
@@ -1366,6 +1406,8 @@ export interface FileRouteTypes {
     | '/dashboard/import-audit'
     | '/dashboard/integrations'
     | '/dashboard/jobs'
+    | '/dashboard/key-rotation'
+    | '/dashboard/local-stack'
     | '/dashboard/logs'
     | '/dashboard/logs-explorer'
     | '/dashboard/mfa'
@@ -1401,6 +1443,7 @@ export interface FileRouteTypes {
     | '/dashboard/projects'
     | '/dashboard/rbac'
     | '/dashboard/rbac-debug'
+    | '/dashboard/rbac-templates'
     | '/dashboard/realtime'
     | '/dashboard/scaling'
     | '/dashboard/sdk-demo'
@@ -1419,6 +1462,7 @@ export interface FileRouteTypes {
     | '/dashboard/vps-recovery'
     | '/dashboard/vps-status'
     | '/dashboard/vps-subdomains'
+    | '/dashboard/webhook-tester'
     | '/dashboard/workspaces'
     | '/docs/api'
     | '/docs/sdk'
@@ -1497,6 +1541,8 @@ export interface FileRouteTypes {
     | '/dashboard/import-audit'
     | '/dashboard/integrations'
     | '/dashboard/jobs'
+    | '/dashboard/key-rotation'
+    | '/dashboard/local-stack'
     | '/dashboard/logs'
     | '/dashboard/logs-explorer'
     | '/dashboard/mfa'
@@ -1532,6 +1578,7 @@ export interface FileRouteTypes {
     | '/dashboard/projects'
     | '/dashboard/rbac'
     | '/dashboard/rbac-debug'
+    | '/dashboard/rbac-templates'
     | '/dashboard/realtime'
     | '/dashboard/scaling'
     | '/dashboard/sdk-demo'
@@ -1550,6 +1597,7 @@ export interface FileRouteTypes {
     | '/dashboard/vps-recovery'
     | '/dashboard/vps-status'
     | '/dashboard/vps-subdomains'
+    | '/dashboard/webhook-tester'
     | '/dashboard/workspaces'
     | '/docs/api'
     | '/docs/sdk'
@@ -1713,6 +1761,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardWorkspacesRouteImport
       parentRoute: typeof DashboardRoute
     }
+    '/dashboard/webhook-tester': {
+      id: '/dashboard/webhook-tester'
+      path: '/webhook-tester'
+      fullPath: '/dashboard/webhook-tester'
+      preLoaderRoute: typeof DashboardWebhookTesterRouteImport
+      parentRoute: typeof DashboardRoute
+    }
     '/dashboard/vps-subdomains': {
       id: '/dashboard/vps-subdomains'
       path: '/vps-subdomains'
@@ -1837,6 +1892,13 @@ declare module '@tanstack/react-router' {
       path: '/realtime'
       fullPath: '/dashboard/realtime'
       preLoaderRoute: typeof DashboardRealtimeRouteImport
+      parentRoute: typeof DashboardRoute
+    }
+    '/dashboard/rbac-templates': {
+      id: '/dashboard/rbac-templates'
+      path: '/rbac-templates'
+      fullPath: '/dashboard/rbac-templates'
+      preLoaderRoute: typeof DashboardRbacTemplatesRouteImport
       parentRoute: typeof DashboardRoute
     }
     '/dashboard/rbac-debug': {
@@ -2082,6 +2144,20 @@ declare module '@tanstack/react-router' {
       path: '/logs'
       fullPath: '/dashboard/logs'
       preLoaderRoute: typeof DashboardLogsRouteImport
+      parentRoute: typeof DashboardRoute
+    }
+    '/dashboard/local-stack': {
+      id: '/dashboard/local-stack'
+      path: '/local-stack'
+      fullPath: '/dashboard/local-stack'
+      preLoaderRoute: typeof DashboardLocalStackRouteImport
+      parentRoute: typeof DashboardRoute
+    }
+    '/dashboard/key-rotation': {
+      id: '/dashboard/key-rotation'
+      path: '/key-rotation'
+      fullPath: '/dashboard/key-rotation'
+      preLoaderRoute: typeof DashboardKeyRotationRouteImport
       parentRoute: typeof DashboardRoute
     }
     '/dashboard/jobs': {
@@ -2663,6 +2739,8 @@ interface DashboardRouteChildren {
   DashboardImportAuditRoute: typeof DashboardImportAuditRoute
   DashboardIntegrationsRoute: typeof DashboardIntegrationsRouteWithChildren
   DashboardJobsRoute: typeof DashboardJobsRoute
+  DashboardKeyRotationRoute: typeof DashboardKeyRotationRoute
+  DashboardLocalStackRoute: typeof DashboardLocalStackRoute
   DashboardLogsRoute: typeof DashboardLogsRoute
   DashboardLogsExplorerRoute: typeof DashboardLogsExplorerRoute
   DashboardMfaRoute: typeof DashboardMfaRoute
@@ -2698,6 +2776,7 @@ interface DashboardRouteChildren {
   DashboardProjectsRoute: typeof DashboardProjectsRouteWithChildren
   DashboardRbacRoute: typeof DashboardRbacRoute
   DashboardRbacDebugRoute: typeof DashboardRbacDebugRoute
+  DashboardRbacTemplatesRoute: typeof DashboardRbacTemplatesRoute
   DashboardRealtimeRoute: typeof DashboardRealtimeRoute
   DashboardScalingRoute: typeof DashboardScalingRoute
   DashboardSdkDemoRoute: typeof DashboardSdkDemoRoute
@@ -2716,6 +2795,7 @@ interface DashboardRouteChildren {
   DashboardVpsRecoveryRoute: typeof DashboardVpsRecoveryRoute
   DashboardVpsStatusRoute: typeof DashboardVpsStatusRoute
   DashboardVpsSubdomainsRoute: typeof DashboardVpsSubdomainsRoute
+  DashboardWebhookTesterRoute: typeof DashboardWebhookTesterRoute
   DashboardWorkspacesRoute: typeof DashboardWorkspacesRoute
   DashboardIndexRoute: typeof DashboardIndexRoute
   DashboardAdminInviteRoute: typeof DashboardAdminInviteRoute
@@ -2749,6 +2829,8 @@ const DashboardRouteChildren: DashboardRouteChildren = {
   DashboardImportAuditRoute: DashboardImportAuditRoute,
   DashboardIntegrationsRoute: DashboardIntegrationsRouteWithChildren,
   DashboardJobsRoute: DashboardJobsRoute,
+  DashboardKeyRotationRoute: DashboardKeyRotationRoute,
+  DashboardLocalStackRoute: DashboardLocalStackRoute,
   DashboardLogsRoute: DashboardLogsRoute,
   DashboardLogsExplorerRoute: DashboardLogsExplorerRoute,
   DashboardMfaRoute: DashboardMfaRoute,
@@ -2784,6 +2866,7 @@ const DashboardRouteChildren: DashboardRouteChildren = {
   DashboardProjectsRoute: DashboardProjectsRouteWithChildren,
   DashboardRbacRoute: DashboardRbacRoute,
   DashboardRbacDebugRoute: DashboardRbacDebugRoute,
+  DashboardRbacTemplatesRoute: DashboardRbacTemplatesRoute,
   DashboardRealtimeRoute: DashboardRealtimeRoute,
   DashboardScalingRoute: DashboardScalingRoute,
   DashboardSdkDemoRoute: DashboardSdkDemoRoute,
@@ -2802,6 +2885,7 @@ const DashboardRouteChildren: DashboardRouteChildren = {
   DashboardVpsRecoveryRoute: DashboardVpsRecoveryRoute,
   DashboardVpsStatusRoute: DashboardVpsStatusRoute,
   DashboardVpsSubdomainsRoute: DashboardVpsSubdomainsRoute,
+  DashboardWebhookTesterRoute: DashboardWebhookTesterRoute,
   DashboardWorkspacesRoute: DashboardWorkspacesRoute,
   DashboardIndexRoute: DashboardIndexRoute,
   DashboardAdminInviteRoute: DashboardAdminInviteRoute,
