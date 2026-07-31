@@ -8,17 +8,30 @@
 //
 // The extension can ask for the set of already-received indices at any time
 // and resume exactly where it stopped.
+//
+// Integrity: every chunk carries a SHA-256 of its own text. The server
+// recomputes it on arrival (reject + ask for re-send on mismatch) and can
+// re-verify the whole staged set against a client manifest, dropping only the
+// corrupted indices so the upload resumes without restarting from zero.
 export type UploadState = {
   upload_id: string;
   event_id: string;
   total_chunks: number;
   total_bytes: number;
   received: number[];
+  /** idx → stored sha256 (hex) for each received chunk. */
+  checksums: Record<number, string>;
+  sha256?: string | null;
   complete: boolean;
   job_id: string | null;
   created_at: string;
   updated_at: string;
 };
+
+export async function sha256Hex(text: string): Promise<string> {
+  const buf = await globalThis.crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+  return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
 
 let ensured = false;
 
@@ -38,6 +51,7 @@ async function ensureTables(): Promise<void> {
        created_at timestamptz not null default now(),
        updated_at timestamptz not null default now()
      );
+     alter table admin.import_uploads add column if not exists sha256 text;
      create table if not exists admin.import_upload_chunks (
        upload_id text not null references admin.import_uploads(upload_id) on delete cascade,
        idx integer not null,
@@ -46,10 +60,12 @@ async function ensureTables(): Promise<void> {
        created_at timestamptz not null default now(),
        primary key (upload_id, idx)
      );
+     alter table admin.import_upload_chunks add column if not exists sha256 text;
      create index if not exists import_uploads_event_idx on admin.import_uploads (event_id);`,
   );
   ensured = true;
 }
+
 
 function rowToState(r: Record<string, unknown>, received: number[]): UploadState {
   return {
