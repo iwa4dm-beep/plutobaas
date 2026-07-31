@@ -252,9 +252,63 @@ function ConnectRoadmapPage() {
     setBusy(false);
   }, [cfg, runOne]);
 
+  const runFullGoLive = useCallback(async () => {
+    if (!cfg) return;
+    stopRef.current = false;
+    setAuto(true);
+    setEvents([]);
+    setReport(null);
+    setStageMap({});
+    setResults({});
+
+    const specs: StageSpec[] = STEPS.map((s) => ({
+      id: s.id,
+      n: s.n,
+      title: s.title_en,
+      title_bn: s.title_bn,
+      check: s.check,
+      page: s.stops[0]?.to ?? "/dashboard",
+    }));
+
+    const rep = await runGoLive(specs, cfg, {
+      shouldStop: () => stopRef.current,
+      onEvent: (e) => setEvents((prev) => [...prev, e]),
+      onStage: (o) => {
+        setStageMap((prev) => ({ ...prev, [o.id]: o }));
+        setResults((prev) => ({
+          ...prev,
+          [o.id]: {
+            id: (STEPS.find((s) => s.id === o.id)?.check ?? "health") as CheckId,
+            label: o.title,
+            label_bn: o.title,
+            status:
+              o.status === "manual"
+                ? "skipped"
+                : o.status === "running"
+                  ? "running"
+                  : o.status,
+            detail: o.detail,
+            hints: o.hints,
+          } as CheckResult,
+        }));
+        if (o.status === "pass") {
+          setDone((prev) => {
+            const next = { ...prev, [o.id]: true };
+            try { localStorage.setItem(DONE_KEY, JSON.stringify(next)); } catch { /* ignore */ }
+            return next;
+          });
+        }
+      },
+    });
+
+    setReport(rep);
+    setAuto(false);
+  }, [cfg]);
+
   const checkable = STEPS.filter((s) => s.check).length;
   const passed = STEPS.filter((s) => results[s.id]?.status === "pass").length;
   const completed = STEPS.filter((s) => done[s.id]).length;
+  const autoProgress = Object.values(stageMap).filter((s) => s.status !== "running").length;
 
   return (
     <div className="space-y-6">
@@ -270,8 +324,14 @@ function ConnectRoadmapPage() {
           <span className="mx-2 text-border">·</span>
           <span className="font-medium text-foreground">{passed}/{checkable}</span>
           <span className="text-muted-foreground"> live checks passing</span>
+          {auto && (
+            <>
+              <span className="mx-2 text-border">·</span>
+              <span className="text-muted-foreground">auto-run {autoProgress}/{STEPS.length}</span>
+            </>
+          )}
         </div>
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ml-auto flex flex-wrap items-center gap-2">
           <Link
             to="/dashboard/connect-project"
             className="inline-flex items-center gap-1 rounded-md border border-border px-3 py-1.5 text-xs font-medium transition hover:bg-accent"
@@ -280,14 +340,104 @@ function ConnectRoadmapPage() {
           </Link>
           <button
             onClick={runAll}
-            disabled={busy || !cfg}
-            className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition hover:opacity-90 disabled:opacity-50"
+            disabled={busy || auto || !cfg}
+            className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-medium transition hover:bg-accent disabled:opacity-50"
           >
             {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
             Run all checks
           </button>
+          {auto ? (
+            <button
+              onClick={() => { stopRef.current = true; }}
+              className="inline-flex items-center gap-1.5 rounded-md border border-destructive/50 px-3 py-1.5 text-xs font-medium text-destructive transition hover:bg-destructive/10"
+            >
+              <Square className="h-3.5 w-3.5" /> Stop
+            </button>
+          ) : (
+            <button
+              onClick={runFullGoLive}
+              disabled={busy || !cfg}
+              className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition hover:opacity-90 disabled:opacity-50"
+            >
+              <Rocket className="h-3.5 w-3.5" /> Run full go-live (১→১০)
+            </button>
+          )}
         </div>
       </div>
+
+      {(events.length > 0 || report) && (
+        <section className="rounded-lg border border-border bg-card p-4">
+          <div className="flex flex-wrap items-center gap-3">
+            <h2 className="text-sm font-semibold text-foreground">Auto-run timeline</h2>
+            {report && (
+              <span
+                className={
+                  "rounded-full px-2 py-0.5 text-[11px] font-medium " +
+                  (report.verdict === "green"
+                    ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
+                    : report.verdict === "amber"
+                      ? "bg-amber-500/15 text-amber-600 dark:text-amber-400"
+                      : "bg-destructive/15 text-destructive")
+                }
+              >
+                {report.verdict.toUpperCase()} · {report.totals.pass} pass / {report.totals.warn} warn /{" "}
+                {report.totals.fail} fail / {report.totals.manual} manual
+              </span>
+            )}
+            {report && (
+              <div className="ml-auto flex gap-2">
+                <button
+                  onClick={() =>
+                    downloadText(
+                      `pluto-go-live-${Date.now()}.json`,
+                      JSON.stringify(report, null, 2),
+                      "application/json",
+                    )
+                  }
+                  className="inline-flex items-center gap-1 rounded-md border border-border px-2.5 py-1 text-xs transition hover:bg-accent"
+                >
+                  <Download className="h-3 w-3" /> JSON
+                </button>
+                <button
+                  onClick={() =>
+                    downloadText(
+                      `pluto-go-live-${Date.now()}.md`,
+                      goLiveReportToMarkdown(report),
+                      "text/markdown",
+                    )
+                  }
+                  className="inline-flex items-center gap-1 rounded-md border border-border px-2.5 py-1 text-xs transition hover:bg-accent"
+                >
+                  <Download className="h-3 w-3" /> Markdown
+                </button>
+              </div>
+            )}
+          </div>
+          <ul className="mt-3 max-h-72 space-y-1 overflow-y-auto rounded-md bg-muted/50 p-3">
+            {events.map((e, i) => (
+              <li
+                key={i}
+                className={
+                  "font-mono text-[11px] leading-relaxed " +
+                  (e.level === "ok"
+                    ? "text-emerald-600 dark:text-emerald-400"
+                    : e.level === "warn"
+                      ? "text-amber-600 dark:text-amber-400"
+                      : e.level === "error"
+                        ? "text-destructive"
+                        : "text-muted-foreground")
+                }
+              >
+                {e.at.slice(11, 19)} [{e.stage}] {e.message}
+              </li>
+            ))}
+            {events.length === 0 && (
+              <li className="text-[11px] text-muted-foreground">Waiting for the first stage…</li>
+            )}
+          </ul>
+        </section>
+      )}
+
 
       {cfg && !cfg.anonKey && (
         <p className="rounded-md border border-amber-500/40 bg-amber-500/10 px-4 py-2 text-xs text-amber-700 dark:text-amber-400">
