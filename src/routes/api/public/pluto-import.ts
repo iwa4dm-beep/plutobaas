@@ -101,6 +101,8 @@ async function handle(request: Request): Promise<Response> {
         index: z.number().int().min(0).max(100_000),
         total: z.number().int().min(1).max(100_000),
         data: z.string().max(1_500_000),
+        sha256: z.string().regex(/^[0-9a-fA-F]{64}$/).nullish(),
+        full_sha256: z.string().regex(/^[0-9a-fA-F]{64}$/).nullish(),
       }),
       envelope: z.record(z.unknown()).optional(),
     });
@@ -114,13 +116,18 @@ async function handle(request: Request): Promise<Response> {
         index: c.data.chunk.index,
         total: c.data.chunk.total,
         data: c.data.chunk.data,
+        sha256: c.data.chunk.sha256 ?? null,
+        full_sha256: c.data.chunk.full_sha256 ?? null,
         envelope: c.data.envelope ?? null,
       });
+      // 422 → integrity failure: client re-sends only `corrupt` indices.
+      if (!r.ok) return json(r, 422);
       return json(r, r.job_id ? 202 : 200);
     } catch (e) {
       return json({ ok: false, error: "chunk_store_failed", detail: (e as Error).message }, 502);
     }
   }
+
 
   let parsed: z.infer<typeof Payload>;
   try {

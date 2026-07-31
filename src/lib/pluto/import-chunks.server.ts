@@ -8,17 +8,30 @@
 //
 // The extension can ask for the set of already-received indices at any time
 // and resume exactly where it stopped.
+//
+// Integrity: every chunk carries a SHA-256 of its own text. The server
+// recomputes it on arrival (reject + ask for re-send on mismatch) and can
+// re-verify the whole staged set against a client manifest, dropping only the
+// corrupted indices so the upload resumes without restarting from zero.
 export type UploadState = {
   upload_id: string;
   event_id: string;
   total_chunks: number;
   total_bytes: number;
   received: number[];
+  /** idx → stored sha256 (hex) for each received chunk. */
+  checksums: Record<number, string>;
+  sha256?: string | null;
   complete: boolean;
   job_id: string | null;
   created_at: string;
   updated_at: string;
 };
+
+export async function sha256Hex(text: string): Promise<string> {
+  const buf = await globalThis.crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+  return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
 
 let ensured = false;
 
@@ -38,6 +51,7 @@ async function ensureTables(): Promise<void> {
        created_at timestamptz not null default now(),
        updated_at timestamptz not null default now()
      );
+     alter table admin.import_uploads add column if not exists sha256 text;
      create table if not exists admin.import_upload_chunks (
        upload_id text not null references admin.import_uploads(upload_id) on delete cascade,
        idx integer not null,
@@ -46,18 +60,26 @@ async function ensureTables(): Promise<void> {
        created_at timestamptz not null default now(),
        primary key (upload_id, idx)
      );
+     alter table admin.import_upload_chunks add column if not exists sha256 text;
      create index if not exists import_uploads_event_idx on admin.import_uploads (event_id);`,
   );
   ensured = true;
 }
 
-function rowToState(r: Record<string, unknown>, received: number[]): UploadState {
+
+function rowToState(
+  r: Record<string, unknown>,
+  received: number[],
+  checksums: Record<number, string>,
+): UploadState {
   return {
     upload_id: String(r.upload_id),
     event_id: String(r.event_id),
     total_chunks: Number(r.total_chunks ?? 0),
     total_bytes: Number(r.total_bytes ?? 0),
     received,
+    checksums,
+    sha256: (r.sha256 as string) ?? null,
     complete: r.complete === true,
     job_id: (r.job_id as string) ?? null,
     created_at: String(r.created_at),
@@ -72,11 +94,14 @@ async function loadState(uploadId: string): Promise<UploadState | null> {
   const row = ((head.rows ?? []) as Record<string, unknown>[])[0];
   if (!row) return null;
   const parts = await readQuery(
-    `select idx from admin.import_upload_chunks where upload_id = $1 order by idx`,
+    `select idx, sha256 from admin.import_upload_chunks where upload_id = $1 order by idx`,
     [uploadId],
   );
-  const received = ((parts.rows ?? []) as Record<string, unknown>[]).map((p) => Number(p.idx));
-  return rowToState(row, received);
+  const rows = (parts.rows ?? []) as Record<string, unknown>[];
+  const received = rows.map((p) => Number(p.idx));
+  const checksums: Record<number, string> = {};
+  for (const p of rows) if (p.sha256) checksums[Number(p.idx)] = String(p.sha256);
+  return rowToState(row, received, checksums);
 }
 
 /** Resume support: which chunk indices does the server already have? */
@@ -90,6 +115,10 @@ export type ChunkInput = {
   index: number;
   total: number;
   data: string;
+  /** SHA-256 (hex) of `data`, computed by the client. Verified server-side. */
+  sha256?: string | null;
+  /** SHA-256 (hex) of the full assembled SQL, sent with the first chunk. */
+  full_sha256?: string | null;
   /** Envelope (repo, lovable, supabase metadata …) sent with the first chunk. */
   envelope?: Record<string, unknown> | null;
 };
@@ -101,6 +130,8 @@ export type ChunkResult = {
   job_id?: string | null;
   duplicate?: boolean;
   assembled_bytes?: number;
+  /** Indices whose stored checksum did not match — client must re-send these. */
+  corrupt?: number[];
   error?: string;
 };
 
@@ -109,22 +140,50 @@ export async function receiveChunk(input: ChunkInput): Promise<ChunkResult> {
   await ensureTables();
   const { readQuery, writeQuery } = await import("./import-jobs.server");
 
+  // 1. Integrity gate — recompute the digest over what actually arrived.
+  const actual = await sha256Hex(input.data);
+  if (input.sha256 && input.sha256.toLowerCase() !== actual) {
+    const state = (await loadState(input.upload_id)) ?? {
+      upload_id: input.upload_id,
+      event_id: input.event_id,
+      total_chunks: input.total,
+      total_bytes: 0,
+      received: [],
+      checksums: {},
+      sha256: null,
+      complete: false,
+      job_id: null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+    return { ok: false, state, corrupt: [input.index], error: "checksum_mismatch" };
+  }
+
   await writeQuery(
-    `insert into admin.import_uploads (upload_id, event_id, total_chunks, envelope)
-     values ($1, $2, $3, $4::jsonb)
+    `insert into admin.import_uploads (upload_id, event_id, total_chunks, envelope, sha256)
+     values ($1, $2, $3, $4::jsonb, $5)
      on conflict (upload_id) do update
        set total_chunks = excluded.total_chunks,
            envelope = case when admin.import_uploads.envelope = '{}'::jsonb
                            then excluded.envelope else admin.import_uploads.envelope end,
+           sha256 = coalesce(admin.import_uploads.sha256, excluded.sha256),
            updated_at = now()`,
-    [input.upload_id, input.event_id, input.total, JSON.stringify(input.envelope ?? {})],
+    [
+      input.upload_id,
+      input.event_id,
+      input.total,
+      JSON.stringify(input.envelope ?? {}),
+      input.full_sha256 ?? null,
+    ],
   );
 
+  // Re-send of a known-bad index must overwrite, so upsert on the digest.
   await writeQuery(
-    `insert into admin.import_upload_chunks (upload_id, idx, data, bytes)
-     values ($1, $2, $3, $4)
-     on conflict (upload_id, idx) do nothing`,
-    [input.upload_id, input.index, input.data, input.data.length],
+    `insert into admin.import_upload_chunks (upload_id, idx, data, bytes, sha256)
+     values ($1, $2, $3, $4, $5)
+     on conflict (upload_id, idx) do update
+       set data = excluded.data, bytes = excluded.bytes, sha256 = excluded.sha256`,
+    [input.upload_id, input.index, input.data, input.data.length, actual],
   );
 
   const state = (await loadState(input.upload_id))!;
@@ -135,17 +194,46 @@ export async function receiveChunk(input: ChunkInput): Promise<ChunkResult> {
     return { ok: true, state };
   }
 
-  // All chunks present → assemble.
+  // All chunks present → verify every stored chunk before assembling.
+  const bad = await findCorruptChunks(input.upload_id);
+  if (bad.length) {
+    await dropChunks(input.upload_id, bad);
+    return {
+      ok: false,
+      state: (await loadState(input.upload_id))!,
+      corrupt: bad,
+      error: "corrupt_chunks",
+    };
+  }
+
+  // All chunks present and individually verified → assemble.
   const parts = await readQuery(
     `select data from admin.import_upload_chunks where upload_id = $1 order by idx`,
     [input.upload_id],
   );
   const sql = ((parts.rows ?? []) as Record<string, unknown>[]).map((p) => String(p.data)).join("");
 
-  const head = await readQuery(`select envelope from admin.import_uploads where upload_id = $1`, [input.upload_id]);
-  const envRaw = ((head.rows ?? []) as Record<string, unknown>[])[0]?.envelope;
+  const head = await readQuery(`select envelope, sha256 from admin.import_uploads where upload_id = $1`, [input.upload_id]);
+  const headRow = ((head.rows ?? []) as Record<string, unknown>[])[0];
+
+  // Whole-payload digest: catches ordering/truncation faults that per-chunk
+  // hashes cannot see. On mismatch the entire staging set is dropped so the
+  // client re-uploads cleanly instead of importing a damaged dump.
+  const wantFull = headRow?.sha256 ? String(headRow.sha256).toLowerCase() : null;
+  if (wantFull && (await sha256Hex(sql)) !== wantFull) {
+    await dropChunks(input.upload_id, state.received);
+    return {
+      ok: false,
+      state: (await loadState(input.upload_id))!,
+      corrupt: state.received,
+      error: "full_checksum_mismatch",
+    };
+  }
+
+  const envRaw = headRow?.envelope;
   const envelope: Record<string, unknown> =
     typeof envRaw === "string" ? JSON.parse(envRaw || "{}") : ((envRaw as Record<string, unknown>) ?? {});
+
 
   const supabase = { ...((envelope.supabase as Record<string, unknown>) ?? {}), schema_sql: sql };
   const payload = {
@@ -195,4 +283,79 @@ export async function pruneUploads(hours = 48): Promise<number> {
     [String(Math.max(1, hours))],
   );
   return Number(res.row_count ?? 0);
+}
+
+/* ------------------------ integrity helpers ------------------------- */
+
+/** Recompute every stored chunk digest; returns the indices that don't match. */
+export async function findCorruptChunks(uploadId: string): Promise<number[]> {
+  await ensureTables();
+  const { readQuery } = await import("./import-jobs.server");
+  const parts = await readQuery(
+    `select idx, data, sha256 from admin.import_upload_chunks where upload_id = $1 order by idx`,
+    [uploadId],
+  );
+  const bad: number[] = [];
+  for (const p of (parts.rows ?? []) as Record<string, unknown>[]) {
+    const stored = p.sha256 ? String(p.sha256).toLowerCase() : null;
+    if (!stored) continue; // legacy chunk, nothing to compare against
+    if ((await sha256Hex(String(p.data))) !== stored) bad.push(Number(p.idx));
+  }
+  return bad;
+}
+
+/** Delete specific chunk indices so the client re-uploads only those. */
+export async function dropChunks(uploadId: string, indices: number[]): Promise<number> {
+  if (!indices.length) return 0;
+  await ensureTables();
+  const { writeQuery } = await import("./import-jobs.server");
+  const res = await writeQuery(
+    `delete from admin.import_upload_chunks where upload_id = $1 and idx = any($2::int[])`,
+    [uploadId, `{${indices.map((n) => Number(n)).join(",")}}`],
+  );
+  return Number(res.row_count ?? 0);
+}
+
+export type VerifyUploadResult = {
+  ok: boolean;
+  upload_id: string;
+  /** Indices the client must re-send (corrupt server-side or manifest mismatch). */
+  corrupt: number[];
+  missing: number[];
+  dropped: number;
+  state: UploadState | null;
+};
+
+/**
+ * Verify a staged upload against the client's per-chunk manifest.
+ * Mismatching chunks are deleted, so a resume re-requests only those indices.
+ */
+export async function verifyUpload(input: {
+  upload_id: string;
+  /** idx → expected sha256 (hex). Optional: server-side self-check runs regardless. */
+  manifest?: Record<string, string> | null;
+}): Promise<VerifyUploadResult> {
+  const state = await loadState(input.upload_id);
+  if (!state) {
+    return { ok: false, upload_id: input.upload_id, corrupt: [], missing: [], dropped: 0, state: null };
+  }
+
+  const bad = new Set(await findCorruptChunks(input.upload_id));
+  const manifest = input.manifest ?? null;
+  if (manifest) {
+    for (const [k, want] of Object.entries(manifest)) {
+      const idx = Number(k);
+      const have = state.checksums[idx];
+      if (have && have.toLowerCase() !== String(want).toLowerCase()) bad.add(idx);
+    }
+  }
+
+  const corrupt = [...bad].sort((a, b) => a - b);
+  const dropped = await dropChunks(input.upload_id, corrupt);
+  const after = await loadState(input.upload_id);
+  const have = new Set(after?.received ?? []);
+  const missing: number[] = [];
+  for (let i = 0; i < (after?.total_chunks ?? 0); i++) if (!have.has(i)) missing.push(i);
+
+  return { ok: corrupt.length === 0, upload_id: input.upload_id, corrupt, missing, dropped, state: after };
 }

@@ -19,14 +19,17 @@ import { createFileRoute } from "@tanstack/react-router";
 import { z } from "zod";
 
 const Body = z.object({
-  action: z.enum(["status", "upload_status", "rollback", "prune_uploads"]),
+  action: z.enum(["status", "upload_status", "verify_upload", "rollback", "prune_uploads"]),
   job_id: z.string().max(100).optional(),
   event_id: z.string().max(200).optional(),
   upload_id: z.string().max(200).optional(),
+  /** idx → sha256(hex) manifest for verify_upload. */
+  manifest: z.record(z.string().regex(/^[0-9a-fA-F]{64}$/)).optional(),
   since: z.string().max(64).optional(),
   dry_run: z.boolean().optional(),
   hours: z.number().int().min(1).max(24 * 30).optional(),
 });
+
 
 function hex(buf: ArrayBuffer): string {
   return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
@@ -88,6 +91,15 @@ async function handle(request: Request): Promise<Response> {
       const state = await getUploadState(body.upload_id);
       return json({ ok: true, state });
     }
+
+    if (body.action === "verify_upload") {
+      if (!body.upload_id) return json({ ok: false, error: "upload_id_required" }, 400);
+      const { verifyUpload } = await import("@/lib/pluto/import-chunks.server");
+      const r = await verifyUpload({ upload_id: body.upload_id, manifest: body.manifest ?? null });
+      return json({ ...r, ok: r.ok });
+    }
+
+
 
     if (body.action === "prune_uploads") {
       const { pruneUploads } = await import("@/lib/pluto/import-chunks.server");

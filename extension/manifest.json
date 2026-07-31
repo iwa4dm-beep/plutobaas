@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Pluto Migrator",
-  "version": "3.0.0",
+  "version": "3.1.0",
   "description": "Scan Lovable, GitHub and Supabase tabs, redact secrets, and ship signed migration jobs to Pluto BaaS with a live timeline, one-click rollback and resumable chunked uploads.",
   "permissions": ["storage", "activeTab", "scripting", "tabs", "alarms", "notifications", "contextMenus", "downloads"],
   "host_permissions": [
