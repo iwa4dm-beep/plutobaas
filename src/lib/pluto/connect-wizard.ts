@@ -95,7 +95,7 @@ const RULES: { match: RegExp; d: Diagnosis }[] = [
     },
   },
   {
-    match: /\b404\b|not found|undefined table|does not exist/i,
+    match: /\b404\b|not found|undefined table|does not exist|42p01/i,
     d: {
       cause: "The table/route does not exist on this project — the import may not have been applied.",
       cause_bn: "এই প্রজেক্টে টেবিল/রুটটি নেই — সম্ভবত ইমপোর্ট apply হয়নি।",
@@ -243,7 +243,8 @@ export async function runCheck(id: CheckId, cfg: WizardConfig): Promise<CheckRes
       });
       const sig = p.error ?? `HTTP ${p.status} ${p.body}`;
       if (p.ok) return result(id, "pass", `Table "${table}" exists and returns rows · ${p.ms}ms`, p.ms);
-      if (p.status === 404) return result(id, "fail", `Table "${table}" not found — import not applied?`, p.ms, sig);
+      const missing = p.status === 404 || /42p01|does not exist/i.test(p.body);
+      if (missing) return result(id, "fail", `Table "${table}" not found — import not applied?`, p.ms, sig);
       return result(id, "warn", sig, p.ms, sig);
     }
     case "storage": {

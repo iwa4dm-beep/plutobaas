@@ -144,6 +144,7 @@ const groups: Group[] = [
   {
     label: "Help",
     items: [
+      { to: "/dashboard/help/connect-roadmap", label: "Connect & Go-Live Roadmap", icon: ScrollText },
       { to: "/dashboard/help/fullstack-guide", label: "Fullstack E2E Guide", icon: ScrollText },
       { to: "/dashboard/help/checklist", label: "E2E Checklist", icon: ScrollText },
     ],
