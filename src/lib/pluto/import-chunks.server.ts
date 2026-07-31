@@ -206,18 +206,34 @@ export async function receiveChunk(input: ChunkInput): Promise<ChunkResult> {
     };
   }
 
-
-  // All chunks present → assemble.
+  // All chunks present and individually verified → assemble.
   const parts = await readQuery(
     `select data from admin.import_upload_chunks where upload_id = $1 order by idx`,
     [input.upload_id],
   );
   const sql = ((parts.rows ?? []) as Record<string, unknown>[]).map((p) => String(p.data)).join("");
 
-  const head = await readQuery(`select envelope from admin.import_uploads where upload_id = $1`, [input.upload_id]);
-  const envRaw = ((head.rows ?? []) as Record<string, unknown>[])[0]?.envelope;
+  const head = await readQuery(`select envelope, sha256 from admin.import_uploads where upload_id = $1`, [input.upload_id]);
+  const headRow = ((head.rows ?? []) as Record<string, unknown>[])[0];
+
+  // Whole-payload digest: catches ordering/truncation faults that per-chunk
+  // hashes cannot see. On mismatch the entire staging set is dropped so the
+  // client re-uploads cleanly instead of importing a damaged dump.
+  const wantFull = headRow?.sha256 ? String(headRow.sha256).toLowerCase() : null;
+  if (wantFull && (await sha256Hex(sql)) !== wantFull) {
+    await dropChunks(input.upload_id, state.received);
+    return {
+      ok: false,
+      state: (await loadState(input.upload_id))!,
+      corrupt: state.received,
+      error: "full_checksum_mismatch",
+    };
+  }
+
+  const envRaw = headRow?.envelope;
   const envelope: Record<string, unknown> =
     typeof envRaw === "string" ? JSON.parse(envRaw || "{}") : ((envRaw as Record<string, unknown>) ?? {});
+
 
   const supabase = { ...((envelope.supabase as Record<string, unknown>) ?? {}), schema_sql: sql };
   const payload = {
