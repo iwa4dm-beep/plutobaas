@@ -1,6 +1,14 @@
-// 5-step onboarding tour shown once on first visit. Fully bilingual;
-// dismisses permanently via localStorage. No portal library required —
-// uses shadcn Dialog for the overlay.
+// 5-step onboarding tour. DISABLED BY DEFAULT — it never opens on its own.
+//
+// How to turn it on (any one of these):
+//   1. Console / code:  window.plutoStartTour()
+//   2. Code import:     import { startOnboardingTour } from "@/components/help/OnboardingTour"
+//                       startOnboardingTour()
+//   3. Persist it on:   localStorage.setItem("pluto:help:tour", "1")  → then reload
+//   4. URL:             add ?tour=1 to any page
+// Turn it off again:    localStorage.removeItem("pluto:help:tour")
+//
+// Fully bilingual; uses shadcn Dialog for the overlay.
 import { useEffect, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
@@ -8,6 +16,16 @@ import { Button } from "@/components/ui/button";
 import { useLocale } from "@/lib/help/locale";
 
 const KEY = "pluto:help:onboarded";
+/** Opt-in switch. Absent/"0" = tour stays closed on load. */
+const ENABLE_KEY = "pluto:help:tour";
+const OPEN_EVENT = "pluto:help:tour:open";
+
+/** Programmatic trigger — opens the tour immediately, from anywhere. */
+export function startOnboardingTour(): void {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new CustomEvent(OPEN_EVENT));
+}
+
 
 type Step = {
   title: { bn: string; en: string };
