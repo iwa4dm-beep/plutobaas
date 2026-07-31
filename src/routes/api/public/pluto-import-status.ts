@@ -92,6 +92,15 @@ async function handle(request: Request): Promise<Response> {
       return json({ ok: true, state });
     }
 
+    if (body.action === "verify_upload") {
+      if (!body.upload_id) return json({ ok: false, error: "upload_id_required" }, 400);
+      const { verifyUpload } = await import("@/lib/pluto/import-chunks.server");
+      const r = await verifyUpload({ upload_id: body.upload_id, manifest: body.manifest ?? null });
+      return json({ ok: true, ...r });
+    }
+
+
+
     if (body.action === "prune_uploads") {
       const { pruneUploads } = await import("@/lib/pluto/import-chunks.server");
       return json({ ok: true, removed: await pruneUploads(body.hours ?? 48) });
