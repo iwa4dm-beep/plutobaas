@@ -398,9 +398,9 @@ export function GuidedSetupWizard({ apiBase }: { apiBase: string }) {
                       <div className="mt-1"><span className="font-medium">Fix:</span> {h.fix}</div>
                       <div className="text-muted-foreground">{h.fix_bn}</div>
                       {h.link && (
-                        <Link to={h.link} className="mt-1 inline-flex items-center gap-1 text-primary hover:underline">
+                        <a href={h.link} className="mt-1 inline-flex items-center gap-1 text-primary hover:underline">
                           Open {h.link} <ArrowRight className="h-3 w-3" />
-                        </Link>
+                        </a>
                       )}
                     </div>
                   ))}

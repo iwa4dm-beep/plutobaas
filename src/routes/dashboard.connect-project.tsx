@@ -9,6 +9,7 @@ import { HelpPanel } from "@/components/help/HelpPanel";
 import { dashboardConnectProjectHelp } from "@/content/help/dashboard.connect-project";
 import { resolveApiUrl } from "@/lib/pluto/base-url";
 import { AppendixSections } from "@/components/pluto/connect/AppendixSections";
+import { GuidedSetupWizard } from "@/components/pluto/connect/GuidedSetupWizard";
 
 export const Route = createFileRoute("/dashboard/connect-project")({
   component: ConnectProjectPage,
@@ -448,6 +449,8 @@ function ConnectProjectPage() {
           );
         })}
       </ol>
+
+      <GuidedSetupWizard apiBase={apiBase} />
 
       <AppendixSections />
     </div>
