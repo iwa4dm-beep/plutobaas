@@ -121,6 +121,7 @@ import { Route as DashboardOpsDockerCheckRouteImport } from './routes/dashboard.
 import { Route as DashboardOpsAuditRouteImport } from './routes/dashboard.ops.audit'
 import { Route as DashboardIntegrationsLovableFrontendRouteImport } from './routes/dashboard.integrations.lovable-frontend'
 import { Route as DashboardHelpFullstackGuideRouteImport } from './routes/dashboard.help.fullstack-guide'
+import { Route as DashboardHelpConnectRoadmapRouteImport } from './routes/dashboard.help.connect-roadmap'
 import { Route as DashboardHelpChecklistRouteImport } from './routes/dashboard.help.checklist'
 import { Route as DashboardCustomDomainsAuditRouteImport } from './routes/dashboard.custom-domains.audit'
 import { Route as DashboardAuditDeletesRouteImport } from './routes/dashboard.audit.deletes'
@@ -713,6 +714,12 @@ const DashboardHelpFullstackGuideRoute =
     path: '/help/fullstack-guide',
     getParentRoute: () => DashboardRoute,
   } as any)
+const DashboardHelpConnectRoadmapRoute =
+  DashboardHelpConnectRoadmapRouteImport.update({
+    id: '/help/connect-roadmap',
+    path: '/help/connect-roadmap',
+    getParentRoute: () => DashboardRoute,
+  } as any)
 const DashboardHelpChecklistRoute = DashboardHelpChecklistRouteImport.update({
   id: '/help/checklist',
   path: '/help/checklist',
@@ -944,6 +951,7 @@ export interface FileRoutesByFullPath {
   '/dashboard/audit/deletes': typeof DashboardAuditDeletesRoute
   '/dashboard/custom-domains/audit': typeof DashboardCustomDomainsAuditRoute
   '/dashboard/help/checklist': typeof DashboardHelpChecklistRoute
+  '/dashboard/help/connect-roadmap': typeof DashboardHelpConnectRoadmapRoute
   '/dashboard/help/fullstack-guide': typeof DashboardHelpFullstackGuideRoute
   '/dashboard/integrations/lovable-frontend': typeof DashboardIntegrationsLovableFrontendRoute
   '/dashboard/ops/audit': typeof DashboardOpsAuditRoute
@@ -1078,6 +1086,7 @@ export interface FileRoutesByTo {
   '/dashboard/audit/deletes': typeof DashboardAuditDeletesRoute
   '/dashboard/custom-domains/audit': typeof DashboardCustomDomainsAuditRoute
   '/dashboard/help/checklist': typeof DashboardHelpChecklistRoute
+  '/dashboard/help/connect-roadmap': typeof DashboardHelpConnectRoadmapRoute
   '/dashboard/help/fullstack-guide': typeof DashboardHelpFullstackGuideRoute
   '/dashboard/integrations/lovable-frontend': typeof DashboardIntegrationsLovableFrontendRoute
   '/dashboard/ops/audit': typeof DashboardOpsAuditRoute
@@ -1214,6 +1223,7 @@ export interface FileRoutesById {
   '/dashboard/audit/deletes': typeof DashboardAuditDeletesRoute
   '/dashboard/custom-domains/audit': typeof DashboardCustomDomainsAuditRoute
   '/dashboard/help/checklist': typeof DashboardHelpChecklistRoute
+  '/dashboard/help/connect-roadmap': typeof DashboardHelpConnectRoadmapRoute
   '/dashboard/help/fullstack-guide': typeof DashboardHelpFullstackGuideRoute
   '/dashboard/integrations/lovable-frontend': typeof DashboardIntegrationsLovableFrontendRoute
   '/dashboard/ops/audit': typeof DashboardOpsAuditRoute
@@ -1351,6 +1361,7 @@ export interface FileRouteTypes {
     | '/dashboard/audit/deletes'
     | '/dashboard/custom-domains/audit'
     | '/dashboard/help/checklist'
+    | '/dashboard/help/connect-roadmap'
     | '/dashboard/help/fullstack-guide'
     | '/dashboard/integrations/lovable-frontend'
     | '/dashboard/ops/audit'
@@ -1485,6 +1496,7 @@ export interface FileRouteTypes {
     | '/dashboard/audit/deletes'
     | '/dashboard/custom-domains/audit'
     | '/dashboard/help/checklist'
+    | '/dashboard/help/connect-roadmap'
     | '/dashboard/help/fullstack-guide'
     | '/dashboard/integrations/lovable-frontend'
     | '/dashboard/ops/audit'
@@ -1620,6 +1632,7 @@ export interface FileRouteTypes {
     | '/dashboard/audit/deletes'
     | '/dashboard/custom-domains/audit'
     | '/dashboard/help/checklist'
+    | '/dashboard/help/connect-roadmap'
     | '/dashboard/help/fullstack-guide'
     | '/dashboard/integrations/lovable-frontend'
     | '/dashboard/ops/audit'
@@ -2454,6 +2467,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardHelpFullstackGuideRouteImport
       parentRoute: typeof DashboardRoute
     }
+    '/dashboard/help/connect-roadmap': {
+      id: '/dashboard/help/connect-roadmap'
+      path: '/help/connect-roadmap'
+      fullPath: '/dashboard/help/connect-roadmap'
+      preLoaderRoute: typeof DashboardHelpConnectRoadmapRouteImport
+      parentRoute: typeof DashboardRoute
+    }
     '/dashboard/help/checklist': {
       id: '/dashboard/help/checklist'
       path: '/help/checklist'
@@ -2800,6 +2820,7 @@ interface DashboardRouteChildren {
   DashboardIndexRoute: typeof DashboardIndexRoute
   DashboardAdminInviteRoute: typeof DashboardAdminInviteRoute
   DashboardHelpChecklistRoute: typeof DashboardHelpChecklistRoute
+  DashboardHelpConnectRoadmapRoute: typeof DashboardHelpConnectRoadmapRoute
   DashboardHelpFullstackGuideRoute: typeof DashboardHelpFullstackGuideRoute
 }
 
@@ -2890,6 +2911,7 @@ const DashboardRouteChildren: DashboardRouteChildren = {
   DashboardIndexRoute: DashboardIndexRoute,
   DashboardAdminInviteRoute: DashboardAdminInviteRoute,
   DashboardHelpChecklistRoute: DashboardHelpChecklistRoute,
+  DashboardHelpConnectRoadmapRoute: DashboardHelpConnectRoadmapRoute,
   DashboardHelpFullstackGuideRoute: DashboardHelpFullstackGuideRoute,
 }
 
