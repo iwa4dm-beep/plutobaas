@@ -526,6 +526,12 @@ function ConnectRoadmapPage() {
               </div>
             )}
           </div>
+          {report?.failedStep != null && (
+            <p className="mt-2 text-[11px] text-destructive">
+              First failure at step {report.failedStep} — fix the hint on that step card, then use “Resume from last
+              step” to continue without rerunning passed checks.
+            </p>
+          )}
           <ul className="mt-3 max-h-72 space-y-1 overflow-y-auto rounded-md bg-muted/50 p-3">
             {events.map((e, i) => (
               <li
