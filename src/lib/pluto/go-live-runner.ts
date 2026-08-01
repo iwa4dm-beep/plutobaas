@@ -87,7 +87,10 @@ export type RunOptions = {
   previous?: Record<string, StageOutcome>;
   /** Resume mode: skip stages that already passed in `previous`. */
   resume?: boolean;
+  /** Apply the baseline schema automatically when a step fails on missing tables (default: true). */
+  autoHeal?: boolean;
 };
+
 
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
