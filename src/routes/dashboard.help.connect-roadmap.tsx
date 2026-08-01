@@ -388,6 +388,16 @@ function ConnectRoadmapPage() {
             {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
             Run all checks
           </button>
+          <button
+            onClick={() => void applyBaseline()}
+            disabled={busy || auto || baselineBusy}
+            className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-medium transition hover:bg-accent disabled:opacity-50"
+            title="Applies the idempotent baseline schema (profiles, user_roles, todos, grants, RLS, realtime)."
+          >
+            {baselineBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+            Apply baseline schema
+          </button>
+
           {auto ? (
             <button
               onClick={() => { stopRef.current = true; }}
