@@ -11,6 +11,7 @@ import {
   runCheck,
   type CheckId,
   type CheckResult,
+  type Evidence,
   type WizardConfig,
 } from "./connect-wizard";
 
@@ -20,7 +21,8 @@ export type StageStatus =
   | "pass"
   | "warn"
   | "fail"
-  | "manual";
+  | "manual"
+  | "skipped";
 
 export type StageSpec = {
   id: string;
@@ -42,6 +44,10 @@ export type StageOutcome = {
   durationMs: number;
   page: string;
   hints?: CheckResult["hints"];
+  /** Request/response snippet from the last probe attempt. */
+  evidence?: Evidence;
+  /** Per-stage log lines, mirrored into the exported report. */
+  logs?: string[];
 };
 
 export type RunEvent = {
@@ -57,8 +63,12 @@ export type GoLiveReport = {
   durationMs: number;
   apiBase: string;
   appOrigin: string;
-  totals: { total: number; pass: number; warn: number; fail: number; manual: number };
+  totals: { total: number; pass: number; warn: number; fail: number; manual: number; skipped: number };
   verdict: "green" | "amber" | "red";
+  /** First failing step number, for alerting and resume. */
+  failedStep: number | null;
+  /** Step id the next resume run should start from (null = nothing pending). */
+  resumeFrom: string | null;
   stages: StageOutcome[];
   events: RunEvent[];
 };
@@ -69,6 +79,14 @@ export type RunnerCallbacks = {
   /** Return true to abort the remaining stages. */
   shouldStop?: () => boolean;
 };
+
+export type RunOptions = {
+  /** Outcomes carried over from a previous run; passed stages are reused, not re-probed. */
+  previous?: Record<string, StageOutcome>;
+  /** Resume mode: skip stages that already passed in `previous`. */
+  resume?: boolean;
+};
+
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
