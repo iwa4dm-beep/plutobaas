@@ -426,6 +426,58 @@ function ConnectRoadmapPage() {
         </div>
       </div>
 
+      {showNotify && (
+        <section className="space-y-3 rounded-lg border border-border bg-card p-4">
+          <h2 className="text-sm font-semibold text-foreground">Run completion alerts</h2>
+          <p className="text-xs text-muted-foreground">
+            রান শেষ হলে (সফল বা ব্যর্থ) নিচের webhook URL-এ JSON payload যাবে — verdict, totals, আর প্রথম ব্যর্থ
+            ধাপের নম্বরসহ। ইমেইল ঠিকানা দিলে সেটি payload-এর <code>email</code> ফিল্ডে যাবে, যাতে আপনার automation
+            (Zapier / n8n / নিজের handler) মেইল পাঠাতে পারে।
+          </p>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="text-xs">
+              <span className="text-muted-foreground">Webhook URL</span>
+              <input
+                value={notify.webhookUrl}
+                onChange={(e) => updateNotify({ webhookUrl: e.target.value })}
+                placeholder="https://hooks.example.com/pluto-go-live"
+                className="mt-1 w-full rounded-md border border-border bg-background px-2 py-1.5 font-mono text-[11px]"
+              />
+            </label>
+            <label className="text-xs">
+              <span className="text-muted-foreground">Alert email (forwarded in payload)</span>
+              <input
+                value={notify.email}
+                onChange={(e) => updateNotify({ email: e.target.value })}
+                placeholder="ops@yourdomain.com"
+                className="mt-1 w-full rounded-md border border-border bg-background px-2 py-1.5 font-mono text-[11px]"
+              />
+            </label>
+          </div>
+          <label className="flex items-center gap-2 text-xs text-muted-foreground">
+            <input
+              type="checkbox"
+              checked={notify.onFailureOnly}
+              onChange={(e) => updateNotify({ onFailureOnly: e.target.checked })}
+              className="h-3.5 w-3.5 accent-primary"
+            />
+            Only alert when the run fails
+          </label>
+          {notifyStatus && (
+            <p
+              className={
+                "text-[11px] " +
+                (notifyStatus.ok ? "text-emerald-600 dark:text-emerald-400" : "text-destructive")
+              }
+            >
+              {notifyStatus.detail}
+            </p>
+          )}
+        </section>
+      )}
+
+
+
       {(events.length > 0 || report) && (
         <section className="rounded-lg border border-border bg-card p-4">
           <div className="flex flex-wrap items-center gap-3">
