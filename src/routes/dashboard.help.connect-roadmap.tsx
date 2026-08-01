@@ -608,15 +608,43 @@ function ConnectRoadmapPage() {
               {r && r.status !== "running" && (
                 <div className="mt-3 rounded-md bg-muted/50 p-3">
                   <p className="font-mono text-[11px] leading-relaxed text-foreground/80">{r.detail}</p>
-                  {r.hints?.map((h, i) => (
-                    <div key={i} className="mt-2 border-l-2 border-border pl-2 text-[11px]">
-                      <p className="text-muted-foreground">{h.cause_bn}</p>
-                      <p className="text-foreground/80">{h.fix_bn}</p>
-                      {h.link && (
-                        <Link to={h.link} className="text-primary underline">Open fix page</Link>
-                      )}
+
+                  {r.evidence && (
+                    <pre className="mt-2 overflow-x-auto rounded bg-background/70 p-2 font-mono text-[10px] leading-relaxed text-muted-foreground">
+{`${r.evidence.method} ${r.evidence.url}
+→ HTTP ${r.evidence.status} · ${r.evidence.latencyMs}ms${r.evidence.error ? `\nerror: ${r.evidence.error}` : ""}${r.evidence.bodyPreview ? `\n${r.evidence.bodyPreview}` : ""}`}
+                    </pre>
+                  )}
+
+                  {(r.status === "fail" || r.status === "warn") && r.hints && r.hints.length > 0 && (
+                    <div className="mt-3 rounded-md border border-amber-500/40 bg-amber-500/5 p-2">
+                      <p className="text-[11px] font-semibold text-amber-700 dark:text-amber-400">
+                        Fix this before rerunning · রিরান করার আগে এটি ঠিক করুন
+                      </p>
+                      {r.hints.map((h, i) => (
+                        <div key={i} className="mt-2 border-l-2 border-amber-500/50 pl-2 text-[11px]">
+                          <p className="text-foreground/90">{h.cause}</p>
+                          <p className="text-muted-foreground">{h.cause_bn}</p>
+                          <p className="mt-1 text-foreground/90">→ {h.fix}</p>
+                          <p className="text-muted-foreground">→ {h.fix_bn}</p>
+                          {h.link && (
+                            <Link to={h.link} className="mt-1 inline-flex items-center gap-1 text-primary underline">
+                              Open fix page <ArrowRight className="h-3 w-3" />
+                            </Link>
+                          )}
+                        </div>
+                      ))}
                     </div>
-                  ))}
+                  )}
+
+                  {stageMap[s.id]?.logs?.length ? (
+                    <details className="mt-2">
+                      <summary className="cursor-pointer text-[11px] text-muted-foreground">Step logs</summary>
+                      <pre className="mt-1 max-h-40 overflow-auto rounded bg-background/70 p-2 font-mono text-[10px] leading-relaxed text-muted-foreground">
+{stageMap[s.id]!.logs!.join("\n")}
+                      </pre>
+                    </details>
+                  ) : null}
                 </div>
               )}
             </li>
