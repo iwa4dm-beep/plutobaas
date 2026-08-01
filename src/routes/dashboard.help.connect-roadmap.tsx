@@ -211,7 +211,11 @@ function ConnectRoadmapPage() {
   const [events, setEvents] = useState<RunEvent[]>([]);
   const [stageMap, setStageMap] = useState<Record<string, StageOutcome>>({});
   const [report, setReport] = useState<GoLiveReport | null>(null);
+  const [notify, setNotify] = useState<NotifyConfig>(EMPTY_NOTIFY);
+  const [notifyStatus, setNotifyStatus] = useState<NotifyOutcome | null>(null);
+  const [showNotify, setShowNotify] = useState(false);
   const stopRef = useRef(false);
+  const stagesRef = useRef<Record<string, StageOutcome>>({});
 
 
   useEffect(() => {
