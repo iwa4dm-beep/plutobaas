@@ -19,6 +19,15 @@ export type CheckId =
 
 export type CheckStatus = "idle" | "running" | "pass" | "warn" | "fail" | "skipped";
 
+export type Evidence = {
+  url: string;
+  method: string;
+  status: number;
+  latencyMs: number;
+  bodyPreview?: string;
+  error?: string;
+};
+
 export type CheckResult = {
   id: CheckId;
   label: string;
@@ -28,6 +37,8 @@ export type CheckResult = {
   latencyMs?: number;
   /** Diagnostic hints resolved from the failure signature. */
   hints?: Diagnosis[];
+  /** Raw request/response snippet for the report + debugging. */
+  evidence?: Evidence;
 };
 
 export type Diagnosis = {
@@ -145,23 +156,45 @@ export function diagnose(signature: string): Diagnosis[] {
  * Probes
  * ------------------------------------------------------------------ */
 
-type Probe = { ok: boolean; status: number; body: string; ms: number; error?: string };
+type Probe = {
+  ok: boolean;
+  status: number;
+  body: string;
+  ms: number;
+  error?: string;
+  url: string;
+  method: string;
+};
 
 async function req(url: string, init?: RequestInit): Promise<Probe> {
   const started = Date.now();
+  const method = (init?.method ?? "GET").toUpperCase();
   try {
     const res = await fetch(url, { ...init, signal: AbortSignal.timeout(12_000) });
     const body = (await res.text()).slice(0, 600);
-    return { ok: res.ok, status: res.status, body, ms: Date.now() - started };
+    return { ok: res.ok, status: res.status, body, ms: Date.now() - started, url, method };
   } catch (e) {
     return {
       ok: false,
       status: 0,
       body: "",
       ms: Date.now() - started,
+      url,
+      method,
       error: e instanceof Error ? e.message : String(e),
     };
   }
+}
+
+function evidenceOf(p: Probe): Evidence {
+  return {
+    url: p.url,
+    method: p.method,
+    status: p.status,
+    latencyMs: p.ms,
+    bodyPreview: p.body ? p.body.slice(0, 400) : undefined,
+    error: p.error,
+  };
 }
 
 function base(cfg: WizardConfig): string {
@@ -180,6 +213,7 @@ function result(
   detail: string,
   latencyMs?: number,
   signature?: string,
+  probe?: Probe,
 ): CheckResult {
   return {
     id,
@@ -189,6 +223,7 @@ function result(
     detail,
     latencyMs,
     hints: status === "fail" || status === "warn" ? diagnose(signature ?? detail) : undefined,
+    evidence: probe ? evidenceOf(probe) : undefined,
   };
 }
 
@@ -198,27 +233,27 @@ export async function runCheck(id: CheckId, cfg: WizardConfig): Promise<CheckRes
     case "health": {
       const p = await req(`${b}/v1/health`, { headers: { accept: "application/json" } });
       const sig = p.error ?? `HTTP ${p.status} ${p.body}`;
-      return result(id, p.ok ? "pass" : "fail", p.ok ? `HTTP 200 · ${p.ms}ms` : sig, p.ms, sig);
+      return result(id, p.ok ? "pass" : "fail", p.ok ? `HTTP 200 · ${p.ms}ms` : sig, p.ms, sig, p);
     }
     case "keys": {
       if (!cfg.anonKey) return result(id, "warn", "No anon key entered yet.", 0, "invalid api key");
       const p = await req(`${b}/auth/v1/settings`, { headers: keyHeaders(cfg) });
       const sig = p.error ?? `HTTP ${p.status} ${p.body}`;
-      if (p.status === 401 || p.status === 403) return result(id, "fail", sig, p.ms, sig);
-      return result(id, p.ok || p.status === 404 ? "pass" : "warn", p.ok ? `Key accepted · ${p.ms}ms` : sig, p.ms, sig);
+      if (p.status === 401 || p.status === 403) return result(id, "fail", sig, p.ms, sig, p);
+      return result(id, p.ok || p.status === 404 ? "pass" : "warn", p.ok ? `Key accepted · ${p.ms}ms` : sig, p.ms, sig, p);
     }
     case "cors": {
       const p = await req(`${b}/v1/health`, { method: "GET", headers: { accept: "application/json" } });
       if (p.error) {
-        return result(id, "fail", `Blocked from ${cfg.appOrigin}: ${p.error}`, p.ms, `failed to fetch ${p.error}`);
+        return result(id, "fail", `Blocked from ${cfg.appOrigin}: ${p.error}`, p.ms, `failed to fetch ${p.error}`, p);
       }
-      return result(id, "pass", `${cfg.appOrigin} → allowed · ${p.ms}ms`, p.ms);
+      return result(id, "pass", `${cfg.appOrigin} → allowed · ${p.ms}ms`, p.ms, undefined, p);
     }
     case "auth": {
       const p = await req(`${b}/auth/v1/health`, { headers: keyHeaders(cfg) });
       const alt = p.status === 404 ? await req(`${b}/auth/v1/settings`, { headers: keyHeaders(cfg) }) : p;
       const sig = alt.error ?? `HTTP ${alt.status} ${alt.body}`;
-      return result(id, alt.ok ? "pass" : "fail", alt.ok ? `Auth online · ${alt.ms}ms` : sig, alt.ms, sig);
+      return result(id, alt.ok ? "pass" : "fail", alt.ok ? `Auth online · ${alt.ms}ms` : sig, alt.ms, sig, alt);
     }
     case "rls": {
       const table = cfg.table || "todos";
@@ -227,12 +262,12 @@ export async function runCheck(id: CheckId, cfg: WizardConfig): Promise<CheckRes
       });
       const sig = p.error ?? `HTTP ${p.status} ${p.body}`;
       if (p.status === 401 || p.status === 403) {
-        return result(id, "pass", `RLS actively denies anon on "${table}" (HTTP ${p.status}) — protected.`, p.ms);
+        return result(id, "pass", `RLS actively denies anon on "${table}" (HTTP ${p.status}) — protected.`, p.ms, undefined, p);
       }
       if (p.ok) {
-        return result(id, "warn", `"${table}" is readable by anon — confirm this is intentional.`, p.ms, "row-level security open");
+        return result(id, "warn", `"${table}" is readable by anon — confirm this is intentional.`, p.ms, "row-level security open", p);
       }
-      return result(id, "fail", sig, p.ms, sig);
+      return result(id, "fail", sig, p.ms, sig, p);
     }
     case "import": {
       const table = cfg.table || "todos";
@@ -242,20 +277,20 @@ export async function runCheck(id: CheckId, cfg: WizardConfig): Promise<CheckRes
           : keyHeaders(cfg),
       });
       const sig = p.error ?? `HTTP ${p.status} ${p.body}`;
-      if (p.ok) return result(id, "pass", `Table "${table}" exists and returns rows · ${p.ms}ms`, p.ms);
+      if (p.ok) return result(id, "pass", `Table "${table}" exists and returns rows · ${p.ms}ms`, p.ms, undefined, p);
       const missing = p.status === 404 || /42p01|does not exist/i.test(p.body);
-      if (missing) return result(id, "fail", `Table "${table}" not found — import not applied?`, p.ms, sig);
-      return result(id, "warn", sig, p.ms, sig);
+      if (missing) return result(id, "fail", `Table "${table}" not found — import not applied?`, p.ms, sig, p);
+      return result(id, "warn", sig, p.ms, sig, p);
     }
     case "storage": {
       const p = await req(`${b}/storage/v1/bucket`, { headers: keyHeaders(cfg) });
       const sig = p.error ?? `HTTP ${p.status} ${p.body}`;
-      return result(id, p.ok ? "pass" : "warn", p.ok ? `Buckets listed · ${p.ms}ms` : sig, p.ms, sig);
+      return result(id, p.ok ? "pass" : "warn", p.ok ? `Buckets listed · ${p.ms}ms` : sig, p.ms, sig, p);
     }
     case "realtime": {
       const p = await req(`${b}/realtime/v1/health`, { headers: keyHeaders(cfg) });
       const sig = p.error ?? `HTTP ${p.status} ${p.body}`;
-      return result(id, p.ok ? "pass" : "warn", p.ok ? `Realtime up · ${p.ms}ms` : sig, p.ms, sig);
+      return result(id, p.ok ? "pass" : "warn", p.ok ? `Realtime up · ${p.ms}ms` : sig, p.ms, sig, p);
     }
   }
 }

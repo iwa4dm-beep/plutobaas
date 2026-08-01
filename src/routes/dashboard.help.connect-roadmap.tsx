@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  ArrowRight, CheckCircle2, CircleAlert, CircleDashed, Download, Loader2, Play, Rocket, Square, XCircle,
+  ArrowRight, Bell, CheckCircle2, CircleAlert, CircleDashed, Download, Loader2, Play, RotateCcw, Rocket, Square, XCircle,
 } from "lucide-react";
 import { PageHeader } from "@/components/pluto/PageHeader";
 import { resolveApiUrl } from "@/lib/pluto/base-url";
@@ -20,6 +20,14 @@ import {
   type StageOutcome,
   type StageSpec,
 } from "@/lib/pluto/go-live-runner";
+import {
+  EMPTY_NOTIFY,
+  loadNotifyConfig,
+  notifyGoLive,
+  saveNotifyConfig,
+  type NotifyConfig,
+  type NotifyOutcome,
+} from "@/lib/pluto/go-live-notify";
 
 
 export const Route = createFileRoute("/dashboard/help/connect-roadmap")({
@@ -203,7 +211,11 @@ function ConnectRoadmapPage() {
   const [events, setEvents] = useState<RunEvent[]>([]);
   const [stageMap, setStageMap] = useState<Record<string, StageOutcome>>({});
   const [report, setReport] = useState<GoLiveReport | null>(null);
+  const [notify, setNotify] = useState<NotifyConfig>(EMPTY_NOTIFY);
+  const [notifyStatus, setNotifyStatus] = useState<NotifyOutcome | null>(null);
+  const [showNotify, setShowNotify] = useState(false);
   const stopRef = useRef(false);
+  const stagesRef = useRef<Record<string, StageOutcome>>({});
 
 
   useEffect(() => {
@@ -227,6 +239,15 @@ function ConnectRoadmapPage() {
       const raw = localStorage.getItem(DONE_KEY);
       if (raw) setDone(JSON.parse(raw) as Record<string, boolean>);
     } catch { /* ignore */ }
+    setNotify(loadNotifyConfig());
+  }, []);
+
+  const updateNotify = useCallback((patch: Partial<NotifyConfig>) => {
+    setNotify((prev) => {
+      const next = { ...prev, ...patch };
+      saveNotifyConfig(next);
+      return next;
+    });
   }, []);
 
   const toggleDone = useCallback((id: string) => {
@@ -258,58 +279,73 @@ function ConnectRoadmapPage() {
     setBusy(false);
   }, [cfg, runOne]);
 
-  const runFullGoLive = useCallback(async () => {
-    if (!cfg) return;
-    stopRef.current = false;
-    setAuto(true);
-    setEvents([]);
-    setReport(null);
-    setStageMap({});
-    setResults({});
+  const runFullGoLive = useCallback(
+    async (resume = false) => {
+      if (!cfg) return;
+      stopRef.current = false;
+      setAuto(true);
+      setEvents([]);
+      setReport(null);
+      setNotifyStatus(null);
+      if (!resume) {
+        stagesRef.current = {};
+        setStageMap({});
+        setResults({});
+      }
 
-    const specs: StageSpec[] = STEPS.map((s) => ({
-      id: s.id,
-      n: s.n,
-      title: s.title_en,
-      title_bn: s.title_bn,
-      check: s.check,
-      page: s.stops[0]?.to ?? "/dashboard",
-    }));
+      const specs: StageSpec[] = STEPS.map((s) => ({
+        id: s.id,
+        n: s.n,
+        title: s.title_en,
+        title_bn: s.title_bn,
+        check: s.check,
+        page: s.stops[0]?.to ?? "/dashboard",
+      }));
 
-    const rep = await runGoLive(specs, cfg, {
-      shouldStop: () => stopRef.current,
-      onEvent: (e) => setEvents((prev) => [...prev, e]),
-      onStage: (o) => {
-        setStageMap((prev) => ({ ...prev, [o.id]: o }));
-        setResults((prev) => ({
-          ...prev,
-          [o.id]: {
-            id: (STEPS.find((s) => s.id === o.id)?.check ?? "health") as CheckId,
-            label: o.title,
-            label_bn: o.title,
-            status:
-              o.status === "manual"
-                ? "skipped"
-                : o.status === "running"
-                  ? "running"
-                  : o.status,
-            detail: o.detail,
-            hints: o.hints,
-          } as CheckResult,
-        }));
-        if (o.status === "pass") {
-          setDone((prev) => {
-            const next = { ...prev, [o.id]: true };
-            try { localStorage.setItem(DONE_KEY, JSON.stringify(next)); } catch { /* ignore */ }
-            return next;
-          });
-        }
-      },
-    });
+      const rep = await runGoLive(
+        specs,
+        cfg,
+        {
+          shouldStop: () => stopRef.current,
+          onEvent: (e) => setEvents((prev) => [...prev, e]),
+          onStage: (o) => {
+            if (o.status !== "running") stagesRef.current[o.id] = o;
+            setStageMap((prev) => ({ ...prev, [o.id]: o }));
+            setResults((prev) => ({
+              ...prev,
+              [o.id]: {
+                id: (STEPS.find((s) => s.id === o.id)?.check ?? "health") as CheckId,
+                label: o.title,
+                label_bn: o.title,
+                status:
+                  o.status === "manual" || o.status === "skipped"
+                    ? "skipped"
+                    : o.status === "running"
+                      ? "running"
+                      : o.status,
+                detail: o.detail,
+                hints: o.hints,
+                evidence: o.evidence,
+              } as CheckResult,
+            }));
+            if (o.status === "pass") {
+              setDone((prev) => {
+                const next = { ...prev, [o.id]: true };
+                try { localStorage.setItem(DONE_KEY, JSON.stringify(next)); } catch { /* ignore */ }
+                return next;
+              });
+            }
+          },
+        },
+        { resume, previous: resume ? { ...stagesRef.current } : undefined },
+      );
 
-    setReport(rep);
-    setAuto(false);
-  }, [cfg]);
+      setReport(rep);
+      setAuto(false);
+      setNotifyStatus(await notifyGoLive(rep, notify));
+    },
+    [cfg, notify],
+  );
 
   const checkable = STEPS.filter((s) => s.check).length;
   const passed = STEPS.filter((s) => results[s.id]?.status === "pass").length;
@@ -360,16 +396,87 @@ function ConnectRoadmapPage() {
               <Square className="h-3.5 w-3.5" /> Stop
             </button>
           ) : (
-            <button
-              onClick={runFullGoLive}
-              disabled={busy || !cfg}
-              className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition hover:opacity-90 disabled:opacity-50"
-            >
-              <Rocket className="h-3.5 w-3.5" /> Run full go-live (১→১০)
-            </button>
+            <>
+              {Object.keys(stagesRef.current).length > 0 && (
+                <button
+                  onClick={() => void runFullGoLive(true)}
+                  disabled={busy || !cfg}
+                  className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-medium transition hover:bg-accent disabled:opacity-50"
+                  title="Skips steps that already passed and continues from the first unresolved step."
+                >
+                  <RotateCcw className="h-3.5 w-3.5" /> Resume from last step
+                </button>
+              )}
+              <button
+                onClick={() => setShowNotify((v) => !v)}
+                className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-medium transition hover:bg-accent"
+              >
+                <Bell className="h-3.5 w-3.5" />
+                {notify.webhookUrl ? "Alerts on" : "Alerts"}
+              </button>
+              <button
+                onClick={() => void runFullGoLive(false)}
+                disabled={busy || !cfg}
+                className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition hover:opacity-90 disabled:opacity-50"
+              >
+                <Rocket className="h-3.5 w-3.5" /> Run full go-live (১→১০)
+              </button>
+            </>
           )}
         </div>
       </div>
+
+      {showNotify && (
+        <section className="space-y-3 rounded-lg border border-border bg-card p-4">
+          <h2 className="text-sm font-semibold text-foreground">Run completion alerts</h2>
+          <p className="text-xs text-muted-foreground">
+            রান শেষ হলে (সফল বা ব্যর্থ) নিচের webhook URL-এ JSON payload যাবে — verdict, totals, আর প্রথম ব্যর্থ
+            ধাপের নম্বরসহ। ইমেইল ঠিকানা দিলে সেটি payload-এর <code>email</code> ফিল্ডে যাবে, যাতে আপনার automation
+            (Zapier / n8n / নিজের handler) মেইল পাঠাতে পারে।
+          </p>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="text-xs">
+              <span className="text-muted-foreground">Webhook URL</span>
+              <input
+                value={notify.webhookUrl}
+                onChange={(e) => updateNotify({ webhookUrl: e.target.value })}
+                placeholder="https://hooks.example.com/pluto-go-live"
+                className="mt-1 w-full rounded-md border border-border bg-background px-2 py-1.5 font-mono text-[11px]"
+              />
+            </label>
+            <label className="text-xs">
+              <span className="text-muted-foreground">Alert email (forwarded in payload)</span>
+              <input
+                value={notify.email}
+                onChange={(e) => updateNotify({ email: e.target.value })}
+                placeholder="ops@yourdomain.com"
+                className="mt-1 w-full rounded-md border border-border bg-background px-2 py-1.5 font-mono text-[11px]"
+              />
+            </label>
+          </div>
+          <label className="flex items-center gap-2 text-xs text-muted-foreground">
+            <input
+              type="checkbox"
+              checked={notify.onFailureOnly}
+              onChange={(e) => updateNotify({ onFailureOnly: e.target.checked })}
+              className="h-3.5 w-3.5 accent-primary"
+            />
+            Only alert when the run fails
+          </label>
+          {notifyStatus && (
+            <p
+              className={
+                "text-[11px] " +
+                (notifyStatus.ok ? "text-emerald-600 dark:text-emerald-400" : "text-destructive")
+              }
+            >
+              {notifyStatus.detail}
+            </p>
+          )}
+        </section>
+      )}
+
+
 
       {(events.length > 0 || report) && (
         <section className="rounded-lg border border-border bg-card p-4">
@@ -419,6 +526,12 @@ function ConnectRoadmapPage() {
               </div>
             )}
           </div>
+          {report?.failedStep != null && (
+            <p className="mt-2 text-[11px] text-destructive">
+              First failure at step {report.failedStep} — fix the hint on that step card, then use “Resume from last
+              step” to continue without rerunning passed checks.
+            </p>
+          )}
           <ul className="mt-3 max-h-72 space-y-1 overflow-y-auto rounded-md bg-muted/50 p-3">
             {events.map((e, i) => (
               <li
@@ -501,15 +614,43 @@ function ConnectRoadmapPage() {
               {r && r.status !== "running" && (
                 <div className="mt-3 rounded-md bg-muted/50 p-3">
                   <p className="font-mono text-[11px] leading-relaxed text-foreground/80">{r.detail}</p>
-                  {r.hints?.map((h, i) => (
-                    <div key={i} className="mt-2 border-l-2 border-border pl-2 text-[11px]">
-                      <p className="text-muted-foreground">{h.cause_bn}</p>
-                      <p className="text-foreground/80">{h.fix_bn}</p>
-                      {h.link && (
-                        <Link to={h.link} className="text-primary underline">Open fix page</Link>
-                      )}
+
+                  {r.evidence && (
+                    <pre className="mt-2 overflow-x-auto rounded bg-background/70 p-2 font-mono text-[10px] leading-relaxed text-muted-foreground">
+{`${r.evidence.method} ${r.evidence.url}
+→ HTTP ${r.evidence.status} · ${r.evidence.latencyMs}ms${r.evidence.error ? `\nerror: ${r.evidence.error}` : ""}${r.evidence.bodyPreview ? `\n${r.evidence.bodyPreview}` : ""}`}
+                    </pre>
+                  )}
+
+                  {(r.status === "fail" || r.status === "warn") && r.hints && r.hints.length > 0 && (
+                    <div className="mt-3 rounded-md border border-amber-500/40 bg-amber-500/5 p-2">
+                      <p className="text-[11px] font-semibold text-amber-700 dark:text-amber-400">
+                        Fix this before rerunning · রিরান করার আগে এটি ঠিক করুন
+                      </p>
+                      {r.hints.map((h, i) => (
+                        <div key={i} className="mt-2 border-l-2 border-amber-500/50 pl-2 text-[11px]">
+                          <p className="text-foreground/90">{h.cause}</p>
+                          <p className="text-muted-foreground">{h.cause_bn}</p>
+                          <p className="mt-1 text-foreground/90">→ {h.fix}</p>
+                          <p className="text-muted-foreground">→ {h.fix_bn}</p>
+                          {h.link && (
+                            <Link to={h.link} className="mt-1 inline-flex items-center gap-1 text-primary underline">
+                              Open fix page <ArrowRight className="h-3 w-3" />
+                            </Link>
+                          )}
+                        </div>
+                      ))}
                     </div>
-                  ))}
+                  )}
+
+                  {stageMap[s.id]?.logs?.length ? (
+                    <details className="mt-2">
+                      <summary className="cursor-pointer text-[11px] text-muted-foreground">Step logs</summary>
+                      <pre className="mt-1 max-h-40 overflow-auto rounded bg-background/70 p-2 font-mono text-[10px] leading-relaxed text-muted-foreground">
+{stageMap[s.id]!.logs!.join("\n")}
+                      </pre>
+                    </details>
+                  ) : null}
                 </div>
               )}
             </li>
