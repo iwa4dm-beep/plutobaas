@@ -270,58 +270,73 @@ function ConnectRoadmapPage() {
     setBusy(false);
   }, [cfg, runOne]);
 
-  const runFullGoLive = useCallback(async () => {
-    if (!cfg) return;
-    stopRef.current = false;
-    setAuto(true);
-    setEvents([]);
-    setReport(null);
-    setStageMap({});
-    setResults({});
+  const runFullGoLive = useCallback(
+    async (resume = false) => {
+      if (!cfg) return;
+      stopRef.current = false;
+      setAuto(true);
+      setEvents([]);
+      setReport(null);
+      setNotifyStatus(null);
+      if (!resume) {
+        stagesRef.current = {};
+        setStageMap({});
+        setResults({});
+      }
 
-    const specs: StageSpec[] = STEPS.map((s) => ({
-      id: s.id,
-      n: s.n,
-      title: s.title_en,
-      title_bn: s.title_bn,
-      check: s.check,
-      page: s.stops[0]?.to ?? "/dashboard",
-    }));
+      const specs: StageSpec[] = STEPS.map((s) => ({
+        id: s.id,
+        n: s.n,
+        title: s.title_en,
+        title_bn: s.title_bn,
+        check: s.check,
+        page: s.stops[0]?.to ?? "/dashboard",
+      }));
 
-    const rep = await runGoLive(specs, cfg, {
-      shouldStop: () => stopRef.current,
-      onEvent: (e) => setEvents((prev) => [...prev, e]),
-      onStage: (o) => {
-        setStageMap((prev) => ({ ...prev, [o.id]: o }));
-        setResults((prev) => ({
-          ...prev,
-          [o.id]: {
-            id: (STEPS.find((s) => s.id === o.id)?.check ?? "health") as CheckId,
-            label: o.title,
-            label_bn: o.title,
-            status:
-              o.status === "manual"
-                ? "skipped"
-                : o.status === "running"
-                  ? "running"
-                  : o.status,
-            detail: o.detail,
-            hints: o.hints,
-          } as CheckResult,
-        }));
-        if (o.status === "pass") {
-          setDone((prev) => {
-            const next = { ...prev, [o.id]: true };
-            try { localStorage.setItem(DONE_KEY, JSON.stringify(next)); } catch { /* ignore */ }
-            return next;
-          });
-        }
-      },
-    });
+      const rep = await runGoLive(
+        specs,
+        cfg,
+        {
+          shouldStop: () => stopRef.current,
+          onEvent: (e) => setEvents((prev) => [...prev, e]),
+          onStage: (o) => {
+            if (o.status !== "running") stagesRef.current[o.id] = o;
+            setStageMap((prev) => ({ ...prev, [o.id]: o }));
+            setResults((prev) => ({
+              ...prev,
+              [o.id]: {
+                id: (STEPS.find((s) => s.id === o.id)?.check ?? "health") as CheckId,
+                label: o.title,
+                label_bn: o.title,
+                status:
+                  o.status === "manual" || o.status === "skipped"
+                    ? "skipped"
+                    : o.status === "running"
+                      ? "running"
+                      : o.status,
+                detail: o.detail,
+                hints: o.hints,
+                evidence: o.evidence,
+              } as CheckResult,
+            }));
+            if (o.status === "pass") {
+              setDone((prev) => {
+                const next = { ...prev, [o.id]: true };
+                try { localStorage.setItem(DONE_KEY, JSON.stringify(next)); } catch { /* ignore */ }
+                return next;
+              });
+            }
+          },
+        },
+        { resume, previous: resume ? { ...stagesRef.current } : undefined },
+      );
 
-    setReport(rep);
-    setAuto(false);
-  }, [cfg]);
+      setReport(rep);
+      setAuto(false);
+      setNotifyStatus(await notifyGoLive(rep, notify));
+    },
+    [cfg, notify],
+  );
 
   const checkable = STEPS.filter((s) => s.check).length;
   const passed = STEPS.filter((s) => results[s.id]?.status === "pass").length;
