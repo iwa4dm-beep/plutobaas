@@ -19,6 +19,15 @@ export type CheckId =
 
 export type CheckStatus = "idle" | "running" | "pass" | "warn" | "fail" | "skipped";
 
+export type Evidence = {
+  url: string;
+  method: string;
+  status: number;
+  latencyMs: number;
+  bodyPreview?: string;
+  error?: string;
+};
+
 export type CheckResult = {
   id: CheckId;
   label: string;
@@ -28,6 +37,8 @@ export type CheckResult = {
   latencyMs?: number;
   /** Diagnostic hints resolved from the failure signature. */
   hints?: Diagnosis[];
+  /** Raw request/response snippet for the report + debugging. */
+  evidence?: Evidence;
 };
 
 export type Diagnosis = {
