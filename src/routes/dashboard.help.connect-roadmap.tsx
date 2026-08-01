@@ -1,4 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { applyBaselineSchema } from "@/lib/pluto/baseline-apply";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ArrowRight, Bell, CheckCircle2, CircleAlert, CircleDashed, Download, Loader2, Play, RotateCcw, Rocket, Square, XCircle,
@@ -214,8 +215,23 @@ function ConnectRoadmapPage() {
   const [notify, setNotify] = useState<NotifyConfig>(EMPTY_NOTIFY);
   const [notifyStatus, setNotifyStatus] = useState<NotifyOutcome | null>(null);
   const [showNotify, setShowNotify] = useState(false);
+  const [baselineBusy, setBaselineBusy] = useState(false);
   const stopRef = useRef(false);
   const stagesRef = useRef<Record<string, StageOutcome>>({});
+
+  const applyBaseline = useCallback(async () => {
+    setBaselineBusy(true);
+    const push = (level: RunEvent["level"], message: string) =>
+      setEvents((prev) => [...prev, { at: new Date().toISOString(), stage: "baseline", level, message }]);
+    push("info", "Applying the Pluto baseline schema (profiles, user_roles, todos, grants, RLS, realtime)…");
+    try {
+      const r = await applyBaselineSchema({ onLog: (m) => push("info", m) });
+      push(r.ok ? "ok" : "error", r.detail);
+    } finally {
+      setBaselineBusy(false);
+    }
+  }, []);
+
 
 
   useEffect(() => {
@@ -388,6 +404,16 @@ function ConnectRoadmapPage() {
             {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
             Run all checks
           </button>
+          <button
+            onClick={() => void applyBaseline()}
+            disabled={busy || auto || baselineBusy}
+            className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-medium transition hover:bg-accent disabled:opacity-50"
+            title="Applies the idempotent baseline schema (profiles, user_roles, todos, grants, RLS, realtime)."
+          >
+            {baselineBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+            Apply baseline schema
+          </button>
+
           {auto ? (
             <button
               onClick={() => { stopRef.current = true; }}

@@ -14,6 +14,8 @@ import {
   type Evidence,
   type WizardConfig,
 } from "./connect-wizard";
+import { applyBaselineSchema, looksLikeMissingBaseline } from "./baseline-apply";
+
 
 export type StageStatus =
   | "idle"
@@ -85,7 +87,10 @@ export type RunOptions = {
   previous?: Record<string, StageOutcome>;
   /** Resume mode: skip stages that already passed in `previous`. */
   resume?: boolean;
+  /** Apply the baseline schema automatically when a step fails on missing tables (default: true). */
+  autoHeal?: boolean;
 };
+
 
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -110,6 +115,8 @@ export async function runGoLive(
   const events: RunEvent[] = [];
   const outcomes: StageOutcome[] = [];
   const previous = opts.previous ?? {};
+  let baselineApplied = false;
+
 
   const emit = (stage: string, level: RunEvent["level"], message: string) => {
     const e: RunEvent = { at: new Date().toISOString(), stage, level, message };
@@ -198,6 +205,36 @@ export async function runGoLive(
           );
         }
       }
+
+      // Self-heal: steps 5 (data import) and 6 (RBAC/RLS) fail purely because
+      // the baseline tables were never applied. Apply the idempotent baseline
+      // once per run and re-probe instead of reporting a red step.
+      const signature = `${res.detail} ${res.evidence?.bodyPreview ?? ""} ${res.evidence?.error ?? ""}`;
+      if (
+        res.status === "fail" &&
+        opts.autoHeal !== false &&
+        !baselineApplied &&
+        looksLikeMissingBaseline(signature)
+      ) {
+        baselineApplied = true;
+        log("warn", "Baseline tables missing — applying the Pluto baseline schema automatically.");
+        const heal = await applyBaselineSchema({
+          apiBase: cfg.apiBase,
+          onLog: (m) => log("info", m),
+        });
+        if (heal.ok) {
+          await sleep(RETRY_DELAY_MS);
+          res = await runCheck(s.check, cfg);
+          attempts += 1;
+          log(
+            res.status === "pass" ? "ok" : "warn",
+            `Post-heal re-probe → ${res.status.toUpperCase()}: ${res.detail}`,
+          );
+        } else {
+          log("error", `Auto-heal failed: ${heal.detail}`);
+        }
+      }
+
 
       const status = statusFromCheck(res);
       if (res.evidence?.bodyPreview) {
