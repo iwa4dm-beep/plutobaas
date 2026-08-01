@@ -115,6 +115,8 @@ export async function runGoLive(
   const events: RunEvent[] = [];
   const outcomes: StageOutcome[] = [];
   const previous = opts.previous ?? {};
+  let baselineApplied = false;
+
 
   const emit = (stage: string, level: RunEvent["level"], message: string) => {
     const e: RunEvent = { at: new Date().toISOString(), stage, level, message };
