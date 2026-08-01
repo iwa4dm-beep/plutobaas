@@ -1,4 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { applyBaselineSchema } from "@/lib/pluto/baseline-apply";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ArrowRight, Bell, CheckCircle2, CircleAlert, CircleDashed, Download, Loader2, Play, RotateCcw, Rocket, Square, XCircle,
