@@ -7,6 +7,16 @@ import { dashboardObservabilityHelp } from "@/content/help/dashboard.observabili
 import { isLive, observability, type GdprRequest, type MetricPoint, type TraceSpan, type TraceSummary } from "@/lib/pluto/live";
 
 export const Route = createFileRoute("/dashboard/observability")({
+  head: () => ({
+    meta: [
+      { title: "Observability · Dashboard — Pluto BaaS" },
+      { name: "description", content: "Observability tools in the Pluto BaaS dashboard: manage your backend, database, auth and services from one console." },
+      { property: "og:title", content: "Observability · Dashboard — Pluto BaaS" },
+      { property: "og:description", content: "Observability tools in the Pluto BaaS dashboard: manage your backend, database, auth and services from one console." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
+    ],
+  }),
   component: ObservabilityPage,
 });
 

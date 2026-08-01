@@ -10,7 +10,19 @@ import { toast } from "sonner";
 import { HelpPanel } from "@/components/help/HelpPanel";
 import { dashboardAuditLogHelp } from "@/content/help/dashboard.audit-log";
 
-export const Route = createFileRoute("/dashboard/audit-log")({ component: AuditLogPage });
+export const Route = createFileRoute("/dashboard/audit-log")({
+  head: () => ({
+    meta: [
+      { title: "Audit Log · Pluto BaaS Dashboard" },
+      { name: "description", content: "Review every admin action on your Pluto BaaS backend with actor, target and timestamp detail." },
+      { property: "og:title", content: "Audit Log · Pluto BaaS Dashboard" },
+      { property: "og:description", content: "Review every admin action on your Pluto BaaS backend with actor, target and timestamp detail." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
+    ],
+  }),
+  component: AuditLogPage,
+});
 
 // Curated filter chips that map to `action LIKE prefix%` on the backend.
 const CHIPS = [

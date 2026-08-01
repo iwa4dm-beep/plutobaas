@@ -19,7 +19,19 @@ function useWorkspaceAdmin(): { role: WorkspaceRole; canAdmin: boolean } {
   };
 }
 
-export const Route = createFileRoute("/dashboard/branching")({ component: BranchingPage });
+export const Route = createFileRoute("/dashboard/branching")({
+  head: () => ({
+    meta: [
+      { title: "Database Branching · Pluto BaaS" },
+      { name: "description", content: "Create and merge isolated database branches for safe schema work on your Pluto BaaS project." },
+      { property: "og:title", content: "Database Branching · Pluto BaaS" },
+      { property: "og:description", content: "Create and merge isolated database branches for safe schema work on your Pluto BaaS project." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
+    ],
+  }),
+  component: BranchingPage,
+});
 
 // Phase 21 — Branching + Studio schema editor MVP.
 // The Studio compiles structured operations into deterministic SQL (dry-run

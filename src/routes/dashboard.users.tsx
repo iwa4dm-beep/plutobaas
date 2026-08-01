@@ -13,6 +13,16 @@ import { getState, softDeletedIds, subscribe } from "@/lib/pluto/delete-store";
 
 
 export const Route = createFileRoute("/dashboard/users")({
+  head: () => ({
+    meta: [
+      { title: "Users · Dashboard — Pluto BaaS" },
+      { name: "description", content: "Users tools in the Pluto BaaS dashboard: manage your backend, database, auth and services from one console." },
+      { property: "og:title", content: "Users · Dashboard — Pluto BaaS" },
+      { property: "og:description", content: "Users tools in the Pluto BaaS dashboard: manage your backend, database, auth and services from one console." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
+    ],
+  }),
   component: UsersPage,
 });
 

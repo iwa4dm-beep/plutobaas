@@ -13,7 +13,19 @@ import { usePaginatedTable } from "@/lib/pluto/usePaginatedTable";
 import { HelpPanel } from "@/components/help/HelpPanel";
 import { dashboardBackupsHelp } from "@/content/help/dashboard.backups";
 
-export const Route = createFileRoute("/dashboard/backups")({ component: BackupsPage });
+export const Route = createFileRoute("/dashboard/backups")({
+  head: () => ({
+    meta: [
+      { title: "Backups & Restore · Pluto BaaS" },
+      { name: "description", content: "Export, schedule and restore Pluto BaaS database backups with point-in-time recovery drills." },
+      { property: "og:title", content: "Backups & Restore · Pluto BaaS" },
+      { property: "og:description", content: "Export, schedule and restore Pluto BaaS database backups with point-in-time recovery drills." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
+    ],
+  }),
+  component: BackupsPage,
+});
 
 function fmtBytes(n: number) {
   if (!n) return "0 B";

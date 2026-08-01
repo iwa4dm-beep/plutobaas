@@ -12,7 +12,19 @@ import { usePaginatedTable } from "@/lib/pluto/usePaginatedTable";
 import { HelpPanel } from "@/components/help/HelpPanel";
 import { dashboardVectorHelp } from "@/content/help/dashboard.vector";
 
-export const Route = createFileRoute("/dashboard/vector")({ component: VectorPage });
+export const Route = createFileRoute("/dashboard/vector")({
+  head: () => ({
+    meta: [
+      { title: "Vector Search · Pluto BaaS Dashboard" },
+      { name: "description", content: "Manage pgvector collections, embeddings and similarity search on your Pluto BaaS database." },
+      { property: "og:title", content: "Vector Search · Pluto BaaS Dashboard" },
+      { property: "og:description", content: "Manage pgvector collections, embeddings and similarity search on your Pluto BaaS database." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
+    ],
+  }),
+  component: VectorPage,
+});
 
 // Deterministic pseudo-embedding for demo/testing without an API key.
 function fakeEmbed(text: string, dims = 64): number[] {

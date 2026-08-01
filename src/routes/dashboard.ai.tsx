@@ -12,6 +12,16 @@ import { Badge } from "@/components/ui/badge";
 import { isLive, ai, type AiStatus, type ChatMessage } from "@/lib/pluto/live";
 
 export const Route = createFileRoute("/dashboard/ai")({
+  head: () => ({
+    meta: [
+      { title: "AI Services · Pluto BaaS Dashboard" },
+      { name: "description", content: "AI and embedding services for your Pluto BaaS project: models, keys and usage in one console." },
+      { property: "og:title", content: "AI Services · Pluto BaaS Dashboard" },
+      { property: "og:description", content: "AI and embedding services for your Pluto BaaS project: models, keys and usage in one console." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
+    ],
+  }),
   component: AiPage,
 });
 

@@ -34,6 +34,16 @@ const searchSchema = z.object({
 });
 
 export const Route = createFileRoute("/dashboard/logs-explorer")({
+  head: () => ({
+    meta: [
+      { title: "Logs Explorer · Dashboard — Pluto BaaS" },
+      { name: "description", content: "Logs Explorer tools in the Pluto BaaS dashboard: manage your backend, database, auth and services from one console." },
+      { property: "og:title", content: "Logs Explorer · Dashboard — Pluto BaaS" },
+      { property: "og:description", content: "Logs Explorer tools in the Pluto BaaS dashboard: manage your backend, database, auth and services from one console." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
+    ],
+  }),
   validateSearch: zodValidator(searchSchema),
   component: LogsExplorer,
 });

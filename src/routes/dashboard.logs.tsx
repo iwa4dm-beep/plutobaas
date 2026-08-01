@@ -7,6 +7,16 @@ import { pluto, type PlutoLog } from "@/lib/pluto/client";
 import { isLive, live } from "@/lib/pluto/live";
 
 export const Route = createFileRoute("/dashboard/logs")({
+  head: () => ({
+    meta: [
+      { title: "Logs · Dashboard — Pluto BaaS" },
+      { name: "description", content: "Logs tools in the Pluto BaaS dashboard: manage your backend, database, auth and services from one console." },
+      { property: "og:title", content: "Logs · Dashboard — Pluto BaaS" },
+      { property: "og:description", content: "Logs tools in the Pluto BaaS dashboard: manage your backend, database, auth and services from one console." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
+    ],
+  }),
   component: LogsPage,
 });
 

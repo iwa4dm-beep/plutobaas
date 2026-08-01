@@ -24,6 +24,16 @@ function useDebounced<T>(value: T, ms = 300): T {
 
 
 export const Route = createFileRoute("/dashboard/audit")({
+  head: () => ({
+    meta: [
+      { title: "Audit · Dashboard — Pluto BaaS" },
+      { name: "description", content: "Audit tools in the Pluto BaaS dashboard: manage your backend, database, auth and services from one console." },
+      { property: "og:title", content: "Audit · Dashboard — Pluto BaaS" },
+      { property: "og:description", content: "Audit tools in the Pluto BaaS dashboard: manage your backend, database, auth and services from one console." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
+    ],
+  }),
   component: AuditPage,
 });
 

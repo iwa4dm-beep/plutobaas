@@ -7,6 +7,16 @@ import { dashboardStorageHelp } from "@/content/help/dashboard.storage";
 import { pluto, type PlutoBucket, type PlutoFile } from "@/lib/pluto/client";
 
 export const Route = createFileRoute("/dashboard/storage")({
+  head: () => ({
+    meta: [
+      { title: "Storage · Dashboard — Pluto BaaS" },
+      { name: "description", content: "Storage tools in the Pluto BaaS dashboard: manage your backend, database, auth and services from one console." },
+      { property: "og:title", content: "Storage · Dashboard — Pluto BaaS" },
+      { property: "og:description", content: "Storage tools in the Pluto BaaS dashboard: manage your backend, database, auth and services from one console." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
+    ],
+  }),
   component: StoragePage,
 });
 

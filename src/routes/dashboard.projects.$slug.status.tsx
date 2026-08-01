@@ -6,6 +6,16 @@ import { PageHeader } from "@/components/pluto/PageHeader";
 import { ErrorBanner } from "@/components/pluto/ErrorBanner";
 
 export const Route = createFileRoute("/dashboard/projects/$slug/status")({
+  head: () => ({
+    meta: [
+      { title: "Status · Dashboard — Pluto BaaS" },
+      { name: "description", content: "Status tools in the Pluto BaaS dashboard: manage your backend, database, auth and services from one console." },
+      { property: "og:title", content: "Status · Dashboard — Pluto BaaS" },
+      { property: "og:description", content: "Status tools in the Pluto BaaS dashboard: manage your backend, database, auth and services from one console." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
+    ],
+  }),
   component: ProjectStatusPage,
 });
 

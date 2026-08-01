@@ -12,6 +12,16 @@ import { AppendixSections } from "@/components/pluto/connect/AppendixSections";
 import { GuidedSetupWizard } from "@/components/pluto/connect/GuidedSetupWizard";
 
 export const Route = createFileRoute("/dashboard/connect-project")({
+  head: () => ({
+    meta: [
+      { title: "Connect Project · Dashboard — Pluto BaaS" },
+      { name: "description", content: "Connect Project tools in the Pluto BaaS dashboard: manage your backend, database, auth and services from one console." },
+      { property: "og:title", content: "Connect Project · Dashboard — Pluto BaaS" },
+      { property: "og:description", content: "Connect Project tools in the Pluto BaaS dashboard: manage your backend, database, auth and services from one console." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
+    ],
+  }),
   component: ConnectProjectPage,
 });
 

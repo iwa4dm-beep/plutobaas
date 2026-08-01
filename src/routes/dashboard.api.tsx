@@ -18,6 +18,16 @@ import { isLive, live, type SchemaEndpoint, type SchemaTable } from "@/lib/pluto
 import { generateTypedClient } from "@/lib/pluto/gen-client";
 
 export const Route = createFileRoute("/dashboard/api")({
+  head: () => ({
+    meta: [
+      { title: "API Keys & Endpoints · Pluto BaaS" },
+      { name: "description", content: "Browse your Pluto BaaS REST endpoints, mint API keys and copy ready-to-use request snippets." },
+      { property: "og:title", content: "API Keys & Endpoints · Pluto BaaS" },
+      { property: "og:description", content: "Browse your Pluto BaaS REST endpoints, mint API keys and copy ready-to-use request snippets." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
+    ],
+  }),
   component: () => <RequireWorkspace><ApiEndpointsPage /></RequireWorkspace>,
 });
 

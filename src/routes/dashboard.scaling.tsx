@@ -7,6 +7,16 @@ import { dashboardScalingHelp } from "@/content/help/dashboard.scaling";
 import { isLive, scaling, type QueueJob, type QueueStat, type RateLimitPolicy, type RateLimitBucket } from "@/lib/pluto/live";
 
 export const Route = createFileRoute("/dashboard/scaling")({
+  head: () => ({
+    meta: [
+      { title: "Scaling · Dashboard — Pluto BaaS" },
+      { name: "description", content: "Scaling tools in the Pluto BaaS dashboard: manage your backend, database, auth and services from one console." },
+      { property: "og:title", content: "Scaling · Dashboard — Pluto BaaS" },
+      { property: "og:description", content: "Scaling tools in the Pluto BaaS dashboard: manage your backend, database, auth and services from one console." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
+    ],
+  }),
   component: ScalingPage,
 });
 

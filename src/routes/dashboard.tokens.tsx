@@ -10,7 +10,19 @@ import { isLive, tokens, type WorkspaceToken, type WorkspaceTokenMint, type Scop
 import { HelpPanel } from "@/components/help/HelpPanel";
 import { dashboardTokensHelp } from "@/content/help/dashboard.tokens";
 
-export const Route = createFileRoute("/dashboard/tokens")({ component: TokensPage });
+export const Route = createFileRoute("/dashboard/tokens")({
+  head: () => ({
+    meta: [
+      { title: "API Tokens · Pluto BaaS Dashboard" },
+      { name: "description", content: "Mint, rotate and revoke Pluto BaaS API tokens with per-role scopes and expiry." },
+      { property: "og:title", content: "API Tokens · Pluto BaaS Dashboard" },
+      { property: "og:description", content: "Mint, rotate and revoke Pluto BaaS API tokens with per-role scopes and expiry." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
+    ],
+  }),
+  component: TokensPage,
+});
 
 function TokensPage() {
   const [rows, setRows] = useState<WorkspaceToken[]>([]);

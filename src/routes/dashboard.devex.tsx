@@ -10,7 +10,19 @@ import {
   type WebhookSub, type WebhookDelivery, type InstalledPlugin,
 } from "@/lib/pluto/live";
 
-export const Route = createFileRoute("/dashboard/devex")({ component: DevexPage });
+export const Route = createFileRoute("/dashboard/devex")({
+  head: () => ({
+    meta: [
+      { title: "Developer Experience · Pluto BaaS" },
+      { name: "description", content: "Local stack, CLI, SDK downloads and developer tooling for building on Pluto BaaS." },
+      { property: "og:title", content: "Developer Experience · Pluto BaaS" },
+      { property: "og:description", content: "Local stack, CLI, SDK downloads and developer tooling for building on Pluto BaaS." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
+    ],
+  }),
+  component: DevexPage,
+});
 
 // Phase 19 console — extended with scoped/expiring token minting and
 // failed-delivery replay for outbound webhooks.
