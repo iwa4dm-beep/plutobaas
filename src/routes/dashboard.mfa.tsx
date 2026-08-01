@@ -11,6 +11,16 @@ import { Input } from "@/components/ui/input";
 import { isLive, mfa, type MfaFactor, type MfaEnrollResponse } from "@/lib/pluto/live";
 
 export const Route = createFileRoute("/dashboard/mfa")({
+  head: () => ({
+    meta: [
+      { title: "Multi-Factor Auth · Pluto BaaS" },
+      { name: "description", content: "Configure MFA/TOTP enrollment and enforcement for your Pluto BaaS auth users." },
+      { property: "og:title", content: "Multi-Factor Auth · Pluto BaaS" },
+      { property: "og:description", content: "Configure MFA/TOTP enrollment and enforcement for your Pluto BaaS auth users." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
+    ],
+  }),
   component: MfaPage,
 });
 

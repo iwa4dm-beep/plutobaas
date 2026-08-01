@@ -12,6 +12,16 @@ import { isLive, live, type Workspace, type WorkspaceKey, type WorkspaceMember }
 
 
 export const Route = createFileRoute("/dashboard/workspaces")({
+  head: () => ({
+    meta: [
+      { title: "Workspaces · Dashboard — Pluto BaaS" },
+      { name: "description", content: "Workspaces tools in the Pluto BaaS dashboard: manage your backend, database, auth and services from one console." },
+      { property: "og:title", content: "Workspaces · Dashboard — Pluto BaaS" },
+      { property: "og:description", content: "Workspaces tools in the Pluto BaaS dashboard: manage your backend, database, auth and services from one console." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
+    ],
+  }),
   component: WorkspacesPage,
 });
 

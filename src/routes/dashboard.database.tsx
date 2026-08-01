@@ -29,6 +29,16 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 export const Route = createFileRoute("/dashboard/database")({
+  head: () => ({
+    meta: [
+      { title: "Database · Dashboard — Pluto BaaS" },
+      { name: "description", content: "Database tools in the Pluto BaaS dashboard: manage your backend, database, auth and services from one console." },
+      { property: "og:title", content: "Database · Dashboard — Pluto BaaS" },
+      { property: "og:description", content: "Database tools in the Pluto BaaS dashboard: manage your backend, database, auth and services from one console." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
+    ],
+  }),
   component: DatabasePage,
 });
 

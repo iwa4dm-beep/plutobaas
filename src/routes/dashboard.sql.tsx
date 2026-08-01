@@ -10,6 +10,16 @@ import { isLive, live, type SqlHistoryEntry, type SqlResult, type SqlRunResponse
 import { validateClientSql } from "@/lib/pluto/sql-client-validator";
 
 export const Route = createFileRoute("/dashboard/sql")({
+  head: () => ({
+    meta: [
+      { title: "SQL Editor · Pluto BaaS Dashboard" },
+      { name: "description", content: "Run SQL against your Pluto BaaS Postgres database with history, limits and safety checks." },
+      { property: "og:title", content: "SQL Editor · Pluto BaaS Dashboard" },
+      { property: "og:description", content: "Run SQL against your Pluto BaaS Postgres database with history, limits and safety checks." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
+    ],
+  }),
   component: () => <RequireWorkspace><SqlRunnerPage /></RequireWorkspace>,
 });
 

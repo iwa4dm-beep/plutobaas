@@ -12,7 +12,19 @@ import {
   type IpRule, type CustomDomain, type RegionConfig, type StatusComponent, type StatusIncident,
 } from "@/lib/pluto/live";
 
-export const Route = createFileRoute("/dashboard/enterprise")({ component: EnterprisePage });
+export const Route = createFileRoute("/dashboard/enterprise")({
+  head: () => ({
+    meta: [
+      { title: "Enterprise Controls · Pluto BaaS" },
+      { name: "description", content: "SSO, compliance, residency and organisation-wide policy controls for Pluto BaaS." },
+      { property: "og:title", content: "Enterprise Controls · Pluto BaaS" },
+      { property: "og:description", content: "SSO, compliance, residency and organisation-wide policy controls for Pluto BaaS." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
+    ],
+  }),
+  component: EnterprisePage,
+});
 
 // Phase 20 console — extended with incident timeline filters, automated
 // DNS TXT polling for pending custom domains, and a live IP allow/deny

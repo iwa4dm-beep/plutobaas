@@ -7,6 +7,16 @@ import { dashboardVerifyHelp } from "@/content/help/dashboard.verify";
 import { isLive, live, liveConfig, subscribe, type RealtimeStatus } from "@/lib/pluto/live";
 
 export const Route = createFileRoute("/dashboard/verify")({
+  head: () => ({
+    meta: [
+      { title: "Verify · Dashboard — Pluto BaaS" },
+      { name: "description", content: "Verify tools in the Pluto BaaS dashboard: manage your backend, database, auth and services from one console." },
+      { property: "og:title", content: "Verify · Dashboard — Pluto BaaS" },
+      { property: "og:description", content: "Verify tools in the Pluto BaaS dashboard: manage your backend, database, auth and services from one console." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
+    ],
+  }),
   component: VerifyPage,
 });
 

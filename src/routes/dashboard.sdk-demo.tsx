@@ -9,6 +9,16 @@ import { Label } from "@/components/ui/label";
 import { createClient, type PlutoClient, type Session } from "@pluto/client";
 
 export const Route = createFileRoute("/dashboard/sdk-demo")({
+  head: () => ({
+    meta: [
+      { title: "SDK Demo · Pluto BaaS Dashboard" },
+      { name: "description", content: "Try the Pluto JS SDK live: auth, database queries, storage uploads and realtime channels." },
+      { property: "og:title", content: "SDK Demo · Pluto BaaS Dashboard" },
+      { property: "og:description", content: "Try the Pluto JS SDK live: auth, database queries, storage uploads and realtime channels." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
+    ],
+  }),
   component: SdkDemo,
 });
 

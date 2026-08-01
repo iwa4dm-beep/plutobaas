@@ -12,7 +12,19 @@ import {
   type QuotaAlert, type UsageWebhook, type UsageWebhookDelivery, type AlertEventPayload,
 } from "@/lib/pluto/live";
 
-export const Route = createFileRoute("/dashboard/usage")({ component: UsagePage });
+export const Route = createFileRoute("/dashboard/usage")({
+  head: () => ({
+    meta: [
+      { title: "Usage & Quotas · Pluto BaaS Dashboard" },
+      { name: "description", content: "Track requests, storage, bandwidth and quota headroom across your Pluto BaaS project." },
+      { property: "og:title", content: "Usage & Quotas · Pluto BaaS Dashboard" },
+      { property: "og:description", content: "Track requests, storage, bandwidth and quota headroom across your Pluto BaaS project." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
+    ],
+  }),
+  component: UsagePage,
+});
 
 // Phase 22b — Live SSE-driven usage dashboard with workspace-role RBAC.
 // Non-admins see read-only cards; admins can edit quotas / billing labels.

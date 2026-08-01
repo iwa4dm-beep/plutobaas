@@ -8,6 +8,16 @@ import { WorkspaceProvider } from "@/lib/pluto/workspace-context";
 
 
 export const Route = createFileRoute("/dashboard")({
+  head: () => ({
+    meta: [
+      { title: "Pluto BaaS Dashboard" },
+      { name: "description", content: "Manage your Pluto BaaS backend: database, auth, storage, functions, realtime and deployments." },
+      { property: "og:title", content: "Pluto BaaS Dashboard" },
+      { property: "og:description", content: "Manage your Pluto BaaS backend: database, auth, storage, functions, realtime and deployments." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
+    ],
+  }),
   ssr: false,
   component: DashboardLayout,
 });

@@ -16,6 +16,16 @@ type ConflictInfo = Awaited<ReturnType<typeof live.admin.apiKeys.checkConflict>>
 type IndexStatus = Awaited<ReturnType<typeof live.admin.apiKeys.verifyIndex>>;
 
 export const Route = createFileRoute("/dashboard/projects")({
+  head: () => ({
+    meta: [
+      { title: "Projects · Dashboard — Pluto BaaS" },
+      { name: "description", content: "Projects tools in the Pluto BaaS dashboard: manage your backend, database, auth and services from one console." },
+      { property: "og:title", content: "Projects · Dashboard — Pluto BaaS" },
+      { property: "og:description", content: "Projects tools in the Pluto BaaS dashboard: manage your backend, database, auth and services from one console." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
+    ],
+  }),
   component: ProjectsPage,
 });
 

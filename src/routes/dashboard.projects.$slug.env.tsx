@@ -7,6 +7,16 @@ import { isLive, live } from "@/lib/pluto/live";
 import { previewSubdomainUrl } from "@/lib/pluto/reserved-slugs";
 
 export const Route = createFileRoute("/dashboard/projects/$slug/env")({
+  head: () => ({
+    meta: [
+      { title: "Env · Dashboard — Pluto BaaS" },
+      { name: "description", content: "Env tools in the Pluto BaaS dashboard: manage your backend, database, auth and services from one console." },
+      { property: "og:title", content: "Env · Dashboard — Pluto BaaS" },
+      { property: "og:description", content: "Env tools in the Pluto BaaS dashboard: manage your backend, database, auth and services from one console." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
+    ],
+  }),
   component: ProjectEnvPage,
 });
 

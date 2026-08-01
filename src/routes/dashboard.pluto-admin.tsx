@@ -16,6 +16,16 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { getAdminUpstreamConfig } from "@/lib/pluto/key-helper.functions";
 
 export const Route = createFileRoute("/dashboard/pluto-admin")({
+  head: () => ({
+    meta: [
+      { title: "Admin · Dashboard — Pluto BaaS" },
+      { name: "description", content: "Admin tools in the Pluto BaaS dashboard: manage your backend, database, auth and services from one console." },
+      { property: "og:title", content: "Admin · Dashboard — Pluto BaaS" },
+      { property: "og:description", content: "Admin tools in the Pluto BaaS dashboard: manage your backend, database, auth and services from one console." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
+    ],
+  }),
   component: PlutoAdminPage,
 });
 

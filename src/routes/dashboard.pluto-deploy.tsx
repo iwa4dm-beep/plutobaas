@@ -19,6 +19,16 @@ import { AiDeployPlannerCard } from "@/components/pluto/AiDeployPlannerCard";
 const WORKSPACE_ID_RE = /^[a-zA-Z0-9][a-zA-Z0-9_-]{1,127}$/;
 
 export const Route = createFileRoute("/dashboard/pluto-deploy")({
+  head: () => ({
+    meta: [
+      { title: "Deploy · Dashboard — Pluto BaaS" },
+      { name: "description", content: "Deploy tools in the Pluto BaaS dashboard: manage your backend, database, auth and services from one console." },
+      { property: "og:title", content: "Deploy · Dashboard — Pluto BaaS" },
+      { property: "og:description", content: "Deploy tools in the Pluto BaaS dashboard: manage your backend, database, auth and services from one console." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
+    ],
+  }),
   component: DeployPage,
 });
 

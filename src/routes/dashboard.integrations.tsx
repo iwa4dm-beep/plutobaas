@@ -7,6 +7,16 @@ import { dashboardIntegrationsHelp } from "@/content/help/dashboard.integrations
 import { integrations, isLive, type IntegrationHealth } from "@/lib/pluto/live";
 
 export const Route = createFileRoute("/dashboard/integrations")({
+  head: () => ({
+    meta: [
+      { title: "Integrations · Dashboard — Pluto BaaS" },
+      { name: "description", content: "Integrations tools in the Pluto BaaS dashboard: manage your backend, database, auth and services from one console." },
+      { property: "og:title", content: "Integrations · Dashboard — Pluto BaaS" },
+      { property: "og:description", content: "Integrations tools in the Pluto BaaS dashboard: manage your backend, database, auth and services from one console." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
+    ],
+  }),
   component: IntegrationsPage,
 });
 

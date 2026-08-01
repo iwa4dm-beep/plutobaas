@@ -13,7 +13,19 @@ import { usePaginatedTable } from "@/lib/pluto/usePaginatedTable";
 import { HelpPanel } from "@/components/help/HelpPanel";
 import { dashboardRealtimeHelp } from "@/content/help/dashboard.realtime";
 
-export const Route = createFileRoute("/dashboard/realtime")({ component: RealtimePage });
+export const Route = createFileRoute("/dashboard/realtime")({
+  head: () => ({
+    meta: [
+      { title: "Realtime Channels · Pluto BaaS" },
+      { name: "description", content: "Monitor realtime channels, presence and change-data-capture streams on Pluto BaaS." },
+      { property: "og:title", content: "Realtime Channels · Pluto BaaS" },
+      { property: "og:description", content: "Monitor realtime channels, presence and change-data-capture streams on Pluto BaaS." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
+    ],
+  }),
+  component: RealtimePage,
+});
 
 function RealtimePage() {
   const [channels, setChannels] = useState<Rt2Channel[]>([]);

@@ -12,7 +12,19 @@ import { toast } from "sonner";
 import { HelpPanel } from "@/components/help/HelpPanel";
 import { dashboardFunctionsHelp } from "@/content/help/dashboard.functions";
 
-export const Route = createFileRoute("/dashboard/functions")({ component: FunctionsPage });
+export const Route = createFileRoute("/dashboard/functions")({
+  head: () => ({
+    meta: [
+      { title: "Edge Functions · Pluto BaaS Dashboard" },
+      { name: "description", content: "Deploy, invoke and inspect serverless functions running on your Pluto BaaS backend." },
+      { property: "og:title", content: "Edge Functions · Pluto BaaS Dashboard" },
+      { property: "og:description", content: "Deploy, invoke and inspect serverless functions running on your Pluto BaaS backend." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
+    ],
+  }),
+  component: FunctionsPage,
+});
 
 function FunctionsPage() {
   const [tab, setTab] = useState<"functions"|"secrets"|"schedules"|"logs">("functions");

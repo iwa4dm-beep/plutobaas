@@ -7,6 +7,16 @@ import { pluto, type PlutoSettings } from "@/lib/pluto/client";
 import { isLive, live } from "@/lib/pluto/live";
 
 export const Route = createFileRoute("/dashboard/settings")({
+  head: () => ({
+    meta: [
+      { title: "Settings · Dashboard — Pluto BaaS" },
+      { name: "description", content: "Settings tools in the Pluto BaaS dashboard: manage your backend, database, auth and services from one console." },
+      { property: "og:title", content: "Settings · Dashboard — Pluto BaaS" },
+      { property: "og:description", content: "Settings tools in the Pluto BaaS dashboard: manage your backend, database, auth and services from one console." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
+    ],
+  }),
   component: SettingsPage,
 });
 

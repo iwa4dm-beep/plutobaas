@@ -16,6 +16,16 @@ import { Plus, RefreshCw, Trash2 } from "lucide-react";
 import { getUpstream, plutoApi, pushUiHistory } from "@/lib/pluto/upstream";
 
 export const Route = createFileRoute("/dashboard/pluto-schema")({
+  head: () => ({
+    meta: [
+      { title: "Schema · Dashboard — Pluto BaaS" },
+      { name: "description", content: "Schema tools in the Pluto BaaS dashboard: manage your backend, database, auth and services from one console." },
+      { property: "og:title", content: "Schema · Dashboard — Pluto BaaS" },
+      { property: "og:description", content: "Schema tools in the Pluto BaaS dashboard: manage your backend, database, auth and services from one console." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
+    ],
+  }),
   component: PlutoSchemaPage,
 });
 

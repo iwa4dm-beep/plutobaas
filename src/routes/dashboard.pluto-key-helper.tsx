@@ -18,6 +18,16 @@ import {
 } from "@/lib/pluto/key-helper.functions";
 
 export const Route = createFileRoute("/dashboard/pluto-key-helper")({
+  head: () => ({
+    meta: [
+      { title: "Key Helper · Dashboard — Pluto BaaS" },
+      { name: "description", content: "Key Helper tools in the Pluto BaaS dashboard: manage your backend, database, auth and services from one console." },
+      { property: "og:title", content: "Key Helper · Dashboard — Pluto BaaS" },
+      { property: "og:description", content: "Key Helper tools in the Pluto BaaS dashboard: manage your backend, database, auth and services from one console." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
+    ],
+  }),
   component: KeyHelperPage,
 });
 
