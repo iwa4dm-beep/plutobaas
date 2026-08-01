@@ -14,6 +14,8 @@ import {
   type Evidence,
   type WizardConfig,
 } from "./connect-wizard";
+import { applyBaselineSchema, looksLikeMissingBaseline } from "./baseline-apply";
+
 
 export type StageStatus =
   | "idle"
