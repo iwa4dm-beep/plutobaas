@@ -387,13 +387,32 @@ function ConnectRoadmapPage() {
               <Square className="h-3.5 w-3.5" /> Stop
             </button>
           ) : (
-            <button
-              onClick={runFullGoLive}
-              disabled={busy || !cfg}
-              className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition hover:opacity-90 disabled:opacity-50"
-            >
-              <Rocket className="h-3.5 w-3.5" /> Run full go-live (১→১০)
-            </button>
+            <>
+              {Object.keys(stagesRef.current).length > 0 && (
+                <button
+                  onClick={() => void runFullGoLive(true)}
+                  disabled={busy || !cfg}
+                  className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-medium transition hover:bg-accent disabled:opacity-50"
+                  title="Skips steps that already passed and continues from the first unresolved step."
+                >
+                  <RotateCcw className="h-3.5 w-3.5" /> Resume from last step
+                </button>
+              )}
+              <button
+                onClick={() => setShowNotify((v) => !v)}
+                className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-medium transition hover:bg-accent"
+              >
+                <Bell className="h-3.5 w-3.5" />
+                {notify.webhookUrl ? "Alerts on" : "Alerts"}
+              </button>
+              <button
+                onClick={() => void runFullGoLive(false)}
+                disabled={busy || !cfg}
+                className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition hover:opacity-90 disabled:opacity-50"
+              >
+                <Rocket className="h-3.5 w-3.5" /> Run full go-live (১→১০)
+              </button>
+            </>
           )}
         </div>
       </div>
