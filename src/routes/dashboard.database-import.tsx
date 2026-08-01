@@ -3,10 +3,21 @@ import { useEffect, useRef, useState } from "react";
 import { plutoApi, getUpstream } from "@/lib/pluto/upstream";
 import { HelpPanel } from "@/components/help/HelpPanel";
 import { dashboardDatabaseImportHelp } from "@/content/help/dashboard.database-import";
+import { Button } from "@/components/ui/button";
+import { CONSOLIDATED_SCHEMA_SQL } from "@/lib/pluto/connect-schema";
 
 export const Route = createFileRoute("/dashboard/database-import")({
   component: DbImportPage,
-  head: () => ({ meta: [{ title: "Database Import & Connect · Pluto Admin" }] }),
+  head: () => ({
+    meta: [
+      { title: "Database Import & Connect · Pluto Admin" },
+      { name: "description", content: "Import schemas and data into Pluto, monitor apply jobs, and verify the resulting database." },
+      { property: "og:title", content: "Database Import & Connect · Pluto Admin" },
+      { property: "og:description", content: "Import schemas and data into Pluto, monitor apply jobs, and verify the resulting database." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary" },
+    ],
+  }),
 });
 
 type Conn = {
@@ -76,6 +87,7 @@ function DbImportPage() {
   const [csvTable, setCsvTable] = useState("");
   const [continueOnError, setContinueOnError] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [applyingBaseline, setApplyingBaseline] = useState(false);
   const [activeJob, setActiveJob] = useState<Job | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -99,6 +111,30 @@ function DbImportPage() {
       setMsg(`Started job ${j.job_id}`);
       pollJob(j.job_id);
     } catch (e: any) { setErr(e.message); } finally { setUploading(false); }
+  }
+
+  async function applyBaseline() {
+    setApplyingBaseline(true); setErr(null); setMsg(null); setActiveJob(null);
+    try {
+      const { url, token } = getUpstream();
+      const base = (url || "/api/pluto").replace(/\/+$/, "");
+      const fd = new FormData();
+      fd.append("file", new File([CONSOLIDATED_SCHEMA_SQL], "pluto-baseline.sql", { type: "application/sql" }));
+      const res = await fetch(`${base}/admin/v1/dbio/import/schema?schema=public`, {
+        method: "POST",
+        body: fd,
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      const body = await res.json() as { job_id?: string; error?: string; message?: string };
+      if (!res.ok || !body.job_id) throw new Error(body.error ?? body.message ?? `HTTP ${res.status}`);
+      setTab("Import File");
+      setMsg(`Baseline apply started · ${body.job_id}`);
+      pollJob(body.job_id);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setApplyingBaseline(false);
+    }
   }
 
   function pollJob(id: string) {
@@ -202,6 +238,19 @@ function DbImportPage() {
 
       {err && <div className="text-sm text-destructive border border-destructive/40 bg-destructive/10 rounded p-2">{err}</div>}
       {msg && <div className="text-sm text-emerald-600 border border-emerald-500/40 bg-emerald-500/10 rounded p-2">{msg}</div>}
+
+      <section className="border rounded-lg p-4 max-w-3xl space-y-3" aria-labelledby="baseline-title">
+        <div>
+          <h2 id="baseline-title" className="font-medium">Missing <code>public.todos</code>?</h2>
+          <p className="text-xs text-muted-foreground mt-1">
+            Apply the idempotent Pluto baseline to create <code>profiles</code>, <code>user_roles</code>, <code>todos</code>, grants, RLS policies, triggers, storage buckets, and realtime registration.
+          </p>
+        </div>
+        <Button onClick={() => void applyBaseline()} disabled={applyingBaseline || uploading}>
+          {applyingBaseline ? "Starting baseline apply…" : "Apply baseline schema + RBAC/RLS"}
+        </Button>
+        <p className="text-xs text-muted-foreground">Safe to re-run. After the job succeeds, resume Go-Live from step 5.</p>
+      </section>
 
       {tab === "Connections" && (
         <div className="grid md:grid-cols-2 gap-4">
