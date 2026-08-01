@@ -233,27 +233,27 @@ export async function runCheck(id: CheckId, cfg: WizardConfig): Promise<CheckRes
     case "health": {
       const p = await req(`${b}/v1/health`, { headers: { accept: "application/json" } });
       const sig = p.error ?? `HTTP ${p.status} ${p.body}`;
-      return result(id, p.ok ? "pass" : "fail", p.ok ? `HTTP 200 · ${p.ms}ms` : sig, p.ms, sig);
+      return result(id, p.ok ? "pass" : "fail", p.ok ? `HTTP 200 · ${p.ms}ms` : sig, p.ms, sig, p);
     }
     case "keys": {
       if (!cfg.anonKey) return result(id, "warn", "No anon key entered yet.", 0, "invalid api key");
       const p = await req(`${b}/auth/v1/settings`, { headers: keyHeaders(cfg) });
       const sig = p.error ?? `HTTP ${p.status} ${p.body}`;
-      if (p.status === 401 || p.status === 403) return result(id, "fail", sig, p.ms, sig);
-      return result(id, p.ok || p.status === 404 ? "pass" : "warn", p.ok ? `Key accepted · ${p.ms}ms` : sig, p.ms, sig);
+      if (p.status === 401 || p.status === 403) return result(id, "fail", sig, p.ms, sig, p);
+      return result(id, p.ok || p.status === 404 ? "pass" : "warn", p.ok ? `Key accepted · ${p.ms}ms` : sig, p.ms, sig, p);
     }
     case "cors": {
       const p = await req(`${b}/v1/health`, { method: "GET", headers: { accept: "application/json" } });
       if (p.error) {
-        return result(id, "fail", `Blocked from ${cfg.appOrigin}: ${p.error}`, p.ms, `failed to fetch ${p.error}`);
+        return result(id, "fail", `Blocked from ${cfg.appOrigin}: ${p.error}`, p.ms, `failed to fetch ${p.error}`, p);
       }
-      return result(id, "pass", `${cfg.appOrigin} → allowed · ${p.ms}ms`, p.ms);
+      return result(id, "pass", `${cfg.appOrigin} → allowed · ${p.ms}ms`, p.ms, undefined, p);
     }
     case "auth": {
       const p = await req(`${b}/auth/v1/health`, { headers: keyHeaders(cfg) });
       const alt = p.status === 404 ? await req(`${b}/auth/v1/settings`, { headers: keyHeaders(cfg) }) : p;
       const sig = alt.error ?? `HTTP ${alt.status} ${alt.body}`;
-      return result(id, alt.ok ? "pass" : "fail", alt.ok ? `Auth online · ${alt.ms}ms` : sig, alt.ms, sig);
+      return result(id, alt.ok ? "pass" : "fail", alt.ok ? `Auth online · ${alt.ms}ms` : sig, alt.ms, sig, alt);
     }
     case "rls": {
       const table = cfg.table || "todos";
@@ -262,12 +262,12 @@ export async function runCheck(id: CheckId, cfg: WizardConfig): Promise<CheckRes
       });
       const sig = p.error ?? `HTTP ${p.status} ${p.body}`;
       if (p.status === 401 || p.status === 403) {
-        return result(id, "pass", `RLS actively denies anon on "${table}" (HTTP ${p.status}) — protected.`, p.ms);
+        return result(id, "pass", `RLS actively denies anon on "${table}" (HTTP ${p.status}) — protected.`, p.ms, undefined, p);
       }
       if (p.ok) {
-        return result(id, "warn", `"${table}" is readable by anon — confirm this is intentional.`, p.ms, "row-level security open");
+        return result(id, "warn", `"${table}" is readable by anon — confirm this is intentional.`, p.ms, "row-level security open", p);
       }
-      return result(id, "fail", sig, p.ms, sig);
+      return result(id, "fail", sig, p.ms, sig, p);
     }
     case "import": {
       const table = cfg.table || "todos";
@@ -277,20 +277,20 @@ export async function runCheck(id: CheckId, cfg: WizardConfig): Promise<CheckRes
           : keyHeaders(cfg),
       });
       const sig = p.error ?? `HTTP ${p.status} ${p.body}`;
-      if (p.ok) return result(id, "pass", `Table "${table}" exists and returns rows · ${p.ms}ms`, p.ms);
+      if (p.ok) return result(id, "pass", `Table "${table}" exists and returns rows · ${p.ms}ms`, p.ms, undefined, p);
       const missing = p.status === 404 || /42p01|does not exist/i.test(p.body);
-      if (missing) return result(id, "fail", `Table "${table}" not found — import not applied?`, p.ms, sig);
-      return result(id, "warn", sig, p.ms, sig);
+      if (missing) return result(id, "fail", `Table "${table}" not found — import not applied?`, p.ms, sig, p);
+      return result(id, "warn", sig, p.ms, sig, p);
     }
     case "storage": {
       const p = await req(`${b}/storage/v1/bucket`, { headers: keyHeaders(cfg) });
       const sig = p.error ?? `HTTP ${p.status} ${p.body}`;
-      return result(id, p.ok ? "pass" : "warn", p.ok ? `Buckets listed · ${p.ms}ms` : sig, p.ms, sig);
+      return result(id, p.ok ? "pass" : "warn", p.ok ? `Buckets listed · ${p.ms}ms` : sig, p.ms, sig, p);
     }
     case "realtime": {
       const p = await req(`${b}/realtime/v1/health`, { headers: keyHeaders(cfg) });
       const sig = p.error ?? `HTTP ${p.status} ${p.body}`;
-      return result(id, p.ok ? "pass" : "warn", p.ok ? `Realtime up · ${p.ms}ms` : sig, p.ms, sig);
+      return result(id, p.ok ? "pass" : "warn", p.ok ? `Realtime up · ${p.ms}ms` : sig, p.ms, sig, p);
     }
   }
 }
