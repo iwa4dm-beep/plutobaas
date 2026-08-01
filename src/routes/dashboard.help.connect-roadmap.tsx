@@ -214,8 +214,23 @@ function ConnectRoadmapPage() {
   const [notify, setNotify] = useState<NotifyConfig>(EMPTY_NOTIFY);
   const [notifyStatus, setNotifyStatus] = useState<NotifyOutcome | null>(null);
   const [showNotify, setShowNotify] = useState(false);
+  const [baselineBusy, setBaselineBusy] = useState(false);
   const stopRef = useRef(false);
   const stagesRef = useRef<Record<string, StageOutcome>>({});
+
+  const applyBaseline = useCallback(async () => {
+    setBaselineBusy(true);
+    const push = (level: RunEvent["level"], message: string) =>
+      setEvents((prev) => [...prev, { at: new Date().toISOString(), stage: "baseline", level, message }]);
+    push("info", "Applying the Pluto baseline schema (profiles, user_roles, todos, grants, RLS, realtime)…");
+    try {
+      const r = await applyBaselineSchema({ onLog: (m) => push("info", m) });
+      push(r.ok ? "ok" : "error", r.detail);
+    } finally {
+      setBaselineBusy(false);
+    }
+  }, []);
+
 
 
   useEffect(() => {
