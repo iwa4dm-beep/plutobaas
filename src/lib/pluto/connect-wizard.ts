@@ -156,23 +156,45 @@ export function diagnose(signature: string): Diagnosis[] {
  * Probes
  * ------------------------------------------------------------------ */
 
-type Probe = { ok: boolean; status: number; body: string; ms: number; error?: string };
+type Probe = {
+  ok: boolean;
+  status: number;
+  body: string;
+  ms: number;
+  error?: string;
+  url: string;
+  method: string;
+};
 
 async function req(url: string, init?: RequestInit): Promise<Probe> {
   const started = Date.now();
+  const method = (init?.method ?? "GET").toUpperCase();
   try {
     const res = await fetch(url, { ...init, signal: AbortSignal.timeout(12_000) });
     const body = (await res.text()).slice(0, 600);
-    return { ok: res.ok, status: res.status, body, ms: Date.now() - started };
+    return { ok: res.ok, status: res.status, body, ms: Date.now() - started, url, method };
   } catch (e) {
     return {
       ok: false,
       status: 0,
       body: "",
       ms: Date.now() - started,
+      url,
+      method,
       error: e instanceof Error ? e.message : String(e),
     };
   }
+}
+
+function evidenceOf(p: Probe): Evidence {
+  return {
+    url: p.url,
+    method: p.method,
+    status: p.status,
+    latencyMs: p.ms,
+    bodyPreview: p.body ? p.body.slice(0, 400) : undefined,
+    error: p.error,
+  };
 }
 
 function base(cfg: WizardConfig): string {
@@ -191,6 +213,7 @@ function result(
   detail: string,
   latencyMs?: number,
   signature?: string,
+  probe?: Probe,
 ): CheckResult {
   return {
     id,
@@ -200,6 +223,7 @@ function result(
     detail,
     latencyMs,
     hints: status === "fail" || status === "warn" ? diagnose(signature ?? detail) : undefined,
+    evidence: probe ? evidenceOf(probe) : undefined,
   };
 }
 
