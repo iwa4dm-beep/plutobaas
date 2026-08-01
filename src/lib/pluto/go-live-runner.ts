@@ -201,6 +201,36 @@ export async function runGoLive(
         }
       }
 
+      // Self-heal: steps 5 (data import) and 6 (RBAC/RLS) fail purely because
+      // the baseline tables were never applied. Apply the idempotent baseline
+      // once per run and re-probe instead of reporting a red step.
+      const signature = `${res.detail} ${res.evidence?.bodyPreview ?? ""} ${res.evidence?.error ?? ""}`;
+      if (
+        res.status === "fail" &&
+        opts.autoHeal !== false &&
+        !baselineApplied &&
+        looksLikeMissingBaseline(signature)
+      ) {
+        baselineApplied = true;
+        log("warn", "Baseline tables missing — applying the Pluto baseline schema automatically.");
+        const heal = await applyBaselineSchema({
+          apiBase: cfg.apiBase,
+          onLog: (m) => log("info", m),
+        });
+        if (heal.ok) {
+          await sleep(RETRY_DELAY_MS);
+          res = await runCheck(s.check, cfg);
+          attempts += 1;
+          log(
+            res.status === "pass" ? "ok" : "warn",
+            `Post-heal re-probe → ${res.status.toUpperCase()}: ${res.detail}`,
+          );
+        } else {
+          log("error", `Auto-heal failed: ${heal.detail}`);
+        }
+      }
+
+
       const status = statusFromCheck(res);
       if (res.evidence?.bodyPreview) {
         logs.push(`response: ${res.evidence.bodyPreview}`);
