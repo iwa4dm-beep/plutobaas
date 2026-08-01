@@ -239,6 +239,15 @@ function ConnectRoadmapPage() {
       const raw = localStorage.getItem(DONE_KEY);
       if (raw) setDone(JSON.parse(raw) as Record<string, boolean>);
     } catch { /* ignore */ }
+    setNotify(loadNotifyConfig());
+  }, []);
+
+  const updateNotify = useCallback((patch: Partial<NotifyConfig>) => {
+    setNotify((prev) => {
+      const next = { ...prev, ...patch };
+      saveNotifyConfig(next);
+      return next;
+    });
   }, []);
 
   const toggleDone = useCallback((id: string) => {
