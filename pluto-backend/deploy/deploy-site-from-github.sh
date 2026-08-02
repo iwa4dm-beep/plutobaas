@@ -112,10 +112,11 @@ REPO_URL="$REPO_URL" BRANCH="$BRANCH" APP_DIR="$APP_DIR" DOMAIN="$DOMAIN" \
   PORT="$PORT" SERVICE="$SERVICE" bash "$INSTALLER" || die "HTTPS vhost render failed" 34
 
 bold_hdr "5/5 Verify"
-code="$(curl -sk -o /dev/null -w '%{http_code}' "https://${DOMAIN}/")"
+code="$(curl -sk --max-time 15 --resolve "${DOMAIN}:443:127.0.0.1" -o /dev/null -w '%{http_code}' "https://${DOMAIN}/")"
 [[ "$code" == "200" ]] || die "https://${DOMAIN}/ → HTTP $code" 36
-hdr="$(curl -skI "https://${DOMAIN}/" | tr -d '\r' | awk 'tolower($1)=="x-pluto-primary:"{print $2; exit}')"
+hdr="$(curl -skI --max-time 15 --resolve "${DOMAIN}:443:127.0.0.1" "https://${DOMAIN}/" | tr -d '\r' | awk 'tolower($1)=="x-pluto-primary:"{print $2; exit}')"
 ok "https://${DOMAIN}/ → 200 (X-Pluto-Primary: ${hdr:-<missing>})"
+
 
 cat <<EOF
 
