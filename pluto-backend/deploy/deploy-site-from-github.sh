@@ -97,6 +97,24 @@ else
   }
   mkdir -p /var/www/html/.well-known/acme-challenge
   chown -R root:www-data /var/www/html 2>/dev/null || true
+  chmod -R 755 /var/www/html/.well-known
+
+  # Self-test: make sure the vhost serves the ACME webroot instead of the SPA
+  # fallback (index.html), which is what makes certbot report "unauthorized".
+  PROBE="pluto-selftest-$(date -u +%s)"
+  echo "$PROBE" > "/var/www/html/.well-known/acme-challenge/$PROBE"
+  body="$(curl -s --max-time 8 --resolve "${DOMAIN}:80:127.0.0.1" \
+            "http://${DOMAIN}/.well-known/acme-challenge/${PROBE}" || true)"
+  rm -f "/var/www/html/.well-known/acme-challenge/$PROBE"
+  if [[ "$body" != "$PROBE" ]]; then
+    warn "ACME webroot not served correctly for ${DOMAIN} (got: ${body:0:60})"
+    warn "Re-rendering vhost with the acme-challenge location, then retrying."
+    REPO_URL="$REPO_URL" BRANCH="$BRANCH" APP_DIR="$APP_DIR" DOMAIN="$DOMAIN" \
+      PORT="$PORT" SERVICE="$SERVICE" bash "$INSTALLER" >/dev/null 2>&1 || true
+    nginx -t >/dev/null 2>&1 && systemctl reload nginx || true
+  fi
+
+
   if certbot certonly --webroot -w /var/www/html -d "$DOMAIN" \
        --non-interactive --agree-tos -m "$CERT_EMAIL" --keep-until-expiring; then
     ok "certificate issued for $DOMAIN"

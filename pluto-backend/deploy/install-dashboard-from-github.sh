@@ -192,6 +192,12 @@ if [ "$MODE" = "ssr" ]; then
     location = /favicon.ico { try_files \$uri =404; access_log off; log_not_found off; }
     location = /robots.txt  { try_files \$uri =404; access_log off; log_not_found off; }
 
+    location ^~ /.well-known/acme-challenge/ {
+        root /var/www/html;
+        default_type "text/plain";
+        try_files \$uri =404;
+    }
+
     location / {
         proxy_pass http://127.0.0.1:${PORT};
         proxy_http_version 1.1;
@@ -211,6 +217,12 @@ else
     index index.html;
     disable_symlinks off;
 
+    location ^~ /.well-known/acme-challenge/ {
+        root /var/www/html;
+        default_type "text/plain";
+        try_files \$uri =404;
+    }
+
     location ^~ /assets/ {
         alias ${DIST_DIR}/assets/;
         access_log off;
@@ -221,6 +233,9 @@ else
     location / { try_files \$uri \$uri/ /index.html; }
 EOF
 fi
+
+mkdir -p /var/www/html/.well-known/acme-challenge
+chmod -R 755 /var/www/html/.well-known
 
 {
   if [ "$HAS_TLS" -eq 1 ]; then
