@@ -119,7 +119,7 @@ info "[1/6] cloning + building $REPO into $APP_DIR (service=$SERVICE port=$PORT)
 # the installer can clone fresh (fixes "APP_DIR is not a git checkout and REPO_URL is not set").
 if [[ -d "$APP_DIR" ]]; then
   existing_remote="$(git -C "$APP_DIR" config --get remote.origin.url 2>/dev/null || true)"
-  if [[ -z "$existing_remote" || "$existing_remote" != "$REPO" ]]; then
+  if [[ -z "$existing_remote" || "${existing_remote%.git}" != "${REPO%.git}" ]]; then
     warn "wiping $APP_DIR (existing remote='${existing_remote:-<none>}', want='$REPO')"
     systemctl stop "$SERVICE" 2>/dev/null || true
     rm -rf "$APP_DIR"
