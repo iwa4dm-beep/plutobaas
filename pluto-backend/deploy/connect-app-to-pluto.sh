@@ -132,18 +132,33 @@ REPO_URL="$REPO" DOMAIN="$DOMAIN" APP_DIR="$APP_DIR" SERVICE="$SERVICE" PORT="$P
 # ── 2. Rewrite source: @supabase/supabase-js → @timescard/pluto-js ──────────
 info "[2/6] rewriting Supabase client imports → Pluto (source-level)"
 if [[ -d "$APP_DIR" && -f "$APP_DIR/package.json" ]]; then
-  ( cd "$APP_DIR" && bash "$HERE/migrate-frontend-to-pluto.sh" ) || warn "migrate-frontend-to-pluto.sh reported warnings"
+  ( cd "$APP_DIR" && bash "$HERE/migrate-frontend-to-pluto.sh" ) \
+    || die "source migration failed; refusing to keep serving the old backend bundle"
 else
-  warn "source dir $APP_DIR missing package.json — skipping source rewrite"
+  die "source dir $APP_DIR is missing package.json"
 fi
 
 # ── 3. Rebuild after migration + inject runtime env.js ─────────────────────
 info "[3/6] rebuilding with Pluto env baked in"
-if [[ -f "$APP_DIR/package.json" ]]; then
-  ( cd "$APP_DIR" \
-      && VITE_PLUTO_URL="$PLUTO_URL" VITE_PLUTO_ANON_KEY="$PLUTO_ANON_KEY" \
-         npm run build ) || warn "npm run build failed — keeping previous build"
-fi
+(
+  cd "$APP_DIR"
+
+  # The migration changes package.json. Refresh dependencies before building;
+  # otherwise an old node_modules can leave @timescard/pluto-js unresolved.
+  if [[ -f bun.lock || -f bun.lockb ]] && command -v bun >/dev/null 2>&1; then
+    bun install
+  elif [[ -f pnpm-lock.yaml ]] && command -v pnpm >/dev/null 2>&1; then
+    pnpm install --no-frozen-lockfile
+  elif [[ -f yarn.lock ]] && command -v yarn >/dev/null 2>&1; then
+    yarn install
+  else
+    npm install --no-audit --no-fund
+  fi
+
+  # Never allow a failed build to fall back to a stale Supabase dist directory.
+  rm -rf dist .output build out
+  VITE_PLUTO_URL="$PLUTO_URL" VITE_PLUTO_ANON_KEY="$PLUTO_ANON_KEY" npm run build
+) || die "Pluto frontend dependency install/build failed; stale build was removed"
 
 DIST=""
 for d in "$APP_DIR/dist" "$APP_DIR/.output/public" "$APP_DIR/build" "$APP_DIR/out"; do
@@ -152,9 +167,14 @@ done
 if [[ -n "$DIST" ]]; then
   info "injecting env.js into $DIST"
   VITE_PLUTO_URL="$PLUTO_URL" VITE_PLUTO_ANON_KEY="$PLUTO_ANON_KEY" \
-    bash "$HERE/inject-pluto-env.sh" "$DIST" || warn "inject-pluto-env.sh failed"
+    bash "$HERE/inject-pluto-env.sh" "$DIST" \
+    || die "runtime Pluto env injection failed"
+
+  # Block activation when any compiled asset still points to the previous BaaS.
+  bash "$HERE/assert-no-supabase.sh" "$DIST" \
+    || die "compiled bundle still contains Supabase references; activation cancelled"
 else
-  warn "no dist/ found — env.js injection skipped"
+  die "build completed but no deployable index.html was found"
 fi
 
 # ── 4. Migrate Supabase schema → Pluto tenant DB (optional) ─────────────────
