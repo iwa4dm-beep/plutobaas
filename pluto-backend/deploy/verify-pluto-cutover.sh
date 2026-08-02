@@ -12,6 +12,7 @@ set -euo pipefail
 DOMAIN="${1:-app.timescard.cloud}"
 BASE="https://$DOMAIN"
 PLUTO_API="${PLUTO_API_BASE:-${PLUTO_API:-https://api.timescard.cloud}}"
+VERIFY_IP="${PLUTO_VERIFY_IP:-}"
 
 red()   { printf "\033[1;31m✗ %s\033[0m\n" "$*"; }
 green() { printf "\033[1;32m✔ %s\033[0m\n" "$*"; }
@@ -43,23 +44,41 @@ raise SystemExit(1)
 PY
 }
 
+CURL=(curl -sSL --max-time 10 -H 'cache-control: no-cache')
+if [[ -n "$VERIFY_IP" ]]; then
+  CURL+=(--resolve "${DOMAIN}:443:${VERIFY_IP}")
+  info "Verifying the local Nginx vhost at $VERIFY_IP (bypassing DNS/CDN)"
+fi
+
 info "Fetching $BASE …"
-HTML=$(curl -sSL --max-time 10 -H 'cache-control: no-cache' "$BASE/?pluto_verify=$(date +%s)" || true)
+HTML=$("${CURL[@]}" "$BASE/?pluto_verify=$(date +%s)" || true)
 if [[ -z "$HTML" ]]; then red "Site unreachable"; exit 1; fi
 
+PRIMARY=$("${CURL[@]}" -I "$BASE/?pluto_verify=$(date +%s)" 2>/dev/null \
+  | tr -d '\r' | awk 'tolower($1)=="x-pluto-primary:"{print $2; exit}')
+if [[ "$PRIMARY" == "$DOMAIN" ]]; then
+  green "Correct Nginx vhost is active (X-Pluto-Primary: $PRIMARY)"
+else
+  red "Wrong Nginx vhost answered (X-Pluto-Primary: ${PRIMARY:-missing}; expected $DOMAIN)"
+  FAIL=1
+fi
+
 # Extract asset URLs from index.html
-mapfile -t ASSETS < <(echo "$HTML" | grep -oE '/assets/[a-zA-Z0-9._/-]+\.js' | sort -u | head -20)
+mapfile -t ASSETS < <(echo "$HTML" \
+  | grep -oE '(["'"'])(/|\./)?(_build/)?assets/[a-zA-Z0-9._/-]+\.js' \
+  | sed -E 's/^["'"']//; s#^\./#/#; s#^([^/])#/_build/\1#' \
+  | sort -u | head -50)
 if [[ ${#ASSETS[@]} -eq 0 ]]; then
-  warn "No /assets/*.js found in index — non-Vite build or unusual layout."
+  warn "No JavaScript assets found in index — non-Vite build or unusual layout."
 fi
 
 TMP=$(mktemp -d); trap "rm -rf $TMP" EXIT
 printf '%s' "$HTML" > "$TMP/index.html"
 for a in "${ASSETS[@]}"; do
-  curl -sSL --max-time 10 -H 'cache-control: no-cache' "$BASE$a" >> "$TMP/all.js" 2>/dev/null || true
+  "${CURL[@]}" "$BASE$a?pluto_verify=$(date +%s)" >> "$TMP/all.js" 2>/dev/null || true
 done
-curl -sSL --max-time 5 -H 'cache-control: no-cache' "$BASE/env.js?pluto_verify=$(date +%s)" -o "$TMP/env.js" 2>/dev/null || true
-curl -sSL --max-time 5 -H 'cache-control: no-cache' "$BASE/sw.js?pluto_verify=$(date +%s)" -o "$TMP/sw.js" 2>/dev/null || true
+"${CURL[@]}" "$BASE/env.js?pluto_verify=$(date +%s)" -o "$TMP/env.js" 2>/dev/null || true
+"${CURL[@]}" "$BASE/sw.js?pluto_verify=$(date +%s)" -o "$TMP/sw.js" 2>/dev/null || true
 cat "$TMP/index.html" "$TMP/all.js" "$TMP/env.js" "$TMP/sw.js" > "$TMP/all.txt" 2>/dev/null || true
 BYTES=$(wc -c < "$TMP/all.js" 2>/dev/null || echo 0)
 info "Concatenated JS: $BYTES bytes"
@@ -91,7 +110,7 @@ if [[ -n "$LEFT" ]]; then
   red "Supabase URLs still present in deployed HTML/JS/env/sw:"
   echo "$LEFT" | sed 's/^/     /'
   echo
-  grep -RIn 'supabase\.(co\|in)' "$TMP" 2>/dev/null | sed 's/^/     source: /' | head -20 || true
+  grep -RIl 'supabase\.(co\|in)' "$TMP" 2>/dev/null | sed 's/^/     source file: /' | head -20 || true
   FAIL=1
 else
   green "No supabase.co URLs left in deployed HTML/JS/env/sw"

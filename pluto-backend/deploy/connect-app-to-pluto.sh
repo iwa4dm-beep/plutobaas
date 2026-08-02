@@ -173,6 +173,13 @@ if [[ -n "$DIST" ]]; then
   # Block activation when any compiled asset still points to the previous BaaS.
   bash "$HERE/assert-no-supabase.sh" "$DIST" \
     || die "compiled bundle still contains Supabase references; activation cancelled"
+
+  # Nginx must be able to traverse the checkout and read the newly rebuilt files.
+  chown -R root:www-data "$DIST" 2>/dev/null || true
+  find "$DIST" -type d -exec chmod 755 {} +
+  find "$DIST" -type f -exec chmod 644 {} +
+  p="$APP_DIR"
+  while [[ "$p" != "/" ]]; do chmod o+x "$p" 2>/dev/null || true; p="$(dirname "$p")"; done
 else
   die "build completed but no deployable index.html was found"
 fi
@@ -181,7 +188,7 @@ fi
 if [[ -n "$SUPABASE_DB_URL" ]]; then
   info "[4/6] extracting Supabase schema for tenant '$TENANT'"
   bash "$HERE/extract-supabase-schema.sh" "$SUPABASE_DB_URL" "$TENANT" \
-    || warn "schema extraction failed — continuing"
+    || die "schema extraction failed; database cutover was not completed"
 
   BUNDLE_DIR="/tmp/pluto-migrations/$TENANT"
   if [[ -f "$BUNDLE_DIR/0001_schema.sql" ]]; then
@@ -189,10 +196,11 @@ if [[ -n "$SUPABASE_DB_URL" ]]; then
       info "applying $BUNDLE_DIR/*.sql into Pluto DB"
       for f in "$BUNDLE_DIR"/*.sql; do
         info "  psql < $(basename "$f")"
-        psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$f" || warn "psql apply failed for $f"
+        psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$f" \
+          || die "database migration failed while applying $f"
       done
     else
-      warn "DATABASE_URL not set — leaving schema bundle at $BUNDLE_DIR for manual apply"
+      die "DATABASE_URL is required when --supabase-db-url is used; schema was extracted but not applied"
     fi
   fi
 else
@@ -201,17 +209,24 @@ fi
 
 # ── 5. Restart + set as primary frontend ────────────────────────────────────
 info "[5/6] restarting $SERVICE${PRIMARY:+ }"
-systemctl restart "$SERVICE" 2>/dev/null || warn "systemctl restart $SERVICE failed (static SPA sites have no unit — safe to ignore)"
+if systemctl cat "$SERVICE" >/dev/null 2>&1; then
+  systemctl restart "$SERVICE" || die "failed to restart $SERVICE"
+else
+  info "$SERVICE is not installed; treating this as a static SPA deployment"
+fi
 if [[ "$PRIMARY" == "1" && -f "$HERE/set-primary-frontend.sh" ]]; then
   info "activating $DOMAIN as primary frontend"
   SLUG="$TENANT" DOMAIN="$DOMAIN" bash "$HERE/set-primary-frontend.sh" || warn "set-primary-frontend.sh failed"
 else
   info "leaving nginx vhost as-is (pass --primary to make $DOMAIN the primary frontend)"
 fi
-nginx -t && systemctl reload nginx || warn "nginx reload failed"
+nginx -t || die "nginx configuration is invalid"
+systemctl reload nginx || die "nginx reload failed"
 
 # ── 6. Verify cutover ───────────────────────────────────────────────────────
-info "[6/6] verifying cutover on https://$DOMAIN"
-bash "$HERE/verify-pluto-cutover.sh" "$DOMAIN" || warn "verify-pluto-cutover reported issues"
+info "[6/6] verifying the exact local vhost for https://$DOMAIN"
+PLUTO_VERIFY_IP="${PLUTO_VERIFY_IP:-127.0.0.1}" \
+  bash "$HERE/verify-pluto-cutover.sh" "$DOMAIN" \
+  || die "cutover verification failed; deployment is NOT complete"
 
 pass "connect-app-to-pluto.sh done — https://$DOMAIN is now on Pluto BaaS"
