@@ -171,7 +171,9 @@ if [[ -n "$DIST" ]]; then
     || die "runtime Pluto env injection failed"
 
   # Block activation when any compiled asset still points to the previous BaaS.
-  bash "$HERE/assert-no-supabase.sh" "$DIST" \
+  SERVER_OUTPUT=""
+  [[ -d "$APP_DIR/.output/server" ]] && SERVER_OUTPUT="$APP_DIR/.output/server"
+  bash "$HERE/assert-no-supabase.sh" "$DIST" ${SERVER_OUTPUT:+"$SERVER_OUTPUT"} \
     || die "compiled bundle still contains Supabase references; activation cancelled"
 
   # Nginx must be able to traverse the checkout and read the newly rebuilt files.
@@ -180,6 +182,12 @@ if [[ -n "$DIST" ]]; then
   find "$DIST" -type f -exec chmod 644 {} +
   p="$APP_DIR"
   while [[ "$p" != "/" ]]; do chmod o+x "$p" 2>/dev/null || true; p="$(dirname "$p")"; done
+
+  info "refreshing service and Nginx from the verified post-migration build"
+  REPO_URL="$REPO" DOMAIN="$DOMAIN" APP_DIR="$APP_DIR" SERVICE="$SERVICE" PORT="$PORT" \
+    SKIP_SOURCE_UPDATE=1 SKIP_BUILD=1 \
+    bash "$HERE/install-dashboard-from-github.sh" \
+    || die "failed to activate the verified post-migration build"
 else
   die "build completed but no deployable index.html was found"
 fi

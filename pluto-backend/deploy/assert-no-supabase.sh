@@ -9,40 +9,38 @@
 #   bash pluto-backend/deploy/assert-no-supabase.sh [dist_dir]
 set -euo pipefail
 
-DIST="${1:-dist}"
+declare -a TARGETS=("${1:-dist}")
+if [[ $# -gt 0 ]]; then shift; fi
+for target in "$@"; do
+  [[ -e "$target" ]] && TARGETS+=("$target")
+done
+
 die()  { printf '\033[1;31m✗ %s\033[0m\n' "$*" >&2; exit 1; }
 pass() { printf '\033[1;32m✓ %s\033[0m\n' "$*"; }
 warn() { printf '\033[1;33m! %s\033[0m\n' "$*"; }
 
-[[ -d "$DIST" ]] || die "dist dir not found: $DIST"
+[[ -d "${TARGETS[0]}" ]] || die "dist dir not found: ${TARGETS[0]}"
 
 FAIL=0
-
-# 1) supabase.co / supabase.in URLs anywhere
-mapfile -t URL_HITS < <(grep -RIln -E 'https?://[a-z0-9-]+\.supabase\.(co|in)' "$DIST" 2>/dev/null || true)
+mapfile -t URL_HITS < <(grep -RIln -E 'https?://[a-z0-9-]+\.supabase\.(co|in)' "${TARGETS[@]}" 2>/dev/null || true)
 if [[ ${#URL_HITS[@]} -gt 0 ]]; then
-  warn "Supabase URLs still present in $DIST:"
-  for f in "${URL_HITS[@]}"; do
-    printf '   %s\n' "$f" >&2
-    grep -oE 'https?://[a-z0-9-]+\.supabase\.(co|in)[^"'"'"' <>]*' "$f" 2>/dev/null | sort -u | sed 's/^/     → /' >&2
-  done
+  warn "Supabase URLs still present in deployable output:"
+  printf '   %s\n' "${URL_HITS[@]}" >&2
   FAIL=1
 fi
 
-# 2) dns-prefetch / preconnect hints pointing at supabase
-if grep -RIln -E '<link[^>]*rel=["'"'"'](dns-prefetch|preconnect)["'"'"'][^>]*supabase\.(co|in)' "$DIST" 2>/dev/null; then
-  warn "Preconnect/dns-prefetch hints for Supabase still in HTML."
+if grep -RIln -E 'supabase\.(co|in)' "${TARGETS[@]}" 2>/dev/null | grep -E '\.(html?|js|mjs|cjs)(:|$)' >/dev/null; then
+  warn "Supabase host references remain in deployable HTML/JavaScript."
   FAIL=1
 fi
 
-# 3) leftover anon JWT literals (safety net)
-if grep -RIln -E '"eyJhbGciOiJIUzI1NiIs[A-Za-z0-9_.-]{20,}"' "$DIST" 2>/dev/null; then
-  warn "Hardcoded Supabase-style anon JWT still in $DIST."
+if grep -RIln -E '"eyJhbGciOiJIUzI1NiIs[A-Za-z0-9_.-]{20,}"' "${TARGETS[@]}" 2>/dev/null; then
+  warn "Hardcoded Supabase-style anon JWT still exists in deployable output."
   FAIL=1
 fi
 
 if [[ $FAIL -ne 0 ]]; then
-  die "cutover guard FAILED — bundle still contains Supabase references. Re-run migrate-frontend-to-pluto.sh, rebuild, and try again."
+  die "cutover guard FAILED — deployable output still contains Supabase references"
 fi
 
-pass "no Supabase references found in $DIST"
+pass "no Supabase references found in: ${TARGETS[*]}"

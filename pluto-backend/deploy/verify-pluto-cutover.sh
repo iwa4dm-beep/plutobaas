@@ -86,7 +86,8 @@ printf '%s' "$HTML" > "$TMP/index.html"
 for a in "${ASSETS[@]}"; do
   "${CURL[@]}" "$BASE$a?pluto_verify=$(date +%s)" >> "$TMP/all.js" 2>/dev/null || true
 done
-"${CURL[@]}" "$BASE/env.js?pluto_verify=$(date +%s)" -o "$TMP/env.js" 2>/dev/null || true
+ENV_CODE=$("${CURL[@]}" "$BASE/env.js?pluto_verify=$(date +%s)" \
+  -o "$TMP/env.js" -w '%{http_code}' 2>/dev/null || echo 000)
 "${CURL[@]}" "$BASE/sw.js?pluto_verify=$(date +%s)" -o "$TMP/sw.js" 2>/dev/null || true
 cat "$TMP/index.html" "$TMP/all.js" "$TMP/env.js" "$TMP/sw.js" > "$TMP/all.txt" 2>/dev/null || true
 BYTES=$(wc -c < "$TMP/all.js" 2>/dev/null || echo 0)
@@ -101,7 +102,10 @@ else
 fi
 
 # ---- Check 2: Pluto publishable/anon key present ----
-if env_file_has_pluto_key "$TMP/env.js"; then
+if [[ "$ENV_CODE" != "200" ]]; then
+  red "Deployed /env.js returned HTTP $ENV_CODE"
+  FAIL=1
+elif env_file_has_pluto_key "$TMP/env.js"; then
   green "Pluto anon key found in deployed env.js"
 else
   red "Pluto anon key NOT found in deployed HTML/JS/env"

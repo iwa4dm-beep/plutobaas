@@ -30,6 +30,8 @@
 #   PORT       Local port for the SSR node server (default: 8790)
 #   NODE_BIN   Path to node (auto-detected)
 #   SERVICE    systemd unit name for SSR mode (default: pluto-dashboard)
+#   SKIP_SOURCE_UPDATE=1  reuse the checkout without git reset
+#   SKIP_BUILD=1          reuse build output and only refresh service/nginx
 
 set -euo pipefail
 
@@ -40,6 +42,8 @@ DOMAIN="${DOMAIN:-dashboard.timescard.cloud}"
 PORT="${PORT:-8790}"
 SERVICE="${SERVICE:-pluto-dashboard}"
 NODE_BIN="${NODE_BIN:-$(command -v node || true)}"
+SKIP_SOURCE_UPDATE="${SKIP_SOURCE_UPDATE:-0}"
+SKIP_BUILD="${SKIP_BUILD:-0}"
 
 log()  { printf '\033[1;36m[%s]\033[0m %s\n' "$(date -u +%H:%M:%SZ)" "$*"; }
 die()  { printf '\033[1;31m[FAIL]\033[0m %s\n' "$*" >&2; exit 1; }
@@ -48,7 +52,10 @@ ok()   { printf '\033[1;32m[OK]\033[0m %s\n' "$*"; }
 [ "$(id -u)" -eq 0 ] || die "run as root (sudo)"
 
 # ---------- 1. clone / pull -------------------------------------------------
-if [ ! -d "$APP_DIR/.git" ]; then
+if [ "$SKIP_SOURCE_UPDATE" = "1" ]; then
+  [ -f "$APP_DIR/package.json" ] || die "cannot reuse $APP_DIR: package.json is missing"
+  log "Reusing existing checkout without git reset: $APP_DIR"
+elif [ ! -d "$APP_DIR/.git" ]; then
   [ -n "$REPO_URL" ] || die "APP_DIR $APP_DIR is not a git checkout and REPO_URL is not set"
   log "Cloning $REPO_URL → $APP_DIR (branch $BRANCH)"
   git clone --branch "$BRANCH" --depth 1 "$REPO_URL" "$APP_DIR"
@@ -61,7 +68,9 @@ fi
 # ---------- 2. install deps + build ----------------------------------------
 cd "$APP_DIR"
 
-if command -v bun >/dev/null 2>&1; then
+if [ "$SKIP_BUILD" = "1" ]; then
+  log "Reusing existing build output"
+elif command -v bun >/dev/null 2>&1; then
   log "bun install"
   bun install --no-progress
   log "bun run build"
@@ -191,6 +200,8 @@ if [ "$MODE" = "ssr" ]; then
     }
     location = /favicon.ico { try_files \$uri =404; access_log off; log_not_found off; }
     location = /robots.txt  { try_files \$uri =404; access_log off; log_not_found off; }
+    location = /env.js      { try_files \$uri =404; access_log off; add_header Cache-Control "no-store"; }
+    location = /sw.js       { try_files \$uri =404; access_log off; add_header Cache-Control "no-cache"; }
 
     location ^~ /.well-known/acme-challenge/ {
         root /var/www/html;
