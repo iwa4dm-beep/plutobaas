@@ -192,6 +192,12 @@ if [ "$MODE" = "ssr" ]; then
     location = /favicon.ico { try_files \$uri =404; access_log off; log_not_found off; }
     location = /robots.txt  { try_files \$uri =404; access_log off; log_not_found off; }
 
+    location ^~ /.well-known/acme-challenge/ {
+        root /var/www/html;
+        default_type "text/plain";
+        try_files \$uri =404;
+    }
+
     location / {
         proxy_pass http://127.0.0.1:${PORT};
         proxy_http_version 1.1;
