@@ -301,6 +301,22 @@ systemctl reload nginx
 
 sleep 1
 SCHEME="https"; [ "$HAS_TLS" -eq 0 ] && SCHEME="http"
+PORT_N=443; [ "$HAS_TLS" -eq 0 ] && PORT_N=80
+
+# Probe THIS host directly (bypass public DNS): the site can be correctly
+# served locally while the A record is still missing/propagating.
+CURL=(curl -sk --max-time 15 --resolve "${DOMAIN}:${PORT_N}:127.0.0.1")
+
+probe_fail() {
+  printf '\033[1;31m[FAIL]\033[0m %s\n' "$*" >&2
+  echo "── diagnostics ─────────────────────────────────────────────" >&2
+  if [ "$MODE" = "ssr" ]; then
+    systemctl is-active "$SERVICE" >&2 2>&1 || true
+    journalctl -u "$SERVICE" -n 30 --no-pager >&2 2>&1 || true
+  fi
+  tail -n 20 /var/log/nginx/error.log >&2 2>/dev/null || true
+  exit 1
+}
 
 # Probe an asset if we can identify one.
 FIRST_ASSET=""
@@ -312,20 +328,21 @@ elif [ "$MODE" = "spa" ] && [ -d "$DIST_DIR/assets" ]; then
   FIRST_ASSET="assets/$(ls "$DIST_DIR/assets" 2>/dev/null | head -1)"
 fi
 if [ -n "$FIRST_ASSET" ]; then
-  code=$(curl -sk -o /dev/null -w "%{http_code}" "${SCHEME}://${DOMAIN}/${FIRST_ASSET}")
-  [ "$code" = "200" ] || die "Asset probe failed: /${FIRST_ASSET} → HTTP $code"
+  code=$("${CURL[@]}" -o /dev/null -w "%{http_code}" "${SCHEME}://${DOMAIN}/${FIRST_ASSET}")
+  [ "$code" = "200" ] || probe_fail "Asset probe failed: /${FIRST_ASSET} → HTTP $code"
   ok "Asset OK: /${FIRST_ASSET} → 200"
 fi
 
-root_code=$(curl -sk -o /dev/null -w "%{http_code}" "${SCHEME}://${DOMAIN}/")
-[ "$root_code" = "200" ] || die "Root probe failed: / → HTTP $root_code"
+root_code=$("${CURL[@]}" -o /dev/null -w "%{http_code}" "${SCHEME}://${DOMAIN}/")
+[ "$root_code" = "200" ] || probe_fail "Root probe failed: / → HTTP $root_code"
 
-primary=$(curl -skI "${SCHEME}://${DOMAIN}/" | tr -d '\r' | awk 'tolower($1)=="x-pluto-primary:"{print $2; exit}')
+primary=$("${CURL[@]}" -I "${SCHEME}://${DOMAIN}/" | tr -d '\r' | awk 'tolower($1)=="x-pluto-primary:"{print $2; exit}')
 [ "$primary" = "${DOMAIN}" ] || log "warn: X-Pluto-Primary=${primary:-<missing>} (expected ${DOMAIN})"
 
-title=$(curl -skL --compressed "${SCHEME}://${DOMAIN}/" \
+title=$("${CURL[@]}" -L --compressed "${SCHEME}://${DOMAIN}/" \
   | python3 -c 'import re,sys; s=sys.stdin.buffer.read().decode("utf-8","ignore"); m=re.search(r"<title>(.*?)</title>",s,re.I|re.S); print((m.group(1).strip() if m else "")[:120])')
 ok "Root OK: / → 200, title: ${title:-<no title>}"
+
 
 cat <<EOF
 
