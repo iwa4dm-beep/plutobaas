@@ -234,6 +234,9 @@ else
 EOF
 fi
 
+mkdir -p /var/www/html/.well-known/acme-challenge
+chmod -R 755 /var/www/html/.well-known
+
 {
   if [ "$HAS_TLS" -eq 1 ]; then
     cat <<EOF
