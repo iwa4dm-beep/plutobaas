@@ -67,7 +67,7 @@ fi
 mapfile -t ASSETS < <(printf '%s' "$HTML" | python3 -c '
 import re, sys
 html = sys.stdin.read()
-paths = set(re.findall(r"(?:src|href)=[\"\x27]([^\"\x27]+\\.js)(?:[?][^\"\x27]*)?[\"\x27]", html, re.I))
+paths = set(re.findall(r"(?:src|href)=[\"\x27]([^\"\x27]+\.js)(?:[?][^\"\x27]*)?[\"\x27]", html, re.I))
 for path in sorted(paths)[:50]:
     if path.startswith("http://") or path.startswith("https://"):
         continue
