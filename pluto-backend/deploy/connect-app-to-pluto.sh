@@ -180,10 +180,13 @@ else
 fi
 
 # ── 5. Restart + set as primary frontend ────────────────────────────────────
-info "[5/6] restarting $SERVICE + activating primary frontend"
-systemctl restart "$SERVICE" 2>/dev/null || warn "systemctl restart $SERVICE failed"
-if [[ -x "$HERE/set-primary-frontend.sh" ]]; then
+info "[5/6] restarting $SERVICE${PRIMARY:+ }"
+systemctl restart "$SERVICE" 2>/dev/null || warn "systemctl restart $SERVICE failed (static SPA sites have no unit — safe to ignore)"
+if [[ "$PRIMARY" == "1" && -f "$HERE/set-primary-frontend.sh" ]]; then
+  info "activating $DOMAIN as primary frontend"
   SLUG="$TENANT" DOMAIN="$DOMAIN" bash "$HERE/set-primary-frontend.sh" || warn "set-primary-frontend.sh failed"
+else
+  info "leaving nginx vhost as-is (pass --primary to make $DOMAIN the primary frontend)"
 fi
 nginx -t && systemctl reload nginx || warn "nginx reload failed"
 
