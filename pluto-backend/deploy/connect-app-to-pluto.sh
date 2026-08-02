@@ -30,6 +30,7 @@ TENANT="${TENANT:-}"
 SUPABASE_DB_URL="${SUPABASE_DB_URL:-}"
 PORT="${PORT:-8791}"
 
+POSITIONAL=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --repo)             REPO="$2"; shift 2;;
@@ -39,8 +40,12 @@ while [[ $# -gt 0 ]]; do
     --tenant|--slug)    TENANT="$2"; shift 2;;
     --supabase-db-url)  SUPABASE_DB_URL="$2"; shift 2;;
     --port)             PORT="$2"; shift 2;;
+    --app-dir)          APP_DIR="$2"; shift 2;;
+    --service)          SERVICE="$2"; shift 2;;
+    --primary)          PRIMARY=1; shift;;
     -h|--help) sed -n '2,25p' "$0"; exit 0;;
-    *) echo "Unknown flag: $1" >&2; exit 2;;
+    -*) echo "Unknown flag: $1" >&2; exit 2;;
+    *) POSITIONAL+=("$1"); shift;;
   esac
 done
 
@@ -49,7 +54,50 @@ info() { printf '\033[1;36m▶ %s\033[0m\n' "$*"; }
 pass() { printf '\033[1;32m✓ %s\033[0m\n' "$*"; }
 warn() { printf '\033[1;33m! %s\033[0m\n' "$*"; }
 
-[[ -n "$REPO" ]]           || die "--repo is required"
+# Positional form used by deploy-site-from-github.sh:
+#   connect-app-to-pluto.sh <app-dir-or-repo-url> <domain>
+if [[ ${#POSITIONAL[@]} -gt 0 ]]; then
+  first="${POSITIONAL[0]}"
+  if [[ "$first" == http*://* || "$first" == git@* ]]; then
+    REPO="$first"
+  elif [[ -d "$first" ]]; then
+    APP_DIR="${APP_DIR:-$first}"
+  fi
+  [[ -n "${POSITIONAL[1]:-}" ]] && DOMAIN="${POSITIONAL[1]}"
+fi
+
+HERE="$(cd "$(dirname "$0")" && pwd)"
+
+# Where the site actually lives. Sites deployed with
+# deploy-site-from-github.sh live in /root/sites/<repo>, older primary-app
+# installs live in /var/www/<domain>. Auto-detect instead of assuming.
+if [[ -z "${APP_DIR:-}" ]]; then
+  slug_guess="$(basename "${REPO%.git}" 2>/dev/null || true)"
+  for cand in "/root/sites/${slug_guess}" "/var/www/$DOMAIN"; do
+    [[ -n "$slug_guess" || "$cand" == /var/www/* ]] || continue
+    if [[ -f "$cand/package.json" ]]; then APP_DIR="$cand"; break; fi
+  done
+  APP_DIR="${APP_DIR:-/var/www/$DOMAIN}"
+fi
+
+# If no repo was given but the checkout exists, reuse its origin remote.
+if [[ -z "$REPO" && -d "$APP_DIR/.git" ]]; then
+  REPO="$(git -C "$APP_DIR" config --get remote.origin.url || true)"
+fi
+
+# Service name: match the per-site unit created by deploy-site-from-github.sh.
+if [[ -z "${SERVICE:-}" ]]; then
+  site_svc="pluto-site-${DOMAIN%%.*}"
+  if systemctl list-unit-files "${site_svc}.service" >/dev/null 2>&1 \
+     && systemctl cat "$site_svc" >/dev/null 2>&1; then
+    SERVICE="$site_svc"
+  else
+    SERVICE="pluto-app"
+  fi
+fi
+PRIMARY="${PRIMARY:-0}"
+
+[[ -n "$REPO" ]]           || die "--repo is required (or point --app-dir at an existing git checkout)"
 [[ -n "$PLUTO_ANON_KEY" ]] || die "--pluto-anon-key is required (VITE_PLUTO_ANON_KEY)"
 
 # Derive tenant slug from repo if not provided
@@ -57,9 +105,7 @@ if [[ -z "$TENANT" ]]; then
   TENANT="$(basename "$REPO" .git | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9-' '-' | sed 's/-\+/-/g;s/^-//;s/-$//')"
 fi
 
-HERE="$(cd "$(dirname "$0")" && pwd)"
-APP_DIR="/var/www/$DOMAIN"
-SERVICE="pluto-app"
+info "APP_DIR=$APP_DIR  SERVICE=$SERVICE  PRIMARY=$PRIMARY"
 
 info "REPO=$REPO"
 info "DOMAIN=$DOMAIN  TENANT=$TENANT  PORT=$PORT"
@@ -73,7 +119,7 @@ info "[1/6] cloning + building $REPO into $APP_DIR (service=$SERVICE port=$PORT)
 # the installer can clone fresh (fixes "APP_DIR is not a git checkout and REPO_URL is not set").
 if [[ -d "$APP_DIR" ]]; then
   existing_remote="$(git -C "$APP_DIR" config --get remote.origin.url 2>/dev/null || true)"
-  if [[ -z "$existing_remote" || "$existing_remote" != "$REPO" ]]; then
+  if [[ -z "$existing_remote" || "${existing_remote%.git}" != "${REPO%.git}" ]]; then
     warn "wiping $APP_DIR (existing remote='${existing_remote:-<none>}', want='$REPO')"
     systemctl stop "$SERVICE" 2>/dev/null || true
     rm -rf "$APP_DIR"
@@ -134,10 +180,13 @@ else
 fi
 
 # ── 5. Restart + set as primary frontend ────────────────────────────────────
-info "[5/6] restarting $SERVICE + activating primary frontend"
-systemctl restart "$SERVICE" 2>/dev/null || warn "systemctl restart $SERVICE failed"
-if [[ -x "$HERE/set-primary-frontend.sh" ]]; then
+info "[5/6] restarting $SERVICE${PRIMARY:+ }"
+systemctl restart "$SERVICE" 2>/dev/null || warn "systemctl restart $SERVICE failed (static SPA sites have no unit — safe to ignore)"
+if [[ "$PRIMARY" == "1" && -f "$HERE/set-primary-frontend.sh" ]]; then
+  info "activating $DOMAIN as primary frontend"
   SLUG="$TENANT" DOMAIN="$DOMAIN" bash "$HERE/set-primary-frontend.sh" || warn "set-primary-frontend.sh failed"
+else
+  info "leaving nginx vhost as-is (pass --primary to make $DOMAIN the primary frontend)"
 fi
 nginx -t && systemctl reload nginx || warn "nginx reload failed"
 
