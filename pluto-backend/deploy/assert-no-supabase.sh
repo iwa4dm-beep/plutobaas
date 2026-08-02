@@ -21,6 +21,26 @@ warn() { printf '\033[1;33m! %s\033[0m\n' "$*"; }
 
 [[ -d "${TARGETS[0]}" ]] || die "dist dir not found: ${TARGETS[0]}"
 
+# Passing the checkout root used to scan .env, node_modules and SQL migrations,
+# producing misleading failures unrelated to deployable output. Narrow an app
+# root to the build directories that can actually be served.
+declare -a DEPLOY_TARGETS=()
+for target in "${TARGETS[@]}"; do
+  if [[ -f "$target/package.json" ]]; then
+    found=0
+    for candidate in "$target/dist" "$target/.output/public" "$target/.output/server" "$target/build" "$target/out"; do
+      if [[ -e "$candidate" ]]; then
+        DEPLOY_TARGETS+=("$candidate")
+        found=1
+      fi
+    done
+    [[ $found -eq 1 ]] || die "no deployable build output found under app root: $target"
+  else
+    DEPLOY_TARGETS+=("$target")
+  fi
+done
+TARGETS=("${DEPLOY_TARGETS[@]}")
+
 FAIL=0
 mapfile -t URL_HITS < <(grep -RIln -E 'https?://[a-z0-9-]+\.supabase\.(co|in)' "${TARGETS[@]}" 2>/dev/null || true)
 if [[ ${#URL_HITS[@]} -gt 0 ]]; then

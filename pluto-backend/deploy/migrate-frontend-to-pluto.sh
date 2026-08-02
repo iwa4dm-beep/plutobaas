@@ -22,6 +22,7 @@
 #   5. Removes Supabase dns-prefetch/preconnect tags from index.html/public HTML
 #   6. Updates .env / .env.example
 #   7. Leaves a backup copy of every changed file at <file>.bak-supabase
+#   8. Runs a residual source guard before allowing the rebuild to continue
 # ---------------------------------------------------------------
 set -euo pipefail
 
@@ -57,10 +58,10 @@ mapfile -t FILES < <(
   {
     if [[ ${#SEARCH_ROOTS[@]} -gt 0 ]]; then
       find "${SEARCH_ROOTS[@]}" -type f \
-        \( -name '*.ts' -o -name '*.tsx' -o -name '*.js' -o -name '*.jsx' -o -name '*.mjs' -o -name '*.cjs' -o -name '*.html' -o -name '*.htm' \) \
+        \( -name '*.ts' -o -name '*.tsx' -o -name '*.js' -o -name '*.jsx' -o -name '*.mjs' -o -name '*.cjs' -o -name '*.html' -o -name '*.htm' -o -name '*.json' \) \
         ! -name '*.bak-supabase' 2>/dev/null
     fi
-    for f in "$ROOT/index.html" "$ROOT/app.html" "$ROOT/vite.config.ts" "$ROOT/vite.config.js"; do
+    for f in "$ROOT/index.html" "$ROOT/app.html" "$ROOT/vite.config.ts" "$ROOT/vite.config.js" "$ROOT/vercel.json"; do
       [[ -f "$f" ]] && printf '%s\n' "$f"
     done
   } | sort -u | xargs -r grep -l -E "$SCAN_RE" 2>/dev/null || true
@@ -79,7 +80,7 @@ fi
 if grep -q '"@supabase/supabase-js"' "$ROOT/package.json"; then
   log "package.json: @supabase/supabase-js → @timescard/pluto-js"
   if [[ $DRY -eq 0 ]]; then
-    cp -n "$ROOT/package.json" "$ROOT/package.json.bak-supabase" || true
+    cp --update=none "$ROOT/package.json" "$ROOT/package.json.bak-supabase" || true
     sed -i 's#"@supabase/supabase-js"#"@timescard/pluto-js"#g' "$ROOT/package.json"
   fi
 fi
@@ -95,7 +96,7 @@ rewrite_file() {
   local f="$1"
   local ext="${f##*.}"
   if [[ $DRY -eq 0 ]]; then
-    cp -n "$f" "$f.bak-supabase"
+    cp --update=none "$f" "$f.bak-supabase" || true
   fi
   # 3a. Import paths + env-var names
   sed -E -i \
@@ -105,6 +106,11 @@ rewrite_file() {
     -e 's#VITE_SUPABASE_URL#VITE_PLUTO_URL#g' \
     -e 's#VITE_SUPABASE_ANON_KEY#VITE_PLUTO_ANON_KEY#g' \
     -e 's#VITE_SUPABASE_PUBLISHABLE_KEY#VITE_PLUTO_ANON_KEY#g' \
+     -e 's#NEXT_PUBLIC_SUPABASE_URL#NEXT_PUBLIC_PLUTO_URL#g' \
+     -e 's#NEXT_PUBLIC_SUPABASE_ANON_KEY#NEXT_PUBLIC_PLUTO_ANON_KEY#g' \
+     -e 's#SUPABASE_PUBLISHABLE_KEY#PLUTO_ANON_KEY#g' \
+     -e 's#SUPABASE_ANON_KEY#PLUTO_ANON_KEY#g' \
+     -e 's#SUPABASE_URL#PLUTO_URL#g' \
     "$f"
 
   if [[ "$ext" == "html" || "$ext" == "htm" ]]; then
@@ -134,6 +140,14 @@ rewrite_file() {
     s#"eyJhbGciOiJIUzI1NiIs[A-Za-z0-9_.\-]+"#'"$PLUTO_KEY_LITERAL"'#g;
     s#'"'"'eyJhbGciOiJIUzI1NiIs[A-Za-z0-9_.\-]+'"'"'#'"$PLUTO_KEY_LITERAL"'#g;
   ' "$f"
+
+  # 3d. Catch URLs in template literals, JSON, concatenated config and other
+  #     shapes not covered above. Keeping the trailing API path intact is
+  #     intentional because Pluto exposes the compatible auth/rest/storage
+  #     routes under its own API origin.
+  sed -E -i \
+    's#https?://[a-z0-9-]+\.supabase\.(co|in)#https://api.timescard.cloud#g' \
+    "$f"
 }
 
 for f in "${FILES[@]:-}"; do
@@ -146,14 +160,14 @@ for f in "${FILES[@]:-}"; do
 done
 
 # ---------------------------------------------------------------
-# 3d. Replace the whole legacy client file with a Pluto re-export shim
+# 3e. Replace the whole legacy client file with a Pluto re-export shim
 # ---------------------------------------------------------------
 LEGACY_DIR="$ROOT/src/integrations/supabase"
 if [[ -d "$LEGACY_DIR" && $DRY -eq 0 ]]; then
   log "Neutralising legacy client at src/integrations/supabase/client.*"
   for legacy in "$LEGACY_DIR"/client.ts "$LEGACY_DIR"/client.tsx "$LEGACY_DIR"/client.js; do
     [[ -f "$legacy" ]] || continue
-    cp -n "$legacy" "$legacy.bak-supabase"
+    cp --update=none "$legacy" "$legacy.bak-supabase" || true
     cat > "$legacy" <<'LEGACY'
 // Neutralised by migrate-frontend-to-pluto.sh — now re-exports the Pluto client.
 export { pluto, supabase, supabase as default } from "@/lib/pluto";
@@ -224,7 +238,7 @@ update_env() {
   if grep -qE '^VITE_SUPABASE_' "$f"; then
     log ".env: renaming VITE_SUPABASE_* → VITE_PLUTO_*  ($f)"
     if [[ $DRY -eq 0 ]]; then
-      cp -n "$f" "$f.bak-supabase"
+      cp --update=none "$f" "$f.bak-supabase" || true
       sed -E -i \
         -e 's#^VITE_SUPABASE_URL=.*#VITE_PLUTO_URL=https://api.timescard.cloud#' \
         -e 's#^VITE_SUPABASE_ANON_KEY=.*#VITE_PLUTO_ANON_KEY=pk_anon_REPLACE_ME#' \
@@ -237,6 +251,21 @@ update_env "$ROOT/.env"
 update_env "$ROOT/.env.local"
 update_env "$ROOT/.env.example"
 
+# Some projects keep the original values under unprefixed or Next.js names.
+# Rename those too; values supplied by the deployment command remain the
+# source of truth during the clean build.
+for env_file in "$ROOT/.env" "$ROOT/.env.local" "$ROOT/.env.example"; do
+  [[ -f "$env_file" || $DRY -eq 1 ]] || continue
+  if [[ $DRY -eq 0 ]]; then
+    sed -E -i \
+      -e 's#^NEXT_PUBLIC_SUPABASE_URL=.*#NEXT_PUBLIC_PLUTO_URL=https://api.timescard.cloud#' \
+      -e 's#^NEXT_PUBLIC_SUPABASE_(ANON_KEY|PUBLISHABLE_KEY)=.*#NEXT_PUBLIC_PLUTO_ANON_KEY=pk_anon_REPLACE_ME#' \
+      -e 's#^SUPABASE_URL=.*#PLUTO_URL=https://api.timescard.cloud#' \
+      -e 's#^SUPABASE_(ANON_KEY|PUBLISHABLE_KEY)=.*#PLUTO_ANON_KEY=pk_anon_REPLACE_ME#' \
+      "$env_file"
+  fi
+done
+
 if [[ ! -f "$ROOT/.env" && $DRY -eq 0 ]]; then
   cat > "$ROOT/.env" <<'EOF'
 VITE_PLUTO_URL=https://api.timescard.cloud
@@ -246,7 +275,35 @@ EOF
 fi
 
 # ---------------------------------------------------------------
-# 6. Summary
+# 6. Residual source guard — never build/activate a partially migrated tree
+# ---------------------------------------------------------------
+if [[ $DRY -eq 0 ]]; then
+  declare -a GUARD_ROOTS=()
+  for path in "$ROOT/src" "$ROOT/app" "$ROOT/public" "$ROOT/index.html" "$ROOT/app.html" "$ROOT/vite.config.ts" "$ROOT/vite.config.js" "$ROOT/vercel.json"; do
+    [[ -e "$path" ]] && GUARD_ROOTS+=("$path")
+  done
+
+  mapfile -t RESIDUALS < <(
+    if [[ ${#GUARD_ROOTS[@]} -gt 0 ]]; then
+      grep -RInE \
+        --exclude='*.bak-supabase' \
+        --exclude-dir=node_modules \
+        --exclude-dir=dist \
+        --exclude-dir=.output \
+        '(@supabase/supabase-js|@/integrations/supabase/(client|types)|VITE_SUPABASE_|NEXT_PUBLIC_SUPABASE_|https?://[a-z0-9-]+\.supabase\.(co|in)|eyJhbGciOiJIUzI1NiIs[A-Za-z0-9_.-]{20,})' \
+        "${GUARD_ROOTS[@]}" 2>/dev/null || true
+    fi
+  )
+  if [[ ${#RESIDUALS[@]} -gt 0 ]]; then
+    warn "Residual Supabase client references remain after migration:"
+    printf '   %s\n' "${RESIDUALS[@]}" >&2
+    die "source cutover is incomplete; refusing to build a mixed-backend frontend"
+  fi
+  ok "Source guard passed — no deployable Supabase client references remain."
+fi
+
+# ---------------------------------------------------------------
+# 7. Summary
 # ---------------------------------------------------------------
 echo
 ok "Rewrite pass complete."
