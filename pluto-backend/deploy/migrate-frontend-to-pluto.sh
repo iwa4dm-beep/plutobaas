@@ -290,7 +290,7 @@ if [[ $DRY -eq 0 ]]; then
         --exclude-dir=node_modules \
         --exclude-dir=dist \
         --exclude-dir=.output \
-        '(@supabase/supabase-js|@/integrations/supabase/(client|types)|VITE_SUPABASE_|NEXT_PUBLIC_SUPABASE_|https?://[a-z0-9-]+\.supabase\.(co|in)|["'"']eyJhbGciOiJIUzI1NiIs[A-Za-z0-9_.-]{20,}["'"'])' \
+        '(@supabase/supabase-js|@/integrations/supabase/(client|types)|VITE_SUPABASE_|NEXT_PUBLIC_SUPABASE_|https?://[a-z0-9-]+\.supabase\.(co|in)|eyJhbGciOiJIUzI1NiIs[A-Za-z0-9_.-]{20,})' \
         "${GUARD_ROOTS[@]}" 2>/dev/null || true
     fi
   )
