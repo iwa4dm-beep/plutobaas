@@ -157,7 +157,13 @@ info "[3/6] rebuilding with Pluto env baked in"
 
   # Never allow a failed build to fall back to a stale Supabase dist directory.
   rm -rf dist .output build out
-  VITE_PLUTO_URL="$PLUTO_URL" VITE_PLUTO_ANON_KEY="$PLUTO_ANON_KEY" npm run build
+  VITE_PLUTO_URL="$PLUTO_URL" \
+  VITE_PLUTO_ANON_KEY="$PLUTO_ANON_KEY" \
+  NEXT_PUBLIC_PLUTO_URL="$PLUTO_URL" \
+  NEXT_PUBLIC_PLUTO_ANON_KEY="$PLUTO_ANON_KEY" \
+  PLUTO_URL="$PLUTO_URL" \
+  PLUTO_ANON_KEY="$PLUTO_ANON_KEY" \
+    npm run build
 ) || die "Pluto frontend dependency install/build failed; stale build was removed"
 
 DIST=""
