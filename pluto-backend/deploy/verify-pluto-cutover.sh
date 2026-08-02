@@ -63,11 +63,20 @@ else
   FAIL=1
 fi
 
-# Extract asset URLs from index.html
-mapfile -t ASSETS < <(echo "$HTML" \
-  | grep -oE '(["'"'])(/|\./)?(_build/)?assets/[a-zA-Z0-9._/-]+\.js' \
-  | sed -E 's/^["'"']//; s#^\./#/#; s#^([^/])#/_build/\1#' \
-  | sort -u | head -50)
+# Extract JavaScript asset URLs from index.html without shell-quote ambiguity.
+mapfile -t ASSETS < <(printf '%s' "$HTML" | python3 -c '
+import re, sys
+html = sys.stdin.read()
+paths = set(re.findall(r"(?:src|href)=[\"\x27]([^\"\x27]+\\.js)(?:[?][^\"\x27]*)?[\"\x27]", html, re.I))
+for path in sorted(paths)[:50]:
+    if path.startswith("http://") or path.startswith("https://"):
+        continue
+    if path.startswith("./"):
+        path = path[1:]
+    if not path.startswith("/"):
+        path = "/" + path
+    print(path)
+')
 if [[ ${#ASSETS[@]} -eq 0 ]]; then
   warn "No JavaScript assets found in index — non-Vite build or unusual layout."
 fi
