@@ -217,6 +217,12 @@ else
     index index.html;
     disable_symlinks off;
 
+    location ^~ /.well-known/acme-challenge/ {
+        root /var/www/html;
+        default_type "text/plain";
+        try_files \$uri =404;
+    }
+
     location ^~ /assets/ {
         alias ${DIST_DIR}/assets/;
         access_log off;
